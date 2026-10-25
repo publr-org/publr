@@ -6,9 +6,9 @@
 const std = @import("std");
 const engine = @import("../../template.zig");
 const registry = @import("../../server/registry.zig");
-const variants = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const record_operations = @import("../../operations/record.zig");
-const model_variant = @import("../../model/dimension.zig");
+const model_dimension = @import("../../model/dimension.zig");
 const context_module = @import("context.zig");
 
 const Context = context_module.Context;
@@ -31,7 +31,7 @@ pub fn of(ctx: *const Context) ![]const Alternate {
 
     const route = ctx.route orelse return &.{};
     var sdk_ctx = ctx.sdk_context();
-    const listed = try variants.listed(&sdk_ctx);
+    const listed = try site_dimensions.listed(&sdk_ctx);
     const id = if (route.kind == .dynamic) try record_id(ctx, route) else null;
 
     if (route.kind == .dynamic and id == null) {
@@ -40,21 +40,21 @@ pub fn of(ctx: *const Context) ![]const Alternate {
 
     var out: std.ArrayList(Alternate) = .empty;
 
-    for (listed) |variant| {
-        const stored = if (variant.main) "" else variant.code;
+    for (listed) |value| {
+        const stored = if (value.main) "" else value.code;
         const path = if (id) |record|
             try path_in(ctx, route, record, stored) orelse continue
         else
             route.pattern;
-        const address = if (variant.main) "" else variant.address;
-        const under = try model_variant.under(ctx.arena, address, path);
+        const address = if (value.main) "" else value.address;
+        const under = try model_dimension.under(ctx.arena, address, path);
 
         try out.append(ctx.arena, .{
-            .code = variant.code,
-            .label = variant.label,
+            .code = value.code,
+            .label = value.label,
             .href = try std.mem.concat(ctx.arena, u8, &.{ ctx.app.url, under }),
-            .current = std.mem.eql(u8, stored, ctx.place.variant),
-            .main = variant.main,
+            .current = std.mem.eql(u8, stored, ctx.place.code),
+            .main = value.main,
         });
     }
 
@@ -78,12 +78,12 @@ fn record_id(ctx: *const Context, route: *const engine.Route) !?[]const u8 {
     return if (listed.records.len == 0) null else listed.records[0].id;
 }
 
-/// The page's path in the app for `record` read in `variant`: its slug there.
+/// The page's path in the app for `record` read at `code` (a language): its slug there.
 fn path_in(
     ctx: *const Context,
     route: *const engine.Route,
     record: []const u8,
-    variant: []const u8,
+    code: []const u8,
 ) !?[]const u8 {
     std.debug.assert(record.len > 0);
     std.debug.assert(route.kind == .dynamic);
@@ -91,7 +91,7 @@ fn path_in(
     var sdk_ctx = ctx.sdk_context();
     const got = registry.SDK.dispatch(&sdk_ctx, record_operations.Get, .{
         .id = record,
-        .dimensions = variants.asked_in(&sdk_ctx, variant),
+        .dimensions = site_dimensions.asked_in(&sdk_ctx, code),
     }) catch return null;
     const slug = got.record.slug orelse return null;
 

@@ -386,7 +386,7 @@ fn register_assets(router: *http.Router) void {
     router.get("/admin/editor/*", &editor_file);
     router.get("/admin/messages/*", &@import("admin/language.zig").messages);
     router.post("/admin/language", &@import("admin/language.zig").choose);
-    router.post("/admin/variant", &@import("admin/variant.zig").choose);
+    router.post("/admin/dimension", &@import("admin/dimension.zig").choose);
     router.get("/admin/welcome", &@import("admin/welcome.zig").page);
     router.post("/admin/welcome", &@import("admin/welcome.zig").save);
 

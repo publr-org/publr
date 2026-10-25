@@ -113,7 +113,7 @@ pub fn read(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
     }
 
     if (form.get("untranslated")) |chosen| {
-        def.variant_fallback = !std.mem.eql(u8, chosen, "omit");
+        def.fallback_to_main = !std.mem.eql(u8, chosen, "omit");
     }
 
     const share = form.text("share") orelse return def;

@@ -7,7 +7,7 @@ const record = @import("../record.zig");
 const library = @import("library.zig");
 const trash = @import("../trash.zig");
 const tags = @import("tags.zig");
-const variants = @import("../variants.zig");
+const site_dimensions = @import("../dimensions.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -120,7 +120,7 @@ fn translations_of(ctx: *Ctx, id: []const u8) Error![]const Translation {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    const others = try variants.others(ctx);
+    const others = try site_dimensions.others(ctx);
 
     if (others.len == 0) {
         return &.{};
@@ -135,12 +135,12 @@ fn translations_of(ctx: *Ctx, id: []const u8) Error![]const Translation {
     };
     const out = ctx.arena.alloc(Translation, others.len) catch return error.OutOfMemory;
 
-    for (others, out) |variant, *translation| {
+    for (others, out) |value, *translation| {
         translation.* = .{
-            .code = variant.code,
-            .title = try text_in(ctx, document, "title", variant.code),
-            .alt = try text_in(ctx, document, "alt", variant.code),
-            .caption = try text_in(ctx, document, "caption", variant.code),
+            .code = value.code,
+            .title = try text_in(ctx, document, "title", value.code),
+            .alt = try text_in(ctx, document, "alt", value.code),
+            .caption = try text_in(ctx, document, "caption", value.code),
         };
     }
 
@@ -156,7 +156,7 @@ fn text_in(
     std.debug.assert(name.len > 0);
     std.debug.assert(code.len > 0);
 
-    const key = try variants.key_in(ctx, name, code);
+    const key = try site_dimensions.key_in(ctx, name, code);
     const value = if (document == .object) document.object.get(key) else null;
 
     return if (value != null and value.? == .string) value.?.string else "";

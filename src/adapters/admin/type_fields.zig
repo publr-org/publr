@@ -3,7 +3,7 @@
 //! `content_type update`, so existing records follow the same rules as from the CLI.
 //! A field inside a group or repeater is addressed as `parent.name`, one level deep.
 const std = @import("std");
-const variants = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const spaces = @import("schema_space.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -678,8 +678,8 @@ fn switches_of(
 
     var out: std.ArrayList(views.FieldPanel.DimensionsItem) = .empty;
 
-    for (variants.all(&session.ctx)) |dimension| {
-        const values = variants.values_of(&session.ctx, dimension) catch continue;
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
 
         if (values.len < 2) {
             continue;

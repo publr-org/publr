@@ -6,7 +6,7 @@ const std = @import("std");
 const runtime = @import("runtime");
 const languages = @import("../../server/languages.zig");
 const context_module = @import("context.zig");
-const model_variant = @import("../../model/dimension.zig");
+const model_dimension = @import("../../model/dimension.zig");
 
 const Context = context_module.Context;
 const Project = @import("../../server/project.zig").Project;
@@ -24,7 +24,7 @@ pub const Language = struct {
 
 /// The page's language, with its catalogue when a plugin translates it.
 pub fn of(ctx: *const Context) !Language {
-    std.debug.assert(ctx.place.locale.len <= model_variant.code_len_max);
+    std.debug.assert(ctx.place.locale.len <= model_dimension.code_len_max);
 
     const found = find(ctx.project, ctx.place.locale) orelse return .{
         .locale = ctx.place.locale,

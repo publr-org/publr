@@ -118,18 +118,18 @@
         "look_for": "The port serve noted, and how many pings."
       },
       {
-        "name": ".variants",
-        "summary": "The one variant dimension: every field gets a setting to keep a value per variant, and the admin a picker. The sampler's are editions, web and print; on a real site it is the languages plugin's.",
+        "name": ".dimensions",
+        "summary": "Dimensions a field may vary by, each made with publr.dimension.define: every field gets a switch per dimension, the editor a picker. The sampler's are editions, web and print; a site's languages and an A/B test's variations are others.",
         "code": [
           {
-            "file": "variants/editions.zig",
+            "file": "dimensions/editions.zig",
             "decl": "dimension"
           }
         ],
         "see": [
           "Open Structure, then Sample notes, then a field."
         ],
-        "look_for": "Per edition under the field, and Edition at the top right of the admin."
+        "look_for": "Per edition in the field's settings, and an Edition picker in a sample note's editor."
       }
     ],
     "tour": [

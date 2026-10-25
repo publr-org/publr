@@ -161,9 +161,10 @@ the `choices` (English and every language a plugin translates the admin into) an
 the caller ever `answered` (the admin's welcome screen asks once). `set_language
 --language <code>` chooses one of the choices, or empty for the site's.
 
-## `user variant` and `user set_variant`
+## `user dimensions` and `user set_dimension`
 
-The variant (with the languages plugin: the content language) the caller reads and edits
-content in, in the admin: `chosen`, empty for the main one, and the site's `variants`.
-`set_variant --variant <code>` chooses one, or empty for the main one; lists, the editor
-and the visual editor open in it.
+What the caller reads and edits content in, in the admin (with the languages plugin: the
+content language): each of the site's dimensions, highest priority first, with its
+`values` and the caller's `chosen` code, empty for the main one. `set_dimension
+--dimension language --code <code>` chooses one, or an empty code for the main one; lists,
+the editor and the visual editor open in it.

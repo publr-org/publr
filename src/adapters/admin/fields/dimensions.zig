@@ -1,8 +1,8 @@
 //! A type's fields as the record form draws and reads them on a site with a dimension of
 //! several values (languages): each field varying by it is followed by one field per
 //! other value, named `name@language=pl`, so it is drawn, posted and read back like any
-//! field. The editor shows
-//! one variant at a time; an empty value shows the main one's text as its placeholder.
+//! field. The editor shows one combination at a time; an empty value shows its fallback's
+//! text as its placeholder.
 const std = @import("std");
 const model = @import("../../../model.zig");
 
@@ -15,9 +15,9 @@ pub const Error = error{OutOfMemory};
 /// `fields` with each varied field's values after it, one per combination in `others` (the
 /// site's combinations other than the main one) that the field varies by every part of.
 /// A group or repeater that is not varied as a whole has its varied fields expanded inside;
-/// one varied as a whole is a structure of its own per variant, inside which nothing more
-/// varies. `document` gives each variant its placeholder (the main value), at the top level
-/// and in groups.
+/// one varied as a whole is a structure of its own per combination, inside which nothing
+/// more varies. `document` gives each combination its placeholder (its fallback's value), at
+/// the top level and in groups.
 pub fn expanded(
     arena: std.mem.Allocator,
     fields: []const Def,
@@ -135,7 +135,7 @@ fn object_get(value: Value, name: []const u8) ?Value {
     };
 }
 
-test "a varied field is followed by its variants; a group's varied fields inside it" {
+test "a varied field is followed by its combinations; a group's varied fields inside it" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();

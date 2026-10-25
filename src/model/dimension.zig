@@ -292,7 +292,7 @@ pub fn order(code: []const u8, buffer: *[order_max][]const u8) []const []const u
 /// in, the language it says it is in (`<html lang>`), and the address its pages are under.
 pub const Place = struct {
     /// The code its values are stored under: empty for the main language.
-    variant: []const u8 = "",
+    code: []const u8 = "",
     /// The language's own code, the main one's too (`en`); empty on a site with none.
     locale: []const u8 = "",
     /// `/pl`; empty for the main language.

@@ -5,7 +5,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const http = @import("../../lib/http.zig");
 const identity_module = @import("../rest/identity.zig");
-const variants = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const model_dimension = @import("../../model/dimension.zig");
 const Project = @import("../../server/project.zig").Project;
 
@@ -82,13 +82,13 @@ fn chosen_of(
     var out: std.ArrayList(model_dimension.Pair) = .empty;
 
     for (chosen) |pair| {
-        const dimension = variants.find(ctx, pair.dimension) orelse continue;
+        const dimension = site_dimensions.find(ctx, pair.dimension) orelse continue;
 
         if (dimension.addresses or pair.code.len == 0 or !model_dimension.valid_code(pair.code)) {
             continue;
         }
 
-        const values = variants.values_of(ctx, dimension) catch continue;
+        const values = site_dimensions.values_of(ctx, dimension) catch continue;
         const known = for (values) |value| {
             if (!value.main and std.mem.eql(u8, value.code, pair.code)) {
                 break true;

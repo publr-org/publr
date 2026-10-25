@@ -218,7 +218,7 @@ pub const operations = struct {
     pub const http = @import("operations/http.zig");
     pub const internal = @import("operations/internal.zig");
     pub const plugin = @import("operations/plugin.zig");
-    pub const variants = @import("operations/variants.zig");
+    pub const dimensions = @import("operations/dimensions.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

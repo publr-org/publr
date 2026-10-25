@@ -1,6 +1,6 @@
 //! The sampler's editions of its content
 //!
-//! The variant dimension the sampler declares: a field may keep one value for the web, the
+//! The dimension the sampler declares: a field may keep one value for the web, the
 //! main edition, and another for print. Answers every edition, the web first.
 //!
 //! Example:

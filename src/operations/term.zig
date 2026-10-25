@@ -316,8 +316,8 @@ pub const Get = struct {
 
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
-        if (try domain.variants.wanted_of(ctx, in.dimensions)) |wanted| {
-            try domain.variants.resolve_one(ctx, &got.record, &got.document, wanted);
+        if (try domain.dimensions.wanted_of(ctx, in.dimensions)) |wanted| {
+            try domain.dimensions.resolve_one(ctx, &got.record, &got.document, wanted);
         }
 
         const parent = try terms.parent_of(ctx.db, ctx.arena, got.record.id);
@@ -458,7 +458,7 @@ pub const List = struct {
 
         try changes.listed(ctx, .terms, in.taxonomy, in.taxonomies);
 
-        const wanted = try domain.variants.wanted_of(ctx, in.dimensions);
+        const wanted = try domain.dimensions.wanted_of(ctx, in.dimensions);
         const listed = try crud.list(ctx, granted, .{
             .definition = in.taxonomy,
             .definitions = in.taxonomies,
@@ -470,7 +470,10 @@ pub const List = struct {
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
-            .variant = if (wanted) |pairs| domain.variants.addressed_code(ctx, pairs) else "",
+            .address_code = if (wanted) |pairs|
+                domain.dimensions.addressed_code(ctx, pairs)
+            else
+                "",
         });
 
         if (wanted) |pairs| {
@@ -479,7 +482,7 @@ pub const List = struct {
 
                 const writable = @constCast(texts);
 
-                try domain.variants.resolve_listed(ctx, @constCast(listed), writable, pairs);
+                try domain.dimensions.resolve_listed(ctx, @constCast(listed), writable, pairs);
             }
         }
 

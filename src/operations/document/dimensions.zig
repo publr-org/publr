@@ -7,7 +7,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
-const variants_module = @import("../variants.zig");
+const site_dimensions = @import("../dimensions.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -46,11 +46,11 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
-            const every = variants_module.all(ctx);
+            const every = site_dimensions.all(ctx);
             var out: std.ArrayList(Pair) = .empty;
 
             for (pairs) |pair| {
-                const known = variants_module.find(ctx, pair.dimension) != null;
+                const known = site_dimensions.find(ctx, pair.dimension) != null;
                 const code_ok = pair.code.len == 0 or dimension.valid_code(pair.code);
 
                 if (!known or !code_ok) {
@@ -77,7 +77,7 @@ pub fn Of(comptime Domain: type) type {
         pub fn addressed_code(ctx: *const Ctx, wanted: []const Pair) []const u8 {
             std.debug.assert(wanted.len <= dimension.dimensions_max);
 
-            const addressed = variants_module.setting(ctx) orelse return "";
+            const addressed = site_dimensions.setting(ctx) orelse return "";
 
             for (wanted) |pair| {
                 if (std.mem.eql(u8, pair.dimension, addressed.name)) {
@@ -148,11 +148,11 @@ pub fn Of(comptime Domain: type) type {
 
             const code = addressed_code(ctx, wanted);
 
-            if (def.variant_fallback or code.len == 0) {
+            if (def.fallback_to_main or code.len == 0) {
                 return true;
             }
 
-            const name = (variants_module.setting(ctx) orelse return true).name;
+            const name = (site_dimensions.setting(ctx) orelse return true).name;
             const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
                 return error.Invalid;
             };

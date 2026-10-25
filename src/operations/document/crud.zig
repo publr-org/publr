@@ -68,8 +68,9 @@ pub const ListInput = struct {
     sort: ?[]const u8 = null,
     limit: u32 = 50,
     offset: u32 = 0,
-    /// `slug` matches this variant's slug (`slug@pl`) first, the main one when none does.
-    variant: []const u8 = "",
+    /// The code of the dimension with pages of its own (a language) a list is read at: `slug`
+    /// matches its slug (`slug@language=pl`) first, the main one when none does.
+    address_code: []const u8 = "",
 };
 
 pub fn Of(comptime Domain: type) type {
@@ -291,8 +292,8 @@ pub fn Of(comptime Domain: type) type {
 
             var rows = try documents.list(ctx.db, ctx.arena, query);
 
-            // A record not translated into the variant keeps its main slug there too.
-            if (rows.len == 0 and in.slug != null and in.variant.len > 0) {
+            // A record not translated into the language keeps its main slug there too.
+            if (rows.len == 0 and in.slug != null and in.address_code.len > 0) {
                 const renamed = ctx.arena.dupe(store.documents.Filter, query.filters) catch {
                     return error.OutOfMemory;
                 };
@@ -677,11 +678,11 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const slug_field = model.document.slug_field_of(def) orelse return error.Invalid;
-            const varied = in.variant.len > 0 and slug_field.dimensions.len > 0;
+            const varied = in.address_code.len > 0 and slug_field.dimensions.len > 0;
 
             return .{
                 .field = if (varied)
-                    try @import("../variants.zig").key_in(ctx, slug_field.name, in.variant)
+                    try @import("../dimensions.zig").key_in(ctx, slug_field.name, in.address_code)
                 else
                     slug_field.name,
                 .text = slug,

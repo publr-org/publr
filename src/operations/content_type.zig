@@ -63,8 +63,10 @@ pub const Create = struct {
         \\field: `name`, `label`, `kind`, and optionally `filterable`, `searchable`, `many`
         \\(a list of values; any kind but slug and group), `validation` (the rules:
         \\`required`, `unique`, `min`, `max`, `min_len`, `max_len`, `hint`, ...), `options`
-        \\(how it is edited: `choices`, `source`, `to`, `taxonomy`, `rows`, ...) and
-        \\`fields` for group/repeater. Use `content_type validate` to see problems.
+        \\(how it is edited: `choices`, `source`, `to`, `taxonomy`, `rows`, ...),
+        \\`dimensions` (the site's dimensions it holds a value per combination of:
+        \\`["language"]`, `["language","variation"]`) and `fields` for group/repeater.
+        \\Use `content_type validate` to see problems.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {

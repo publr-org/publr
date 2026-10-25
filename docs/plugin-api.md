@@ -57,7 +57,7 @@ A missing one fails the build and says where it goes.
 | `taxonomies` | `&.{ ... }` of `publr.taxonomy.define` | both |
 | `register_taxonomies` | `.{ .{ .taxonomy, .to } }` | both |
 | `operations` | `&.{ ... }` of `publr.operation.define` | both |
-| `hooks` | `&.{ ... }` of `publr.before`, `publr.after`, `publr.on` and `publr.modify` | both |
+| `hooks` | `&.{ ... }` of `publr.before`, `publr.after`, `publr.on`, `publr.modify` and `publr.hook.request` (built-in for now) | both |
 | `events` | `&.{ ... }` of `publr.event.define` | both |
 | `jobs` | `&.{ ... }` of `publr.job.define` | both |
 | `webhooks` | `&.{ ... }` of `publr.webhook.define`, see [Webhooks](#webhooks) | both |
@@ -71,7 +71,7 @@ A missing one fails the build and says where it goes.
 | `roles` | `&.{ ... }` of `publr.plugin.Role` | both |
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
-| `variants` | `.{ .label, .help, .picker, .list, .untranslated }`: the one variant dimension | both |
+| `dimensions` | `&.{ ... }` of `publr.dimension.define`, see [Dimensions](#dimensions) | both |
 | `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
 | `row_actions` | see [Built-in only](#built-in-only) | built-in |
 
@@ -467,6 +467,40 @@ plugin's page says so; a plugin that must have the type says so in `.depends_on`
 A plugin's own taxonomies are its own as its types are: reading and writing their terms takes
 no permission. Uninstalling offers them, with their terms, among its data.
 
+### Dimensions
+
+A field may hold a value per combination of dimensions: a site's languages, an A/B test's
+variations. A plugin declares a dimension; the core draws a switch for it in every field's
+settings, a picker in the editor, stores each value beside the field
+(`title@language=pl,variation=b`) and reads it with fallback.
+
+```zig
+/// Content per variation of the site's A/B test, chosen per visitor.
+const variation = publr.dimension.define(.{
+    .name = "variation",
+    .priority = 10,
+    .label = "Test variations",
+    .picker = "Variation",
+    .help = "A value for each variation of the A/B test; one left empty shows the control's.",
+    .list = Variations.List,
+});
+
+// in define:
+.dimensions = &.{variation},
+```
+
+- `.name` is what values are stored and asked for under: `--variation b`, `"variation": "b"`.
+- `.list` is a read of the plugin's own answering `values`, each a `publr.dimension.Value`
+  (`code`, `label`, `address`, `main`), the main one first.
+- `.priority`: a read with no value in a combination drops the lowest priority dimension
+  first. The languages plugin's `language` is 100.
+- `.addresses = true`: the values have pages of their own under their `address` (`/pl`),
+  and the admin's top bar offers the dimension. At most one on a site.
+- `.untranslated` names the type setting for records with no value in it.
+
+Up to four dimensions on a site, from different plugins, combine: a field varying by
+`language` and `variation` holds a value for each pair.
+
 ## Hooks and events
 
 Publr is event-driven. Every operation emits an event under its own name when it succeeds,
@@ -606,6 +640,32 @@ running out), one fact per record in a call over many, or something nobody calle
 session expiring); "X was done" is the operation's own event. `before` and `after` are part
 of the write, in its transaction; `on` hooks, compiled in or installed, hear operations and
 events alike from the queue the server's worker process works through, beside the server.
+
+### Request hooks
+
+`publr.hook.request(run)` sees a page request before the page is drawn. It reads the path,
+headers, cookies and the address's query; it may set a header, choose a dimension's value
+for the page, redirect (301, 302, 303) or refuse (403, 503). It reads only and never calls
+out: a page waits on it. Hooks run in plugin order until one redirects or refuses.
+
+```zig
+/// Reads each page in the visitor's variation of the A/B test
+fn bucket(ctx: *publr.Ctx, request: *publr.PageRequest) publr.Error!publr.Answered {
+    const kept = request.cookie("publr_variation") orelse "control";
+
+    if (!publr.text.equals(kept, "control")) {
+        request.choose("variation", kept);
+    }
+
+    return request.next();
+}
+
+// in define:
+.hooks = &.{publr.hook.request(bucket)},
+```
+
+A page read in a value a hook chose is drawn live and kept out of shared caches; the built
+page stays the main one's. Compiled-in plugins only, for now.
 
 ## Jobs
 

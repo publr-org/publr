@@ -256,9 +256,9 @@ pub const Ctx = struct {
     /// edit copy (pending changes, else the record as saved), drafts included, never the
     /// trash, so the site reads as it will once everything edited is published.
     preview: bool = false,
-    /// The language a page for a visitor or a preview is in (the code of the dimension with
-    /// pages of its own, set from the address); empty: the main one.
-    variant: []const u8 = "",
+    /// The code a page for a visitor or a preview is at in the dimension with pages of its
+    /// own (its language), from the address; empty: the main one.
+    address_code: []const u8 = "",
     /// The combination a page for a visitor or a preview reads documents in, highest
     /// priority first: the addressed dimension's code from the address, the others as the
     /// request chose them. Empty: the main values.
@@ -425,13 +425,13 @@ pub const Ctx = struct {
         reads.read(reads.context, key);
     }
 
-    /// The language queued work this call queues speaks: the record's as the call reads it
-    /// (`variant`), else the person's (`language`), carried in the job's row.
+    /// The language queued work this call queues speaks: the page's (`address_code`), else
+    /// the person's (`language`), carried in the job's row.
     pub fn language_queued(ctx: *const Ctx) []const u8 {
-        std.debug.assert(ctx.variant.len <= 64);
+        std.debug.assert(ctx.address_code.len <= 64);
         std.debug.assert(ctx.language.locale.len <= 64);
 
-        return if (ctx.variant.len > 0) ctx.variant else ctx.language.locale;
+        return if (ctx.address_code.len > 0) ctx.address_code else ctx.language.locale;
     }
 
     pub fn init(

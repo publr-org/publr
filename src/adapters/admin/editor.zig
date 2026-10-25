@@ -4,7 +4,7 @@
 //! header, for the editor drawn again (`editor`) or for a JSON verdict (`json`, the
 //! autosave) instead of a redirect. `content/form.zig` and `terms.zig` instantiate it.
 const std = @import("std");
-const variants_module = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const nouns = @import("nouns.zig");
 const sdk_operation = @import("../../sdk/operation.zig");
 const admin = @import("../admin.zig");
@@ -1918,16 +1918,16 @@ fn slug_prefixes_of(session: *Session, def: Def) Error![]const fields.SlugPrefix
         return &.{};
     }
 
-    const others = variants_module.others(&session.ctx) catch return &.{};
+    const others = site_dimensions.others(&session.ctx) catch return &.{};
     const base_url = try definitions.host_url_of(session);
     const out = try session.arena.alloc(fields.SlugPrefix, others.len);
 
-    for (others, out) |variant, *entry| {
+    for (others, out) |value, *entry| {
         entry.* = .{
-            .code = variant.code,
+            .code = value.code,
             .prefix = try print(session.arena, "{s}{s}/{s}/", .{
                 base_url,
-                variant.address,
+                value.address,
                 def.url,
             }),
         };
@@ -1998,10 +1998,10 @@ pub fn user_options(
     return got.users;
 }
 
-/// The fields as the form draws and reads them: each varied field followed by its variants
+/// The fields as the form draws and reads them: each varied field followed by its values
 /// (`name@pl`) on a site with more than one.
 pub const VariedOptions = struct {
-    /// The record being edited: each variant's placeholder is its main value.
+    /// The record being edited: each combination's placeholder is its fallback.
     document: ?Value = null,
 };
 
@@ -2015,18 +2015,19 @@ pub fn varied(
 
     const others = try other_pairs(session);
 
-    return fields.variants.expanded(session.arena, defs, others, options.document);
+    return fields.dimensions.expanded(session.arena, defs, others, options.document);
 }
 
-/// The codes of the site's variants other than the main one; none on a site with one.
-pub fn variant_codes(session: *Session) Error![]const []const u8 {
+/// The codes of the addressed dimension (a language) other than its main one; none on a
+/// site with one.
+pub fn other_codes(session: *Session) Error![]const []const u8 {
     std.debug.assert(session.signed_in());
 
-    const others = variants_module.others(&session.ctx) catch return &.{};
+    const others = site_dimensions.others(&session.ctx) catch return &.{};
     const codes = try session.arena.alloc([]const u8, others.len);
 
-    for (others, codes) |variant, *code| {
-        code.* = variant.code;
+    for (others, codes) |value, *code| {
+        code.* = value.code;
     }
 
     return codes;
@@ -2042,8 +2043,8 @@ fn other_pairs(session: *Session) Error![]const []const model.dimension.Pair {
 
     try combinations.append(session.arena, &.{});
 
-    for (variants_module.all(&session.ctx)) |dimension| {
-        const values = variants_module.values_of(&session.ctx, dimension) catch continue;
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
         var grown: std.ArrayList([]const Pair) = .empty;
 
         for (combinations.items) |before| {
@@ -2086,8 +2087,8 @@ fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem
     const Shown = @typeInfo(@FieldType(Item, "values")).pointer.child;
     var out: std.ArrayList(Item) = .empty;
 
-    for (variants_module.all(&session.ctx)) |dimension| {
-        const values = variants_module.values_of(&session.ctx, dimension) catch continue;
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
 
         if (values.len < 2) {
             continue;
@@ -2118,18 +2119,18 @@ fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem
 pub fn languages_of(comptime Item: type, session: *Session) Error![]const Item {
     std.debug.assert(session.signed_in());
 
-    const dimension = variants_module.setting(&session.ctx) orelse return &.{};
-    const listed = variants_module.listed(&session.ctx) catch return &.{};
+    const dimension = site_dimensions.setting(&session.ctx) orelse return &.{};
+    const listed = site_dimensions.listed(&session.ctx) catch return &.{};
     const items = try session.arena.alloc(Item, listed.len);
 
     // Each as the part of a key it is: `language=pl`; the main one empty.
-    for (listed, items) |variant, *item| {
+    for (listed, items) |value, *item| {
         item.* = .{
-            .code = if (variant.main)
+            .code = if (value.main)
                 ""
             else
-                try std.fmt.allocPrint(session.arena, "{s}={s}", .{ dimension.name, variant.code }),
-            .label = variant.label,
+                try std.fmt.allocPrint(session.arena, "{s}={s}", .{ dimension.name, value.code }),
+            .label = value.label,
         };
     }
 

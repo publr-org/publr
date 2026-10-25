@@ -138,7 +138,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
     var list_in = try filters.list_in(arena, effective);
     list_in.dimensions = .{
-        .pairs = @import("../variant.zig").chosen_pairs(&session),
+        .pairs = @import("../dimension.zig").chosen_pairs(&session),
     };
     list_in.count = true;
 

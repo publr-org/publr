@@ -2,7 +2,7 @@
 //! by one to `/delete` under it.
 
 const std = @import("std");
-const variants = @import("../../../operations/variants.zig");
+const site_dimensions = @import("../../../operations/dimensions.zig");
 const editor = @import("../editor.zig");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
@@ -236,15 +236,15 @@ fn translations_posted(
     std.debug.assert(session.signed_in());
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    const others = variants.others(&session.ctx) catch return &.{};
+    const others = site_dimensions.others(&session.ctx) catch return &.{};
     const out = try session.arena.alloc(media.edit.Translation, others.len);
 
-    for (others, out) |variant, *translation| {
+    for (others, out) |value, *translation| {
         translation.* = .{
-            .code = variant.code,
-            .title = try posted(session.arena, form, "title", variant.code),
-            .alt = try posted(session.arena, form, "alt", variant.code),
-            .caption = try posted(session.arena, form, "caption", variant.code),
+            .code = value.code,
+            .title = try posted(session.arena, form, "title", value.code),
+            .alt = try posted(session.arena, form, "alt", value.code),
+            .caption = try posted(session.arena, form, "caption", value.code),
         };
     }
 

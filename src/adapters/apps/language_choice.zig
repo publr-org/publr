@@ -30,7 +30,7 @@ pub fn redirect(
     const cookies = request.header("cookie") orelse "";
     const chose = identity.cookie_value(cookies, cookie_name) != null;
 
-    if (!reading or chose or target.place.variant.len > 0) {
+    if (!reading or chose or target.place.code.len > 0) {
         return false;
     }
 
@@ -73,7 +73,7 @@ fn asked_of(all: []const Place, accepted: []const u8) ?Place {
 
         for (all) |place| {
             if (matches(tag, place.locale)) {
-                return if (place.variant.len == 0) null else place;
+                return if (place.code.len == 0) null else place;
             }
         }
     }
@@ -126,12 +126,12 @@ pub fn remember(
 test "the browser's first language the site has" {
     const all = [_]Place{
         .{
-            .variant = "",
+            .code = "",
             .locale = "en",
             .address = "",
         },
         .{
-            .variant = "pl",
+            .code = "pl",
             .locale = "pl",
             .address = "/pl",
         },

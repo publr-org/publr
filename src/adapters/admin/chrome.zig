@@ -201,7 +201,7 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
 
     var reading = session.*;
 
-    request.admin.variant = @import("variant.zig").chosen(&reading);
+    request.admin.dimensions = @import("dimension.zig").chosen(&reading);
 
     var choosing = session.*;
 

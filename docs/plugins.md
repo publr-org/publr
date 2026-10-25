@@ -1110,16 +1110,22 @@ A host's plugin also calls `host.hosted()`: the project's folder is then never
 the person's, so the Overview always gives the steps for a site elsewhere (get Publr, sign
 in, install the skill), even at an address that looks like this machine.
 
-### Variants
+### Dimensions
 
-A plugin may declare the one **variant dimension** (`.variants`, a `publr.plugin.Variants`),
-compiled in or installed: the words of the setting every field then has (`label`, `help`),
-the words of the type setting for records not written in a variant (`untranslated`), and a
-read of its own answering `variants`, each `{ code, label, address, main }` in order, the
-main one first. The core draws the setting, stores and reads the values (see
-[Content](content.md#languages-and-other-variants)), offers the switch in its editors and
-serves each variant's pages under its address. The languages plugin is one: a language is
-a variant.
+A plugin may declare **dimensions** a field's value varies by (`.dimensions`, each made
+with `publr.dimension.define`), compiled in or installed: its `name` (`language`), the
+words of the switch every field then has (`label`, `help`), the editor's picker
+(`picker`), its `priority` (higher keeps its value longer when a read falls back across
+dimensions), whether its values have pages of their own (`addresses`, at most one
+dimension on a site), the words of the type setting for records with no value in it
+(`untranslated`), and a read of its own answering `values`, each
+`{ code, label, address, main }` in order, the main one first. Several plugins may declare
+one each, up to four on a site, and they combine. The core draws the switches, stores and
+reads the values (see [Content](content.md#languages-and-other-dimensions)), offers a
+picker per dimension in its editors, takes each as a flag of its own (`--language pl`) and
+serves an addressed dimension's pages under its addresses. The languages plugin declares
+`language`; an A/B test plugin may declare `variation` and choose it per visitor with a
+request hook (`publr.hook.request`, `request.choose("variation", "b")`).
 
 ### Its data, when it is removed
 

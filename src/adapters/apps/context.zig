@@ -3,13 +3,13 @@
 //! records of public types. Every read is written down in `Deps` when a build asks for it.
 
 const std = @import("std");
-const variants_module = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const jit = @import("publr_jit");
 const template_render = @import("../../template/render.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
-const model_variant = @import("../../model/dimension.zig");
+const model_dimension = @import("../../model/dimension.zig");
 const record_operations = @import("../../operations/record.zig");
 const user_operations = @import("../../operations/user.zig");
 const http = @import("../../lib/http.zig");
@@ -401,7 +401,7 @@ pub const Context = struct {
     preview_base: ?[]const u8 = null,
     /// The language the page is in: its documents read in it, its root paths under its
     /// address (`/pl`), its `<html lang>`.
-    place: model_variant.Place = .{},
+    place: model_dimension.Place = .{},
     /// The route the page answers, for its address in the other languages; null for a
     /// fragment or a page drawn outside a route.
     route: ?*const engine.Route = null,
@@ -994,7 +994,7 @@ pub const Context = struct {
     /// `Publr.build.locale()`: the language the page is in (`pl`, the main one's `en`);
     /// empty on a site without languages.
     pub fn locale(ctx: *const Context) []const u8 {
-        std.debug.assert(ctx.place.locale.len <= model_variant.code_len_max);
+        std.debug.assert(ctx.place.locale.len <= model_dimension.code_len_max);
         std.debug.assert(ctx.place.address.len == 0 or ctx.place.locale.len > 0);
 
         return ctx.place.locale;
@@ -1242,10 +1242,10 @@ pub const Context = struct {
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
-        sdk_ctx.variant = ctx.place.variant;
-        sdk_ctx.dimensions = variants_module.page_pairs(
+        sdk_ctx.address_code = ctx.place.code;
+        sdk_ctx.dimensions = site_dimensions.page_pairs(
             &sdk_ctx,
-            ctx.place.variant,
+            ctx.place.code,
             ctx.place.chosen,
         );
 

@@ -28,7 +28,7 @@ const Request = http.Request;
 const Response = http.Response;
 const HttpContext = http.Context;
 const Context = context_module.Context;
-const model_variant = @import("../../model/dimension.zig");
+const model_dimension = @import("../../model/dimension.zig");
 
 pub const Renderer = engine.Renderer(Context);
 
@@ -39,7 +39,7 @@ pub const page_stale: u32 = 24 * 60 * 60;
 
 /// The renderer for a page or fragment in `place`'s language: its islands are asked for
 /// under the language's address, so they read in it too.
-pub fn renderer(arena: std.mem.Allocator, app: *const App, place: model_variant.Place) Renderer {
+pub fn renderer(arena: std.mem.Allocator, app: *const App, place: model_dimension.Place) Renderer {
     std.debug.assert(app.pages().templates.len > 0);
     std.debug.assert(app.pages().options.pjsx.len == app.spec.pjsx_renders.len);
 
@@ -304,7 +304,7 @@ fn render(
     const app = target.app;
     const route = matched.route;
 
-    const full_path = try model_variant.under(ctx.arena, target.place.address, target.path);
+    const full_path = try model_dimension.under(ctx.arena, target.place.address, target.path);
 
     // A value a request hook chose is read live: the built page is the main one's.
     if (!route.live and target.place.chosen.len == 0) {

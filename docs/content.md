@@ -174,14 +174,18 @@ What a dimension is belongs to the plugin that declares it; the languages plugin
 `language`, and labels the field setting Translate. The core stores, validates (a
 combination's value by the field's own rules, never required), reads and picks them:
 
-- Read whole (the admin, the API, `record get`), a document carries every variant beside
-  its field.
-- Read in a variant (`record get --variant pl`, `record list --variant pl`, and every page
-  drawn under a language's address), each field gives the variant's value, else the code
-  without its region's (`en-gb` reads `en`), else the main value; the listed title and
-  slug follow. `--slug` with `--variant` matches the variant's slug first.
-- A type's `variant_fallback` (default true) says what a record with nothing written in a
-  variant does there: shows in its main values, or is left out (not listed; not found).
+- Read whole (the admin, the API, `record get`), a document carries every combination
+  beside its field.
+- Read in a combination (a flag per dimension: `record get --language pl --variation b`,
+  `record list --language pl`; `"language": "pl"` in JSON; and every page drawn under a
+  language's address, in whatever a request hook chose), each field gives the
+  combination's value, else falls back: within a dimension to the code without its region
+  (`en-gb` reads `en`), then to its main value, the dimension with the lowest priority
+  first, so Polish in variation `b` with no such value reads Polish. The listed title and
+  slug follow. `--slug` with `--language` matches that language's slug first.
+- A type's `fallback_to_main` (default true) says what a record with nothing written in
+  the language its page's address chose does there: shows in its main values, or is left
+  out (not listed; not found).
 - Changing a type keeps every combination's value; taking a dimension off a field drops its
   values in that dimension, asked first as removing a field with content is
   (`--drop_content`).

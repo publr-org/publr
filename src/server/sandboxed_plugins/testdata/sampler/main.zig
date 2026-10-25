@@ -54,7 +54,7 @@ const Remind = @import("jobs/remind.zig");
 
 const Ping = @import("webhooks/ping.zig");
 
-const Editions = @import("variants/editions.zig");
+const Editions = @import("dimensions/editions.zig");
 
 const Shout = @import("hooks/shout.zig");
 const Announce = @import("hooks/announce.zig");

@@ -4,7 +4,7 @@
 //! `rebuild.zig`.
 
 const std = @import("std");
-const variants_module = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const report = @import("../../lib/report.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
@@ -14,8 +14,8 @@ const deps = @import("../../lib/deps.zig");
 const engine = @import("../../template.zig");
 const context_module = @import("context.zig");
 const languages = @import("languages.zig");
-const model_variant = @import("../../model/dimension.zig");
-const Place = model_variant.Place;
+const model_dimension = @import("../../model/dimension.zig");
+const Place = model_dimension.Place;
 const pages = @import("pages.zig");
 const rebuild = @import("rebuild.zig");
 const public = @import("public.zig");
@@ -174,7 +174,7 @@ fn build_route(
 
     switch (route.kind) {
         .static => {
-            const url = try model_variant.under(arena, place.address, route.pattern);
+            const url = try model_dimension.under(arena, place.address, route.pattern);
             const rendered = try render_url(app, project, route, url, .{}, place, .always);
 
             summary.bytes += rendered.bytes;
@@ -186,7 +186,7 @@ fn build_route(
 
             for (slugs, 1..) |slug, done| {
                 const in_app = try engine.substitute(arena, route.pattern, slug);
-                const url = try model_variant.under(arena, place.address, in_app);
+                const url = try model_dimension.under(arena, place.address, in_app);
                 const params: context_module.Params = .{
                     .slug = slug,
                 };
@@ -245,8 +245,8 @@ fn slugs_of(
             .order = .created_desc,
             .limit = record_operations.list_max,
             .offset = offset,
-            .dimensions = if (place.variant.len > 0)
-                variants_module.asked_in(&sdk_ctx, place.variant)
+            .dimensions = if (place.code.len > 0)
+                site_dimensions.asked_in(&sdk_ctx, place.code)
             else
                 .{},
         }) catch |err| switch (err) {
@@ -492,14 +492,14 @@ fn sitemap_route(
     switch (route.kind) {
         .static => {
             const priority: []const u8 = if (route.pattern.len <= 1) "1.0" else "0.8";
-            const url = try model_variant.under(arena, place.address, route.pattern);
+            const url = try model_dimension.under(arena, place.address, route.pattern);
 
             try sitemap_url(writer, base, url, if (route.live) "0.5" else priority);
         },
         .dynamic => {
             for (try slugs_of(app, project, arena, route, place)) |slug| {
                 const in_app = try engine.substitute(arena, route.pattern, slug);
-                const url = try model_variant.under(arena, place.address, in_app);
+                const url = try model_dimension.under(arena, place.address, in_app);
 
                 try sitemap_url(writer, base, url, "0.6");
             }

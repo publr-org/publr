@@ -203,9 +203,9 @@ pub const Def = struct {
     /// A taxonomy that never reaches the site: staff-only labels, order tags. Admin only; on
     /// a type only by its name, never by a pattern. Meaningless on a content type.
     internal: bool = false,
-    /// A record not written in a variant (a language) still shows there, in its main values;
-    /// false leaves it out of that variant: not listed, its address there not found.
-    variant_fallback: bool = true,
+    /// A record with no value in the code its page's address chose (a language) still shows
+    /// there, in its main values; false leaves it out there: not listed, its address not found.
+    fallback_to_main: bool = true,
     group: @import("field_group.zig").Options = .{},
     menu: Menu = .{},
     view: View = .{},

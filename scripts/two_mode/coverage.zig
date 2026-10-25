@@ -58,7 +58,7 @@ const exercised = [_]Part{
     },
     .{
         .name = "dimensions",
-        .where = "sampler's editions, read through `user variant`",
+        .where = "sampler's editions, read through `user dimensions`",
     },
     .{
         .name = "custom_fields",

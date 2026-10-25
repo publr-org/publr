@@ -112,8 +112,8 @@ pub const files = [_]File{
         .text = @embedFile("../taxonomies/shelves.zig"),
     },
     .{
-        .path = "variants/editions.zig",
-        .text = @embedFile("../variants/editions.zig"),
+        .path = "dimensions/editions.zig",
+        .text = @embedFile("../dimensions/editions.zig"),
     },
     .{
         .path = "webhooks/ping.zig",

@@ -3,7 +3,7 @@
 //! address. The main language has none. A site without languages has no places at all.
 const std = @import("std");
 const model = @import("../../model.zig");
-const variants = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const identity_module = @import("../rest/identity.zig");
 
 const Project = @import("../../server/project.zig").Project;
@@ -15,14 +15,14 @@ pub fn places(project: *const Project, arena: std.mem.Allocator) ![]const Place 
     std.debug.assert(project.connection.transaction_depth == 0);
 
     var ctx = identity_module.context(project, arena, .anonymous);
-    const listed = try variants.listed(&ctx);
+    const listed = try site_dimensions.listed(&ctx);
     const out = try arena.alloc(Place, listed.len);
 
-    for (listed, out) |variant, *place| {
+    for (listed, out) |value, *place| {
         place.* = .{
-            .variant = if (variant.main) "" else variant.code,
-            .locale = variant.code,
-            .address = if (variant.main) "" else variant.address,
+            .code = if (value.main) "" else value.code,
+            .locale = value.code,
+            .address = if (value.main) "" else value.address,
         };
     }
 
@@ -41,7 +41,7 @@ pub fn locate(project: *const Project, arena: std.mem.Allocator, target: Target)
 
     for (all) |place| {
         if (place.address.len < 2) {
-            located.place = if (place.variant.len == 0) place else located.place;
+            located.place = if (place.code.len == 0) place else located.place;
 
             continue;
         }

@@ -378,8 +378,8 @@ pub const Get = struct {
 
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
-        if (try domain.variants.wanted_of(ctx, in.dimensions)) |wanted| {
-            try domain.variants.resolve_one(ctx, &got.record, &got.document, wanted);
+        if (try domain.dimensions.wanted_of(ctx, in.dimensions)) |wanted| {
+            try domain.dimensions.resolve_one(ctx, &got.record, &got.document, wanted);
         }
 
         // What a site or the API reads shows virtual fields worked out; the editor gets
@@ -578,7 +578,7 @@ pub const List = struct {
 
         try changes.listed(ctx, .records, in.type, in.types);
 
-        const wanted = try domain.variants.wanted_of(ctx, in.dimensions);
+        const wanted = try domain.dimensions.wanted_of(ctx, in.dimensions);
         const input: crud_module.ListInput = .{
             .definition = in.type,
             .definitions = in.types,
@@ -594,7 +594,10 @@ pub const List = struct {
             .sort = in.sort,
             .limit = in.limit,
             .offset = in.offset,
-            .variant = if (wanted) |pairs| domain.variants.addressed_code(ctx, pairs) else "",
+            .address_code = if (wanted) |pairs|
+                domain.dimensions.addressed_code(ctx, pairs)
+            else
+                "",
         };
         const listed = try crud.list(ctx, granted, input);
         const total = if (in.count) try crud.count(ctx, granted, input) else 0;
@@ -615,9 +618,9 @@ pub const List = struct {
         var documents = read;
 
         if (wanted) |pairs| {
-            const kept = try domain.variants.kept_in(ctx, listed, read, pairs);
+            const kept = try domain.dimensions.kept_in(ctx, listed, read, pairs);
 
-            try domain.variants.resolve_listed(ctx, kept.records, kept.texts, pairs);
+            try domain.dimensions.resolve_listed(ctx, kept.records, kept.texts, pairs);
             records_shown = kept.records;
             documents = kept.texts;
         }

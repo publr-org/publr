@@ -532,7 +532,7 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
     // A visitor's request on the Polish page queues it; nobody signed in.
     var request = harness.ctx(.anonymous);
 
-    request.variant = "pl";
+    request.address_code = "pl";
     request.plugin = "probe";
 
     var asking: HostApi = .{
@@ -642,7 +642,7 @@ test "queued work tells each in their own words: the admin in English, the visit
     try @import("../store.zig").settings.set(request.db, "admin_language:u_admin", "en", 1);
 
     // A visitor's request on the Polish page queues it.
-    request.variant = "pl";
+    request.address_code = "pl";
     request.plugin = "probe";
 
     var asking: HostApi = .{

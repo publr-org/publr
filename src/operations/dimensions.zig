@@ -8,16 +8,16 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
 const dimension_module = @import("../sdk/plugin/dimensions.zig");
-const model_variant = @import("../model/dimension.zig");
+const model_dimension = @import("../model/dimension.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 
-pub const Variant = dimension_module.Value;
-pub const variants_max = dimension_module.values_max;
+pub const Value = dimension_module.Value;
+pub const values_max = dimension_module.values_max;
 
 /// A dimension as the core uses it: its words, and its list by full name.
-pub const Setting = model_variant.Declared;
+pub const Setting = model_dimension.Declared;
 
 /// The compiled-in plugins' dimensions, as data.
 const compiled = blk: {
@@ -42,9 +42,9 @@ const compiled = blk: {
 /// Every dimension the site has, highest priority first (declared order among equals): the
 /// compiled-in plugins', then the installed ones' whose names are not taken, at most four.
 pub fn all(ctx: *const Ctx) []const Setting {
-    std.debug.assert(compiled.len <= model_variant.dimensions_max);
+    std.debug.assert(compiled.len <= model_dimension.dimensions_max);
 
-    var found: [model_variant.dimensions_max]Setting = undefined;
+    var found: [model_dimension.dimensions_max]Setting = undefined;
     var len: u32 = 0;
 
     for (compiled) |dimension| {
@@ -55,7 +55,7 @@ pub fn all(ctx: *const Ctx) []const Setting {
     if (ctx.sandboxed_plugins) |sandboxed| {
         for (sandboxed.manifests()) |manifest| {
             for (manifest.dimensions) |dimension| {
-                if (len == model_variant.dimensions_max or named(found[0..len], dimension.name)) {
+                if (len == model_dimension.dimensions_max or named(found[0..len], dimension.name)) {
                     continue;
                 }
 
@@ -73,7 +73,7 @@ pub fn all(ctx: *const Ctx) []const Setting {
 }
 
 fn named(dimensions: []const Setting, name: []const u8) bool {
-    std.debug.assert(dimensions.len <= model_variant.dimensions_max);
+    std.debug.assert(dimensions.len <= model_dimension.dimensions_max);
 
     for (dimensions) |dimension| {
         if (std.mem.eql(u8, dimension.name, name)) {
@@ -86,7 +86,7 @@ fn named(dimensions: []const Setting, name: []const u8) bool {
 
 /// Highest priority first; stable, so equals keep the order they were declared in.
 fn sort(dimensions: []Setting) void {
-    std.debug.assert(dimensions.len <= model_variant.dimensions_max);
+    std.debug.assert(dimensions.len <= model_dimension.dimensions_max);
 
     if (dimensions.len < 2) {
         return;
@@ -121,7 +121,7 @@ pub fn find(ctx: *const Ctx, name: []const u8) ?Setting {
 /// The dimension with pages of its own, else the highest priority one: the one the site's
 /// addresses, the editor's language switch and the type's untranslated setting follow.
 pub fn setting(ctx: *const Ctx) ?Setting {
-    std.debug.assert(variants_max > 1);
+    std.debug.assert(values_max > 1);
 
     const every = all(ctx);
 
@@ -135,7 +135,7 @@ pub fn setting(ctx: *const Ctx) ?Setting {
 }
 
 /// `dimension`'s values, the main one first.
-pub fn values_of(ctx: *Ctx, dimension: Setting) Error![]const Variant {
+pub fn values_of(ctx: *Ctx, dimension: Setting) Error![]const Value {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(dimension.list.len > 0);
 
@@ -147,7 +147,7 @@ pub fn values_of(ctx: *Ctx, dimension: Setting) Error![]const Variant {
     defer ctx.caller = saved;
 
     const Answer = struct {
-        values: []const Variant = &.{},
+        values: []const Value = &.{},
     };
     const json = try registry.SDK.call_json(ctx, dimension.list, "{}");
     const answer = std.json.parseFromSliceLeaky(Answer, ctx.arena, json, .{
@@ -155,7 +155,7 @@ pub fn values_of(ctx: *Ctx, dimension: Setting) Error![]const Variant {
         .allocate = .alloc_always,
     }) catch return error.Invalid;
 
-    if (answer.values.len > variants_max) {
+    if (answer.values.len > values_max) {
         return error.Invalid;
     }
 
@@ -163,7 +163,7 @@ pub fn values_of(ctx: *Ctx, dimension: Setting) Error![]const Variant {
 }
 
 /// The values of `setting`'s dimension, the main one first; empty without one.
-pub fn listed(ctx: *Ctx) Error![]const Variant {
+pub fn listed(ctx: *Ctx) Error![]const Value {
     std.debug.assert(ctx.now_ms >= 0);
 
     const dimension = setting(ctx) orelse return &.{};
@@ -173,15 +173,15 @@ pub fn listed(ctx: *Ctx) Error![]const Variant {
 
 /// Its values other than the main one: the codes fields hold values under. Empty while it
 /// has one value, so nothing about it shows.
-pub fn others(ctx: *Ctx) Error![]const Variant {
+pub fn others(ctx: *Ctx) Error![]const Value {
     std.debug.assert(ctx.now_ms >= 0);
 
     const every = try listed(ctx);
-    var rest: std.ArrayList(Variant) = .empty;
+    var rest: std.ArrayList(Value) = .empty;
 
-    for (every) |variant| {
-        if (!variant.main) {
-            rest.append(ctx.arena, variant) catch return error.OutOfMemory;
+    for (every) |value| {
+        if (!value.main) {
+            rest.append(ctx.arena, value) catch return error.OutOfMemory;
         }
     }
 
@@ -191,12 +191,12 @@ pub fn others(ctx: *Ctx) Error![]const Variant {
 }
 
 /// Its main value, if the site has the dimension at all.
-pub fn main(ctx: *Ctx) Error!?Variant {
+pub fn main(ctx: *Ctx) Error!?Value {
     std.debug.assert(ctx.now_ms >= 0);
 
-    for (try listed(ctx)) |variant| {
-        if (variant.main) {
-            return variant;
+    for (try listed(ctx)) |value| {
+        if (value.main) {
+            return value;
         }
     }
 
@@ -208,15 +208,15 @@ pub fn main(ctx: *Ctx) Error!?Variant {
 pub fn page_pairs(
     ctx: *const Ctx,
     code: []const u8,
-    chosen: []const model_variant.Pair,
-) []const model_variant.Pair {
-    std.debug.assert(chosen.len <= model_variant.dimensions_max);
+    chosen: []const model_dimension.Pair,
+) []const model_dimension.Pair {
+    std.debug.assert(chosen.len <= model_dimension.dimensions_max);
 
     const addressed = if (code.len > 0) asked_in(ctx, code).pairs else &.{};
-    var out: std.ArrayList(model_variant.Pair) = .empty;
+    var out: std.ArrayList(model_dimension.Pair) = .empty;
 
     for (all(ctx)) |dimension| {
-        for ([_][]const model_variant.Pair{ addressed, chosen }) |given| {
+        for ([_][]const model_dimension.Pair{ addressed, chosen }) |given| {
             for (given) |pair| {
                 if (std.mem.eql(u8, pair.dimension, dimension.name)) {
                     out.append(ctx.arena, pair) catch return &.{};
@@ -225,7 +225,7 @@ pub fn page_pairs(
         }
     }
 
-    std.debug.assert(out.items.len <= model_variant.dimensions_max * 2);
+    std.debug.assert(out.items.len <= model_dimension.dimensions_max * 2);
 
     return out.items;
 }
@@ -233,10 +233,10 @@ pub fn page_pairs(
 /// A read in `setting`'s dimension at `code` (the language of a page): nothing asked on a
 /// site with no dimension.
 pub fn asked_in(ctx: *const Ctx, code: []const u8) sdk.Dimensions {
-    std.debug.assert(code.len <= model_variant.code_len_max);
+    std.debug.assert(code.len <= model_dimension.code_len_max);
 
     const dimension = setting(ctx) orelse return .{};
-    const one = ctx.arena.alloc(model_variant.Pair, 1) catch return .{};
+    const one = ctx.arena.alloc(model_dimension.Pair, 1) catch return .{};
 
     std.debug.assert(dimension.name.len > 0);
     one[0] = .{
@@ -257,11 +257,11 @@ pub fn key_in(
     code: []const u8,
 ) Error![]const u8 {
     std.debug.assert(name.len > 0);
-    std.debug.assert(code.len <= model_variant.code_len_max);
+    std.debug.assert(code.len <= model_dimension.code_len_max);
 
     const dimension = setting(ctx) orelse return name;
 
-    return model_variant.key_of(ctx.arena, name, &.{.{
+    return model_dimension.key_of(ctx.arena, name, &.{.{
         .dimension = dimension.name,
         .code = code,
     }});
@@ -273,11 +273,11 @@ pub fn code_in(ctx: *const Ctx, key: []const u8) []const u8 {
     std.debug.assert(key.len > 0);
 
     const dimension = setting(ctx) orelse return "";
-    const combination = model_variant.parse(model_variant.split(key).combination) orelse {
+    const combination = model_dimension.parse(model_dimension.split(key).combination) orelse {
         return "";
     };
 
-    std.debug.assert(combination.len <= model_variant.dimensions_max);
+    std.debug.assert(combination.len <= model_dimension.dimensions_max);
 
     return combination.code_of(dimension.name);
 }

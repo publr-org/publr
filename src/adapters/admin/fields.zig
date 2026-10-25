@@ -14,7 +14,7 @@ const time = @import("../../lib/time.zig");
 pub const decode = @import("fields/decode.zig");
 pub const reshape = @import("fields/reshape.zig");
 pub const media = @import("fields/media.zig");
-pub const variants = @import("fields/variants.zig");
+pub const dimensions = @import("fields/dimensions.zig");
 
 const Error = admin.Error;
 const Def = model.field.Def;

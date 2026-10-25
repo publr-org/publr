@@ -703,7 +703,7 @@ pub const Get = fields.Get;
 pub const Validate = fields.Validate;
 
 pub const language = @import("user/language.zig");
-pub const variant = @import("user/variant.zig");
+pub const dimension = @import("user/dimension.zig");
 pub const columns = @import("user/columns.zig");
 
 pub const operations = [_]type{
@@ -718,8 +718,8 @@ pub const operations = [_]type{
     Validate,
     language.Language,
     language.SetLanguage,
-    variant.Variant,
-    variant.SetVariant,
+    dimension.Dimensions,
+    dimension.SetDimension,
     columns.Columns,
     columns.SetColumns,
 };

@@ -7,7 +7,7 @@ import { Icon } from "@publr/ui/Icon.ptsx";
 import { StatusButton } from "@publr/ui/StatusButton.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
-export type VariantSwitcherProps = {
+export type DimensionSwitcherProps = {
   /** The dimension it chooses in: `language`. */
   dimension: string;
   /** The dimension's word for the picker: "Content language". */
@@ -23,9 +23,9 @@ export type VariantSwitcherProps = {
 /** What the admin reads and edits content in, top right, one per dimension (with the
  * languages plugin: the content language). The person's own choice, apart from the language
  * the admin speaks to them; lists, the editor and the visual editor open in it. */
-export function VariantSwitcher({ dimension, title, current, choices, back }: VariantSwitcherProps) {
+export function DimensionSwitcher({ dimension, title, current, choices, back }: DimensionSwitcherProps) {
   return (
-    <div class="inline-flex items-stretch" data-part="variant-switcher" data-dimension={dimension}>
+    <div class="inline-flex items-stretch" data-part="dimension-switcher" data-dimension={dimension}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <StatusButton stripe={false} label={Publr.t("{title}: {current}. Switch", { title, current })}>
@@ -40,10 +40,10 @@ export function VariantSwitcher({ dimension, title, current, choices, back }: Va
             <Text as="span" variant="label-md-strong" tone="muted">{title}</Text>
           </div>
           {choices.map((choice) => (
-            <form method="post" action="/admin/variant" key={choice.code}>
+            <form method="post" action="/admin/dimension" key={choice.code}>
               <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
               <input type="hidden" name="dimension" value={dimension} />
-              <input type="hidden" name="variant" value={choice.code} />
+              <input type="hidden" name="code" value={choice.code} />
               <input type="hidden" name="back" value={back} />
               <DropdownMenuItem type="submit">
                 <Text as="span" variant="body-md" classes="flex-1 truncate">{choice.label}</Text>

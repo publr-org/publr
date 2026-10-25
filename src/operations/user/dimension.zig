@@ -5,14 +5,14 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
-const variants = @import("../variants.zig");
+const site_dimensions = @import("../dimensions.zig");
 const model_dimension = @import("../../model/dimension.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-const person_prefix = "content_variant:";
+const person_prefix = "content_dimension:";
 
 /// One dimension as the person sees it: what it is, its values, their choice.
 pub const Chosen = struct {
@@ -22,11 +22,11 @@ pub const Chosen = struct {
     picker: []const u8,
     /// The code chosen; empty for the main value.
     chosen: []const u8,
-    values: []const variants.Variant,
+    values: []const site_dimensions.Value,
 };
 
-pub const Variant = struct {
-    pub const name = "user.variant";
+pub const Dimensions = struct {
+    pub const name = "user.dimensions";
     pub const description = "What you read and edit content in, in the admin";
     pub const details =
         \\Any signed-in account, about itself: for each of the site's dimensions, highest
@@ -54,13 +54,13 @@ pub const Variant = struct {
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        const every = variants.all(ctx);
+        const every = site_dimensions.all(ctx);
         const out = ctx.arena.alloc(Chosen, every.len) catch return error.OutOfMemory;
 
         std.debug.assert(every.len <= model_dimension.dimensions_max);
 
         for (every, out) |dimension, *one| {
-            const values = try variants.values_of(ctx, dimension);
+            const values = try site_dimensions.values_of(ctx, dimension);
             const value = if (ctx.caller.user_id()) |user|
                 try store.settings.get(ctx.db, ctx.arena, try key_of(ctx, dimension.name, user))
             else
@@ -80,13 +80,13 @@ pub const Variant = struct {
     }
 };
 
-pub const SetVariant = struct {
-    pub const name = "user.set_variant";
+pub const SetDimension = struct {
+    pub const name = "user.set_dimension";
     pub const description = "Choose what you read and edit content in, in the admin";
     pub const details =
         \\Any signed-in account, for itself: in `dimension` (empty: the one with pages of its
-        \\own, else the highest priority one), a code `user variant` lists, or empty for the
-        \\main value. Lists, the editor and the visual editor open in it.
+        \\own, else the highest priority one), a code `user dimensions` lists, or empty for
+        \\the main value. Lists, the editor and the visual editor open in it.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const open = true;
@@ -94,25 +94,25 @@ pub const SetVariant = struct {
     pub const example_signed_in = true;
     pub const In = struct {
         dimension: []const u8 = "",
-        variant: []const u8 = "",
+        code: []const u8 = "",
     };
     pub const Out = struct {
         dimension: []const u8,
-        variant: []const u8,
+        code: []const u8,
     };
     // As a site with no dimension takes it: back to the main value.
     pub const example: In = .{};
     pub const example_out: Out = .{
         .dimension = "",
-        .variant = "",
+        .code = "",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .dimension = "The dimension (`language`); empty for the site's first",
-        .variant = "One of its codes (`pl`), or empty for its main value",
+        .code = "One of its codes (`pl`), or empty for its main value",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .dimension = "The dimension chosen in; empty on a site with none",
-        .variant = "Your choice now; empty for the main value",
+        .code = "Your choice now; empty for the main value",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -121,19 +121,19 @@ pub const SetVariant = struct {
 
         const user = ctx.caller.user_id() orelse return error.Denied;
         const found = if (in.dimension.len > 0)
-            variants.find(ctx, in.dimension)
+            site_dimensions.find(ctx, in.dimension)
         else
-            variants.setting(ctx);
+            site_dimensions.setting(ctx);
         const dimension = found orelse {
-            return if (in.dimension.len > 0 or in.variant.len > 0) error.Invalid else .{
+            return if (in.dimension.len > 0 or in.code.len > 0) error.Invalid else .{
                 .dimension = "",
-                .variant = "",
+                .code = "",
             };
         };
-        const listed = try variants.values_of(ctx, dimension);
-        const kept = if (other_of(listed, in.variant)) in.variant else "";
+        const listed = try site_dimensions.values_of(ctx, dimension);
+        const kept = if (other_of(listed, in.code)) in.code else "";
 
-        if (in.variant.len > 0 and kept.len == 0) {
+        if (in.code.len > 0 and kept.len == 0) {
             return error.Invalid;
         }
 
@@ -141,7 +141,7 @@ pub const SetVariant = struct {
 
         return .{
             .dimension = dimension.name,
-            .variant = kept,
+            .code = kept,
         };
     }
 };
@@ -154,8 +154,16 @@ pub fn chosen_pairs(ctx: *Ctx) Error![]const model_dimension.Pair {
     const read = try sdk_dispatch(ctx);
     var out: std.ArrayList(model_dimension.Pair) = .empty;
 
+    // Only a dimension that moves the whole site (its values have addresses) is chosen for
+    // the person; the others are chosen where content is edited.
     for (read.dimensions) |one| {
-        if (one.chosen.len > 0) {
+        const site_wide = for (one.values) |value| {
+            if (value.address.len > 0) {
+                break true;
+            }
+        } else false;
+
+        if (one.chosen.len > 0 and site_wide) {
             out.append(ctx.arena, .{
                 .dimension = one.dimension,
                 .code = one.chosen,
@@ -166,10 +174,10 @@ pub fn chosen_pairs(ctx: *Ctx) Error![]const model_dimension.Pair {
     return out.items;
 }
 
-fn sdk_dispatch(ctx: *Ctx) Error!Variant.Out {
+fn sdk_dispatch(ctx: *Ctx) Error!Dimensions.Out {
     std.debug.assert(ctx.now_ms >= 0);
 
-    return @import("../../server/registry.zig").SDK.dispatch(ctx, Variant, .{});
+    return @import("../../server/registry.zig").SDK.dispatch(ctx, Dimensions, .{});
 }
 
 fn key_of(ctx: *Ctx, dimension: []const u8, user: []const u8) Error![]const u8 {
@@ -182,11 +190,11 @@ fn key_of(ctx: *Ctx, dimension: []const u8, user: []const u8) Error![]const u8 {
 }
 
 /// Whether `code` is one of the values other than the main one.
-fn other_of(listed: []const variants.Variant, code: []const u8) bool {
-    std.debug.assert(listed.len <= variants.variants_max);
+fn other_of(listed: []const site_dimensions.Value, code: []const u8) bool {
+    std.debug.assert(listed.len <= site_dimensions.values_max);
 
-    for (listed) |variant| {
-        if (!variant.main and std.mem.eql(u8, variant.code, code)) {
+    for (listed) |value| {
+        if (!value.main and std.mem.eql(u8, value.code, code)) {
             return true;
         }
     }
