@@ -42,24 +42,24 @@
     <td width="50%" valign="top">
       <h3>🤖 Agent-ready</h3>
       Bring any agent you like. It can build apps and plugins, model the schema and
-      manage content: anything you can do, under your permissions.
+      manage content: anything you can do, under your permissions.<br><br>
     </td>
     <td width="50%" valign="top">
       <h3>⚡ Quality by default</h3>
       Static pages with islands, optimized images, accessible and made for search.
-      Nothing to configure. Just build.
+      Nothing to configure. Just build.<br><br>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>🗂️ A real admin</h3>
       Your data gets a proper home: content, structure, media, people and roles, made
-      for the people who run the site every day.
+      for the people who run the site every day.<br><br>
     </td>
     <td width="50%" valign="top">
       <h3>🛡️ Sandboxed plugins</h3>
       Every installed plugin runs sealed off, with only the access you grant. Inside one
-      small binary: no extra server, no vendor cloud.
+      small binary: no extra server, no vendor cloud.<br><br>
     </td>
   </tr>
 </table>
