@@ -10,18 +10,20 @@ export type FieldMarkersProps = {
 type Marker = { field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string };
 
 /** The markers of one field, by dimension: each dimension's together, its group label
- * first; a marker that hides while current left out where the field is shown at its code. */
+ * first, the one the form shows selected; a marker that hides while current left out. */
 const groupsOf = (markers: Marker[], chosen: string, name: string) => {
   const field = name.split("@")[0];
-  const groups: Array<{ key: string; label: string; markers: Marker[] }> = [];
+  const groups: Array<{ key: string; label: string; markers: Array<Marker & { selected: boolean }> }> = [];
   for (const marker of markers) {
     if (marker.field !== field) continue;
     const pair = chosen.split(",").find((one) => one.startsWith(marker.dimension + "=")) ?? marker.dimension + "=";
-    if (marker.current === "hide" && pair === marker.dimension + "=" + marker.code) continue;
+    const selected = marker.dimension !== "" && pair === marker.dimension + "=" + marker.code;
+    if (marker.current === "hide" && selected) continue;
     const key = marker.dimension === "" ? marker.label : marker.dimension;
     const group = groups.find((one) => one.key === key);
-    if (group) group.markers.push(marker);
-    else groups.push({ key, label: marker.group, markers: [marker] });
+    const shown = { ...marker, selected };
+    if (group) group.markers.push(shown);
+    else groups.push({ key, label: marker.group, markers: [shown] });
   }
   return groups;
 };
@@ -37,7 +39,7 @@ export function FieldMarkers({ name }: FieldMarkersProps) {
           {group.markers.map((marker) => (
             <button type="button" class="inline-flex h-full cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
               data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
-              <Badge shape="segment" tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+              <Badge shape="segment" selected={marker.selected} tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
             </button>
           ))}
         </BadgeGroup>
