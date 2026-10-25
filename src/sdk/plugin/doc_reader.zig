@@ -236,7 +236,8 @@ fn collect(
 
 /// Every `publr.operation.define(In, Out, .{ .name = "answer", ... })` in the file: its words
 /// filed under `operation:answer`, from the `///` above it or else the file's `//!`, so the
-/// operation finds them wherever it is declared.
+/// operation finds them wherever it is declared. A `publr.taxonomy.define(.{ .name })` the
+/// same, under `taxonomy:<name>`.
 fn collect_definitions(
     arena: std.mem.Allocator,
     tree: *const Ast,
@@ -250,6 +251,15 @@ fn collect_definitions(
         const node: Ast.Node.Index = @enumFromInt(index);
         const declaration = tree.fullVarDecl(node) orelse continue;
         const init = declaration.ast.init_node.unwrap() orelse continue;
+
+        // A taxonomy's name and description: `taxonomy:<name>`, the same way.
+        if (defined_name(tree, init, "taxonomy.define")) |name| {
+            const words = try member_doc(arena, tree, node) orelse file_words orelse continue;
+
+            try add(arena, out, try std.fmt.allocPrint(arena, "taxonomy:{s}", .{name}), words);
+            continue;
+        }
+
         const verb = defined_name(tree, init, "operation.define") orelse continue;
         const words = try member_doc(arena, tree, node) orelse file_words orelse continue;
         const key = try std.fmt.allocPrint(arena, "operation:{s}", .{verb});

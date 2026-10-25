@@ -101,6 +101,10 @@ pub const Manifest = struct {
     depends_on: []const []const u8 = &.{},
     limits: Limits = .{},
     content_types: []const content_type.Def = &.{},
+    /// Its taxonomies (`.taxonomies`), each under its name: `blog.topic`.
+    taxonomies: []const content_type.Def = &.{},
+    /// Its taxonomies on other plugins' types (`.register_taxonomies`).
+    register_taxonomies: []const @import("taxonomy.zig").Registration = &.{},
     custom_fields: []const content_type.Def = &.{},
     roles: []const role.Declared = &.{},
     /// The statuses it adds to other plugins' flows (`.register_statuses`), each a request.

@@ -215,6 +215,7 @@ fn reach(
     const read_wide = if (read) |held| held.names().len == 0 else false;
     const write_wide = if (write) |held| held.names().len == 0 else false;
     const every_kind = read_wide and read.?.private;
+    const internal_too = (read != null and read.?.internal) or (write != null and write.?.internal);
     const read_live = if (read) |held| !held.drafts else false;
     const read_names = if (read) |held| held.names() else &.{};
     const write_names = if (write) |held| held.names() else &.{};
@@ -229,6 +230,7 @@ fn reach(
         .record_filter = .{
             .flags = .{
                 .public_types_only = (read_wide or write_wide) and !every_kind,
+                .named_internal_only = !internal_too,
                 .live_only = read_live,
             },
         },

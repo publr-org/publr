@@ -54,6 +54,8 @@ A missing one fails the build and says where it goes.
 | Option | Shape | Runs |
 |---|---|---|
 | `records` | `&.{ ... }` of `publr.record.define` | both |
+| `taxonomies` | `&.{ ... }` of `publr.taxonomy.define` | both |
+| `register_taxonomies` | `.{ .{ .taxonomy, .to } }` | both |
 | `operations` | `&.{ ... }` of `publr.operation.define` | both |
 | `hooks` | `&.{ ... }` of `publr.before`, `publr.after`, `publr.on` and `publr.modify` | both |
 | `events` | `&.{ ... }` of `publr.event.define` | both |
@@ -75,9 +77,8 @@ A missing one fails the build and says where it goes.
 
 Any other option is a build error.
 
-Decided but not built: `define` refuses these and names the gate that brings them:
-`register_taxonomies`, `register_columns`, `register_components`, `register_location_rules`, `taxonomies`. Outside
-search engines and field editors in the plugin frame come with later gates too.
+Decided but not built: `register_components`. Outside search engines and field editors in the
+plugin frame come with later gates too.
 
 ## Manifest
 
@@ -413,6 +414,58 @@ names, fails the build. `.{ .trashed = true }` includes records in the trash. A 
 record's `status` is a field like any other (`status == "published"`). A plugin's
 code reads its own internal records the same way (`_type == "cart.line"`, in the request's
 app), and another plugin's only through a `records.read` naming them (or `.internal`).
+
+### Taxonomies
+
+```zig
+//! Topics
+//!
+//! What a post is about. Topics nest, each with a colour.
+
+const Topic = struct {
+    /// Colour
+    colour: ?[]const u8 = null,
+};
+
+pub const taxonomy = publr.taxonomy.define(Topic, .{
+    .name = "topic",
+    .public = true,
+    .hierarchical = true,
+    .fields = .{
+        .colour = .{
+            .kind = "color",
+        },
+    },
+});
+```
+
+A taxonomy is stored as `<plugin>.<name>` (`blog.topic`), listed in `.taxonomies`. Its name
+and description are the `///` above it or its file's `//!`. Every term has a name and a slug;
+`Term` holds the rest, each field labelled by its `///` and overridden by name as a record's
+fields are. `.public` lets any visitor read its live terms (private by default, read by the
+roles that reach it); `.hierarchical` lets terms nest, and filing a record under a term files
+it under every ancestor; `.single` takes one term per record; `.internal` never reaches the
+site: no term pages, nothing in templates, in a visitor's GROQ or in an app's call.
+
+A taxonomy never names types. Your own type lists its taxonomies, yours or the site's:
+`.taxonomies = &.{ "blog.topic", "tags" }` on `publr.record.define`. Each is a picker in the
+editor's sidebar, a column and a filter on the list, and comes back on `get` under its name
+with the dot an underscore (`blog_topic`, a list of term ids); GROQ filters on it
+(`$topic in blog_topic`). A `terms` field of the form (`.kind = "terms"`,
+`.options = .{ .taxonomy = "blog.topic" }`) puts the picker in the form instead, and the
+taxonomy leaves the sidebar.
+
+`.register_taxonomies = .{ .{ .taxonomy = "shipping.region", .to = &.{ "products.*",
+"events.event" } } }` puts a taxonomy on other plugins' types, neither knowing the other: one
+type by name, every type of a plugin (`plugin.*`), or every type (`*`), content types only.
+A pattern never picks an internal taxonomy; name the type for that. It waits while nothing
+matches. An administrator can take it off a type in the type's settings: it hides, and the
+records keep their terms for when it is ticked again. A taxonomy's settings list the types it
+is on and who put it there. When a plugin that is present lacks a type you name, your
+plugin's page says so; a plugin that must have the type says so in `.depends_on`.
+
+A plugin's own taxonomies are its own as its types are: reading and writing their terms takes
+no permission. Uninstalling offers them, with their terms, among its data.
 
 ## Hooks and events
 

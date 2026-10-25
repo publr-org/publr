@@ -21,9 +21,10 @@ pub const namespace: sdk.operation.Namespace = .{
     \\records: a handle, a name, whether it is public, and the fields a term carries
     \\(a name, a slug, a colour, a cover image: any field kind but `terms`). A
     \\`hierarchical` taxonomy lets a term have a parent term; a flat one does not. A
-    \\content type opts into a taxonomy with a field of kind `terms` naming it, and
-    \\each record then selects terms in that field. Definitions are passed as JSON.
-    \\Signed-in users may read taxonomies; changing them needs an admin.
+    \\taxonomy never names types: a content type lists it in `taxonomies`, and each
+    \\record then selects its terms in the editor's sidebar (or in a `terms` field of the
+    \\form naming it). An `internal` taxonomy never reaches the site. Definitions are
+    \\passed as JSON. Signed-in users may read taxonomies; changing them needs an admin.
     ,
 };
 
@@ -147,7 +148,6 @@ pub const Update = struct {
         }
 
         try refuse_flattening(ctx, in.taxonomy, in.definition);
-        try detach(ctx, in.taxonomy, in.definition);
 
         const updated = try definition.update(ctx, in.taxonomy, in.definition, in.drop_content);
 
@@ -159,36 +159,6 @@ pub const Update = struct {
         };
     }
 };
-
-/// A content type the taxonomy no longer applies to loses its records' terms of it: the
-/// values and the memberships, as a removed field loses its values.
-fn detach(ctx: *Ctx, handle_or_id: []const u8, text: []const u8) Error!void {
-    if (handle_or_id.len > 64 << 10) {
-        return error.Invalid;
-    }
-
-    std.debug.assert(ctx.db.transaction_depth >= 1);
-
-    if (text.len == 0 or text.len > content_type.definition_bytes_max) {
-        return error.Invalid;
-    }
-
-    const row = try find(ctx, handle_or_id) orelse return error.NotFound;
-    const wanted = try content_type.decode(ctx.arena, text);
-    const content_types = @import("content_type.zig");
-
-    for (row.def.applies_to) |handle| {
-        if (model.taxonomy.applies(wanted, handle)) {
-            continue;
-        }
-
-        const detached = try content_types.find_raw(ctx, handle) orelse continue;
-        const store = @import("../store.zig");
-
-        _ = try store.values.delete_field(ctx.db, detached.id, row.def.handle);
-        _ = try store.record_terms.delete_field(ctx.db, detached.id, row.def.handle);
-    }
-}
 
 /// A hierarchy is not taken away from terms that use it.
 fn refuse_flattening(ctx: *Ctx, handle_or_id: []const u8, text: []const u8) Error!void {

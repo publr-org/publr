@@ -51,6 +51,8 @@ pub fn of(comptime Plugin: type) Manifest {
             else
                 .{},
             .content_types = plugin_define.get(Plugin, "content_types"),
+            .taxonomies = plugin_define.get(Plugin, "taxonomies"),
+            .register_taxonomies = plugin_define.get(Plugin, "register_taxonomies"),
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
             .statuses = @import("record_flow.zig").registered_of(Plugin),

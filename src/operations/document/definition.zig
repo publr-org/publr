@@ -114,9 +114,12 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(ctx.now_ms >= 0);
 
+            // The site's side reads a type without its internal taxonomies: kept apart.
             var key_buffer: [160]u8 = undefined;
-            const key = std.fmt.bufPrint(&key_buffer, "{s}:{s}", .{
+            const side = if (@import("../record.zig").site_side(ctx)) "@site" else "";
+            const key = std.fmt.bufPrint(&key_buffer, "{s}{s}:{s}", .{
                 Domain.config.noun,
+                side,
                 handle_or_id,
             }) catch "";
 
@@ -261,6 +264,10 @@ pub fn Of(comptime Domain: type) type {
                 return false;
             }
 
+            if (brief.internal and !granted.internal_on(brief.handle)) {
+                return false;
+            }
+
             if (!brief.public and !granted.reaches_roles(brief.roles)) {
                 return false;
             }
@@ -295,6 +302,7 @@ pub fn Of(comptime Domain: type) type {
                 .app = row.def.app,
                 .shared = row.def.shared,
                 .roles = row.def.roles,
+                .internal = row.def.internal,
             };
         }
 
@@ -769,6 +777,12 @@ pub fn Of(comptime Domain: type) type {
                         problems.add(candidate.name, "locked fields are declared in code");
                     }
                 }
+
+                for (def.taxonomies) |classified| {
+                    if (classified.locked) {
+                        problems.add("taxonomies", "locked taxonomies are declared in code");
+                    }
+                }
             }
 
             if (!problems.is_empty()) {
@@ -810,6 +824,11 @@ pub fn Of(comptime Domain: type) type {
             @memcpy(fields[locked..], given.fields[locked..]);
             def.fields = fields;
             def.group = given.group;
+            def.taxonomies = try content_type.with_locked(
+                ctx.arena,
+                current.taxonomies,
+                given.taxonomies,
+            );
 
             var problems: model.field.Problems = .{};
 

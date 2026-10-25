@@ -46,9 +46,15 @@ pub const domain = document_domain.Domain(.{
     .prepare_def = as_given,
 });
 
+/// A taxonomy as read: an internal one is not found from the site's side (a page, a
+/// preview, an app's call, a visitor), whoever asks.
 fn as_read(ctx: *Ctx, row: store.taxonomies.Row) Error!store.taxonomies.Row {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(row.id.len > 0);
+
+    if (row.def.internal and @import("record.zig").site_side(ctx)) {
+        return error.NotFound;
+    }
 
     return row;
 }
@@ -75,8 +81,7 @@ fn check_taxonomy(ctx: *Ctx, row: store.taxonomies.Row) Error!void {
     }
 }
 
-/// The shared rules, and every content type the taxonomy applies to holds records: a
-/// record type or a media type.
+/// The shared rules: a taxonomy holds terms and names no types.
 fn check_taxonomy_def(
     ctx: *Ctx,
     def: store.taxonomies.Def,
@@ -87,18 +92,8 @@ fn check_taxonomy_def(
 
     model.taxonomy.validate_def(def, problems);
 
-    const content_types = @import("content_type.zig");
-
-    for (def.applies_to) |handle| {
-        const row = try content_types.find_raw(ctx, handle) orelse {
-            problems.add("applies_to", "unknown content type");
-
-            continue;
-        };
-
-        if (row.def.kind != .record and row.def.kind != .media) {
-            problems.add("applies_to", "only a record or media type takes terms");
-        }
+    if (def.internal and def.public) {
+        problems.add("internal", "an internal taxonomy never reaches the site: not public");
     }
 }
 

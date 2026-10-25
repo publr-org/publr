@@ -1,5 +1,6 @@
 const std = @import("std");
 const plugin_define = @import("plugin/define.zig");
+const taxonomy_define = @import("plugin/taxonomy_define.zig");
 const permission_model = @import("../model/permission.zig");
 const job_define = @import("plugin/job_define.zig");
 const webhook_define = @import("plugin/webhook_define.zig");
@@ -173,7 +174,43 @@ pub fn validate(comptime Plugin: type) void {
                 @compileError("plugin " ++ manifest.name ++ ": content type " ++ def.handle ++
                     ": " ++ problems.items[0].message);
             }
+
+            // Its own taxonomies on its own types are declared beside them.
+            for (def.taxonomies) |classified| {
+                const own = std.mem.startsWith(u8, classified.taxonomy, manifest.name ++ ".");
+
+                if (own and !declares_taxonomy(Plugin, classified.taxonomy)) {
+                    @compileError("plugin " ++ manifest.name ++ ": " ++ def.handle ++ " is " ++
+                        "filed under " ++ classified.taxonomy ++ ", which `.taxonomies` " ++
+                        "does not declare");
+                }
+            }
         }
+
+        for (plugin_define.get(Plugin, "taxonomies")) |def| {
+            var problems: field.Problems = .{};
+            content_type.validate_def(known, def, &problems);
+            @import("../model/taxonomy.zig").validate_def(def, &problems);
+
+            if (!problems.is_empty()) {
+                @compileError("plugin " ++ manifest.name ++ ": taxonomy " ++ def.handle ++
+                    ": " ++ problems.items[0].message);
+            }
+        }
+    }
+}
+
+fn declares_taxonomy(comptime Plugin: type, comptime handle: []const u8) bool {
+    comptime {
+        std.debug.assert(handle.len > 0);
+
+        for (plugin_define.get(Plugin, "taxonomies")) |def| {
+            if (std.mem.eql(u8, def.handle, handle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -246,6 +283,11 @@ pub fn grants_of(comptime Plugin: type) sdk.PluginGrants {
         }
 
         for (plugin_define.get(Plugin, "content_types")) |def| {
+            own = own ++ &[_][]const u8{def.handle};
+        }
+
+        // Its taxonomies are its own as its types are: their terms need no permission.
+        for (plugin_define.get(Plugin, "taxonomies")) |def| {
             own = own ++ &[_][]const u8{def.handle};
         }
 
@@ -578,6 +620,8 @@ pub fn Merged(comptime plugins: anytype) type {
         var location_rules: []const field_group_model.PluginRule = &.{};
         var columns: []const column_define.Column = &.{};
         var content_types: []const DeclaredType = &.{};
+        var taxonomies: []const DeclaredType = &.{};
+        var taxonomy_registrations: []const taxonomy_define.Registered = &.{};
         var custom_fields: []const DeclaredType = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
@@ -747,6 +791,21 @@ pub fn Merged(comptime plugins: anytype) type {
                 }};
             }
 
+            for (plugin_define.get(Plugin, "taxonomies")) |def| {
+                taxonomies = taxonomies ++ &[_]DeclaredType{.{
+                    .owner = Plugin.manifest.name,
+                    .def = def,
+                }};
+            }
+
+            for (plugin_define.get(Plugin, "register_taxonomies")) |entry| {
+                taxonomy_registrations = taxonomy_registrations ++ &[_]taxonomy_define.Registered{.{
+                    .plugin = Plugin.manifest.name,
+                    .taxonomy = entry.taxonomy,
+                    .to = entry.to,
+                }};
+            }
+
             for (custom_fields_of(Plugin)) |def| {
                 custom_fields = custom_fields ++ &[_]DeclaredType{.{
                     .owner = Plugin.manifest.name,
@@ -854,6 +913,10 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_location_rules = location_rules;
             pub const merged_columns = columns;
             pub const merged_content_types = content_types;
+            /// The taxonomies compiled-in plugins declare, each with its owner.
+            pub const merged_taxonomies = taxonomies;
+            /// The taxonomies compiled-in plugins put on other plugins' types.
+            pub const merged_taxonomy_registrations = taxonomy_registrations;
             pub const merged_custom_fields = custom_fields;
             pub const merged_delivery_gates = delivery_gates;
             pub const merged_sign_in_providers = sign_in_providers;

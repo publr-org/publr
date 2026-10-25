@@ -6,6 +6,10 @@ const publr = @import("publr");
 pub const Review = struct {
     /// Text
     text: []const u8,
+    /// Shelves
+    ///
+    /// Where the review is kept, picked in the form rather than the sidebar.
+    shelves: []const []const u8 = &.{},
 };
 
 pub const Status = enum {
@@ -41,6 +45,14 @@ const flow = [_]publr.record.Transition(Status){
 pub const record = publr.record.define(Review, .{
     .name = "sampler.sample_review",
     .validate = not_spam,
+    .fields = .{
+        .shelves = .{
+            .kind = "terms",
+            .options = .{
+                .taxonomy = "sampler.shelf",
+            },
+        },
+    },
     .status = .{
         .list = Status,
         .start = .draft,

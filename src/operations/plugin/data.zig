@@ -1,7 +1,8 @@
 //! What a plugin's data is, read from the database: the content types it owns with their
-//! records, the collections of internal records it keeps, the custom field groups and the
-//! roles it declared. Each a piece with a key (`type:<handle>`, `internal:<collection>`,
-//! `fields:<group>`, `role:<name>`), so an administrator chooses which go when it is
+//! records, the taxonomies with their terms, the collections of internal records it keeps,
+//! the custom field groups and the roles it declared. Each a piece with a key
+//! (`type:<handle>`, `taxonomy:<handle>`, `internal:<collection>`, `fields:<group>`,
+//! `role:<name>`), so an administrator chooses which go when it is
 //! removed, and the removal takes those into the plugin's trash entry.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -15,18 +16,19 @@ const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const Root = store.trash_copy.Root;
 const definition = record.domain.definition;
+const taxonomy_definition = @import("../term.zig").domain.definition;
 
 pub const pieces_max: u32 = 96;
 
-pub const Kind = enum { type, internal, fields, role };
+pub const Kind = enum { type, taxonomy, internal, fields, role };
 
 pub const Piece = struct {
     key: []const u8,
     kind: Kind,
     /// As the admin names it: the type's or group's name, the collection's.
     label: []const u8,
-    /// Records or internal records it holds, the accounts holding a role; 0 for a field
-    /// group.
+    /// Records, terms or internal records it holds, the accounts holding a role; 0 for a
+    /// field group.
     count: u32,
     /// Chosen to go with the plugin when it is removed.
     chosen: bool,
@@ -55,6 +57,27 @@ pub fn pieces_of(ctx: *Ctx, decoded: state.Decoded) Error![]Piece {
             .kind = .type,
             .label = row.def.name,
             .count = try store.records.count_by_type(ctx.db, row.id),
+            .chosen = has(chosen, key),
+        });
+    }
+
+    // Its taxonomies on other plugins' types have no data of their own: the terms follow
+    // their taxonomy's tick box.
+    for (decoded.manifest.taxonomies) |def| {
+        const row = try store.taxonomies.get_by_handle(ctx.db, ctx.arena, def.handle) orelse
+            continue;
+
+        if (!std.mem.eql(u8, row.def.owner, name)) {
+            continue;
+        }
+
+        const key = try key_of(ctx, "taxonomy", def.handle);
+
+        try append(ctx, &pieces, .{
+            .key = key,
+            .kind = .taxonomy,
+            .label = row.def.name,
+            .count = try store.terms.count_by_type(ctx.db, row.id),
             .chosen = has(chosen, key),
         });
     }
@@ -166,6 +189,13 @@ pub fn roots_of(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]co
                     return error.OutOfMemory;
                 };
             },
+            .taxonomy => {
+                const row = try store.taxonomies.get_by_handle(ctx.db, ctx.arena, handle) orelse
+                    continue;
+                const kept = try taxonomy_definition.roots_of(ctx, row.id);
+
+                roots.appendSlice(ctx.arena, kept) catch return error.OutOfMemory;
+            },
             .internal => {
                 const ids = try internal_ids(ctx, plugin, handle);
 
@@ -210,6 +240,12 @@ pub fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const 
                 try definition.drop_kept(ctx, row.id);
                 types.append(ctx.arena, handle) catch return error.OutOfMemory;
             },
+            .taxonomy => {
+                const row = try store.taxonomies.get_by_handle(ctx.db, ctx.arena, handle) orelse
+                    continue;
+
+                try taxonomy_definition.drop_kept(ctx, row.id);
+            },
             .internal => {
                 try store.internal_records.delete_collection(ctx.db, plugin, handle);
                 changes.internal_changed(ctx, plugin, handle, null) catch |err| {
@@ -246,6 +282,11 @@ pub fn summary_of(ctx: *Ctx, pieces: []const Piece) Error![]const u8 {
 
         const written = switch (piece.kind) {
             .type => text.print(ctx.arena, "{s}{s} ({d} records)", .{
+                separator,
+                piece.label,
+                piece.count,
+            }),
+            .taxonomy => text.print(ctx.arena, "{s}{s} ({d} terms)", .{
                 separator,
                 piece.label,
                 piece.count,

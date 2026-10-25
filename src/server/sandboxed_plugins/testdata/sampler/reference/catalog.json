@@ -770,6 +770,62 @@
     ]
   },
   {
+    "id": "taxonomy-define",
+    "group": "Records",
+    "name": "publr.taxonomy.define(Term, options)",
+    "summary": "A taxonomy the plugin declares, stored as <plugin>.<name>: every term has a name and a slug, Term holds the rest. It never names types: a type lists it, another plugin's type gets it by .register_taxonomies.",
+    "code": [
+      {
+        "file": "taxonomies/shelves.zig",
+        "decl": "taxonomy"
+      },
+      {
+        "file": "taxonomies/flags.zig",
+        "decl": "taxonomy"
+      }
+    ],
+    "see": [
+      "Open Structure, then Taxonomies."
+    ],
+    "look_for": "Shelves and Flags, both declared by the sampler; Flags is staff only.",
+    "options": [
+      {
+        "name": ".taxonomies on a record",
+        "summary": "A type's own taxonomies: each a picker in the editor's sidebar, a column and a filter on its list.",
+        "code": [
+          {
+            "file": "records/notes.zig",
+            "decl": "record"
+          }
+        ],
+        "see": [
+          "Open Sample notes, then a note."
+        ],
+        "look_for": "Shelves and Flags in the sidebar beside the form.",
+        "tour": [
+          {
+            "go": "/admin/content?type=sampler.sample_note",
+            "say": "Open a note: its shelves and flag are picked in the sidebar."
+          }
+        ]
+      },
+      {
+        "name": ".register_taxonomies",
+        "summary": "Puts a taxonomy on other plugins' types by name, plugin.* or *, neither knowing the other. Waits while nothing matches; an administrator can take it off.",
+        "code": [
+          {
+            "file": "main.zig",
+            "decl": "shelved"
+          }
+        ],
+        "see": [
+          "Open Structure, then Taxonomies, then Shelves, then Settings."
+        ],
+        "look_for": "Used by: Sample note, and greeter's types added by the sampler plugin."
+      }
+    ]
+  },
+  {
     "id": "event-define",
     "group": "Hooks and events",
     "name": "publr.event.define(options)",

@@ -58,7 +58,8 @@ pub const Create = struct {
         \\default `record`), optional `icon`, `public` (default false), `editor` (default
         \\`form`), `editor_config`, `title_field` (default `title`: records take their
         \\title from the field of that name when the type has one), `statuses` (restrict
-        \\to some of the registered statuses), and `fields`, which may be empty. Each
+        \\to some of the registered statuses), `taxonomies` (the taxonomies it is filed
+        \\under, `[{"taxonomy":"topics"}]`), and `fields`, which may be empty. Each
         \\field: `name`, `label`, `kind`, and optionally `filterable`, `searchable`, `many`
         \\(a list of values; any kind but slug and group), `validation` (the rules:
         \\`required`, `unique`, `min`, `max`, `min_len`, `max_len`, `hint`, ...), `options`

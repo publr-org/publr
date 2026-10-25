@@ -58,28 +58,33 @@ pub const domain = document_domain.Domain(.{
 });
 
 /// A content type as read: its own fields, then the implicit `terms` field of every
-/// taxonomy that applies to it.
+/// taxonomy it is filed under (`taxonomy/on_type.zig`). An internal taxonomy's never on
+/// the site's side: a page, a preview, an app's call or a visitor.
 fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_types.Row {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.def.fields.len <= model.field.fields_max);
 
-    const room = model.field.fields_max - @as(u32, @intCast(row.def.fields.len));
-    const applying = if (room == 0)
-        &.{}
-    else
-        try store.taxonomies.applying_to(ctx.db, ctx.arena, row.def.handle, room);
+    const placed = try on_type.of(ctx, row.def, .{});
     var fields: std.ArrayList(model.field.Def) = .empty;
 
     try fields.appendSlice(ctx.arena, row.def.fields);
 
-    for (applying) |taxonomy| {
-        std.debug.assert(model.taxonomy.applies(taxonomy.def, row.def.handle));
-
+    for (placed) |each| {
         if (fields.items.len == model.field.fields_max) {
             break;
         }
 
-        try fields.append(ctx.arena, model.taxonomy.implicit_field(taxonomy.def));
+        if (each.placed.internal and site_side(ctx)) {
+            continue;
+        }
+
+        const implicit = try model.taxonomy.implicit_field(ctx.arena, each.row.def);
+
+        if (has_field(fields.items, implicit.name)) {
+            continue;
+        }
+
+        try fields.append(ctx.arena, implicit);
     }
 
     var expanded = row;
@@ -87,6 +92,27 @@ fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_
     expanded.def.fields = fields.items;
 
     return expanded;
+}
+
+const on_type = @import("taxonomy/on_type.zig");
+
+/// Whether a read is made for the site: a page or a preview, an app's call, or a visitor.
+pub fn site_side(ctx: *const Ctx) bool {
+    std.debug.assert(!(ctx.delivery and ctx.preview));
+
+    return ctx.delivery or ctx.preview or ctx.app.len > 0 or ctx.caller == .anonymous;
+}
+
+fn has_field(fields: []const model.field.Def, name: []const u8) bool {
+    std.debug.assert(fields.len <= model.field.fields_max);
+
+    for (fields) |candidate| {
+        if (std.mem.eql(u8, candidate.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// A content type as given: the implicit fields, if the caller sent them back, are dropped;
@@ -101,10 +127,7 @@ fn without_taxonomies(ctx: *Ctx, def: store.content_types.Def) Error!store.conte
     var fields: std.ArrayList(model.field.Def) = .empty;
 
     for (def.fields) |candidate| {
-        const implicit = candidate.locked and std.mem.eql(u8, candidate.kind, "terms") and
-            std.mem.eql(u8, candidate.name, candidate.options.taxonomy);
-
-        if (!implicit) {
+        if (!model.taxonomy.is_implicit(candidate)) {
             try fields.append(ctx.arena, candidate);
         }
     }
@@ -153,8 +176,16 @@ fn check_content_type(
         problems.add("hierarchical", "only a taxonomy is hierarchical");
     }
 
-    if (def.applies_to.len > 0 or def.single) {
-        problems.add("applies_to", "only a taxonomy applies to content types");
+    if (def.single or def.internal) {
+        problems.add("single", "only a taxonomy takes one term or stays off the site");
+    }
+
+    for (def.taxonomies) |classified| {
+        const found = try taxonomies.find(ctx, classified.taxonomy);
+
+        if (found == null and !classified.removed and !classified.locked) {
+            problems.add("taxonomies", "unknown taxonomy");
+        }
     }
 
     var assigning = model.taxonomy.terms_fields(def.fields);
@@ -1718,7 +1749,7 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     try std.testing.expect(purged.purged);
 }
 
-test "a taxonomy applying to a type gives it an implicit terms field; detaching drops values" {
+test "a type filed under a taxonomy gets its implicit terms field; taking it off keeps terms" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -1730,22 +1761,43 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
             .roles = &.{"admin"},
         },
     });
+    const arena = harness.fixed.allocator();
     const term_operations = @import("term.zig");
-    const applying =
-        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
-        \\ "applies_to":["post"],
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
-    ;
     _ = try SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition = applying,
-    });
-    const unknown_type = SDK.dispatch(&admin, taxonomies.Create, .{
         .definition =
-        \\{"handle":"tags","name":"Tags","applies_to":["nope"],
+        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
+        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
+        ,
+    });
+    const naming_types = SDK.dispatch(&admin, taxonomies.Create, .{
+        .definition =
+        \\{"handle":"tags","name":"Tags","taxonomies":[{"taxonomy":"topics"}],
         \\ "fields":[{"name":"name","label":"Name","kind":"string"}]}
         ,
     });
-    try std.testing.expectError(error.Invalid, unknown_type);
+    try std.testing.expectError(error.Invalid, naming_types);
+
+    const bare = try SDK.dispatch(&admin, types.Get, .{
+        .type = "post",
+    });
+    var filed_def = bare.definition;
+    filed_def.taxonomies = &.{.{
+        .taxonomy = "nope",
+    }};
+    const unknown = SDK.dispatch(&admin, types.Update, .{
+        .type = "post",
+        .definition = try model.content_type.encode(arena, filed_def),
+    });
+    try std.testing.expectError(error.Invalid, unknown);
+
+    filed_def.taxonomies = &.{.{
+        .taxonomy = "topics",
+    }};
+    const filed_text = try model.content_type.encode(arena, filed_def);
+    _ = try SDK.dispatch(&admin, types.Update, .{
+        .type = "post",
+        .definition = filed_text,
+    });
 
     const post = try SDK.dispatch(&admin, types.Get, .{
         .type = "post",
@@ -1760,7 +1812,7 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
         .document = "{\"name\":\"Technology\"}",
     });
     const filed = try std.fmt.allocPrint(
-        harness.fixed.allocator(),
+        arena,
         "{{\"title\":\"Filed\",\"body\":\"x\",\"topics\":[\"{s}\"]}}",
         .{tech.id},
     );
@@ -1773,7 +1825,8 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
     });
     try std.testing.expect(std.mem.indexOf(u8, got.document, tech.id) != null);
 
-    const sent_back = try model.content_type.encode(harness.fixed.allocator(), post.definition);
+    // The definition sent back whole, implicit field and all, changes nothing.
+    const sent_back = try model.content_type.encode(arena, post.definition);
     const kept = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
         .definition = sent_back,
@@ -1784,24 +1837,26 @@ test "a taxonomy applying to a type gives it an implicit terms field; detaching 
     });
     try std.testing.expectEqual(post.definition.fields.len, stored.definition.fields.len);
 
-    const detached =
-        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
-    ;
-    _ = try SDK.dispatch(&admin, taxonomies.Update, .{
-        .taxonomy = "topics",
-        .definition = detached,
+    // Taken off, the field goes and the record reads without it; ticked again, it is back.
+    _ = try SDK.dispatch(&admin, types.Update, .{
+        .type = "post",
+        .definition = try model.content_type.encode(arena, bare.definition),
     });
-    const bare = try SDK.dispatch(&admin, types.Get, .{
+    const off = try SDK.dispatch(&admin, types.Get, .{
         .type = "post",
     });
-    try std.testing.expectEqual(post.definition.fields.len - 1, bare.definition.fields.len);
+    try std.testing.expectEqual(post.definition.fields.len - 1, off.definition.fields.len);
     const after = try SDK.dispatch(&admin, Get, .{
         .id = record.id,
     });
     try std.testing.expect(std.mem.indexOf(u8, after.document, tech.id) == null);
-    const purged = try SDK.dispatch(&admin, term_operations.Purge, .{
-        .id = tech.id,
+
+    _ = try SDK.dispatch(&admin, types.Update, .{
+        .type = "post",
+        .definition = filed_text,
     });
-    try std.testing.expect(purged.purged);
+    const back = try SDK.dispatch(&admin, Get, .{
+        .id = record.id,
+    });
+    try std.testing.expect(std.mem.indexOf(u8, back.document, tech.id) != null);
 }

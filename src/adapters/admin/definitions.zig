@@ -26,9 +26,10 @@ const Kind = model.content_type.Kind;
 const room_text = @import("type_fields/rules.zig").room_text;
 const values_of = @import("type_fields/settings.zig").values_of;
 const content_types = @import("../../operations/content_type.zig");
-const template_module = @import("../../template.zig");
-const Routed = views.TypeForm.Applies_routedItem;
-const Other = views.TypeForm.Applies_otherItem;
+const Choice = views.TypeForm.Taxonomy_choicesItem;
+const User = views.TypeForm.Used_byItem;
+const on_type = @import("../../operations/taxonomy/on_type.zig");
+const taxonomy_operations = @import("../../operations/taxonomy.zig");
 
 pub const Domain = struct {
     /// `/admin/types`, `/admin/structure/taxonomies`.
@@ -406,10 +407,15 @@ pub fn Pages(comptime domain: Domain) type {
                 null;
             const errors = try head_errors(arena, problems);
             const limits = model.content_type;
-            const applicable: Applicable = if (domain.is_taxonomy)
-                applies_of(session, def) catch |err| return admin.fail(session, err, back)
+            const classified = !is_new and !domain.is_taxonomy and def.kind == .record;
+            const choices: []const Choice = if (classified)
+                choices_of(session, def) catch |err| return admin.fail(session, err, back)
             else
-                .{};
+                &.{};
+            const users: []const User = if (!is_new and domain.is_taxonomy)
+                users_of(session, def) catch |err| return admin.fail(session, err, back)
+            else
+                &.{};
 
             const own_name: ?[]const u8 = if (back_href == null) null else def.name;
             const placement = try type_placement.props_of(session, def);
@@ -449,9 +455,13 @@ pub fn Pages(comptime domain: Domain) type {
                 .is_taxonomy = domain.is_taxonomy,
                 .hierarchical = def.hierarchical,
                 .single = def.single,
-                .applies_routed = applicable.routed,
-                .applies_other = applicable.other,
-                .show_all_types = any_selected(applicable.other),
+                .internal = def.internal,
+                .taxonomy_choices = choices,
+                .taxonomies_action = if (classified)
+                    try print(arena, "{s}/{s}/taxonomies", .{ back, def.handle })
+                else
+                    "",
+                .used_by = users,
                 .is_record = def.kind == .record,
                 .is_settings = def.kind == .settings,
                 .is_component = def.kind == .component,
@@ -556,6 +566,66 @@ pub fn Pages(comptime domain: Domain) type {
             try response.redirect(.see_other, moved);
         }
 
+        /// A type's taxonomies, as its settings tick them: the ticked ones its own, a
+        /// registration left unticked taken off (hidden, its terms kept). A plugin's type
+        /// takes this too; what its plugin declares stays.
+        pub fn taxonomies(request: *Request, response: *Response, ctx: *Context) Error!void {
+            std.debug.assert(request.method() == .post);
+            std.debug.assert(!domain.is_taxonomy);
+
+            var post = try admin.accept(request, response, ctx, back) orelse return;
+            var session = &post.session;
+            const form = &post.form;
+            const handle = try admin.param(session, "handle", back) orelse return;
+            const got = try load(session, handle) orelse return;
+            const settings = try print(session.arena, "{s}/{s}/settings", .{ back, handle });
+            const ticked = try values_of(session.arena, form, "taxonomy");
+            const placed = on_type.of(&session.ctx, got.definition, .{
+                .removed = true,
+            }) catch |err| return admin.fail(session, err, settings);
+            var kept: std.ArrayList(model.content_type.Classified) = .empty;
+
+            for (got.definition.taxonomies) |classified| {
+                if (classified.locked) {
+                    try kept.append(session.arena, classified);
+                }
+            }
+
+            for (ticked) |taxonomy| {
+                if (!registered(placed, taxonomy) and !classified_in(kept.items, taxonomy)) {
+                    try kept.append(session.arena, .{
+                        .taxonomy = taxonomy,
+                    });
+                }
+            }
+
+            for (placed) |each| {
+                if (each.placed.registered and !contains(ticked, each.placed.taxonomy)) {
+                    try kept.append(session.arena, .{
+                        .taxonomy = each.placed.taxonomy,
+                        .removed = true,
+                    });
+                }
+            }
+
+            var def = got.definition;
+
+            def.taxonomies = kept.items;
+
+            const definition = model.content_type.encode(session.arena, def) catch {
+                return error.OutOfMemory;
+            };
+            const in = keyed(operations.Update.In, domain.key, handle, .{
+                .definition = definition,
+            });
+
+            _ = registry.SDK.dispatch(&session.ctx, operations.Update, in) catch |err| {
+                return admin.fail(session, err, settings);
+            };
+
+            try response.redirect(.see_other, settings);
+        }
+
         /// The head of the form over `base`: kind, names, handle (made from the name when
         /// empty), where it lives and who reads it. Fields and everything the form does not
         /// show stay as they are. A taxonomy has no kind and no URL; it is hierarchical or
@@ -581,7 +651,7 @@ pub fn Pages(comptime domain: Domain) type {
                 def.url = "";
                 def.hierarchical = form.get("hierarchical") != null;
                 def.single = form.get("single") != null;
-                def.applies_to = try values_of(arena, form, "applies_to");
+                def.internal = form.get("internal") != null;
 
                 return type_placement.read(arena, form, def);
             }
@@ -664,107 +734,117 @@ pub fn Pages(comptime domain: Domain) type {
     };
 }
 
-fn any_selected(items: []const Other) bool {
-    std.debug.assert(items.len <= model.taxonomy.applies_max);
-    std.debug.assert(slug_field.len == 1);
-
-    for (items) |item| {
-        if (item.selected) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// Whether records of a type have pages of their own: a page template of a loaded app reads
-/// the type's entry (`posts/[slug].publr`); without apps, whether the definition claims an
-/// address.
-fn has_pages(session: *Session, handle: []const u8) !bool {
-    std.debug.assert(handle.len > 0);
+/// Every taxonomy a type may be filed under, the ones it is ticked: its own, a plugin's
+/// registration unless taken off, its plugin's declared ones fixed.
+fn choices_of(session: *Session, def: Def) ![]const Choice {
     std.debug.assert(session.signed_in());
+    std.debug.assert(def.handle.len > 0);
 
-    if (session.project.apps.len == 0) {
-        var scratch = std.heap.ArenaAllocator.init(session.arena);
-        defer scratch.deinit();
-        var ctx = session.ctx;
-        ctx.arena = scratch.allocator();
-        const row = try content_types.find_raw(&ctx, handle);
-
-        return row != null and row.?.def.url.len > 0;
-    }
-
-    for (session.project.apps) |*app| {
-        const program = app.program orelse continue;
-
-        if (try template_module.impact.has_entry_page(session.arena, program, handle)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// The record types a taxonomy may apply to, the chosen ones ticked: the ones with pages
-/// of their own on the site (`routed`), or the rest.
-const Applicable = struct {
-    routed: []const Routed = &.{},
-    other: []const Other = &.{},
-};
-
-fn applies_of(session: *Session, def: Def) !Applicable {
-    std.debug.assert(session.signed_in());
-    std.debug.assert(def.applies_to.len <= model.taxonomy.applies_max);
-
-    const listed = try registry.SDK.dispatch(&session.ctx, content_types.List, .{
+    const placed = try on_type.of(&session.ctx, def, .{
+        .removed = true,
+    });
+    const listed_all = try registry.SDK.dispatch(&session.ctx, taxonomy_operations.List, .{
         .limit = sdk_operation.page_limit_max,
     });
-    var routed: std.ArrayList(Routed) = .empty;
-    var other: std.ArrayList(Other) = .empty;
+    var choices: std.ArrayList(Choice) = .empty;
 
-    for (listed.types) |summary| {
-        if (summary.kind != .record) {
-            continue;
-        }
-
-        const selected = model.taxonomy.applies(def, summary.handle);
-
-        if (try has_pages(session, summary.handle)) {
-            try routed.append(session.arena, .{
-                .value = summary.handle,
-                .label = summary.name,
-                .selected = selected,
-            });
-        } else {
-            try other.append(session.arena, .{
-                .value = summary.handle,
-                .label = summary.name,
-                .selected = selected,
-            });
-        }
-    }
-
-    // A type it applies to past the first listed: offered too, so saving keeps it.
-    for (def.applies_to) |handle| {
-        const shown = for (listed.types) |summary| {
-            if (std.mem.eql(u8, summary.handle, handle)) {
-                break true;
+    for (listed_all.taxonomies) |summary| {
+        const found = for (placed) |each| {
+            if (std.mem.eql(u8, each.placed.taxonomy, summary.handle)) {
+                break each.placed;
             }
-        } else false;
+        } else null;
 
-        if (!shown) {
-            try other.append(session.arena, .{
-                .value = handle,
-                .label = handle,
-                .selected = true,
-            });
+        const by = if (found) |each| each.by else "";
+
+        try choices.append(session.arena, .{
+            .value = summary.handle,
+            .label = summary.name,
+            .selected = if (found) |each| !each.removed else false,
+            .locked = if (found) |each| each.locked else false,
+            .note = if (by.len == 0)
+                ""
+            else
+                try session.translated("Added by the {plugin} plugin", .{
+                    .values = &.{.{
+                        .name = "plugin",
+                        .value = by,
+                    }},
+                }),
+        });
+    }
+
+    return choices.items;
+}
+
+/// The types a taxonomy is on, and who put it on each.
+fn users_of(session: *Session, def: Def) ![]const User {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(def.handle.len > 0);
+
+    const users = try on_type.used_by(&session.ctx, def.handle);
+    const items = try session.arena.alloc(User, users.len);
+
+    for (users, items) |used, *item| {
+        const href = try print(session.arena, "/admin/types/{s}/settings", .{used.type});
+
+        item.* = .{
+            .id = href,
+            .title = used.name,
+            .type_label = try session.translated("Content type", .{}),
+            .status = if (used.removed)
+                try session.translated("Taken off", .{})
+            else if (used.by.len == 0)
+                try session.translated("Ticked by an administrator", .{})
+            else
+                try session.translated("Added by the {plugin} plugin", .{
+                    .values = &.{.{
+                        .name = "plugin",
+                        .value = used.by,
+                    }},
+                }),
+            .tone = if (used.removed) "neutral" else "success",
+            .href = href,
+        };
+    }
+
+    return items;
+}
+
+fn registered(placed: []const on_type.Found, handle: []const u8) bool {
+    std.debug.assert(handle.len > 0);
+
+    for (placed) |each| {
+        if (each.placed.registered and std.mem.eql(u8, each.placed.taxonomy, handle)) {
+            return true;
         }
     }
 
-    return .{
-        .routed = routed.items,
-        .other = other.items,
-    };
+    return false;
+}
+
+fn classified_in(kept: []const model.content_type.Classified, handle: []const u8) bool {
+    std.debug.assert(handle.len > 0);
+
+    for (kept) |each| {
+        if (std.mem.eql(u8, each.taxonomy, handle)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn contains(values: []const []const u8, wanted: []const u8) bool {
+    std.debug.assert(wanted.len > 0);
+
+    for (values) |value| {
+        if (std.mem.eql(u8, value, wanted)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// The problems of the name, the handle and the description go under their fields (the

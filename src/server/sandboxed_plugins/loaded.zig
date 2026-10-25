@@ -182,9 +182,16 @@ fn own_types_of(
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(manifest.content_types.len <= 64);
 
-    const handles = try arena.alloc([]const u8, manifest.content_types.len);
+    const types = manifest.content_types;
+    const taxonomies = manifest.taxonomies;
+    const handles = try arena.alloc([]const u8, types.len + taxonomies.len);
 
-    for (manifest.content_types, handles) |def, *handle| {
+    // Its taxonomies are its own as its types are: their terms need no permission.
+    for (types, handles[0..types.len]) |def, *handle| {
+        handle.* = def.handle;
+    }
+
+    for (taxonomies, handles[types.len..]) |def, *handle| {
         handle.* = def.handle;
     }
 

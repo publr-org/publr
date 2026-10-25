@@ -120,6 +120,7 @@ const options_known = [_][]const u8{
     "extend",                  "webhooks",
     "register_location_rules", "register_providers",
     "register_columns",        "variants",
+    "taxonomies",              "register_taxonomies",
 };
 
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.
@@ -236,6 +237,8 @@ fn list_option(comptime name: []const u8) bool {
 const resolvers = .{
     .{ "operations", type, described_operations },
     .{ "content_types", ContentTypeDef, declared_content_types },
+    .{ "taxonomies", ContentTypeDef, declared_taxonomies },
+    .{ "register_taxonomies", TaxonomyRegistration, declared_registrations },
     .{ "internal_records", Collection, declared_collections },
     .{ "middleware", type, declared_hooks },
     .{ "namespaces", Namespace, declared_namespaces },
@@ -304,6 +307,62 @@ fn described_operations(comptime Plugin: type) []const type {
         const done = described;
 
         return &done;
+    }
+}
+
+const TaxonomyRegistration = @import("taxonomy_define.zig").Registration;
+
+/// A bound plugin's taxonomies, each `publr.taxonomy.define` stored under the plugin's name.
+fn declared_taxonomies(comptime Plugin: type) []const ContentTypeDef {
+    comptime {
+        const taxonomy_define = @import("taxonomy_define.zig");
+        var list: []const ContentTypeDef = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (Plugin.options.taxonomies) |Taxonomy| {
+            if (!taxonomy_define.is_taxonomy(Taxonomy)) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": `.taxonomies` lists " ++
+                    @typeName(Taxonomy) ++ "; make it with `publr.taxonomy.define`");
+            }
+
+            const def = taxonomy_define.def_of(Taxonomy, Plugin.manifest.name, Plugin.docs);
+
+            for (list) |earlier| {
+                if (std.mem.eql(u8, earlier.handle, def.handle)) {
+                    @compileError("plugin " ++ Plugin.manifest.name ++ ": two taxonomies " ++
+                        "are named " ++ def.handle);
+                }
+            }
+
+            list = list ++ [_]ContentTypeDef{def};
+        }
+
+        const done = list;
+
+        return done;
+    }
+}
+
+/// A bound plugin's taxonomies on other plugins' types, checked.
+fn declared_registrations(comptime Plugin: type) []const TaxonomyRegistration {
+    comptime {
+        var list: []const TaxonomyRegistration = &.{};
+
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (Plugin.options.register_taxonomies) |entry| {
+            list = list ++ [_]TaxonomyRegistration{.{
+                .taxonomy = entry.taxonomy,
+                .to = entry.to,
+            }};
+        }
+
+        const done = list;
+
+        @import("taxonomy_define.zig").check(Plugin.manifest.name, done);
+
+        return done;
     }
 }
 

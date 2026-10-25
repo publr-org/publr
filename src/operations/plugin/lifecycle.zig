@@ -298,8 +298,8 @@ fn provided(ctx: *Ctx, text: []const u8) bool {
     return depends_on.satisfies(row.version, wanted.range);
 }
 
-/// Creates or brings up to date the content types, custom fields and roles the plugin
-/// declares, as the system: owned by the plugin, their declared fields locked.
+/// Creates or brings up to date the taxonomies, content types, custom fields and roles the
+/// plugin declares, as the system: owned by the plugin, their declared fields locked.
 pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(manifest.content_types.len <= 64);
@@ -322,6 +322,21 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
 
     ctx.kinds = try registry.with_kinds(ctx.arena, registry.kinds(ctx), &.{manifest.*});
     defer ctx.kinds = kept;
+
+    // Its taxonomies first, each under its name: the types filed under them name them.
+    for (manifest.taxonomies) |def| {
+        const own = std.mem.startsWith(u8, def.handle, manifest.name) and
+            def.handle.len > manifest.name.len + 1 and def.handle[manifest.name.len] == '.';
+
+        if (!own) {
+            return error.Invalid;
+        }
+
+        try plugin_types.apply_taxonomy(ctx, .{
+            .owner = manifest.name,
+            .def = def,
+        });
+    }
 
     for (manifest.content_types) |def| {
         try plugin_types.apply_one(ctx, .{

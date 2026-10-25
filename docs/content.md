@@ -197,17 +197,23 @@ edits a term in the record editor. What a term has that a record has not is a
 **parent**: in a `hierarchical` taxonomy terms form a tree (categories, up to
 16 levels); a flat one is a list (tags).
 
-A taxonomy says which content types it classifies: `applies_to` lists their
-handles, `single` makes records take one term instead of several. Every type
-it applies to gains an implicit, locked field of kind `terms` named after the
-taxonomy; the type's own definition never stores it, it is added whenever the
-definition is read and dropped whenever one is written. The record's document
-holds the selected term ids under that field, as a reference holds record
-ids. Detaching a type drops those values and memberships. A `terms` field can
-also be authored on a type by hand (`"options":{"taxonomy":"topics"}`), at
-any depth, inside a group or a repeater: that is a form control like any
-other, for composing terms with other fields, not the way a taxonomy is
-attached. Filing a record under a term files it under every
+A taxonomy never names the types it classifies: a content type lists its
+taxonomies (`"taxonomies":[{"taxonomy":"topics"}]`), and a plugin's
+`.register_taxonomies` puts one on other plugins' types by name or pattern
+(`products.*`, `*`), listed beside the type's own as long as it matches. `single`
+makes records take one term instead of several; `internal` keeps a taxonomy off
+the site (no term pages, nothing in templates, a visitor's GROQ or an app's call;
+on a type only by its name, never by a pattern). Every taxonomy on a type gives it
+an implicit, locked field of kind `terms` named after the taxonomy (a plugin's
+`blog.topic` as `blog_topic`); the type's own definition never stores it, it is
+added whenever the definition is read and dropped whenever one is written. The
+record's document holds the selected term ids under that field, as a reference
+holds record ids. Taking a taxonomy off a type hides the field and keeps the
+values and memberships, so ticking it again brings them back; a registration an
+administrator takes off is kept on the type as `"removed":true`. A `terms` field
+can also be authored on a type (`"options":{"taxonomy":"topics"}`), at any depth,
+inside a group or a repeater: a form control like any other, and the taxonomy it
+names leaves the sidebar. Filing a record under a term files it under every
 ancestor as well: selecting `C` in `A > B > C` makes the record a member of
 `A`, `B` and `C`, and filtering the type's records by `A` finds it. The
 membership index (`record_terms`) keeps the selected terms and the ancestors
@@ -215,13 +221,14 @@ apart, follows the document's slot (pending edits, publish), and is rebuilt
 for the records concerned when a term moves under another parent. A term
 with children, or with records filed under it, cannot be purged.
 
-In the admin the taxonomy's settings page ticks the types it applies to (the
-types the apps give pages first, every record type behind a switch).
+In the admin a type's settings tick its taxonomies (one a plugin put there says
+so; one the type's own plugin declares cannot be unticked), and a taxonomy's
+settings list the types it is used by and who put it on each.
 The terms of a record sit in the editor's sidebar, one section per taxonomy
-that applies: a tree of checkboxes for a hierarchical taxonomy (ticking a
+on the type: a tree of checkboxes for a hierarchical taxonomy (ticking a
 term ticks its ancestors, unticking one unticks what was filed below it), a
 combobox for a flat one, a dropdown when the taxonomy takes one term. A
-hand-authored `terms` field is drawn in the form itself, as checkboxes or a
+`terms` field of the form is drawn in the form itself, as checkboxes or a
 dropdown.
 
 Whenever a live document is replaced, the old one is kept as a **snapshot**

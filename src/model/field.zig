@@ -363,7 +363,7 @@ fn validate_kind_rules(
         validate_virtual(def, problems);
     }
 
-    if (kind.has.taxonomy and !valid_name(def.options.taxonomy)) {
+    if (kind.has.taxonomy and !@import("content_type.zig").valid_handle(def.options.taxonomy)) {
         problems.add(def.name, "a terms field names the taxonomy it assigns from");
     }
 

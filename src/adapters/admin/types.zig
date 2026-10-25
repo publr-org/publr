@@ -30,6 +30,7 @@ pub const new_page = Pages.new_page;
 pub const settings_page = Pages.settings_page;
 pub const create = Pages.create;
 pub const update = Pages.update;
+pub const taxonomies = Pages.taxonomies;
 pub const delete = Pages.delete;
 pub const problems_of = Pages.problems_of;
 pub const host_url_of = definitions.host_url_of;

@@ -1865,7 +1865,7 @@ fn add_path_terms(
 
     const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
 
-    if (!kind.has.taxonomy or field.locked) {
+    if (!kind.has.taxonomy or model.taxonomy.is_implicit(field)) {
         return;
     }
 

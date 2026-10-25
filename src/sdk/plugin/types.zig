@@ -5,6 +5,7 @@ const content_type = @import("../../model/content_type.zig");
 const field = @import("../../model/field.zig");
 const types = @import("../../operations/content_type.zig");
 const custom_fields = @import("../../operations/custom_fields.zig");
+const taxonomies = @import("../../operations/taxonomy.zig");
 
 pub const Def = content_type.Def;
 
@@ -26,6 +27,11 @@ pub fn apply(ctx: *sdk.Ctx, comptime defs: []const Declared) sdk.Error!void {
 pub fn apply_all(ctx: *sdk.Ctx) sdk.Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.now_ms >= 0);
+
+    // Taxonomies first: the types filed under them name them.
+    inline for (registry.native_plugins.merged_taxonomies) |declared| {
+        try apply_taxonomy(ctx, declared);
+    }
 
     try apply(ctx, registry.native_plugins.merged_content_types);
 
@@ -107,6 +113,11 @@ pub fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     def.owner = declared.owner;
     def.fields = fields;
     def.group = if (existing) |row| row.def.group else declared.def.group;
+    // Its declared taxonomies, then what an administrator ticked or took off.
+    def.taxonomies = if (existing) |row|
+        try content_type.with_locked(ctx.arena, declared.def.taxonomies, row.def.taxonomies)
+    else
+        declared.def.taxonomies;
 
     const wanted = try content_type.encode(ctx.arena, def);
 
@@ -126,6 +137,55 @@ pub fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     }
 
     _ = try registry.SDK.dispatch(ctx, types.Create, .{
+        .definition = wanted,
+    });
+}
+
+/// Create or update a declared taxonomy, as a declared type is: its fields locked and owned
+/// by the plugin, fields added by hand kept.
+pub fn apply_taxonomy(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
+    std.debug.assert(declared.def.handle.len > 0);
+    std.debug.assert(declared.def.fields.len > 0);
+
+    const existing = try taxonomies.find(ctx, declared.def.handle);
+
+    if (existing) |row| {
+        if (!std.mem.eql(u8, row.def.owner, declared.owner)) {
+            return error.Conflict;
+        }
+    }
+
+    const extras: []const field.Def = if (existing) |row| unlocked_of(row.def) else &.{};
+    const fields = try ctx.arena.alloc(field.Def, declared.def.fields.len + extras.len);
+
+    for (declared.def.fields, 0..) |declared_field, index| {
+        fields[index] = declared_field;
+        fields[index].locked = true;
+    }
+
+    @memcpy(fields[declared.def.fields.len..], extras);
+
+    var def = declared.def;
+    def.system = true;
+    def.owner = declared.owner;
+    def.fields = fields;
+
+    const wanted = try content_type.encode(ctx.arena, def);
+
+    if (existing) |row| {
+        if (std.mem.eql(u8, try content_type.encode(ctx.arena, row.def), wanted)) {
+            return;
+        }
+
+        _ = try registry.SDK.dispatch(ctx, taxonomies.Update, .{
+            .taxonomy = def.handle,
+            .definition = wanted,
+        });
+
+        return;
+    }
+
+    _ = try registry.SDK.dispatch(ctx, taxonomies.Create, .{
         .definition = wanted,
     });
 }

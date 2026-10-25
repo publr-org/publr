@@ -355,6 +355,11 @@ fn pieces_of(session: *Session, name: []const u8) Error![]PieceRow {
                 "Content type, {count} records",
                 piece.count,
             ),
+            .taxonomy => try session.translated_count(
+                "Taxonomy, {count} term",
+                "Taxonomy, {count} terms",
+                piece.count,
+            ),
             .internal => try session.translated_count(
                 "Internal records, {count}",
                 "Internal records, {count}",

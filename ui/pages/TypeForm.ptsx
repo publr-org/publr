@@ -6,6 +6,8 @@ import { Button } from "@publr/ui/Button.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { ItemList } from "@publr/ui/ItemList.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
 import { TypeHead } from "../components/TypeHead.ptsx";
 import { TypeNames } from "../components/TypeNames.ptsx";
 import { TypeEditor } from "../components/TypeEditor.ptsx";
@@ -25,11 +27,15 @@ export type TypeFormProps = {
   hierarchical: boolean;
   /** A taxonomy: records take one term, not several. */
   single: boolean;
-  /** A taxonomy: the record types it may apply to, the ticked ones selected: those with an
-   * address on the site, and the others, shown on request (or when one is ticked). */
-  applies_routed: Array<{ value: string; label: string; selected: boolean }>;
-  applies_other: Array<{ value: string; label: string; selected: boolean }>;
-  show_all_types: boolean;
+  /** A taxonomy that never reaches the site. */
+  internal: boolean;
+  /** A record type: every taxonomy, the ones it is filed under ticked; `note` says which
+   * plugin put one there, `locked` one its own plugin declares. */
+  taxonomy_choices: Array<{ value: string; label: string; selected: boolean; locked: boolean; note: string }>;
+  /** Where the Taxonomies form posts; empty draws none (a new type, a taxonomy). */
+  taxonomies_action: string;
+  /** A taxonomy: the types it is on, each card saying who put it there. */
+  used_by: Array<{ id: string; title: string; type_label: string; status: string; tone: string; href: string }>;
   /** Where the form posts: create, or update of an existing type. */
   action: string;
   is_new: boolean;
@@ -102,9 +108,10 @@ export function TypeForm({
   is_taxonomy,
   hierarchical,
   single,
-  applies_routed,
-  applies_other,
-  show_all_types,
+  internal,
+  taxonomy_choices,
+  taxonomies_action,
+  used_by,
   action,
   is_new,
   choose_kind,
@@ -218,9 +225,7 @@ export function TypeForm({
             is_taxonomy={is_taxonomy}
             hierarchical={hierarchical}
             single={single}
-            applies_routed={applies_routed}
-            applies_other={applies_other}
-            show_all_types={show_all_types}
+            internal={internal}
           />
           <TypeNames name={name} plural_name={plural_name} languages={noun_languages} />
           <TypePlacement
@@ -245,6 +250,53 @@ export function TypeForm({
             <TypeEditor visual={visual} is_new={is_new} rich_fields={rich_fields} />
           )}
         </form>
+      )}
+      {taxonomies_action !== "" && (
+        <section class="flex flex-col gap-3" data-part="type-taxonomies">
+          <Heading level={2} size="md">{Publr.t("Taxonomies")}</Heading>
+          <Text as="p" variant="body-sm" tone="muted">
+            {Publr.t("Records of this type pick terms of each ticked taxonomy in the editor's sidebar. Unticked, the terms they had are kept for when it is ticked again.")}
+          </Text>
+          {taxonomy_choices.length === 0 && (
+            <Text as="p" variant="body-sm" tone="muted">
+              {Publr.t("No taxonomies yet: make one in Structure.")}
+            </Text>
+          )}
+          {taxonomy_choices.length > 0 && (
+            <form method="post" action={taxonomies_action} class="flex flex-col gap-3">
+              <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+              {taxonomy_choices.map((choice) => (
+                <CheckboxField
+                  id={`taxonomy-${choice.value}`}
+                  name="taxonomy"
+                  value={choice.value}
+                  checked={choice.selected}
+                  disabled={choice.locked}
+                  label={choice.label}
+                  description={choice.note}
+                />
+              ))}
+              <div>
+                <Button type="submit" hierarchy="secondary" size="sm">
+                  {Publr.t("Save taxonomies")}
+                </Button>
+              </div>
+            </form>
+          )}
+        </section>
+      )}
+      {is_taxonomy && !is_new && (
+        <section class="flex flex-col gap-3" data-part="used-by">
+          <Heading level={2} size="md">{Publr.t("Used by")}</Heading>
+          {used_by.length === 0 && (
+            <Text as="p" variant="body-sm" tone="muted">
+              {Publr.t("No content type is filed under it yet: tick it in a type's settings.")}
+            </Text>
+          )}
+          {used_by.length > 0 && (
+            <ItemList items={used_by} />
+          )}
+        </section>
       )}
       {workflow_type !== "" && (
         <section class="flex flex-col gap-2" data-part="workflow">
