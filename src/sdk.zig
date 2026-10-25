@@ -25,6 +25,7 @@ pub const stored_roles = @import("sdk/roles.zig");
 pub const hooks = @import("sdk/hooks.zig");
 pub const mods = @import("sdk/mods.zig");
 pub const delivery = @import("sdk/delivery.zig");
+pub const page_request = @import("sdk/page_request.zig");
 pub const provider = @import("sdk/provider.zig");
 pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
 pub const plugin_access = @import("sdk/plugin_access.zig");

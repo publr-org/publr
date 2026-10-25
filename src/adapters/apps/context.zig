@@ -1243,10 +1243,11 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.variant = ctx.place.variant;
-        sdk_ctx.dimensions = if (ctx.place.variant.len > 0)
-            variants_module.asked_in(&sdk_ctx, ctx.place.variant).pairs
-        else
-            &.{};
+        sdk_ctx.dimensions = variants_module.page_pairs(
+            &sdk_ctx,
+            ctx.place.variant,
+            ctx.place.chosen,
+        );
 
         if (ctx.deps) |deps| {
             sdk_ctx.reads = deps.reads();

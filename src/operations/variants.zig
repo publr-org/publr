@@ -203,6 +203,33 @@ pub fn main(ctx: *Ctx) Error!?Variant {
     return null;
 }
 
+/// A page's combination: `setting`'s dimension at `code` (the address's language), then
+/// `chosen` (what request hooks chose), in the site's priority order.
+pub fn page_pairs(
+    ctx: *const Ctx,
+    code: []const u8,
+    chosen: []const model_variant.Pair,
+) []const model_variant.Pair {
+    std.debug.assert(chosen.len <= model_variant.dimensions_max);
+
+    const addressed = if (code.len > 0) asked_in(ctx, code).pairs else &.{};
+    var out: std.ArrayList(model_variant.Pair) = .empty;
+
+    for (all(ctx)) |dimension| {
+        for ([_][]const model_variant.Pair{ addressed, chosen }) |given| {
+            for (given) |pair| {
+                if (std.mem.eql(u8, pair.dimension, dimension.name)) {
+                    out.append(ctx.arena, pair) catch return &.{};
+                }
+            }
+        }
+    }
+
+    std.debug.assert(out.items.len <= model_variant.dimensions_max * 2);
+
+    return out.items;
+}
+
 /// A read in `setting`'s dimension at `code` (the language of a page): nothing asked on a
 /// site with no dimension.
 pub fn asked_in(ctx: *const Ctx, code: []const u8) sdk.Dimensions {

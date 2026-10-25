@@ -635,6 +635,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var admin_brand: []const type = &.{};
         var app_picker_segment: []const type = &.{};
         var dimension_list: []const dimensions.Dimension = &.{};
+        var request_hooks: []const @import("page_request.zig").Hook = &.{};
         var work_start: ?[]const u8 = null;
         var hosted = false;
         var translations: []const OwnedTranslation = &.{};
@@ -744,6 +745,17 @@ pub fn Merged(comptime plugins: anytype) type {
                         .plugin = Plugin.manifest.name,
                         .translation = translation,
                     }};
+                }
+            }
+
+            if (@hasField(@TypeOf(Plugin.options), "hooks")) {
+                for (Plugin.options.hooks) |Hook| {
+                    if (@import("plugin/hook_define.zig").is_request_hook(Hook)) {
+                        request_hooks = request_hooks ++ &[_]@import("page_request.zig").Hook{.{
+                            .plugin = Plugin.manifest.name,
+                            .run = Hook.wrapped,
+                        }};
+                    }
                 }
             }
 
@@ -952,6 +964,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_translations = translations;
             /// The dimensions the plugins declare, in plugin order.
             pub const merged_dimensions = dimension_list;
+            /// Every `publr.hook.request`, in plugin order.
+            pub const merged_request_hooks = request_hooks;
             /// The operation `publr work start` runs, where a hosting service's plugin
             /// sends a device's work to a copy of the project (`pub const work_start`).
             pub const merged_work_start = work_start;

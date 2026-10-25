@@ -51,6 +51,38 @@ pub fn modify(comptime name: []const u8, comptime run: anytype) type {
     }
 }
 
+/// `publr.hook.request(run)`: sees a page request before it is drawn; `run` takes
+/// `(ctx: *publr.Ctx, request: *publr.PageRequest)` and answers `publr.Answered`.
+pub fn request(comptime run: anytype) type {
+    comptime {
+        const PageRequest = @import("../page_request.zig");
+
+        if (@typeInfo(@TypeOf(run)) != .@"fn") {
+            @compileError("a request hook takes a named function: `publr.hook.request(run)`");
+        }
+
+        return struct {
+            pub const publr_request_hook = true;
+
+            pub fn wrapped(
+                ctx: *sdk.Ctx,
+                page: *PageRequest.PageRequest,
+            ) sdk.Error!PageRequest.Answered {
+                var plugin_ctx: PluginCtx = .{
+                    .inner = ctx,
+                };
+
+                return run(&plugin_ctx, page);
+            }
+        };
+    }
+}
+
+/// Whether `Type` is a `publr.hook.request`.
+pub fn is_request_hook(comptime Type: type) bool {
+    return @typeInfo(Type) == .@"struct" and @hasDecl(Type, "publr_request_hook");
+}
+
 fn hook(comptime stage: Stage, comptime Target: type, comptime run: anytype) type {
     comptime {
         std.debug.assert(stage != .pre);

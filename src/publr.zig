@@ -49,6 +49,13 @@ pub const dimension = struct {
     pub const Value = @import("sdk/plugin/dimensions.zig").Value;
 };
 
+/// `publr.hook.request(run)` in `.hooks`: a page request before it is drawn.
+pub const hook = struct {
+    pub const request = @import("sdk/plugin/hook_define.zig").request;
+};
+pub const PageRequest = @import("sdk/page_request.zig").PageRequest;
+pub const Answered = @import("sdk/page_request.zig").Answered;
+
 pub const taxonomy = struct {
     pub const define = @import("sdk/plugin/taxonomy_define.zig").define;
     pub const Registration = @import("sdk/plugin/taxonomy_define.zig").Registration;

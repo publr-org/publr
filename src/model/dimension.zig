@@ -297,6 +297,9 @@ pub const Place = struct {
     locale: []const u8 = "",
     /// `/pl`; empty for the main language.
     address: []const u8 = "",
+    /// The other dimensions the request chose a value in (a request hook's variation): read
+    /// live, kept out of shared caches.
+    chosen: []const Pair = &.{},
 };
 
 /// A path under an address: `/pl` and `/` give `/pl`, `/pl` and `/about` give `/pl/about`.
