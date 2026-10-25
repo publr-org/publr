@@ -22,6 +22,8 @@ pub const Marker = struct {
     /// What clicking it shows: the field in this dimension (empty: no link) at `code`.
     dimension: []const u8 = "",
     code: []const u8 = "",
+    /// `show`, or `hide` while the editor shows the field at this code.
+    current: []const u8 = "show",
 };
 
 pub const markers_max: u32 = 256;
@@ -169,6 +171,10 @@ fn collected(arena: std.mem.Allocator, items: []const Value) Error![]const Marke
                 .tone = tone_of(text_of(marker, "tone") orelse ""),
                 .dimension = text_of(marker, "dimension") orelse "",
                 .code = text_of(marker, "code") orelse "",
+                .current = if (std.mem.eql(u8, text_of(marker, "current") orelse "", "hide"))
+                    "hide"
+                else
+                    "show",
             }) catch return error.OutOfMemory;
         }
     }

@@ -104,6 +104,9 @@ pub const Marker = struct {
     tone: []const u8 = "outline",
     dimension: []const u8 = "",
     code: []const u8 = "",
+    /// `show` (the default) or `hide` while the field is shown at this very code: a marker
+    /// for going elsewhere is not needed where you are.
+    current: []const u8 = "show",
 };
 /// What a plugin calls when the data its modifier of a name answers from changed:
 /// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages

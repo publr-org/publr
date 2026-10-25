@@ -8,11 +8,13 @@ export type FieldMarkersProps = {
 
 /** The markers plugins put beside a field's label (`PL`, `Hero test • Variant B`), as the
  * editor last asked for them: they follow the values as they change. One that names a
- * dimension shows the field there when clicked. */
+ * dimension shows the field there when clicked; one that hides while current is left out
+ * where the field is shown at its code. */
 export function FieldMarkers({ name }: FieldMarkersProps) {
   return (
     <span class="flex flex-wrap items-center gap-1" data-part="field-markers">
-      {editor.markers.filter((marker) => marker.field === name.split("@")[0]).map((marker) => (
+      {editor.markers.filter((marker) => marker.field === name.split("@")[0] && !(marker.current === "hide" &&
+        (editor.chosen.split(",").find((pair) => pair.startsWith(marker.dimension + "=")) ?? marker.dimension + "=") === marker.dimension + "=" + marker.code)).map((marker) => (
         <button type="button" class="cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
           data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
           <Badge tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
