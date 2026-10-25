@@ -119,7 +119,7 @@ const options_known = [_][]const u8{
     "icons",                   "register_statuses",
     "extend",                  "webhooks",
     "register_location_rules", "register_providers",
-    "register_columns",        "variants",
+    "register_columns",        "dimensions",
     "taxonomies",              "register_taxonomies",
 };
 

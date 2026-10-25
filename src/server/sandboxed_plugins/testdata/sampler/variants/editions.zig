@@ -5,7 +5,7 @@
 //!
 //! Example:
 //!   in: {}
-//!   out: { "variants": [{ "code": "web", "label": "Web", "address": "", "main": true },
+//!   out: { "values": [{ "code": "web", "label": "Web", "address": "", "main": true },
 //!     { "code": "print", "label": "Print", "address": "/print", "main": false }] }
 const publr = @import("publr");
 const std = @import("std");
@@ -14,10 +14,10 @@ pub const In = struct {};
 
 pub const Out = struct {
     /// Every edition, the main one first
-    variants: []const publr.plugin.Variant,
+    values: []const publr.dimension.Value,
 };
 
-const editions = [_]publr.plugin.Variant{
+const editions = [_]publr.dimension.Value{
     .{
         .code = "web",
         .label = "Web",
@@ -35,7 +35,7 @@ fn run(ctx: *publr.Ctx, _: In) publr.Error!Out {
     std.debug.assert(editions[0].main);
 
     return .{
-        .variants = &editions,
+        .values = &editions,
     };
 }
 
@@ -46,10 +46,10 @@ pub const operation = publr.operation.define(In, Out, .{
 });
 
 /// A field kept per edition: the setting on every field, and the admin's picker.
-pub const dimension: publr.plugin.Variants = .{
+pub const dimension = publr.dimension.define(.{
     .name = "edition",
     .label = "Per edition",
     .help = "Keep a different value of this field for the print edition.",
     .picker = "Edition",
     .list = operation,
-};
+});

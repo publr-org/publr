@@ -57,7 +57,7 @@ const exercised = [_]Part{
         .where = "sampler's shelves on greeter.*",
     },
     .{
-        .name = "variants",
+        .name = "dimensions",
         .where = "sampler's editions, read through `user variant`",
     },
     .{

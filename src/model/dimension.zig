@@ -40,6 +40,8 @@ pub const Declared = struct {
     list: []const u8,
     /// Higher keeps its value longer when a combination falls back.
     priority: i32 = 0,
+    /// Its values have pages of their own, under their addresses.
+    addresses: bool = false,
     untranslated: Untranslated = .{},
 };
 

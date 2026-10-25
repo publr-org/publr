@@ -41,6 +41,14 @@ pub const record = struct {
 };
 /// `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single, .internal, .fields })`,
 /// and what `.register_taxonomies` takes: `.{ .taxonomy, .to }`.
+/// `publr.dimension.define(.{ .name, .label, .help, .list, .priority, .addresses, ... })`,
+/// listed in `.dimensions`; `publr.dimension.Value` is one value its list answers.
+pub const dimension = struct {
+    pub const define = @import("sdk/plugin/dimensions.zig").define;
+    pub const Dimension = @import("sdk/plugin/dimensions.zig").Dimension;
+    pub const Value = @import("sdk/plugin/dimensions.zig").Value;
+};
+
 pub const taxonomy = struct {
     pub const define = @import("sdk/plugin/taxonomy_define.zig").define;
     pub const Registration = @import("sdk/plugin/taxonomy_define.zig").Registration;

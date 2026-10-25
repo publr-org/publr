@@ -46,7 +46,7 @@ pub const route = @import("plugin/route.zig");
 pub const Route = route.Route;
 pub const OperatorCommand = route.OperatorCommand;
 pub const admin_slots = @import("plugin/admin_slots.zig");
-pub const variants = @import("plugin/variants.zig");
+pub const dimensions = @import("plugin/dimensions.zig");
 /// A PO file a plugin brings: the admin's words in one language. A language pack is a
 /// plugin of these alone; a plugin may bring its own words too.
 pub const Translation = struct {
@@ -100,8 +100,6 @@ pub const Word = struct {
     key: []const u8,
     label: []const u8,
 };
-pub const Variants = variants.Dimension;
-pub const Variant = variants.Variant;
 pub const RowAction = admin_slots.RowAction;
 pub const Page = admin_slots.Page;
 pub const Panel = admin_slots.Panel;
@@ -636,7 +634,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var sign_in_at: []const type = &.{};
         var admin_brand: []const type = &.{};
         var app_picker_segment: []const type = &.{};
-        var dimension: ?variants.Dimension = null;
+        var dimension_list: []const dimensions.Dimension = &.{};
         var work_start: ?[]const u8 = null;
         var hosted = false;
         var translations: []const OwnedTranslation = &.{};
@@ -749,17 +747,24 @@ pub fn Merged(comptime plugins: anytype) type {
                 }
             }
 
-            if (variants.of(Plugin)) |declared| {
-                if (dimension != null) {
-                    @compileError("two plugins declare `variants`; one dimension at a time");
+            for (dimensions.of(Plugin)) |declared| {
+                for (dimension_list) |known| {
+                    if (std.mem.eql(u8, known.name, declared.name)) {
+                        @compileError("two plugins declare the dimension `" ++ declared.name ++
+                            "`");
+                    }
+                }
+
+                if (dimension_list.len == @import("../model/dimension.zig").dimensions_max) {
+                    @compileError("more than 4 dimensions on one site");
                 }
 
                 var resolved = declared;
 
                 resolved.list = own_operation(Plugin, declared.list) orelse
-                    @compileError("plugin " ++ Plugin.manifest.name ++
-                        ": `variants.list` is one of its own operations");
-                dimension = resolved;
+                    @compileError("plugin " ++ Plugin.manifest.name ++ ": dimension `" ++
+                        declared.name ++ "`'s list is one of its own operations");
+                dimension_list = dimension_list ++ &[_]dimensions.Dimension{resolved};
             }
 
             if (plugin_define.has(Plugin, "hosted")) {
@@ -945,8 +950,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_app_picker_segment = app_picker_segment;
             /// Every PO file the plugins bring, in plugin order.
             pub const merged_translations = translations;
-            /// The variant dimension a plugin declares, if one does.
-            pub const merged_variants = dimension;
+            /// The dimensions the plugins declare, in plugin order.
+            pub const merged_dimensions = dimension_list;
             /// The operation `publr work start` runs, where a hosting service's plugin
             /// sends a device's work to a copy of the project (`pub const work_start`).
             pub const merged_work_start = work_start;

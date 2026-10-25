@@ -1,23 +1,143 @@
-//! The site's variants, from the plugin that declares the dimension: what the admin offers a
-//! switch between and the site serves pages for. None without such a plugin. Read as the
-//! system: the list says how the site is built, not what a caller may see.
+//! The site's dimensions, from the plugins that declare them (compiled in or installed),
+//! highest priority first: what the admin offers a picker for and the site reads pages in.
+//! None without such a plugin. One of them may have pages of its own under its values'
+//! addresses (`addresses`, a language): `setting` and the lists below are that one's, else
+//! the highest priority one's. Read as the system: a list says how the site is built, not
+//! what a caller may see.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
-const dimension_module = @import("../sdk/plugin/variants.zig");
+const dimension_module = @import("../sdk/plugin/dimensions.zig");
 const model_variant = @import("../model/dimension.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 
-pub const Variant = dimension_module.Variant;
-pub const variants_max = dimension_module.variants_max;
+pub const Variant = dimension_module.Value;
+pub const variants_max = dimension_module.values_max;
 
-/// Every variant, the main one first; empty when no plugin declares the dimension. A
-/// compiled-in plugin's list is called directly; an installed one's by its name.
-pub fn listed(ctx: *Ctx) Error![]const Variant {
-    std.debug.assert(ctx.now_ms >= 0);
+/// A dimension as the core uses it: its words, and its list by full name.
+pub const Setting = model_variant.Declared;
+
+/// The compiled-in plugins' dimensions, as data.
+const compiled = blk: {
+    var out: []const Setting = &.{};
+
+    for (registry.dimensions) |dimension| {
+        out = out ++ &[_]Setting{.{
+            .name = dimension.name,
+            .priority = dimension.priority,
+            .addresses = dimension.addresses,
+            .label = dimension.label,
+            .help = dimension.help,
+            .picker = dimension.picker,
+            .list = dimension.list.name,
+            .untranslated = dimension.untranslated,
+        }};
+    }
+
+    break :blk out;
+};
+
+/// Every dimension the site has, highest priority first (declared order among equals): the
+/// compiled-in plugins', then the installed ones' whose names are not taken, at most four.
+pub fn all(ctx: *const Ctx) []const Setting {
+    std.debug.assert(compiled.len <= model_variant.dimensions_max);
+
+    var found: [model_variant.dimensions_max]Setting = undefined;
+    var len: u32 = 0;
+
+    for (compiled) |dimension| {
+        found[len] = dimension;
+        len += 1;
+    }
+
+    if (ctx.sandboxed_plugins) |sandboxed| {
+        for (sandboxed.manifests()) |manifest| {
+            for (manifest.dimensions) |dimension| {
+                if (len == model_variant.dimensions_max or named(found[0..len], dimension.name)) {
+                    continue;
+                }
+
+                found[len] = dimension;
+                len += 1;
+            }
+        }
+    }
+
+    sort(found[0..len]);
+
+    const out = ctx.arena.dupe(Setting, found[0..len]) catch return &.{};
+
+    return out;
+}
+
+fn named(dimensions: []const Setting, name: []const u8) bool {
+    std.debug.assert(dimensions.len <= model_variant.dimensions_max);
+
+    for (dimensions) |dimension| {
+        if (std.mem.eql(u8, dimension.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Highest priority first; stable, so equals keep the order they were declared in.
+fn sort(dimensions: []Setting) void {
+    std.debug.assert(dimensions.len <= model_variant.dimensions_max);
+
+    if (dimensions.len < 2) {
+        return;
+    }
+
+    for (1..dimensions.len) |index| {
+        var at = index;
+        const moving = dimensions[index];
+
+        while (at > 0 and dimensions[at - 1].priority < moving.priority) {
+            dimensions[at] = dimensions[at - 1];
+            at -= 1;
+        }
+
+        dimensions[at] = moving;
+    }
+}
+
+/// The dimension named `name`, if the site has it.
+pub fn find(ctx: *const Ctx, name: []const u8) ?Setting {
+    std.debug.assert(name.len > 0);
+
+    for (all(ctx)) |dimension| {
+        if (std.mem.eql(u8, dimension.name, name)) {
+            return dimension;
+        }
+    }
+
+    return null;
+}
+
+/// The dimension with pages of its own, else the highest priority one: the one the site's
+/// addresses, the editor's language switch and the type's untranslated setting follow.
+pub fn setting(ctx: *const Ctx) ?Setting {
     std.debug.assert(variants_max > 1);
+
+    const every = all(ctx);
+
+    for (every) |dimension| {
+        if (dimension.addresses) {
+            return dimension;
+        }
+    }
+
+    return if (every.len > 0) every[0] else null;
+}
+
+/// `dimension`'s values, the main one first.
+pub fn values_of(ctx: *Ctx, dimension: Setting) Error![]const Variant {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(dimension.list.len > 0);
 
     // As the system, on the request's own context: a copy would set aside a scratch of its
     // own on every call.
@@ -26,70 +146,51 @@ pub fn listed(ctx: *Ctx) Error![]const Variant {
     ctx.caller = .system;
     defer ctx.caller = saved;
 
-    const answered = if (registry.variants) |dimension|
-        (try registry.SDK.dispatch(ctx, dimension.list, .{})).variants
-    else if (installed(ctx)) |declared|
-        try installed_list(ctx, declared.list)
-    else
-        return &.{};
-
-    if (answered.len > variants_max) {
-        return error.Invalid;
-    }
-
-    return answered;
-}
-
-/// The dimension an installed plugin declares, when one does.
-fn installed(ctx: *const Ctx) ?model_variant.Declared {
-    std.debug.assert(variants_max > 1);
-
-    const sandboxed = ctx.sandboxed_plugins orelse return null;
-
-    for (sandboxed.manifests()) |manifest| {
-        if (manifest.variants) |declared| {
-            return declared;
-        }
-    }
-
-    return null;
-}
-
-fn installed_list(ctx: *Ctx, operation: []const u8) Error![]const Variant {
-    std.debug.assert(operation.len > 0);
-
     const Answer = struct {
-        variants: []const Variant = &.{},
+        values: []const Variant = &.{},
     };
-    const json = try registry.SDK.call_json(ctx, operation, "{}");
+    const json = try registry.SDK.call_json(ctx, dimension.list, "{}");
     const answer = std.json.parseFromSliceLeaky(Answer, ctx.arena, json, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     }) catch return error.Invalid;
 
-    return answer.variants;
+    if (answer.values.len > variants_max) {
+        return error.Invalid;
+    }
+
+    return answer.values;
 }
 
-/// The variants other than the main one: the codes fields hold values under. Empty while the
-/// site has one variant, so nothing about variants shows.
+/// The values of `setting`'s dimension, the main one first; empty without one.
+pub fn listed(ctx: *Ctx) Error![]const Variant {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const dimension = setting(ctx) orelse return &.{};
+
+    return values_of(ctx, dimension);
+}
+
+/// Its values other than the main one: the codes fields hold values under. Empty while it
+/// has one value, so nothing about it shows.
 pub fn others(ctx: *Ctx) Error![]const Variant {
     std.debug.assert(ctx.now_ms >= 0);
 
-    const all = try listed(ctx);
+    const every = try listed(ctx);
     var rest: std.ArrayList(Variant) = .empty;
 
-    for (all) |variant| {
+    for (every) |variant| {
         if (!variant.main) {
             rest.append(ctx.arena, variant) catch return error.OutOfMemory;
         }
     }
 
-    std.debug.assert(rest.items.len <= all.len);
+    std.debug.assert(rest.items.len <= every.len);
 
     return rest.items;
 }
 
-/// The main variant, if the site has variants at all.
+/// Its main value, if the site has the dimension at all.
 pub fn main(ctx: *Ctx) Error!?Variant {
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -102,8 +203,8 @@ pub fn main(ctx: *Ctx) Error!?Variant {
     return null;
 }
 
-/// `name`'s key in the declared dimension's `code`: `title@language=pl`; `name` alone for the
-/// main value, or on a site that declares none.
+/// `name`'s key in `setting`'s dimension at `code`: `title@language=pl`; `name` alone for
+/// the main value, or on a site with none.
 pub fn key_in(
     ctx: *const Ctx,
     name: []const u8,
@@ -120,8 +221,8 @@ pub fn key_in(
     }});
 }
 
-/// The declared dimension's code `key` is in (`title@language=pl` gives `pl`); empty for a
-/// main value, another dimension's, or a site that declares none.
+/// `setting`'s dimension's code `key` is in (`title@language=pl` gives `pl`); empty for a
+/// main value, another dimension's, or a site with none.
 pub fn code_in(ctx: *const Ctx, key: []const u8) []const u8 {
     std.debug.assert(key.len > 0);
 
@@ -133,43 +234,4 @@ pub fn code_in(ctx: *const Ctx, key: []const u8) []const u8 {
     std.debug.assert(combination.len <= model_variant.dimensions_max);
 
     return combination.code_of(dimension.name);
-}
-
-/// What the admin shows of the dimension: the field setting, the picker, the type setting
-/// for untranslated records.
-pub const Setting = struct {
-    /// The dimension's name: `language`.
-    name: []const u8,
-    priority: i32,
-    label: []const u8,
-    help: []const u8,
-    picker: []const u8,
-    untranslated: model_variant.Untranslated,
-};
-
-/// The dimension's settings, when a plugin, compiled in or installed, declares one.
-pub fn setting(ctx: *const Ctx) ?Setting {
-    std.debug.assert(variants_max > 1);
-
-    if (registry.variants) |dimension| {
-        return .{
-            .name = dimension.name,
-            .priority = dimension.priority,
-            .label = dimension.label,
-            .help = dimension.help,
-            .picker = dimension.picker,
-            .untranslated = dimension.untranslated,
-        };
-    }
-
-    const declared = installed(ctx) orelse return null;
-
-    return .{
-        .name = declared.name,
-        .priority = declared.priority,
-        .label = declared.label,
-        .help = declared.help,
-        .picker = declared.picker,
-        .untranslated = declared.untranslated,
-    };
 }

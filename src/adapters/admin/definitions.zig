@@ -1027,4 +1027,4 @@ fn untranslated_of(session: *Session) Error!Untranslated {
     return if (others.len == 0) .{} else named;
 }
 
-const Untranslated = @import("../../sdk/plugin/variants.zig").Untranslated;
+const Untranslated = @import("../../sdk/plugin/dimensions.zig").Untranslated;
