@@ -267,9 +267,12 @@ work for.
 
 **Data**
 
-- **Content is what people manage.** Model it as content types they edit: products,
-  variants, orders, methods.
-- **What only your plugin keeps is internal records.** Carts, holds, ledgers, logs:
+- **Content is what goes live in versions.** Model it as content types when it is
+  published, keeps versions, or is read by visitors as public or private records:
+  products, variants, orders, pages.
+- **Everything else is internal records.** Carts, holds, ledgers, logs, and what people
+  manage that never goes live in versions (an A/B test, a tax class), through admin pages
+  of your plugin over its own operations:
   declare each kind as a record with `.internal = true` and `.indexed` for the fields it is
   found by (`publr.record.define(Movement, .{ .name = "stock.movement", .internal = true,
   .indexed = &.{.stock} })`), and use its handle. They never show in the admin's Content, reach only your plugin's records in
