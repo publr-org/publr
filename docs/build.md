@@ -16,8 +16,8 @@ each concern lives in `build/<topic>.zig`.
 | `zig build wasm` | Compile the core for wasm32-wasi; part of `verify-full`. |
 | `zig build smoke` | Run the built binary through every entry point from a fresh folder; part of `verify-full`. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
-| `zig build upgrade` | Update every release's fixture in `fixtures/upgrade/` with this build and check it (`-Dupgrade-from=<release>` for one, `-Dupgrade-previous=<publr>` to prove the release before still runs on the result, `-Dupgrade-binary=<publr>` to test that binary instead); part of `verify-full`. See [Updates](updates.md). |
-| `zig build upgrade-fixture` | Make this version's fixture and carry the lived site on to it, with this build or `-Dupgrade-binary`; the Release workflow runs it with the release binary. |
+| `zig build upgrade` | Update every release's upgrade site in `.zig-cache/upgrade-sites/` (the releases' assets, fetched there by CI) with this build and check it (`-Dupgrade-from=<release>` for one, `-Dupgrade-previous=<publr>` to prove the release before still runs on the result, `-Dupgrade-binary=<publr>` to test that binary instead); part of `verify-full`. See [Updates](updates.md). |
+| `zig build upgrade-fixture` | Make this version's upgrade site and carry the lived site on to it, in `.zig-cache/upgrade-sites/`, with this build or `-Dupgrade-binary`; the Release workflow runs it with the release binary and attaches both to the release. |
 | `zig build migration-draft` | Draft `src/lib/db/migrations/unreleased.zig` from what `schema.sql` adds to the last release's. |
 | `zig build two-mode` | Run every test plugin installed and compiled in, and compare the answers. |
 | `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |

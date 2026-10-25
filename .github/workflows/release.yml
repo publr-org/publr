@@ -9,8 +9,9 @@ name: Release
 #
 # The kind must match the database (`.agents/specs/updates.md`): a patch has no migration,
 # a minor's migration only adds, a one-way migration needs a major. The Linux x86_64 build
-# makes the release's upgrade fixture and carries the lived site, updates every earlier
-# fixture with the release binary, and proves the previous minor still runs on the result.
+# makes the release's upgrade site and carries the lived site (both attached to the release,
+# never committed), updates every earlier release's site with the release binary, and proves
+# the previous minor still runs on the result.
 
 on:
   workflow_dispatch:
@@ -155,6 +156,8 @@ jobs:
         with:
           commits: ${{ needs.version.outputs.commits }}
 
+      - uses: ./publr/.github/actions/upgrade-sites
+
       - name: Upgrade fixtures and tests
         working-directory: publr
         env: { PREVIOUS: "${{ needs.version.outputs.previous }}" }
@@ -172,19 +175,23 @@ jobs:
             previous_binary="$PWD/../previous/publr-linux-x86_64"
           fi
           # Fixtures are made only once update testing has started (fixtures/upgrade/START).
+          # This release's site and the lived site carried on to it become release assets.
+          mkdir -p ../upgrade-sites
           if [ -f fixtures/upgrade/START ]; then
             zig build upgrade-fixture -Dupgrade-binary="$binary" \
               -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE"
+            cp ".zig-cache/upgrade-sites/$VERSION.tar.gz" "../upgrade-sites/upgrade-$VERSION.tar.gz"
+            cp .zig-cache/upgrade-sites/lived.tar.gz ../upgrade-sites/upgrade-lived.tar.gz
           fi
           zig build upgrade -Dupgrade-binary="$binary" -Dupgrade-previous="$previous_binary" \
-            -Dupgrade-releasing=true -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" 2>&1 | tee ../upgrade.txt
+            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" 2>&1 | tee ../upgrade.txt
           test "${PIPESTATUS[0]}" -eq 0
 
       - uses: actions/upload-artifact@v4
         with:
           name: upgrade
           path: |
-            publr/fixtures/upgrade/*.tar.gz
+            upgrade-sites/*.tar.gz
             upgrade.txt
 
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
@@ -277,18 +284,15 @@ jobs:
           rm ../signing.pem
           test "$(wc -c < SHA256SUMS.sig)" -eq 64
 
-      # The fixture this release made and the lived site go in its own commit, so the tag
-      # holds them; nothing ever changes them after. Only the tag is pushed: main may have
-      # moved since the commit tested, and it takes the release afterwards.
+      # The version and the migration it named go in its own commit, and the tag holds it.
+      # Only the tag is pushed: main may have moved since the commit tested, and it takes the
+      # release afterwards.
       - name: Commit the version and tag it
         working-directory: publr
         run: |
-          if ls ../upgrade/publr/fixtures/upgrade/*.tar.gz >/dev/null 2>&1; then
-            cp ../upgrade/publr/fixtures/upgrade/*.tar.gz fixtures/upgrade/
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A fixtures/upgrade src/lib/db/migrations src/lib/db/migrations.zig
+          git add -A src/lib/db/migrations src/lib/db/migrations.zig
           git commit -qam "Release $TAG"
           git tag "$TAG"
           git push origin "$TAG"
@@ -313,7 +317,9 @@ jobs:
           $(grep -E '^(upgrade to|  |[0-9]+ passed)' upgrade/upgrade.txt || true)
           \`\`\`
           EOF
-          gh release create "$TAG" dist/* \
+          # This release's upgrade site and the lived site are its assets, never repository
+          # files: the next releases' upgrade tests fetch them (.github/actions/upgrade-sites).
+          gh release create "$TAG" dist/* $(ls upgrade/upgrade-sites/*.tar.gz 2>/dev/null) \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$TAG" \

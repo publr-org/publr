@@ -1,8 +1,10 @@
 //! Upgrade tests (`../.agents/specs/upgrade-testing.md`).
 //!
 //!   upgrade matrix <publr> <version> <fixtures> <work> [--from <release>] [--previous <publr>]
-//!       [--releasing true]
 //!       Every fixture in <fixtures> updated by <publr>, one line each; exits 1 on any failure.
+//!
+//! <fixtures> is `.zig-cache/upgrade-sites`: each release's site, and the lived site, are that
+//! release's assets on GitHub, never files in the repository; CI fetches them there.
 //!   upgrade draft <publr> <version> <fixtures> <work>
 //!       `src/lib/db/migrations/unreleased.zig` drafted from what the schema adds to the last
 //!       release's.
@@ -34,8 +36,6 @@ const Arguments = struct {
     work: []const u8,
     from: ?[]const u8 = null,
     previous: ?[]const u8 = null,
-    /// A release being made: its fixture and the lived site are new, not yet in a tag.
-    releasing: bool = false,
 };
 
 pub fn main(init: std.process.Init) !u8 {
@@ -46,6 +46,9 @@ pub fn main(init: std.process.Init) !u8 {
             "[--from <release>] [--previous <publr>]\n", .{});
         return 2;
     };
+
+    // Fetched by CI, empty on a fresh clone: no fixtures is a run that checks nothing.
+    try std.Io.Dir.cwd().createDirPath(init.io, args.fixtures);
 
     if (std.mem.eql(u8, args.command, "matrix")) {
         return matrix(init, args);
@@ -86,8 +89,6 @@ fn parse(init: std.process.Init) !Arguments {
             args.from = if (value.len == 0) null else value;
         } else if (std.mem.eql(u8, flag, "--previous")) {
             args.previous = if (value.len == 0) null else value;
-        } else if (std.mem.eql(u8, flag, "--releasing")) {
-            args.releasing = std.mem.eql(u8, value, "true");
         } else {
             return error.Usage;
         }
@@ -108,7 +109,7 @@ fn matrix(init: std.process.Init, given: Arguments) !u8 {
 
     args.previous = try stepping_back(init, given);
 
-    if (!try frozen.expect_unchanged(init, args.fixtures, args.releasing)) {
+    if (!try frozen.expect_unchanged(init, args.fixtures)) {
         return 1;
     }
 

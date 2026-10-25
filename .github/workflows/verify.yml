@@ -10,7 +10,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      # Every tag: the upgrade tests compare each released fixture and migration with it.
+      # Every tag: the upgrade tests compare each released migration with it, and fetch each
+      # release's upgrade site.
       - uses: actions/checkout@v4
         with: { path: publr, fetch-depth: 0 }
       - uses: ./publr/.github/actions/workspace
@@ -34,6 +35,8 @@ jobs:
       - name: Printed examples
         working-directory: publr
         run: zig build parity -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+      - uses: ./publr/.github/actions/upgrade-sites
+        env: { GH_TOKEN: "${{ github.token }}" }
       - name: Upgrades from every release
         working-directory: publr
         run: zig build upgrade -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures

@@ -1,0 +1,44 @@
+name: Upgrade sites
+description: >
+  Every release's upgrade site in publr/.zig-cache/upgrade-sites, where `zig build upgrade`
+  reads them: `<version>.tar.gz` from each release's `upgrade-<version>.tar.gz` asset, and
+  `lived.tar.gz` from the latest release's `upgrade-lived.tar.gz`. They are release assets,
+  never files in the repository; the Actions cache only saves downloading them again. The
+  caller checks out publr with its tags (fetch-depth: 0) and sets GH_TOKEN.
+
+runs:
+  using: composite
+  steps:
+    - id: latest
+      shell: bash
+      working-directory: publr
+      run: echo "tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v4
+      with:
+        path: publr/.zig-cache/upgrade-sites
+        key: upgrade-sites-${{ steps.latest.outputs.tag }}
+        restore-keys: upgrade-sites-
+
+    # A release that attached no site (before update testing started) is skipped; one that
+    # attached a site and cannot be downloaded fails the run, so no site is lost quietly.
+    - shell: bash
+      working-directory: publr
+      env: { LATEST: "${{ steps.latest.outputs.tag }}" }
+      run: |
+        sites=.zig-cache/upgrade-sites
+        mkdir -p "$sites"
+        for tag in $(git tag --list 'v*'); do
+          version="${tag#v}"
+          assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+          if [ ! -f "$sites/$version.tar.gz" ] && grep -qx "upgrade-$version.tar.gz" <<< "$assets"; then
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$sites" --pattern "upgrade-$version.tar.gz"
+            mv "$sites/upgrade-$version.tar.gz" "$sites/$version.tar.gz"
+          fi
+          if [ "$tag" = "$LATEST" ] && grep -qx "upgrade-lived.tar.gz" <<< "$assets"; then
+            rm -f "$sites/lived.tar.gz"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$sites" --pattern upgrade-lived.tar.gz
+            mv "$sites/upgrade-lived.tar.gz" "$sites/lived.tar.gz"
+          fi
+        done
+        ls -l "$sites"

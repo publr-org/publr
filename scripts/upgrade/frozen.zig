@@ -1,40 +1,23 @@
-//! What a release shipped never changes: its fixture is evidence of what it wrote, and its
-//! migration is what every later release runs. Each is compared with the file in its tag.
+//! What a release shipped never changes: its migration is what every later release runs, so
+//! each is compared with the file in its tag. A release's fixture is its asset on GitHub, not
+//! a file here, so nothing in the repository can change it.
 
 const std = @import("std");
 
 const output_bytes_max: u32 = 256 << 20;
 const migrations_dir = "src/lib/db/migrations";
 
-/// Whether every released fixture and migration is the file its tag holds. A file with no
-/// tag here (a release being made, a clone without tags) is named, not failed.
-pub fn expect_unchanged(init: std.process.Init, fixtures: []const u8, releasing: bool) !bool {
+/// Whether every released migration is the file its tag holds. A file with no tag here (a
+/// release being made, a clone without tags) is named, not failed.
+pub fn expect_unchanged(init: std.process.Init, fixtures: []const u8) !bool {
     std.debug.assert(fixtures.len > 0);
     std.debug.assert(output_bytes_max > 0);
 
     const arena = init.arena.allocator();
     const fixtures_real = try std.Io.Dir.cwd().realPathFileAlloc(init.io, fixtures, arena);
     const repo = std.fs.path.dirname(std.fs.path.dirname(fixtures_real) orelse ".") orelse ".";
-    var same = true;
-
-    for (try names_in(init, fixtures_real, ".tar.gz")) |name| {
-        const release = name[0 .. name.len - ".tar.gz".len];
-        const lived = std.mem.eql(u8, release, "lived");
-
-        if (lived and releasing) {
-            continue;
-        }
-
-        const tag = if (lived)
-            try latest_tag(init, repo) orelse continue
-        else
-            try std.fmt.allocPrint(arena, "v{s}", .{release});
-        const path = try std.fmt.allocPrint(arena, "fixtures/upgrade/{s}", .{name});
-
-        same = try compare(init, repo, tag, path) and same;
-    }
-
     const migrations = try std.fs.path.join(arena, &.{ repo, migrations_dir });
+    var same = true;
 
     for (try names_in(init, migrations, ".zig")) |name| {
         const release = name[0 .. name.len - ".zig".len];
@@ -76,8 +59,8 @@ fn compare(init: std.process.Init, repo: []const u8, tag: []const u8, path: []co
     );
 
     if (!std.mem.eql(u8, local, shipped.stdout)) {
-        std.debug.print("upgrade: {s} differs from the one {s} shipped. A released fixture " ++
-            "or migration never changes: put it back (`git checkout {s} -- {s}`) and fix " ++
+        std.debug.print("upgrade: {s} differs from the one {s} shipped. A released " ++
+            "migration never changes: put it back (`git checkout {s} -- {s}`) and fix " ++
             "forward in the next migration\n", .{ path, tag, tag, path });
         return false;
     }
