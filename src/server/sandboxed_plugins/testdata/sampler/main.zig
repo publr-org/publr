@@ -54,6 +54,8 @@ const Remind = @import("jobs/remind.zig");
 
 const Ping = @import("webhooks/ping.zig");
 
+const Editions = @import("variants/editions.zig");
+
 const Shout = @import("hooks/shout.zig");
 const Announce = @import("hooks/announce.zig");
 const LogNote = @import("hooks/log_note.zig");
@@ -175,6 +177,7 @@ const operations = [_]type{
     Reference.operation,
     Hi.operation,
     Motto.operation,
+    Editions.operation,
 };
 /// Compiled in, Settings › Sampler drawn by its read.
 const native_operations = operations ++ [_]type{Settings.operation};
@@ -248,6 +251,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .register_columns = columns,
         .jobs = &jobs,
         .webhooks = &webhooks,
+        .variants = Editions.dimension,
         .register_fields = field_groups,
         .operations = native_operations,
         .hooks = hooks,
@@ -271,6 +275,7 @@ else
         .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .webhooks = &webhooks,
+        .variants = Editions.dimension,
         .register_fields = field_groups,
         .register_columns = columns,
         .operations = operations,

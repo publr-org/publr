@@ -116,6 +116,20 @@
           "POST /_publr/sampler/ping with the operator key."
         ],
         "look_for": "The port serve noted, and how many pings."
+      },
+      {
+        "name": ".variants",
+        "summary": "The one variant dimension: every field gets a setting to keep a value per variant, and the admin a picker. The sampler's are editions, web and print; on a real site it is the languages plugin's.",
+        "code": [
+          {
+            "file": "variants/editions.zig",
+            "decl": "dimension"
+          }
+        ],
+        "see": [
+          "Open Structure, then Sample notes, then a field."
+        ],
+        "look_for": "Per edition under the field, and Edition at the top right of the admin."
       }
     ],
     "tour": [

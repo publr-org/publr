@@ -57,6 +57,10 @@ const exercised = [_]Part{
         .where = "sampler's shelves on greeter.*",
     },
     .{
+        .name = "variants",
+        .where = "sampler's editions, read through `user variant`",
+    },
+    .{
         .name = "custom_fields",
         .where = "sampler's field group on users",
     },
