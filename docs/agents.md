@@ -583,9 +583,17 @@ is refused with `DraftsOnly`: save drafts and tell them what waits to be publish
 
 With no files of your own to edit, the project's apps and plugins are reached through
 operations: `apps files`, `apps read`, `apps write --path <app>/<path> --content <text>`,
-`apps remove`, then `apps load`, which answers why the apps do not load when they do not;
+`apps remove`, each live as soon as it is written (`apps load` answers why they do not
+load when they do not);
 and `plugin build --name <name> --files '[{"path":"main.zig","content":"..."}]'`, which
 builds and installs on the server, with `plugin build_log --name <name>` to follow it.
+With the plugin's source in this folder, `publr plugin build --name <name>` builds it here
+and sends the module, and it is the only way on Publr Cloud: its projects build nothing
+themselves. A file that is not text (an icon, an image) goes with `apps write
+--encoding base64 --content <base64>`.
+
+Where Publr may not write in your home folder (a sandbox), point its cache at the project:
+`PUBLR_CACHE_DIR=$PWD/.publr/cache`.
 
 ## Where to read more
 

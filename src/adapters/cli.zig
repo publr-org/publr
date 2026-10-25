@@ -5,7 +5,9 @@ const report = @import("../lib/report.zig");
 const model_role = @import("../model/role.zig");
 
 pub const args_max: u32 = 128;
-pub const value_len_max: u32 = 64 << 10;
+/// As large as the biggest value an operation takes in one call (an app file, a piece of an
+/// upload), so a command sent with `--site` can carry it.
+pub const value_len_max: u32 = 1 << 20;
 
 pub const Error = sdk.Error || error{ UnknownOp, UnknownFlag, MissingValue, WriteFailed };
 

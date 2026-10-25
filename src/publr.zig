@@ -203,6 +203,10 @@ pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.z
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");
 pub const toolchain = if (builtin.os.tag == .wasi) void else @import("server/toolchain.zig");
 pub const plugin_build = if (builtin.os.tag == .wasi) void else @import("server/plugin_build.zig");
+pub const plugin_build_remote = if (builtin.os.tag == .wasi)
+    void
+else
+    @import("server/plugin_build/remote.zig");
 pub const plugin_check = if (builtin.os.tag == .wasi)
     void
 else

@@ -18,7 +18,7 @@ const heap_bytes: u32 = 32 << 20;
 const manifest_instructions_max: u64 = 400_000_000;
 const stubs_max: u32 = 32;
 
-const Request = struct {
+pub const Request = struct {
     name: []const u8,
     dir: []const u8,
     /// Only build, into this file: nothing is installed.
@@ -32,12 +32,6 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         report.err("usage: publr plugin build --name <name> [--dir <folder>] [--out <file>]", .{});
         return 2;
     };
-    const tools = toolchain.unpack(init) catch |err| {
-        const message = "publr plugin build: the compiler is not available";
-
-        report.err_reason(@errorName(err), message, .{});
-        return 1;
-    };
     const data_dir = std.fs.path.dirname(db_path) orelse ".";
     const built = request.out orelse try std.fmt.allocPrint(
         init.arena.allocator(),
@@ -45,13 +39,34 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .{ data_dir, request.name },
     );
 
-    std.debug.assert(tools.sdk.len > 0);
+    if (!try built_module(init, request, built)) {
+        return 1;
+    }
 
+    if (request.out != null) {
+        return 0;
+    }
+
+    return install(init, db_path, request.name, built);
+}
+
+/// The plugin built into `built`, checked, its examples run; false, having said why, when
+/// it does not build. A build to be installed also gets its types beside its views.
+pub fn built_module(init: std.process.Init, request: Request, built: []const u8) !bool {
+    std.debug.assert(request.name.len > 0);
+    std.debug.assert(built.len > 0);
+
+    const tools = toolchain.unpack(init) catch |err| {
+        const message = "publr plugin build: the compiler is not available";
+
+        report.err_reason(@errorName(err), message, .{});
+        return false;
+    };
     const main_path = try std.fs.path.join(init.arena.allocator(), &.{ request.dir, "main.zig" });
 
     std.Io.Dir.cwd().access(init.io, main_path, .{}) catch {
         report.err("publr plugin build: no plugin at {s}", .{main_path});
-        return 1;
+        return false;
     };
 
     const check = @import("plugin_build/check.zig");
@@ -63,7 +78,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     check.reported(request.dir, problems);
 
     if (doc_reader.failing(problems)) {
-        return 1;
+        return false;
     }
 
     const docs_path = try std.fmt.allocPrint(init.arena.allocator(), "{s}.docs.zig", .{built});
@@ -71,7 +86,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     try write_docs(init, docs_path, read.source);
 
     const views = @import("plugin_build/views.zig").lower(init, tools, request.dir, built) catch {
-        return 1;
+        return false;
     };
 
     if (try compile(init, tools, request, .{
@@ -79,7 +94,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .docs = docs_path,
         .views = views,
     }) != 0) {
-        return 1;
+        return false;
     }
 
     const source = try std.json.Stringify.valueAlloc(init.arena.allocator(), files, .{});
@@ -88,24 +103,24 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     try warn_left_out(init, request.name, manifest);
 
     if (request.out != null) {
-        return 0;
+        return true;
     }
 
     // Every `Example:` runs against an empty site with the plugin before it reaches this one.
     if (!try @import("plugin_build/examples.zig").run(init, built, manifest)) {
-        return 1;
+        return false;
     }
 
     // Only a plugin being installed gets its types beside its views: a build to a file
     // (the fixtures) leaves the sources as they are.
     try @import("plugin_build/types.zig").write(init, request.dir, manifest);
 
-    return install(init, db_path, request.name, built);
+    return true;
 }
 
 /// `--name <name>`, `--dir <folder>` (default `plugins/<name>`), whose `main.zig`
 /// is the plugin, and `--out <file>` to only build it.
-fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
+pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
     std.debug.assert(args.len < 1 << 16);
 
     var name: ?[]const u8 = null;

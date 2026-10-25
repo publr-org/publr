@@ -63,6 +63,10 @@ fn run(init: std.process.Init) !u8 {
     if (try site_of(init, &rest)) |address| {
         production = taken(&rest, "--production") or production;
 
+        if (rest.len > 0 and try builds_here(init, rest)) {
+            return try publr.plugin_build_remote.run(init, address, rest[2..], production, out);
+        }
+
         if (rest.len > 0 and !stays_here(rest)) {
             return try publr.forwarding.forward(init, address, rest, production, out);
         }
@@ -127,6 +131,29 @@ fn stays_here(args: []const []const u8) bool {
 
     return is_account(args[0]) or is_local_work(args) or guide or
         std.mem.eql(u8, args[0], "skill");
+}
+
+/// `plugin build` for a plugin whose source is in this folder: built here and its module
+/// sent, so a site without a compiler of its own (Publr Cloud) still gets it.
+fn builds_here(init: std.process.Init, args: []const []const u8) !bool {
+    std.debug.assert(args.len > 0);
+
+    const build = args.len >= 4 and std.mem.eql(u8, args[0], "plugin") and
+        std.mem.eql(u8, args[1], "build") and !has_flag(args, "--files") and
+        !has_flag(args, "--help");
+
+    // The browser build has no compiler: its `plugin_build` is `void`.
+    if (builtin.os.tag == .wasi or !build) {
+        return false;
+    } else {
+        const arena = init.arena.allocator();
+        const request = publr.plugin_build.parse(arena, args[2..]) orelse return false;
+        const source = try std.fs.path.join(arena, &.{ request.dir, "main.zig" });
+
+        std.Io.Dir.cwd().access(init.io, source, .{}) catch return false;
+
+        return true;
+    }
 }
 
 /// `publr work` and `work done`: the folder's, never sent; `work start` is the site's.
