@@ -5,6 +5,7 @@
 //! under the same checks.
 const std = @import("std");
 const outside = @import("../model/outside.zig");
+const egress = @import("../model/egress.zig");
 
 const Client = std.http.Client;
 const HostName = std.Io.net.HostName;
@@ -87,6 +88,17 @@ pub fn connect(
     const port = uri.port orelse @as(u16, if (protocol == .tls) 443 else 80);
     var name_buffer: [HostName.max_len]u8 = undefined;
     const host = uri.getHost(&name_buffer) catch return error.Unreachable;
+
+    switch (guard.rule.egress) {
+        .direct => {},
+        .off => {
+            checked.refusal = .offline;
+
+            return error.Refused;
+        },
+        .through => |through| return proxied(client, through, protocol, host, port, checked),
+    }
+
     const pinned = try resolved(client.io, guard.rule, host, port, checked);
 
     if (protocol == .tls) {
@@ -99,6 +111,46 @@ pub fn connect(
     return client.connectTcpOptions(.{
         .host = target,
         .port = port,
+        .protocol = protocol,
+        .proxied_host = host,
+        .proxied_port = port,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.Unreachable,
+    };
+}
+
+/// Through the host's egress proxy, which looks the name up and checks every address itself:
+/// this server may have no way to. The connection's TLS still names `host`, so the
+/// certificate checked is the site's, end to end.
+fn proxied(
+    client: *Client,
+    through: egress.Through,
+    protocol: Client.Protocol,
+    host: HostName,
+    port: u16,
+    checked: *Checked,
+) Error!*Client.Connection {
+    std.debug.assert(through.host.len > 0);
+    std.debug.assert(checked.refusal == null);
+
+    const tls = protocol == .tls;
+
+    if (port != @as(u16, if (tls) 443 else 80)) {
+        checked.refusal = .not_web_port;
+
+        return error.Refused;
+    }
+
+    if (tls) {
+        try certificates_loaded(client);
+    }
+
+    const proxy = HostName.init(through.host) catch return error.Unreachable;
+
+    return client.connectTcpOptions(.{
+        .host = proxy,
+        .port = egress.port_for(through, tls),
         .protocol = protocol,
         .proxied_host = host,
         .proxied_port = port,

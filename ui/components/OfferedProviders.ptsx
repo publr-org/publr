@@ -9,12 +9,15 @@ type Offered = {
   offered: Array<{ name: string; label: string; summary: string }>;
   reached: boolean;
   looking: boolean;
+  offline?: boolean;
 };
 
 /** Filled once the page is drawn: Publr's plugin server is never waited on to draw it. */
 export const state = Publr.reactive({
   looked: false,
   reached: true,
+  /** The host keeps this site off the internet: no provider can answer it. */
+  offline: false,
   offered: [] as Offered["offered"],
   /** The providers ticked are installing in the background (`?setting_up=<id>`). */
   installing: false,
@@ -34,6 +37,7 @@ const look = async () => {
       return;
     }
     state.reached = value.reached;
+    state.offline = value.offline === true;
     state.offered = value.offered;
   } catch {
     state.reached = false;
@@ -78,7 +82,12 @@ export function OfferedProviders({ from = "", title = "" }: OfferedProvidersProp
       )}
       {state.offered.length > 0 && title !== "" && <SectionTitle title={title} />}
       {state.offered.length > 0 && <ProviderPicker offered={state.offered} from={from} />}
-      {state.looked && !state.reached && (
+      {state.looked && state.offline && (
+        <Callout tone="warning" title={Publr.t("This site can't reach the internet yet")}>
+          {Publr.t("Its host keeps it offline, so no model provider can answer it. On Publr Cloud, verify your email to turn the internet on.")}
+        </Callout>
+      )}
+      {state.looked && !state.offline && !state.reached && (
         <Callout tone="warning" title={Publr.t("Publr's plugin server could not be reached")}>
           {Publr.t("Try again later, or upload a provider's .wasm under Plugins.")}
         </Callout>

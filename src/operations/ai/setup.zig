@@ -40,7 +40,8 @@ pub const Catalog = struct {
         \\folder or address `PUBLR_PLUGIN_CATALOG` names), each marked when it is installed
         \\already: the list as last read, read again in the background once it is an hour
         \\old. `looking` while the first read is on its way; `reached` is false, and the
-        \\list empty, when the server could not be reached. Administrators only.
+        \\list empty, when the server could not be reached; `offline` too when this server's
+        \\host keeps it off the internet. Administrators only.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {};
@@ -48,6 +49,7 @@ pub const Catalog = struct {
         offered: []const Offered,
         reached: bool,
         looking: bool = false,
+        offline: bool = false,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -63,6 +65,7 @@ pub const Catalog = struct {
         .offered = "Each provider: its plugin's name, label, summary, and whether it is installed",
         .reached = "Whether the list of official plugins could be read",
         .looking = "Whether the list is being read for the first time: ask again shortly",
+        .offline = "Whether this server's host keeps it off the internet, so nothing is read",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -91,6 +94,7 @@ pub const Catalog = struct {
             .offered = offered.items,
             .reached = kept.reached,
             .looking = kept.looking,
+            .offline = kept.offline,
         };
     }
 };

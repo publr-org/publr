@@ -7,6 +7,7 @@ const model_app = @import("../model/app.zig");
 const sdk = @import("../sdk.zig");
 const registry = @import("registry.zig");
 const outside_model = @import("../model/outside.zig");
+const egress_model = @import("../model/egress.zig");
 
 const App = apps_state.App;
 
@@ -249,7 +250,8 @@ test "the session cookie is shared across subdomains only for a named domain" {
 
 /// The rule plugins' outside calls follow on a server whose site and admin answer at these
 /// origins (either may be empty): their hosts are its own, and so are the public addresses
-/// on the machine's interfaces. `serve` and its queue worker both get it from here.
+/// on the machine's interfaces; how calls leave is the host's (`PUBLR_EGRESS`). `serve` and
+/// its queue worker both get it from here.
 pub fn outside_of(
     arena: std.mem.Allocator,
     site_origin: []const u8,
@@ -271,6 +273,7 @@ pub fn outside_of(
     var rule = outside_model.rule_of(registry.hosted, site_origin, hosts.items);
 
     rule.own_addresses = try @import("interfaces.zig").public(arena);
+    rule.egress = egress_model.parse(@import("../lib/environment.zig").get(egress_model.variable));
 
     return rule;
 }

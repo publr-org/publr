@@ -117,6 +117,7 @@ fn offered_json(request: *Request, response: *Response, ctx: *Context) Error!voi
         .offered = offered.items,
         .reached = catalog.reached,
         .looking = catalog.looking,
+        .offline = catalog.offline,
     });
 }
 

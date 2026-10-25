@@ -212,7 +212,11 @@ A plugin granted `http.fetch` sends requests with `ctx.call(publr.operations.htt
 ...)`: to the domains its request names in `.domains` (exact, `*.example.com`, or `*` for
 any public address), over https, or in development plain http to this machine when listed;
 in production never a local or private address or the server itself (by name or by
-address), compiled in or installed. `ctx.grant("http.fetch").domains` is the list as
+address), compiled in or installed. Where the server's host sets `PUBLR_EGRESS`, calls
+leave only through it: `off` refuses every one (the host keeps the site offline), and
+`<host>:<port>` sends each through the host's egress proxy (TLS on `port`, plain http on
+the one above, to ports 443 and 80 only), which looks the name up and checks the
+addresses itself. `ctx.grant("http.fetch").domains` is the list as
 granted now; an update's new domains join it when the administrator allows the update. A key it needs is a **secret it names but never holds**: it
 declares its secrets as a struct, each field one secret, its `///` what it is and where to
 find it, and writes `{secret:NAME}` where the value goes, in the address, a header or the

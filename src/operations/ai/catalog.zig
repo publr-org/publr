@@ -74,6 +74,8 @@ pub const Kept = struct {
     plugins: []const Entry = &.{},
     /// A look is on its way and nothing was kept before it.
     looking: bool = false,
+    /// The host keeps this server offline: nothing is looked at.
+    offline: bool = false,
 };
 
 pub fn kept(ctx: *Ctx) Error!Kept {
@@ -94,6 +96,12 @@ pub fn kept(ctx: *Ctx) Error!Kept {
             .at = ctx.now_ms,
             .reached = true,
             .plugins = file.plugins,
+        };
+    }
+
+    if (ctx.outside.egress == .off) {
+        return .{
+            .offline = true,
         };
     }
 

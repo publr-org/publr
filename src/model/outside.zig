@@ -4,6 +4,7 @@
 const std = @import("std");
 
 const IpAddress = std.Io.net.IpAddress;
+const egress = @import("egress.zig");
 
 /// How many domains one grant lists.
 pub const domains_max: u32 = 32;
@@ -18,6 +19,8 @@ pub const Rule = struct {
     /// The public addresses on the machine's own network interfaces: never called in
     /// production either, whatever name leads there.
     own_addresses: []const IpAddress = &.{},
+    /// How calls leave: straight out, not at all, or through the host's proxy.
+    egress: egress.Egress = .direct,
 };
 
 /// How many of the machine's own addresses a rule keeps.
@@ -55,14 +58,20 @@ pub const Refusal = enum {
     not_https,
     /// A local or private address, or the server itself, in production.
     local,
+    /// The host keeps this server offline (`PUBLR_EGRESS=off`).
+    offline,
+    /// Through the host's proxy, only the web's own ports: 443, and 80 for plain http.
+    not_web_port,
 
     pub fn text(refusal: Refusal) []const u8 {
-        std.debug.assert(@intFromEnum(refusal) <= 2);
+        std.debug.assert(@intFromEnum(refusal) <= 4);
 
         return switch (refusal) {
             .not_listed => "not a domain on its http.fetch grant",
             .not_https => "only https, or plain http to this machine in development",
             .local => "a local or private address, or this server: refused in production",
+            .offline => "this server's host keeps it offline",
+            .not_web_port => "only ports 443 and 80 leave through the host's proxy",
         };
     }
 };
