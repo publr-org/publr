@@ -640,6 +640,10 @@ pub fn Pages(comptime domain: Domain) type {
                 const message: []const u8 = switch (err) {
                     error.Conflict => (try domain.words(session)).conflict,
                     error.Denied => (try domain.words(session)).denied,
+                    error.Failed => if (session.ctx.failure) |failure|
+                        failure.message
+                    else
+                        @errorName(err),
                     else => @errorName(err),
                 };
 

@@ -1481,7 +1481,9 @@ test "slug comes from the slug field's source; type update re-indexes existing r
             .definition = narrowed,
         },
     );
-    try std.testing.expectError(error.Conflict, refused);
+    try std.testing.expectError(error.Failed, refused);
+    try std.testing.expectEqualStrings("ContentHeld", admin.failure.?.name);
+    try std.testing.expect(std.mem.indexOf(u8, admin.failure.?.message, "drop_content") != null);
 
     const dropped = try SDK.dispatch(&admin, types.Update, .{
         .type = "person",

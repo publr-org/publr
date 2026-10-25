@@ -13,6 +13,7 @@ const trash = @import("../trash.zig");
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
+const Failure = sdk.operation.Failure;
 const content_type = model.content_type;
 const evolution = model.evolution;
 const Def = store.definitions.Def;
@@ -358,7 +359,7 @@ pub fn Of(comptime Domain: type) type {
                 const held = try values.count_field(ctx.db, row.id, path);
 
                 if (held > 0 and !drop_content) {
-                    return error.Conflict;
+                    return ctx.fail(try content_held(ctx, path, held, .removed));
                 }
 
                 dropped += try values.delete_field(ctx.db, row.id, path);
@@ -368,7 +369,7 @@ pub fn Of(comptime Domain: type) type {
                 const held = try values.count_variants(ctx.db, row.id, path);
 
                 if (held > 0 and !drop_content) {
-                    return error.Conflict;
+                    return ctx.fail(try content_held(ctx, path, held, .unvaried));
                 }
 
                 dropped += held;
@@ -837,5 +838,34 @@ pub fn Of(comptime Domain: type) type {
                 }
             }
         }
+    };
+}
+
+const Loss = enum {
+    removed,
+    unvaried,
+};
+
+/// A change refused because `path` holds `held` values it would delete: which, how many,
+/// and the two ways on.
+fn content_held(ctx: *Ctx, path: []const u8, held: u64, loss: Loss) Error!Failure {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(held > 0);
+
+    const message = switch (loss) {
+        .removed => std.fmt.allocPrint(ctx.arena, "`{s}` holds {d} value(s) that removing it " ++
+            "deletes: keep the field, or send drop_content to delete them with it", .{
+            path,
+            held,
+        }),
+        .unvaried => std.fmt.allocPrint(ctx.arena, "`{s}` holds {d} translation(s) that turning " ++
+            "its variants off deletes: keep its variants on, or send drop_content to delete " ++
+            "them", .{ path, held }),
+    } catch return error.OutOfMemory;
+
+    return .{
+        .name = "ContentHeld",
+        .status = 409,
+        .message = message,
     };
 }
