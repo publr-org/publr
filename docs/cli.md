@@ -94,9 +94,9 @@ publr apps load [--apps <dir>]
 ```
 
 Reads the project's apps again from the folder the running server was started with and
-swaps them in, so a changed template is live when it returns, and says which folder; a
-template that does not load is named with the reason, and the apps answer 503 until a load
-succeeds. (A device, or `--as`, reaches the same as the operation `apps.load`.) With no server running, it only checks the apps: those in `--apps <dir>`, else
+swaps them in, so a changed template is live when it returns, and says which folder. The
+server also does this on its own whenever a file in the folder changes. A template that does
+not compile is named with the reason and the apps loaded before keep serving. (A device, or `--as`, reaches the same as the operation `apps.load`.) With no server running, it only checks the apps: those in `--apps <dir>`, else
 the project's own `apps/`, else the build's folder. `--apps` is refused while a server
 runs, since the server reads only its own folder. See [Apps](apps.md).
 

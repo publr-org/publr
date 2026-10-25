@@ -62,8 +62,10 @@ import never leaves the apps folder.
 `serve` reads every folder under `apps/` that has an `app.zon`: `--apps <dir>` when named,
 else the project's own `apps/` beside where Publr runs, else where the build's apps came from
 (a binary built from a preset reads the preset's), checking what the build used to check (names, mounts, roles, templates), and
-`publr apps load` reads them again into the running server: a changed or new template is
-served when the command returns, never after a rebuild. What still needs compiling comes
+a running `serve` watches the folder and loads the apps again, within half a second, whenever
+a file in it changes; `publr apps load` does the same at once and says how it went. A
+change that does not compile is refused and the apps loaded before keep serving. A changed
+or new template is served as soon as it loads, never after a rebuild. What still needs compiling comes
 from a build of Publr: `-Dapps=<dir>` compiles that folder's apps in, and an app of the
 same name takes its interactive components and middleware from there; an app the build
 does not have may have neither. With no `apps/` folder, `serve` serves the build's own.

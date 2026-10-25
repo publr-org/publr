@@ -2,7 +2,7 @@
 
 The project's apps as files, for an agent with no file system of its own (a chat app over
 MCP, an agent sending commands with `--site`). An agent next to the project edits `apps/`
-and runs `publr apps load` instead. What an app is made of is in [Apps](../apps.md). Back
+instead. Either way a running server loads the change on its own. What an app is made of is in [Apps](../apps.md). Back
 to the [CLI reference](../cli.md).
 
 Administrators only. With `publr serve` running they act on its apps folder, else on the
@@ -46,6 +46,7 @@ One file deleted. As `write`, refused to a drafts-only device.
 ## `load`
 
 The apps read again into the running server, live at once; with no server running, only
-checked, as `serve` would load them. When they do not load, it fails with `NotLoaded` and
-why, and a running server's apps stay unavailable (the admin up) until a load succeeds.
+checked, as `serve` would load them. A running server also loads them on its own, within
+half a second of a file changing; this is for the answer. When they do not compile, it
+fails with `NotLoaded` and why, and the apps loaded before keep serving.
 `publr apps load --apps <dir>` checks another folder while no server runs.

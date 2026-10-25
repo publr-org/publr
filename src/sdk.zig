@@ -1314,8 +1314,9 @@ pub fn SDK(comptime registry: Registry) type {
             return error.Sqlite;
         }
 
+        /// Inside an operation, or outside any for an event the server announces itself
+        /// (`announce`): `ctx.parent` may be null.
         pub fn invoke_hook(ctx: *Ctx, comptime Middleware: type, args: anytype) Error!void {
-            std.debug.assert(ctx.parent != null);
             std.debug.assert(args.len <= 2);
 
             const running = ctx.plugin;

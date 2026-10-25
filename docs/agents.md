@@ -464,14 +464,41 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
   of Publr: an app loaded from a folder has neither. For behaviour in the browser, use
   scripts in `public/`; for code on the server, a plugin.
 
-After changing an app:
+A running `publr serve` watches the apps folder: save a file and the change is live within
+half a second, a stylesheet included. A change that does not compile is refused, the
+version before it keeps serving, and the server prints why. To see that reason yourself,
+or to wait for the change before you check a page, run:
 
 ```sh
 publr apps load
 ```
 
-The running server reads the apps again and serves the change at once; a template it
-refuses is named with the reason, and the apps answer 503 until a load succeeds.
+A `<script>` in a template is written out exactly as it is, with no `{expressions}` filled
+in. Structured data takes `set:json`, which writes a value as JSON a script holds safely:
+`<script type="application/ld+json" set:json={{ "@type": "Product", name: product.title }} />`.
+HTML from a field (`set:html`) is sanitized and never carries a script.
+
+## A second language
+
+Content languages come from the `languages` plugin. When `publr languages --help` does not
+answer, install it from Publr's marketplace (`publr plugin install --name languages`, then
+`publr job answer --id <asked>` until it is `done`). The admin's own language is separate: a
+language pack such as `language_pl` makes the admin speak Polish. Never stand in for a
+language with separate fields or pages per language.
+
+```sh
+publr languages save --languages '[{"code":"pl","name":"Polski","main":true},
+  {"code":"en","name":"English","address":"/en"}]'
+```
+
+The main language is at `/`, every other at its address. A content type's field holds a
+value per language when it has `"variants": true` (`content_type create` or `update`);
+a value in a language is the field's name with the code, `"title@en"`, written beside
+`title` in the same record. One template serves every language: `/en/about` is the
+`/about` page read in English, its links keep `/en`. A plugin's own records cannot be
+translated yet. Turning a field's variants off drops its translations, so `content_type
+update` asks for `--drop_content`. `--language` on an account is the admin's language,
+not the site's.
 
 ## Permissions: declare, never grant
 

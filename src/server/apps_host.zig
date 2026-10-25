@@ -10,6 +10,7 @@ const build_command = @import("build.zig");
 const Index = @import("../lib/deps.zig").Index;
 const identity = @import("../adapters/rest/identity.zig");
 const registry = @import("registry.zig");
+const apps_watch = @import("apps_watch.zig");
 
 /// How the apps are served: their options, and `--static` (with `--full`).
 pub const Mode = struct {
@@ -28,6 +29,8 @@ pub const AppsHost = struct {
     reason: report.Reason = .{},
     /// The folder the apps were last read from.
     dir: []const u8 = "",
+    /// That folder as it was when they were read (`apps_watch`): 0 for none.
+    stamp: u64 = 0,
 
     /// At startup: a failure is a warning, the admin stays up.
     pub fn start(host: *AppsHost) void {
@@ -43,11 +46,13 @@ pub const AppsHost = struct {
         };
     }
 
-    /// The apps read from the folder again and swapped in: on a failure, why, in `reason`,
-    /// and the apps unavailable until a load succeeds.
+    /// The apps read from the folder again and swapped in. A folder whose apps do not
+    /// compile is refused first, the apps loaded before still serving: why, in `reason`.
+    /// Any other failure leaves the apps unavailable until a load succeeds.
     pub fn reload(host: *AppsHost) !void {
         std.debug.assert(host.project.connection.transaction_depth == 0);
 
+        try host.check_folder();
         host.close();
         host.project.apps_failed = false;
 
@@ -55,6 +60,32 @@ pub const AppsHost = struct {
             host.project.apps_failed = true;
             return err;
         };
+    }
+
+    /// The folder's apps read and compiled aside, nothing swapped: an edit caught half
+    /// done never takes the running apps down. Its stamp is kept, so the watch waits for
+    /// the next change.
+    fn check_folder(host: *AppsHost) !void {
+        std.debug.assert(host.mode.options.apps_dir.len > 0);
+
+        const io = host.project.io;
+        const dir = apps_adapter.folder.resolve_dir(io, host.mode.options.apps_dir);
+        var arena_state = std.heap.ArenaAllocator.init(host.gpa);
+        defer arena_state.deinit();
+
+        var source = apps_adapter.folder.project_apps(host.gpa, io, dir, &host.reason) catch |err| {
+            host.stamp = apps_watch.stamp_of(io, dir) orelse 0;
+            return err;
+        };
+        defer source.deinit();
+
+        const arena = arena_state.allocator();
+
+        if (try apps_adapter.check_specs(host.gpa, arena, source.specs)) |problem| {
+            host.reason.set("{s}", .{problem});
+            host.stamp = apps_watch.stamp_of(io, dir) orelse 0;
+            return error.AppsRefused;
+        }
     }
 
     /// Every app loaded and validated, then: `--static` brings each app's build up to date
@@ -67,6 +98,7 @@ pub const AppsHost = struct {
 
         options.apps_dir = apps_adapter.folder.resolve_dir(host.project.io, options.apps_dir);
         host.dir = options.apps_dir;
+        host.stamp = apps_watch.stamp_of(host.project.io, host.dir) orelse 0;
         options.diagnostic = &host.reason;
         host.source = try apps_adapter.folder.project_apps(
             host.gpa,
@@ -181,3 +213,7 @@ pub const AppsHost = struct {
         }
     }
 };
+
+test {
+    _ = apps_watch;
+}

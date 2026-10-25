@@ -331,7 +331,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/build.zig` | 221 | `publr build`: every app as files |
 | `server/toolchain.zig` | 124 | `publr zig`: the compiler and the SDK plugins build against, written out once per machine at `init` and `serve` (a warning when they cannot be), run as a child process |
 | `server/agents.zig` | 37 | `publr agents`: the guide for agents (`docs/agents.md`), this machine's SDK path, the permission catalog |
-| `server/apps_host.zig` | 135 | The apps `serve` holds: read from the folder (or the build's own), opened, loaded again on `apps load` |
+| `server/apps_host.zig` | 135 | The apps `serve` holds: read from the folder (or the build's own), opened, loaded again when its files change or on `apps load` |
+| `server/apps_watch.zig` | 110 | The apps folder watched while `serve` runs: a change loads the apps again once it holds still |
 | `server/apps_load.zig` | 126 | `publr apps load` and `/_publr/apps/load`: the apps swapped into the running server, or checked here |
 | `server/operator.zig` | 304 | While `serve` runs: its session beside the database, the CLI sending it commands (`/_publr/cli`), and running a command there or here (`Commands`) |
 | `server/plugin_build.zig` | 365 | `publr plugin build`: a plugin's source compiled, its manifest read from the module in the sandbox and written in, then added and enabled or applied as its next version |

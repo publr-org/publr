@@ -616,6 +616,7 @@ fn run_loop(
         .stop_ms = idle_stop_ms,
         .last_ms = sdk.context.wall_clock_ms(project.io),
     };
+    var watch: @import("apps_watch.zig").Watch = .{};
 
     // The loop is the server's, interleaved with the apps' rebuild queue: a batch that
     // went quiet (an admin's publish, a CLI's) is rebuilt between requests, never inside
@@ -633,6 +634,11 @@ fn run_loop(
         if (worker) |keeper| {
             keeper.tick(sdk.context.wall_clock_ms(project.io));
             plugins.tick();
+        }
+
+        // A failed load is watched too: fixing the file is what loads it again.
+        if (project.apps_host) |host| {
+            watch.tick(host);
         }
 
         if (project.apps.len > 0) {
