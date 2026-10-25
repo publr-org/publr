@@ -128,6 +128,8 @@ pub const Manifest = struct {
     warnings: []const []const u8 = &.{},
     /// The GROQ texts it prepares, parsed when it is installed.
     queries: []const Query = &.{},
+    /// The variant dimension it declares (`.variants`): a field holds a value per variant.
+    variants: ?@import("variant.zig").Declared = null,
 };
 
 /// A GROQ text the plugin prepares, and where.

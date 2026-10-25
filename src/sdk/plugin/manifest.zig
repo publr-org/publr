@@ -66,6 +66,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
             .queries = @import("prepared_queries.zig").of(docs_of(Plugin)),
+            .variants = @import("variants.zig").declared_of(Plugin),
             .warnings = if (@hasDecl(docs_of(Plugin), "warnings"))
                 &docs_of(Plugin).warnings
             else

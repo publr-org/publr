@@ -682,11 +682,11 @@ const Offered = struct {
 fn translate_offered(session: *Session) Error!?Offered {
     std.debug.assert(session.signed_in());
 
-    const words: ?Offered = comptime if (variants.setting()) |dimension| .{
+    const dimension = variants.setting(&session.ctx) orelse return null;
+    const setting: Offered = .{
         .label = dimension.label,
         .help = dimension.help,
-    } else null;
-    const setting = words orelse return null;
+    };
     const others = variants.others(&session.ctx) catch return null;
 
     if (others.len == 0) {

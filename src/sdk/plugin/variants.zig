@@ -6,7 +6,7 @@ const std = @import("std");
 const plugin_define = @import("define.zig");
 const model_variant = @import("../../model/variant.zig");
 
-/// `pub const variants: publr.plugin.Variants` in a plugin.
+/// What a plugin's `define` takes as `.variants`.
 pub const Dimension = struct {
     /// The field setting that turns it on: `Translate`.
     label: []const u8,
@@ -23,13 +23,7 @@ pub const Dimension = struct {
     untranslated: Untranslated = .{},
 };
 
-pub const Untranslated = struct {
-    label: []const u8 = "",
-    keep: []const u8 = "",
-    keep_help: []const u8 = "",
-    omit: []const u8 = "",
-    omit_help: []const u8 = "",
-};
+pub const Untranslated = model_variant.Untranslated;
 
 /// One variant as the core shows and serves it.
 pub const Variant = struct {
@@ -72,5 +66,20 @@ pub fn of(comptime Plugin: type) ?Dimension {
         const done = declared;
 
         return done;
+    }
+}
+
+/// The dimension `Plugin` declares, as its manifest carries it; null for none.
+pub fn declared_of(comptime Plugin: type) ?model_variant.Declared {
+    comptime {
+        const dimension = of(Plugin) orelse return null;
+
+        return .{
+            .label = dimension.label,
+            .help = dimension.help,
+            .picker = dimension.picker,
+            .list = dimension.list.name,
+            .untranslated = dimension.untranslated,
+        };
     }
 }

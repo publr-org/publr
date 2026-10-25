@@ -1108,8 +1108,8 @@ in, install the skill), even at an address that looks like this machine.
 
 ### Variants
 
-A plugin may declare the one **variant dimension** (`host.variants`, a
-`publr.plugin.Variants`): the words of the setting every field then has (`label`, `help`),
+A plugin may declare the one **variant dimension** (`.variants`, a `publr.plugin.Variants`),
+compiled in or installed: the words of the setting every field then has (`label`, `help`),
 the words of the type setting for records not written in a variant (`untranslated`), and a
 read of its own answering `variants`, each `{ code, label, address, main }` in order, the
 main one first. The core draws the setting, stores and reads the values (see

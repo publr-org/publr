@@ -6,7 +6,6 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const routing = @import("route.zig");
-const variant = @import("variants.zig");
 const provider = @import("../provider.zig");
 const db = @import("../../lib/db.zig");
 
@@ -81,7 +80,6 @@ const Given = struct {
     before_command: ?type = null,
     sign_in_provider: ?type = null,
     sign_in_at: ?type = null,
-    variants: ?type = null,
     admin_brand: ?type = null,
     app_picker_segment: ?type = null,
     work_start: ?type = null,
@@ -160,11 +158,6 @@ pub const Host = struct {
     /// Where someone who must sign in is sent instead of the form.
     pub fn sign_in_at(host: *Host, comptime run: anytype) Error!void {
         host.give("sign_in_at", run);
-    }
-
-    /// The variant dimension: what makes a field hold a value per variant.
-    pub fn variants(host: *Host, comptime dimension: variant.Dimension) Error!void {
-        host.give("variants", dimension);
     }
 
     /// Whose admin it is: its name and mark.

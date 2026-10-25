@@ -26,7 +26,7 @@ pub fn chosen(session: *Session) []const u8 {
 pub fn switcher(session: *Session) ?Node {
     std.debug.assert(session.signed_in());
 
-    const dimension = variants.setting() orelse return null;
+    const dimension = variants.setting(&session.ctx) orelse return null;
 
     if (dimension.picker.len == 0) {
         return null;

@@ -13,6 +13,26 @@ const Def = field.Def;
 const Value = std.json.Value;
 
 pub const code_len_max: u32 = 16;
+
+/// The type setting for records not written in a variant: shown in its main values
+/// (`keep`), or left out of it (`omit`). Unnamed: the setting is not offered.
+pub const Untranslated = struct {
+    label: []const u8 = "",
+    keep: []const u8 = "",
+    keep_help: []const u8 = "",
+    omit: []const u8 = "",
+    omit_help: []const u8 = "",
+};
+
+/// A variant dimension as data: what an installed plugin's manifest says of the one it
+/// declares, its list an operation by full name (`languages.list`).
+pub const Declared = struct {
+    label: []const u8,
+    help: []const u8,
+    picker: []const u8 = "",
+    list: []const u8,
+    untranslated: Untranslated = .{},
+};
 /// The codes one read falls back through: the variant, each shorter prefix, the main value.
 pub const order_max: u32 = 5;
 pub const separator: u8 = '@';

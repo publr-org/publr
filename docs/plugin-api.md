@@ -1179,7 +1179,7 @@ handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key onl
 `host.app_picker_segment` (`fn (*const publr.admin.Session, bool,
 ?publr.admin.render.Node) publr.admin.Error!?publr.admin.render.Node`), `host.sign_in_at`
 (`fn (*const publr.admin.Session) anyerror!?[]const u8`), `host.admin_brand`,
-`host.variants` (one dimension per site), `host.work_start` (the operation `publr work
+`host.work_start` (the operation `publr work
 start` calls). Still an option of `define`: `.row_actions`.
 
 ### The server

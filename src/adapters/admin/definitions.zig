@@ -932,11 +932,8 @@ test "handles are made from names; an input is keyed under the domain's name" {
 fn untranslated_of(session: *Session) Error!Untranslated {
     std.debug.assert(session.signed_in());
 
-    const words: ?Untranslated = comptime if (variants.setting()) |dimension|
-        dimension.untranslated
-    else
-        null;
-    const named = words orelse return .{};
+    const dimension = variants.setting(&session.ctx) orelse return .{};
+    const named = dimension.untranslated;
     const others = variants.others(&session.ctx) catch return .{};
 
     return if (others.len == 0) .{} else named;
