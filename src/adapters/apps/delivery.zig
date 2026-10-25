@@ -7,6 +7,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const http = @import("../../lib/http.zig");
 const identity_module = @import("../rest/identity.zig");
+const split = @import("../../server/split.zig");
 const Project = @import("../../server/project.zig").Project;
 
 const Request = http.Request;
@@ -37,7 +38,7 @@ pub fn door(
     var ctx = identity_module.context(project, arena, .system);
     const delivery: sdk.delivery.Delivery = .{
         .ctx = &ctx,
-        .visitor = identity_module.identify(request, arena, project).caller,
+        .visitor = visitor_of(project, arena, request),
         .path = request.path(),
     };
 
@@ -55,6 +56,28 @@ pub fn door(
             return .refused;
         },
     }
+}
+
+/// Who asks: signed in on this host, else, on the site's host of a split project, the
+/// administrator the admin sent here with a member pass.
+fn visitor_of(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    request: *const Request,
+) sdk.Caller {
+    std.debug.assert(request.path().len > 0);
+
+    const signed_in = identity_module.identify(request, arena, project).caller;
+
+    if (signed_in.user_id() != null or !project.split() or project.on_admin_host(request)) {
+        return signed_in;
+    }
+
+    const member = split.member_identity(project, arena, request).caller;
+
+    std.debug.assert(member == .anonymous or member.user_id() != null);
+
+    return member;
 }
 
 /// For an answer a gate made personal: whatever the render set, no shared cache keeps it.

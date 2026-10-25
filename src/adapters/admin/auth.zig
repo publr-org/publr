@@ -181,7 +181,12 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
 
     if (session.signed_in()) {
         if (registry.SDK.reaches_admin(&session.ctx)) {
-            return response.redirect(.see_other, "/admin/content");
+            // Signed in already, as when a site's preview sends its owner here: on to the
+            // page they came for.
+            const wanted = admin.query_param(&session, "return") orelse "/admin/content";
+            const back = if (rest_auth.local_path(wanted)) wanted else "/admin/content";
+
+            return response.redirect(.see_other, back);
         }
 
         const turned_back = try session.translated("This account has no access to the admin.", .{});
@@ -238,7 +243,7 @@ fn sign_in_elsewhere(session: *const Session) Error!?[]const u8 {
     return null;
 }
 
-/// `<issuer>/sign-on?site=<audience>&return=/admin`, when an issuer is trusted.
+/// `<issuer>/sign-on?project=<audience>&return=/admin`, when an issuer is trusted.
 fn issuer_login(session: *Session) Error!?[]const u8 {
     std.debug.assert(session.ctx.now_ms > 0);
 
@@ -252,7 +257,7 @@ fn issuer_login(session: *Session) Error!?[]const u8 {
 
     std.debug.assert(sign_on_operations.valid_issuer(status.issuer));
 
-    return std.fmt.allocPrint(session.arena, "{s}/sign-on?site={s}&return={s}", .{
+    return std.fmt.allocPrint(session.arena, "{s}/sign-on?project={s}&return={s}", .{
         status.issuer,
         status.audience,
         try return_of(session),
