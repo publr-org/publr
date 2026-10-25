@@ -17,6 +17,8 @@ const Value = std.json.Value;
 pub const Marker = struct {
     field: []const u8,
     label: []const u8,
+    /// What the markers of its dimension are of, drawn once before them: `Hero test`.
+    group: []const u8 = "",
     /// `outline` (the default), `neutral` or `success`.
     tone: []const u8 = "outline",
     /// What clicking it shows: the field in this dimension (empty: no link) at `code`.
@@ -168,6 +170,7 @@ fn collected(arena: std.mem.Allocator, items: []const Value) Error![]const Marke
             out.append(arena, .{
                 .field = field.string,
                 .label = try mods.cleaned(arena, label),
+                .group = try mods.cleaned(arena, text_of(marker, "group") orelse ""),
                 .tone = tone_of(text_of(marker, "tone") orelse ""),
                 .dimension = text_of(marker, "dimension") orelse "",
                 .code = text_of(marker, "code") orelse "",

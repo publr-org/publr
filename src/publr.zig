@@ -96,10 +96,13 @@ pub const FieldMarkers = struct {
     record: @import("std").json.Value = .null,
     markers: []const Marker = &.{},
 };
-/// A marker beside a field's label: `PL`, `Hero test • Variant B`. One naming a
-/// `dimension` is a link: clicking it shows the field at `code` there (empty: its main).
+/// A marker beside a field's label: `PL`, `Variant B`. Markers of one `dimension` are drawn
+/// together as one pill, `group` first when given (`Hero test`); one naming a `dimension` is
+/// a link: clicking it shows the field at `code` there (empty: its main).
 pub const Marker = struct {
     label: []const u8,
+    /// What its dimension's markers are of, drawn once before them: `Hero test`.
+    group: []const u8 = "",
     /// `outline` (the default), `neutral` or `success`.
     tone: []const u8 = "outline",
     dimension: []const u8 = "",

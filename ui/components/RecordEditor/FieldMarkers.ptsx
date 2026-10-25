@@ -1,4 +1,5 @@
 import { Badge } from "@publr/ui/Badge.ptsx";
+import { BadgeGroup } from "@publr/ui/BadgeGroup.ptsx";
 import { state as editor, onDimension } from "../RecordEditor.ptsx";
 
 export type FieldMarkersProps = {
@@ -6,19 +7,40 @@ export type FieldMarkersProps = {
   name: string;
 };
 
-/** The markers plugins put beside a field's label (`PL`, `Hero test • Variant B`), as the
- * editor last asked for them: they follow the values as they change. One that names a
- * dimension shows the field there when clicked; one that hides while current is left out
- * where the field is shown at its code. */
+type Marker = { field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string };
+
+/** The markers of one field, by dimension: each dimension's together, its group label
+ * first; a marker that hides while current left out where the field is shown at its code. */
+const groupsOf = (markers: Marker[], chosen: string, name: string) => {
+  const field = name.split("@")[0];
+  const groups: Array<{ key: string; label: string; markers: Marker[] }> = [];
+  for (const marker of markers) {
+    if (marker.field !== field) continue;
+    const pair = chosen.split(",").find((one) => one.startsWith(marker.dimension + "=")) ?? marker.dimension + "=";
+    if (marker.current === "hide" && pair === marker.dimension + "=" + marker.code) continue;
+    const key = marker.dimension === "" ? marker.label : marker.dimension;
+    const group = groups.find((one) => one.key === key);
+    if (group) group.markers.push(marker);
+    else groups.push({ key, label: marker.group, markers: [marker] });
+  }
+  return groups;
+};
+
+/** The markers plugins put beside a field's label, as the editor last asked for them: one
+ * pill per dimension (`Variation | Control | Variation B`, `EN | PL`), following the values
+ * as they change. A marker naming a dimension shows the field there when clicked. */
 export function FieldMarkers({ name }: FieldMarkersProps) {
   return (
-    <span class="flex flex-wrap items-center gap-1" data-part="field-markers">
-      {editor.markers.filter((marker) => marker.field === name.split("@")[0] && !(marker.current === "hide" &&
-        (editor.chosen.split(",").find((pair) => pair.startsWith(marker.dimension + "=")) ?? marker.dimension + "=") === marker.dimension + "=" + marker.code)).map((marker) => (
-        <button type="button" class="cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
-          data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
-          <Badge tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
-        </button>
+    <span class="flex flex-wrap items-center gap-1.5 self-center" data-part="field-markers">
+      {groupsOf(editor.markers, editor.chosen, name).map((group) => (
+        <BadgeGroup label={group.label}>
+          {group.markers.map((marker) => (
+            <button type="button" class="inline-flex cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
+              data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
+              <Badge shape="segment" tone={marker.tone === "success" ? "success" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+            </button>
+          ))}
+        </BadgeGroup>
       ))}
     </span>
   );
