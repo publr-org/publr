@@ -66,13 +66,14 @@ pub fn write_script(ctx: *const Context, writer: *std.Io.Writer, base: []const u
 
     const found = find(ctx.project, ctx.place.locale) orelse return;
 
-    try writer.print("<script src=\"{s}{s}{s}{s}.js?v={s}-{d}\"></script>", .{
+    // By what the script holds: a pack updated in place is fetched again.
+    try writer.print("<script src=\"{s}{s}{s}{s}.js?v={s}-{x}\"></script>", .{
         base,
         context_module.assets_prefix,
         messages_prefix,
         found.locale,
         &ctx.app.version,
-        found.catalog.messages(),
+        std.hash.Wyhash.hash(0, found.script),
     });
 }
 

@@ -375,7 +375,8 @@ fn write_manifest(init: std.process.Init, path: []const u8, source: []const u8) 
     const arena = init.arena.allocator();
     const module = try cwd.readFileAlloc(init.io, path, arena, .limited(module_bytes_max));
     // WAMR rewrites the bytes it loads, so it gets a copy of its own.
-    const manifest = try manifest_of(init.gpa, arena, try arena.dupe(u8, module));
+    const read = try manifest_of(init.gpa, arena, try arena.dupe(u8, module));
+    const manifest = read.manifest;
     var output: std.Io.Writer.Allocating = .init(arena);
 
     std.debug.assert(manifest.len > 0);
@@ -383,6 +384,13 @@ fn write_manifest(init: std.process.Init, path: []const u8, source: []const u8) 
     try output.writer.writeAll(module);
     try wasm.section.write(&output.writer, plugin_manifest.section_name, manifest);
     try wasm.section.write(&output.writer, plugin_manifest.source_section_name, source);
+
+    if (read.translations) |translations| {
+        const name = plugin_manifest.translations_section_name;
+
+        try wasm.section.write(&output.writer, name, translations);
+    }
+
     try cwd.writeFile(init.io, .{
         .sub_path = path,
         .data = output.written(),
@@ -418,7 +426,14 @@ fn warn_left_out(init: std.process.Init, name: []const u8, manifest: []const u8)
         "publr.zon's `.plugins.native` to compile it in with everything.\n", .{});
 }
 
-fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: []u8) ![]u8 {
+/// What running the module tells of it: its manifest, and its translations when it brings
+/// any.
+const Read = struct {
+    manifest: []u8,
+    translations: ?[]u8,
+};
+
+fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: []u8) !Read {
     std.debug.assert(module_bytes.len > 0);
 
     const heap = try gpa.alloc(u8, heap_bytes);
@@ -440,21 +455,52 @@ fn manifest_of(gpa: std.mem.Allocator, arena: std.mem.Allocator, module_bytes: [
     var instance = try wasm.Instance.init(&module, 256, &problem, .{});
     defer instance.deinit();
 
+    const manifest = try exported_json(&instance, arena, "publr_manifest", &problem) orelse {
+        return error.NoManifest;
+    };
+    // Only a plugin that brings translations exports them.
+    const asked = exported_json(&instance, arena, "publr_translations", &problem);
+    const translations = asked catch |err| {
+        if (err != error.NotFound) {
+            return err;
+        }
+
+        return .{
+            .manifest = manifest,
+            .translations = null,
+        };
+    };
+
+    return .{
+        .manifest = manifest,
+        .translations = translations,
+    };
+}
+
+/// The JSON the module's `export_name` writes, copied out; null when it answers nothing.
+fn exported_json(
+    instance: *wasm.Instance,
+    arena: std.mem.Allocator,
+    export_name: [:0]const u8,
+    problem: *wasm.Problem,
+) !?[]u8 {
+    std.debug.assert(export_name.len > 0);
+
     const budget = manifest_instructions_max;
-    const cell = try instance.call("publr_alloc", &.{wire.result_bytes}, budget, &problem, .{});
-    const status = try instance.call("publr_manifest", &.{cell}, budget, &problem, .{});
+    const cell = try instance.call("publr_alloc", &.{wire.result_bytes}, budget, problem, .{});
+    const status = try instance.call(export_name, &.{cell}, budget, problem, .{});
 
     if (cell == 0 or status != wire.ok) {
-        return error.NoManifest;
+        return null;
     }
 
-    const result_bytes = instance.bytes(cell, wire.result_bytes) orelse return error.NoManifest;
+    const result_bytes = instance.bytes(cell, wire.result_bytes) orelse return null;
     const result = std.mem.bytesToValue(wire.Result, result_bytes);
-    const json = instance.bytes(result.ptr, result.len) orelse return error.NoManifest;
+    const json = instance.bytes(result.ptr, result.len) orelse return null;
 
     std.debug.assert(result.len == json.len);
 
-    return arena.dupe(u8, json);
+    return try arena.dupe(u8, json);
 }
 
 /// `plugin add` as the local operator, then `plugin enable` for a new plugin or `plugin

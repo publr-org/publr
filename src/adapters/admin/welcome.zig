@@ -48,7 +48,7 @@ fn draw(session: *Session, token: []const u8, back: []const u8, problem: ?[]cons
     std.debug.assert(back.len > 0);
 
     const arena = session.arena;
-    const choices = language_operations.choices(arena) catch return error.OutOfMemory;
+    const choices = language_operations.choices(&session.ctx) catch return error.OutOfMemory;
     const preferred = preferred_of(session, choices);
     const Item = views.Welcome.LanguagesItem;
     const items = try arena.alloc(Item, choices.len);

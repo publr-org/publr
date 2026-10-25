@@ -77,7 +77,7 @@ fn render_setup(
     std.debug.assert(problem == null or problem.?.len > 0);
 
     const arena = session.arena;
-    const choices = language_operations.choices(arena) catch return error.OutOfMemory;
+    const choices = language_operations.choices(&session.ctx) catch return error.OutOfMemory;
     const known = for (choices) |choice| {
         if (std.mem.eql(u8, choice.locale, asked)) {
             break true;

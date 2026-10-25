@@ -470,6 +470,7 @@ pub fn Pages(comptime domain: Domain) type {
                     views.TypeForm.Noun_languagesItem,
                     arena,
                     def,
+                    try type_names.declining_of(arena, session.project.languages),
                 ),
                 .untranslated_label = try session.declared(untranslated.label),
                 .keep_label = try session.declared(untranslated.keep),
@@ -495,7 +496,7 @@ pub fn Pages(comptime domain: Domain) type {
             var session = &post.session;
             const form = &post.form;
 
-            var def = try head_of(session.arena, form, empty_def);
+            var def = try head_of(session, form, empty_def);
 
             if (domain.is_taxonomy) {
                 def.title_field = "name";
@@ -540,7 +541,7 @@ pub fn Pages(comptime domain: Domain) type {
                 return admin.fail(session, error.Denied, back);
             }
 
-            const def = try head_of(session.arena, form, got.definition);
+            const def = try head_of(session, form, got.definition);
             const definition = model.content_type.encode(session.arena, def) catch {
                 return error.OutOfMemory;
             };
@@ -559,7 +560,10 @@ pub fn Pages(comptime domain: Domain) type {
         /// empty), where it lives and who reads it. Fields and everything the form does not
         /// show stay as they are. A taxonomy has no kind and no URL; it is hierarchical or
         /// flat.
-        fn head_of(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
+        fn head_of(session: *Session, form: *const Form, base: Def) Error!Def {
+            const arena = session.arena;
+            const declining = try type_names.declining_of(arena, session.project.languages);
+
             std.debug.assert(form.len <= admin.form_pairs_max);
             std.debug.assert(base.fields.len <= model.field.fields_max);
 
@@ -567,7 +571,7 @@ pub fn Pages(comptime domain: Domain) type {
             const name = form.text("name") orelse "";
             const has_url = form.get("has_url") != null;
 
-            def = try type_names.read(arena, form, def);
+            def = try type_names.read(arena, form, def, declining);
             def.name = name;
             def.description = form.text("description") orelse "";
             def.handle = form.text("handle") orelse try handle_of(arena, name);

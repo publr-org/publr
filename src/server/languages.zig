@@ -61,6 +61,10 @@ pub const Languages = struct {
     coverage: []const Coverage = &.{},
     /// The choices the catalogues were built with, as stored; rebuilt when they change.
     applied: []const u8 = "",
+    /// The installed plugins' translations, beside the compiled-in ones (`set_installed`),
+    /// in memory of their own.
+    installed: []const OwnedTranslation = &.{},
+    installed_arena: ?std.heap.ArenaAllocator = null,
 
     /// The plugins' PO files, by language. A file the language's plural rule cannot take
     /// stops the server, naming the language: its translations would land on wrong counts.
@@ -69,6 +73,8 @@ pub const Languages = struct {
 
         languages.gpa = gpa;
         languages.applied = "";
+        languages.installed = &.{};
+        languages.installed_arena = null;
         languages.arena = .init(gpa);
         errdefer languages.arena.deinit();
 
@@ -76,7 +82,7 @@ pub const Languages = struct {
         const arena = languages.arena.allocator();
 
         languages.disagreements = try disagreements_of(arena, registry.translations);
-        languages.coverage = try coverage_of(languages.arena.allocator(), languages.list);
+        languages.coverage = try coverage_of(arena, languages.list, registry.translations);
     }
 
     /// The view operations read the disagreements through (`Ctx.translations`).
@@ -88,6 +94,7 @@ pub const Languages = struct {
             .disagreements = read_disagreements,
             .coverage = read_coverage,
             .say = say,
+            .spoken = read_spoken,
         };
     }
 
@@ -95,6 +102,11 @@ pub const Languages = struct {
         std.debug.assert(languages.list.len <= languages_max);
 
         languages.arena.deinit();
+
+        if (languages.installed_arena) |*arena| {
+            arena.deinit();
+        }
+
         languages.* = undefined;
     }
 
@@ -107,21 +119,84 @@ pub const Languages = struct {
             return;
         }
 
+        try languages.rebuild(stored);
+    }
+
+    /// The installed plugins' translations, as their modules brought them: copied, and the
+    /// catalogues built again with them and the choices applied. A file that does not build
+    /// leaves every installed one out, logged; the server's own words stay.
+    pub fn set_installed(languages: *Languages, brought: []const OwnedTranslation) !void {
+        std.debug.assert(brought.len <= 1024);
+
+        if (brought.len == 0 and languages.installed.len == 0) {
+            return;
+        }
+
+        var copies: std.heap.ArenaAllocator = .init(languages.gpa);
+        errdefer copies.deinit();
+
+        const kept = try deep_copy(copies.allocator(), brought);
+        const before = languages.installed_arena;
+
+        languages.installed = kept;
+        languages.installed_arena = copies;
+
+        languages.rebuild(languages.applied) catch |err| {
+            std.log.err("languages: the installed plugins' translations are left out: {t}", .{err});
+            languages.installed = &.{};
+            try languages.rebuild(languages.applied);
+        };
+
+        if (before) |old| {
+            var used = old;
+
+            used.deinit();
+        }
+    }
+
+    /// Every translation: the compiled-in plugins', then the installed ones'.
+    pub fn every(
+        languages: *const Languages,
+        arena: std.mem.Allocator,
+    ) error{OutOfMemory}![]const OwnedTranslation {
+        std.debug.assert(languages.installed.len <= 1024);
+
+        return std.mem.concat(arena, OwnedTranslation, &.{
+            registry.translations,
+            languages.installed,
+        });
+    }
+
+    fn rebuild(languages: *Languages, stored: []const u8) !void {
+        std.debug.assert(stored.len <= 16 << 20);
+
         var fresh: std.heap.ArenaAllocator = .init(languages.gpa);
         errdefer fresh.deinit();
 
+        // `stored` may be the choices applied now, in the memory about to go.
         const arena = fresh.allocator();
-        const kept = std.json.parseFromSliceLeaky([]const Kept, arena, stored, .{
+        const applied = try arena.dupe(u8, stored);
+        const kept = std.json.parseFromSliceLeaky([]const Kept, arena, applied, .{
             .ignore_unknown_fields = true,
         }) catch &.{};
-        const list = try build(arena, registry.translations, kept);
+        const all = try languages.every(arena);
+        const list = try build(arena, all, kept);
+        const disagreements = try disagreements_of(arena, all);
+        const coverage = try coverage_of(arena, list, all);
 
-        languages.disagreements = try disagreements_of(arena, registry.translations);
-        languages.coverage = try coverage_of(arena, list);
         languages.arena.deinit();
         languages.arena = fresh;
         languages.list = list;
-        languages.applied = try arena.dupe(u8, stored);
+        languages.disagreements = disagreements;
+        languages.coverage = coverage;
+        languages.applied = applied;
+    }
+
+    /// Every language the catalogues hold, by locale and label: what the admin may speak.
+    pub fn spoken(languages: *const Languages) []const Language {
+        std.debug.assert(languages.list.len <= languages_max);
+
+        return languages.list;
     }
 
     /// The language, null for English and any language no plugin brings.
@@ -239,6 +314,26 @@ fn say(
         .count = message.count,
         .values = values,
     });
+}
+
+fn read_spoken(
+    context: *const anyopaque,
+    arena: std.mem.Allocator,
+) std.mem.Allocator.Error![]const @import("../sdk/context.zig").Spoken {
+    const languages: *const Languages = @ptrCast(@alignCast(context));
+
+    std.debug.assert(languages.list.len <= languages_max);
+
+    const list = try arena.alloc(@import("../sdk/context.zig").Spoken, languages.list.len);
+
+    for (languages.list, list) |language, *item| {
+        item.* = .{
+            .locale = language.locale,
+            .label = language.label,
+        };
+    }
+
+    return list;
 }
 
 fn read_coverage(context: *const anyopaque) []const Coverage {
@@ -567,4 +662,53 @@ test "queued work tells each in their own words: the admin in English, the visit
     try std.testing.expectEqualStrings("Gotowe: Zamówienie", Probe.kept(0));
     try std.testing.expectEqualStrings("Zamówienie is ready", Probe.kept(1));
     try std.testing.expectEqualStrings("Gotowe: Zamówienie", Probe.kept(2));
+}
+
+/// `brought` and every text it holds, in `arena`: the plugins' memory goes with their next load.
+fn deep_copy(
+    arena: std.mem.Allocator,
+    brought: []const OwnedTranslation,
+) error{OutOfMemory}![]const OwnedTranslation {
+    std.debug.assert(brought.len <= 1024);
+
+    const copies = try arena.alloc(OwnedTranslation, brought.len);
+
+    for (brought, copies) |owned, *copy| {
+        const translation = owned.translation;
+
+        copy.* = .{
+            .plugin = try arena.dupe(u8, owned.plugin),
+            .translation = .{
+                .locale = try arena.dupe(u8, translation.locale),
+                .label = try arena.dupe(u8, translation.label),
+                .po = try arena.dupe(u8, translation.po),
+                .domain = try arena.dupe(u8, translation.domain),
+                .official = translation.official,
+                .grammar = .{
+                    .cases = try words_copy(arena, translation.grammar.cases),
+                    .genders = try words_copy(arena, translation.grammar.genders),
+                },
+            },
+        };
+    }
+
+    return copies;
+}
+
+fn words_copy(
+    arena: std.mem.Allocator,
+    words: []const @import("../sdk/plugin.zig").Word,
+) error{OutOfMemory}![]const @import("../sdk/plugin.zig").Word {
+    std.debug.assert(words.len <= 64);
+
+    const copies = try arena.alloc(@import("../sdk/plugin.zig").Word, words.len);
+
+    for (words, copies) |word, *copy| {
+        copy.* = .{
+            .key = try arena.dupe(u8, word.key),
+            .label = try arena.dupe(u8, word.label),
+        };
+    }
+
+    return copies;
 }

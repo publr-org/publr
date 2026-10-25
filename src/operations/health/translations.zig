@@ -325,7 +325,7 @@ pub const ChooseTranslation = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.id.len == 0 or (in.provider.len > 0 and !provides(in.provider, in.locale))) {
+        if (in.id.len == 0 or (in.provider.len > 0 and !provides(ctx, in.provider, in.locale))) {
             return error.Invalid;
         }
 
@@ -361,7 +361,31 @@ pub const ChooseTranslation = struct {
     }
 };
 
-fn provides(provider: []const u8, locale: []const u8) bool {
+/// Whether `provider` is one of the plugins translating the message in `locale`: compiled
+/// in or installed, as the server's catalogues hold them, the compiled-in ones where none do.
+fn provides(ctx: *const Ctx, provider: []const u8, locale: []const u8) bool {
+    std.debug.assert(provider.len > 0);
+
+    const view = ctx.translations orelse return compiled_provides(provider, locale);
+
+    for (view.disagreements(view.context)) |language| {
+        if (!std.mem.eql(u8, language.locale, locale)) {
+            continue;
+        }
+
+        for (language.conflicts) |conflict| {
+            for (conflict.candidates) |candidate| {
+                if (std.mem.eql(u8, candidate.provider, provider)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+fn compiled_provides(provider: []const u8, locale: []const u8) bool {
     std.debug.assert(provider.len > 0);
 
     for (registry.translations) |owned| {

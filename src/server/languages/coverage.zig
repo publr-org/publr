@@ -2,7 +2,7 @@
 //! compiled-in plugin's, as the build embedded them, against the language's catalogue.
 const std = @import("std");
 const model = @import("../../model.zig");
-const registry = @import("../registry.zig");
+const OwnedTranslation = @import("../../sdk/plugin.zig").OwnedTranslation;
 const languages = @import("../languages.zig");
 
 const Language = languages.Language;
@@ -88,14 +88,18 @@ fn unescaped(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
 
 /// Each language over each domain: how many messages it translates, which it does not,
 /// and the plugins translating any of them.
-pub fn of(arena: std.mem.Allocator, list: []const Language) ![]const Coverage {
+pub fn of(
+    arena: std.mem.Allocator,
+    list: []const Language,
+    translations: []const OwnedTranslation,
+) ![]const Coverage {
     std.debug.assert(list.len <= languages.languages_max);
 
     const domains = try domains_of(arena);
     var out: std.ArrayList(Coverage) = .empty;
 
     for (list) |language| {
-        const translated = try translated_by(arena, language.locale);
+        const translated = try translated_by(arena, translations, language.locale);
 
         for (domains) |domain| {
             var missing: std.ArrayList(Message) = .empty;
@@ -129,10 +133,14 @@ const Translated = struct {
     catalog: model.i18n.Catalog,
 };
 
-fn translated_by(arena: std.mem.Allocator, locale: []const u8) ![]const Translated {
+fn translated_by(
+    arena: std.mem.Allocator,
+    translations: []const OwnedTranslation,
+    locale: []const u8,
+) ![]const Translated {
     std.debug.assert(locale.len > 0);
 
-    const sources = try languages.sources_of(arena, registry.translations, locale);
+    const sources = try languages.sources_of(arena, translations, locale);
     const out = try arena.alloc(Translated, sources.len);
 
     for (sources, out) |source, *translated| {

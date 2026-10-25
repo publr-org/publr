@@ -118,6 +118,17 @@ pub const Translations = struct {
         locale: []const u8,
         message: Message,
     ) std.mem.Allocator.Error![]const u8,
+    /// Every language the catalogues hold, compiled-in plugins' and installed ones'.
+    spoken: *const fn (
+        context: *const anyopaque,
+        arena: std.mem.Allocator,
+    ) std.mem.Allocator.Error![]const Spoken,
+};
+
+/// A language the admin can speak: `pl`, `Polski`.
+pub const Spoken = struct {
+    locale: []const u8,
+    label: []const u8,
 };
 
 /// The source text with each `{name}` its value, the plural by count: what `Ctx.say` gives

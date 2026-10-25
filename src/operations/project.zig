@@ -102,7 +102,7 @@ pub const Init = struct {
         }
 
         if (!try language.valid(ctx, in.language)) {
-            return error.Invalid;
+            return language.refused(ctx, "language");
         }
 
         const admin: []const []const u8 = &.{role.admin};

@@ -93,6 +93,9 @@ pub const Server = struct {
         try server.sandboxed_plugins.init(process.gpa, process.io, plugins_dir);
         errdefer server.sandboxed_plugins.deinit();
 
+        // Their translations join the catalogues each time they load.
+        server.sandboxed_plugins.languages = &server.languages;
+
         try server.sandboxed_plugins.load_all(&server.connection);
 
         try server.plugin_states.init(.{

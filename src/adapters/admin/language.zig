@@ -73,12 +73,13 @@ pub fn in(session: *Session, locale: []const u8) admin.Error!Language {
     return .{
         .locale = locale,
         .translator = translator,
-        .messages = try std.fmt.allocPrint(session.arena, "{s}{s}{s}.js?v={s}-{d}", .{
+        // By what the script holds: a pack updated in place is fetched again.
+        .messages = try std.fmt.allocPrint(session.arena, "{s}{s}{s}.js?v={s}-{x}", .{
             session.project.admin_path(),
             prefix,
             locale,
             @import("../../publr.zig").version,
-            catalog.messages(),
+            std.hash.Wyhash.hash(0, language.script),
         }),
         .script = language.script,
     };

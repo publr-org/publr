@@ -19,16 +19,32 @@ pub const Choice = struct {
     label: []const u8,
 };
 
-/// English, then every language a plugin translates the admin into, each once.
-pub fn choices(arena: std.mem.Allocator) Error![]const Choice {
+/// English, then every language a plugin translates the admin into, compiled in or
+/// installed, each once. Where no server built the catalogues (the browser), the
+/// compiled-in ones.
+pub fn choices(ctx: *const Ctx) Error![]const Choice {
     std.debug.assert(registry.translations.len <= 1024);
 
+    const arena = ctx.arena;
     var list: std.ArrayList(Choice) = .empty;
 
     list.append(arena, .{
         .locale = "en",
         .label = "English",
     }) catch return error.OutOfMemory;
+
+    if (ctx.translations) |translations| {
+        for (try translations.spoken(translations.context, arena)) |language| {
+            if (!known(list.items, language.locale)) {
+                list.append(arena, .{
+                    .locale = language.locale,
+                    .label = language.label,
+                }) catch return error.OutOfMemory;
+            }
+        }
+
+        return list.items;
+    }
 
     for (registry.translations) |owned| {
         const translation = owned.translation;
@@ -106,7 +122,7 @@ pub const Language = struct {
         std.debug.assert(granted.allows());
 
         const user = ctx.caller.user_id() orelse return error.Denied;
-        const all = try choices(ctx.arena);
+        const all = try choices(ctx);
         const site = try stored(ctx, site_key, all);
         const key = std.mem.concat(ctx.arena, u8, &.{ person_prefix, user }) catch {
             return error.OutOfMemory;
@@ -141,7 +157,7 @@ pub fn person_speaks(ctx: *Ctx, user: []const u8) Error![]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(user.len > 0);
 
-    const all = try choices(ctx.arena);
+    const all = try choices(ctx);
     const key = std.mem.concat(ctx.arena, u8, &.{ person_prefix, user }) catch {
         return error.OutOfMemory;
     };
@@ -155,7 +171,7 @@ pub fn person_speaks(ctx: *Ctx, user: []const u8) Error![]const u8 {
 pub fn site_speaks(ctx: *Ctx) Error![]const u8 {
     std.debug.assert(ctx.now_ms >= 0);
 
-    return stored(ctx, site_key, try choices(ctx.arena));
+    return stored(ctx, site_key, try choices(ctx));
 }
 
 /// What a key holds, while a plugin still brings the language; empty otherwise.
@@ -261,7 +277,7 @@ pub const SetSiteLanguage = struct {
 pub fn valid(ctx: *Ctx, language: []const u8) Error!bool {
     std.debug.assert(language.len <= 64 << 10);
 
-    return language.len == 0 or known(try choices(ctx.arena), language);
+    return language.len == 0 or known(try choices(ctx), language);
 }
 
 /// A fresh site's language, chosen as it is set up: the site's default, and its first
@@ -283,9 +299,37 @@ pub fn set_first(ctx: *Ctx, user_id: []const u8, language: []const u8) Error!voi
 fn save(ctx: *Ctx, key: []const u8, language: []const u8) Error!void {
     std.debug.assert(key.len > 0);
 
-    if (language.len > 0 and !known(try choices(ctx.arena), language)) {
-        return error.Invalid;
+    if (language.len > 0 and !known(try choices(ctx), language)) {
+        return refused(ctx, "language");
     }
 
     try store.settings.set(ctx.db, key, language, ctx.now_ms);
+}
+
+/// `language` refused on `field`: which languages the admin speaks, and that this is not the
+/// site's content language, which the languages plugin keeps.
+pub fn refused(ctx: *Ctx, field: []const u8) Error {
+    std.debug.assert(field.len > 0);
+
+    var spoken: std.Io.Writer.Allocating = .init(ctx.arena);
+
+    for (try choices(ctx), 0..) |choice, index| {
+        const separator: []const u8 = if (index == 0) "" else ", ";
+
+        spoken.writer.print("{s}{s} ({s})", .{ separator, choice.locale, choice.label }) catch {
+            return error.OutOfMemory;
+        };
+    }
+
+    const message = std.fmt.allocPrint(ctx.arena, "The admin speaks {s}. This is the admin's " ++
+        "language, not the site's: a site's languages are the languages plugin's " ++
+        "(`languages save`)", .{spoken.written()}) catch return error.OutOfMemory;
+    const problems = ctx.arena.alloc(sdk.operation.Problem, 1) catch return error.OutOfMemory;
+
+    problems[0] = .{
+        .field = field,
+        .message = message,
+    };
+
+    return ctx.refuse(problems);
 }

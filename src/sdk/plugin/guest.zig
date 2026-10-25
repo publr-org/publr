@@ -10,6 +10,7 @@ const Caller = @import("../caller.zig").Caller;
 const Grant = @import("../grant.zig").Grant;
 const contract = @import("../plugin.zig");
 const plugin_manifest = @import("manifest.zig");
+const plugin_define = @import("define.zig");
 const runtime = @import("sandboxed.zig");
 const mod_reads = @import("mod_reads.zig");
 const queue = @import("queue.zig");
@@ -495,6 +496,12 @@ pub fn export_all(comptime Plugin: type) void {
         @export(&Generated.manifest, .{
             .name = "publr_manifest",
         });
+
+        if (@hasField(@TypeOf(Plugin.options), "translations")) {
+            @export(&Generated.translations, .{
+                .name = "publr_translations",
+            });
+        }
     }
 }
 
@@ -538,6 +545,33 @@ pub fn Exports(comptime Plugin: type) type {
             defer arena_state.deinit();
 
             plugin_manifest.write(Plugin, arena_state.allocator(), &output.writer) catch {
+                return wire.code_of(error.OutOfMemory);
+            };
+
+            const bytes = output.toOwnedSlice() catch return wire.code_of(error.OutOfMemory);
+
+            std.debug.assert(bytes.len > 0);
+            result.* = .{
+                .ptr = @intCast(@intFromPtr(bytes.ptr)),
+                .len = @intCast(bytes.len),
+            };
+
+            return wire.ok;
+        }
+
+        /// The plugin's translations as JSON, PO text included, for building into the
+        /// module's `publr.translations` section. Exported only by a plugin that brings some.
+        pub fn translations(result_ptr: u32) callconv(.c) u32 {
+            std.debug.assert(result_ptr != 0);
+
+            const result: *wire.Result = @ptrFromInt(result_ptr);
+            var output: std.Io.Writer.Allocating = .init(allocator);
+            const brought: []const contract.Translation = comptime plugin_define.get(
+                Plugin,
+                "translations",
+            );
+
+            std.json.Stringify.value(brought, .{}, &output.writer) catch {
                 return wire.code_of(error.OutOfMemory);
             };
 

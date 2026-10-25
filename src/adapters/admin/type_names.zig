@@ -5,48 +5,65 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
+const Languages = @import("../../server/languages.zig").Languages;
 
 const Def = model.content_type.Def;
 const NounForms = model.content_type.NounForms;
 const NounForm = model.content_type.NounForm;
 const Grammar = @import("../../sdk/plugin.zig").Grammar;
 
-const Declining = struct {
+pub const Declining = struct {
     locale: []const u8,
     label: []const u8,
     grammar: Grammar,
 };
 
-/// The languages whose packs say how they decline, each once.
-const declining = blk: {
-    var found: []const Declining = &.{};
+/// The languages whose packs say how they decline, each once: compiled-in plugins' and
+/// installed ones', as the server's catalogues hold them.
+pub fn declining_of(
+    arena: std.mem.Allocator,
+    languages: ?*const Languages,
+) admin.Error![]const Declining {
+    std.debug.assert(registry.translations.len <= 1024);
 
-    for (registry.translations) |owned| {
+    const every = if (languages) |held| try held.every(arena) else registry.translations;
+    var found: std.ArrayList(Declining) = .empty;
+
+    for (every) |owned| {
         const translation = owned.translation;
 
-        if (translation.grammar.cases.len == 0) continue;
+        if (translation.grammar.cases.len == 0 or seen(found.items, translation.locale)) {
+            continue;
+        }
 
-        var seen = false;
+        try found.append(arena, .{
+            .locale = translation.locale,
+            .label = translation.label,
+            .grammar = translation.grammar,
+        });
+    }
 
-        for (found) |known| seen = seen or std.mem.eql(u8, known.locale, translation.locale);
+    return found.items;
+}
 
-        if (!seen) {
-            found = found ++ &[_]Declining{.{
-                .locale = translation.locale,
-                .label = translation.label,
-                .grammar = translation.grammar,
-            }};
+fn seen(found: []const Declining, locale: []const u8) bool {
+    std.debug.assert(locale.len > 0);
+
+    for (found) |known| {
+        if (std.mem.eql(u8, known.locale, locale)) {
+            return true;
         }
     }
 
-    break :blk found;
-};
+    return false;
+}
 
 /// The forms the form shows, filled from `def`.
 pub fn languages_of(
     comptime Language: type,
     arena: std.mem.Allocator,
     def: Def,
+    declining: []const Declining,
 ) admin.Error![]const Language {
     std.debug.assert(def.noun_forms.len <= 64);
     std.debug.assert(declining.len <= 64);
@@ -113,7 +130,12 @@ fn form_of(forms: NounForms, case: []const u8) ?NounForm {
 /// The post's names over `base`: `plural_name`, then `forms.<locale>.gender` and
 /// `forms.<locale>.<case>.singular` / `.plural` for each declining language; a language
 /// with nothing filled keeps no forms.
-pub fn read(arena: std.mem.Allocator, form: *const admin.Form, base: Def) admin.Error!Def {
+pub fn read(
+    arena: std.mem.Allocator,
+    form: *const admin.Form,
+    base: Def,
+    declining: []const Declining,
+) admin.Error!Def {
     std.debug.assert(form.len <= admin.form_pairs_max);
 
     var def = base;

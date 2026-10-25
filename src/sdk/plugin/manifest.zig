@@ -14,6 +14,9 @@ pub const section_name = "publr";
 /// The plugin's source a built module carries (`[{ "path", "text" }]`): what the install
 /// gate runs the plugin checks over.
 pub const source_section_name = "publr.source";
+/// The plugin's translations (`[Translation]`, PO text and all), when it brings any: read
+/// into the host's catalogues as the plugin loads, kept out of the manifest it re-reads.
+pub const translations_section_name = "publr.translations";
 pub const format = sandboxed_plugin.format;
 
 pub const Manifest = sandboxed_plugin.Manifest;

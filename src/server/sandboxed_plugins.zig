@@ -12,6 +12,8 @@ const files_module = @import("sandboxed_plugins/files.zig");
 const invoke_module = @import("sandboxed_plugins/invoke.zig");
 const Loaded = @import("sandboxed_plugins/loaded.zig").Loaded;
 const interface = @import("sandboxed_plugins/interface.zig");
+const translations_module = @import("sandboxed_plugins/translations.zig");
+const Languages = @import("languages.zig").Languages;
 
 pub const Files = files_module.Files;
 pub const hash_len = files_module.hash_len;
@@ -53,6 +55,11 @@ pub const Host = struct {
     /// there, or it does not fit. Calls to it answer `Unavailable`, its hooks don't run.
     off: []const Off = &.{},
     interface: sdk.sandboxed_plugins.SandboxedPlugins,
+    /// The loaded plugins' translations, read from their modules on each load.
+    translations_arena: std.heap.ArenaAllocator,
+    translations: std.ArrayList(@import("../sdk/plugin.zig").OwnedTranslation) = .empty,
+    /// The catalogues they join, told after every load; none in a process without them.
+    languages: ?*Languages = null,
 
     pub fn init(host: *Host, gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !void {
         std.debug.assert(dir.len > 0);
@@ -70,6 +77,9 @@ pub const Host = struct {
         host.hooks = .empty;
         host.operations = .empty;
         host.index_arena = std.heap.ArenaAllocator.init(gpa);
+        host.translations_arena = std.heap.ArenaAllocator.init(gpa);
+        host.translations = .empty;
+        host.languages = null;
         host.statuses = null;
         host.kinds = null;
         host.manifests = &.{};
@@ -89,6 +99,7 @@ pub const Host = struct {
 
         host.loaded.deinit(host.gpa);
         host.index_arena.deinit();
+        host.translations_arena.deinit();
         host.files.close();
         host.runtime.deinit();
         host.gpa.free(host.heap);
@@ -111,6 +122,8 @@ pub const Host = struct {
         }
 
         host.loaded.clearRetainingCapacity();
+        _ = host.translations_arena.reset(.retain_capacity);
+        host.translations = .empty;
 
         var arena_state = std.heap.ArenaAllocator.init(host.gpa);
         defer arena_state.deinit();
@@ -147,6 +160,10 @@ pub const Host = struct {
         try keep.appendSlice(arena_state.allocator(), in_trash);
         host.files.sweep(keep.items);
         try host.reindex();
+
+        if (host.languages) |languages| {
+            try languages.set_installed(host.translations.items);
+        }
     }
 
     fn load_one(host: *Host, row: store.sandboxed_plugins.Row) !void {
@@ -154,6 +171,12 @@ pub const Host = struct {
         std.debug.assert(files_module.valid_hash(row.hash));
 
         const bytes = try host.files.read(host.gpa, row.hash);
+        // Read before loading: the runtime rewrites the bytes it loads.
+        const arena = host.translations_arena.allocator();
+        const brought = try translations_module.of(arena, row.name, bytes);
+
+        try host.translations.appendSlice(arena, brought);
+
         const slot = try host.loaded.addOne(host.gpa);
         errdefer _ = host.loaded.pop();
 
@@ -348,4 +371,5 @@ test {
     _ = @import("sandboxed_plugins/scenarios_queued.zig");
     _ = files_module;
     _ = interface;
+    _ = translations_module;
 }

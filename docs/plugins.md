@@ -1078,8 +1078,12 @@ A plugin brings the admin's words in other languages as gettext PO files, the
 or a plugin's name; the plugin's own when left out), so one plugin can translate the core
 and others, and fill in what their authors left out. A plugin translating its own words is
 first-party and wins; a `publr` file wins only when marked `.official`. A language pack is
-a plugin of these alone, named `language_<code>` (`language_pl`). Site Health shows where
-translations disagree and what each language still misses. See
+a plugin of these alone, named `language_<code>` (`language_pl`). They work the same compiled
+in or installed: an installed plugin's files travel in its module and join the admin's
+catalogues as it loads, leave them when it is disabled or removed, and take effect at once,
+without a restart. An installed plugin's file is never `.official`: it translates, and where
+it disagrees with another the administrator chooses. Site Health shows where translations
+disagree and what each language still misses. See
 [Admin](admin.md#the-admins-language).
 
 ### The Overview's "Your agent" tab
