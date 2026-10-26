@@ -51,6 +51,37 @@ const mod_operations = @import("../operations/mod.zig");
 const provider_operations = @import("../operations/provider.zig");
 const messaging = @import("../sdk/messaging.zig");
 
+/// A compiled-in plugin's `components/<name>.publr`, which an app imports as
+/// `plugin:<plugin>/<name>`.
+pub const PluginComponent = struct {
+    plugin: []const u8,
+    name: []const u8,
+    text: []const u8,
+};
+
+/// Every compiled-in plugin's components; none in a build listing none.
+pub const plugin_components: []const PluginComponent = listed: {
+    const listed = @import("native_plugins");
+
+    if (!@hasDecl(listed, "components")) {
+        break :listed &.{};
+    }
+
+    var out: [listed.components.len]PluginComponent = undefined;
+
+    for (listed.components, &out) |component, *slot| {
+        slot.* = .{
+            .plugin = component.plugin,
+            .name = component.name,
+            .text = component.text,
+        };
+    }
+
+    const done = out;
+
+    break :listed &done;
+};
+
 /// The compiled-in plugins, each bound to its doc comments.
 pub const bound_plugins = bound: {
     const listed = @import("native_plugins");
