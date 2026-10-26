@@ -6,6 +6,14 @@ globalThis.__publr = (() => {
   const element = (name, attributes, children) => node({ kind: "element", name, attributes, children });
   const text = value => node({ kind: "text", value });
   const component = (index, attributes, children) => node({ kind: "component", index, attributes, children });
+  // A plugin kind's value keeps its fields and prints as the kind's text.
+  const texts = new WeakMap();
+  const texted = (value, words) => {
+    if (value === null || typeof value !== "object") return value;
+    texts.set(value, words);
+    Object.defineProperty(value, "toString", { value: () => words });
+    return value;
+  };
   const api = scope => Object.freeze({
     getEntry: (...args) => host(scope + ".getEntry", args),
     getCollection: (...args) => host(scope + ".getCollection", args),
@@ -46,6 +54,7 @@ globalThis.__publr = (() => {
   const tn = (one, other, count, values) =>
     host("build.t", ["", one, other, Number(count), true, words(values)]);
   return Object.freeze({ element, text, component, isNode: value => nodes.has(value),
+    texted, textOf: value => texts.get(value),
     api: Object.freeze({ build: api("build"), request: api("request"), t, tn, tx }) });
 })();
 // Static computations use explicit, tracked time and randomness.

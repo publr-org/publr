@@ -375,7 +375,27 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 }
             }
 
+            if (@hasDecl(Ctx.Data, "getKindText")) {
+                try kind_values(vm, data, document, object);
+            }
+
             return object;
+        }
+
+        /// Each field of a plugin's kind as its value decoded, printing as the kind's text.
+        fn kind_values(vm: *VM, data: Ctx.Data, document: std.json.Value, object: Value) !void {
+            std.debug.assert(document == .object);
+            var fields = document.object.iterator();
+
+            while (fields.next()) |field| {
+                const text = data.getKindText(field.key_ptr.*) orelse continue;
+                const value = try json(vm, decoded(vm.arena, field.value_ptr.*));
+                defer vm.free(value);
+                const words = try vm.string(text);
+                defer vm.free(words);
+
+                try vm.set(object, field.key_ptr.*, try vm.helper("texted", &.{ value, words }));
+            }
         }
 
         /// An operation's answer as the page reads it: `{ data: <the answer> }`, the answer
@@ -420,6 +440,17 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
             return array;
         }
     };
+}
+
+/// A struct kept as JSON text, read back; any other value as it is.
+fn decoded(arena: std.mem.Allocator, value: std.json.Value) std.json.Value {
+    std.debug.assert(value != .number_string);
+
+    if (value != .string or value.string.len == 0 or value.string[0] != '{') {
+        return value;
+    }
+
+    return std.json.parseFromSliceLeaky(std.json.Value, arena, value.string, .{}) catch value;
 }
 
 fn json(vm: *VM, value: std.json.Value) !Value {

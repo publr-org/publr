@@ -272,14 +272,8 @@ pub const Context = struct {
 
             const value = data.document.object.get(key) orelse return null;
 
-            if (data.owner) |owner| {
-                const project = owner.sdk_context();
-
-                if (kinds_with_text(registry.kinds(&project))) {
-                    if (owner.kind_text(data.type, key, value)) |text| {
-                        return text;
-                    }
-                }
+            if (data.getKindText(key)) |text| {
+                return text;
             }
 
             return switch (value) {
@@ -289,6 +283,22 @@ pub const Context = struct {
                 .bool => |flag| if (flag) "true" else "false",
                 else => null,
             };
+        }
+
+        /// A field of a plugin's kind as the kind's `.text`; null for any other field.
+        pub fn getKindText(data: Data, key: []const u8) ?[]const u8 {
+            std.debug.assert(key.len > 0);
+            std.debug.assert(data.document == .object);
+
+            const value = data.document.object.get(key) orelse return null;
+            const owner = data.owner orelse return null;
+            const project = owner.sdk_context();
+
+            if (!kinds_with_text(registry.kinds(&project))) {
+                return null;
+            }
+
+            return owner.kind_text(data.type, key, value);
         }
 
         /// A reference field's targets: one id, or a list of ids in the order stored, up

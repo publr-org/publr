@@ -182,7 +182,11 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                     return error.InvalidJavaScriptChild;
                 }
 
-                try descriptor(renderer, frame, buffer, value, depth + 1);
+                if (try kind_text(vm, value)) |text| {
+                    try escape(&buffer.writer, text);
+                } else {
+                    try descriptor(renderer, frame, buffer, value, depth + 1);
+                }
             }
 
             if (buffer.written().len > engine.output_bytes_max) {
@@ -327,6 +331,14 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                 }
 
                 if (api.JS_IsObject(prop.value)) {
+                    if (try kind_text(vm, prop.value)) |text| {
+                        try props.append(renderer.arena, .{
+                            .name = prop.name,
+                            .value = text,
+                        });
+                        continue;
+                    }
+
                     const handle = try vm.get(prop.value, "__publr_entry");
                     defer vm.free(handle);
                     var index: u32 = 0;
@@ -490,11 +502,24 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 fn scalar(vm: *VM, value: Value) ![]const u8 {
     std.debug.assert(!api.JS_IsException(value));
 
+    if (api.JS_IsObject(value)) {
+        return try kind_text(vm, value) orelse error.InvalidJavaScriptScalar;
+    }
+
     if (!api.JS_IsString(value) and !api.JS_IsNumber(value) and !api.JS_IsBool(value)) {
         return error.InvalidJavaScriptScalar;
     }
 
     return vm.text(value);
+}
+
+/// A plugin kind's value as the kind's text; null for any other object.
+fn kind_text(vm: *VM, value: Value) !?[]const u8 {
+    std.debug.assert(api.JS_IsObject(value));
+    const text = try vm.helper("textOf", &.{value});
+    defer vm.free(text);
+
+    return if (api.JS_IsString(text)) try vm.text(text) else null;
 }
 
 fn check_descriptor(vm: *VM, value: Value) !void {
