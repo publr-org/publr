@@ -382,7 +382,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     const form = Form.parse(arena, "label=SKU&required=1&unique=1&limit_length=1&min_len=2" ++
         "&max_len=12&length_message=Two+to+twelve&help=As+printed&default=x&limit_pattern=1" ++
         "&preset=uppercase&pattern=SKU-%23%23%23%23&placeholder=SKU-0000").?;
-    const sku = try field_of(arena, &form, .{
+    const sku = try field_of(arena, registry.Kinds.all, &form, .{
         .name = "",
         .label = "",
         .kind = "string",
@@ -399,7 +399,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     try std.testing.expectEqualStrings("SKU-0000", sku.options.placeholder);
 
     const off = Form.parse(arena, "label=SKU&min_len=2&pattern=x").?;
-    const loose = try field_of(arena, &off, sku);
+    const loose = try field_of(arena, registry.Kinds.all, &off, sku);
     try std.testing.expect(loose.validation.min_len == null);
     try std.testing.expectEqual(@as(usize, 0), loose.validation.messages.length.len);
     try std.testing.expect(!loose.validation.unique);
@@ -407,7 +407,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
 
     const dated = Form.parse(arena, "label=When&limit_range=1&min=1970-01-02&max=1970-01-02" ++
         "&date_format=date&from_now=1&default_now=1&default=1970-01-02").?;
-    const when = try field_of(arena, &dated, .{
+    const when = try field_of(arena, registry.Kinds.all, &dated, .{
         .name = "",
         .label = "",
         .kind = "datetime",
@@ -421,7 +421,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     const filed = Form.parse(arena, "label=Cover&limit_size=1&size_max=2&size_max_unit=mb" ++
         "&limit_types=1&media_types=image&media_types=video&limit_dimensions=1&width_min=800" ++
         "&media_link=1").?;
-    const cover = try field_of(arena, &filed, .{
+    const cover = try field_of(arena, registry.Kinds.all, &filed, .{
         .name = "",
         .label = "",
         .kind = "media",
@@ -440,7 +440,7 @@ test "lists, listed numbers and the number of values" {
 
     const tags = Form.parse(arena, "label=Tags&many=1&limit_items=1&items_min=1&items_max=5" ++
         "&distinct=1&items_message=One+to+five").?;
-    const tagged = try field_of(arena, &tags, .{
+    const tagged = try field_of(arena, registry.Kinds.all, &tags, .{
         .name = "",
         .label = "",
         .kind = "string",
@@ -450,7 +450,7 @@ test "lists, listed numbers and the number of values" {
     try std.testing.expectEqualStrings("One to five", tagged.validation.messages.items);
 
     const sizes = Form.parse(arena, "label=Size&limit_choices=1&number_choices=1%0A2%0A5").?;
-    const sized = try field_of(arena, &sizes, .{
+    const sized = try field_of(arena, registry.Kinds.all, &sizes, .{
         .name = "",
         .label = "",
         .kind = "integer",
@@ -460,7 +460,7 @@ test "lists, listed numbers and the number of values" {
 
     const link = Form.parse(arena, "label=Site&limit_schemes=1&schemes=https&schemes=mailto" ++
         "&limit_hosts=1&hosts=a.io%0Ab.io&host_message=Ours+only").?;
-    const site = try field_of(arena, &link, .{
+    const site = try field_of(arena, registry.Kinds.all, &link, .{
         .name = "",
         .label = "",
         .kind = "url",
@@ -470,7 +470,7 @@ test "lists, listed numbers and the number of values" {
     try std.testing.expectEqualStrings("Ours only", site.validation.messages.host);
 
     const mail = Form.parse(arena, "label=Mail&limit_domains=1&domains=publr.dev&lowercase=1").?;
-    const mailed = try field_of(arena, &mail, .{
+    const mailed = try field_of(arena, registry.Kinds.all, &mail, .{
         .name = "",
         .label = "",
         .kind = "email",
@@ -480,7 +480,7 @@ test "lists, listed numbers and the number of values" {
 
     const path = Form.parse(arena, "label=Slug&limit_reserved=1&reserved=admin%0Aapi" ++
         "&lock_on_publish=1").?;
-    const slugged = try field_of(arena, &path, .{
+    const slugged = try field_of(arena, registry.Kinds.all, &path, .{
         .name = "",
         .label = "",
         .kind = "slug",

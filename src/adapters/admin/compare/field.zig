@@ -267,11 +267,13 @@ test "a field's definition reads as its row, anything else is not one" {
         \\{"name":"chapters","label":"Chapters","kind":"reference","many":true,
         \\"options":{"to":["chapter"]},"help":"Shown below"}
     ;
-    const shown = (try of(arena, json)).?;
+    const shown = (try of(arena, registry_kinds, json)).?;
 
     try std.testing.expectEqualStrings("Chapters", shown.title);
     try std.testing.expectEqualStrings("Reference (many) to chapter", shown.summary);
     try std.testing.expectEqualStrings("Help: Shown below", shown.details[0]);
-    try std.testing.expect(try of(arena, "\"text\"") == null);
-    try std.testing.expect(try of(arena, "{\"title\":\"x\"}") == null);
+    try std.testing.expect(try of(arena, registry_kinds, "\"text\"") == null);
+    try std.testing.expect(try of(arena, registry_kinds, "{\"title\":\"x\"}") == null);
 }
+
+const registry_kinds = @import("../../../server/registry.zig").Kinds.all;

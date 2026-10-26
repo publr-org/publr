@@ -528,7 +528,7 @@ test "items and groups drawn closed past the fold come back whole from their JSO
         "%7B%22question%22%3A%22Who%22%7D%5D&" ++
         "seo=%7B%22description%22%3A%22About%22%7D";
     const form = Form.parse(arena, body).?;
-    const text = document_of(arena, &test_fields, &form).?;
+    const text = document_of(arena, registry.Kinds.all, &test_fields, &form).?;
 
     try std.testing.expectEqualStrings(
         "{\"live\":true,\"seo\":{\"description\":\"About\"}," ++
@@ -541,11 +541,11 @@ test "items and groups drawn closed past the fold come back whole from their JSO
     const empty = Form.parse(arena, "live=1&seo=").?;
     try std.testing.expectEqualStrings(
         "{\"live\":true,\"seo\":null}",
-        document_of(arena, &test_fields, &empty).?,
+        document_of(arena, registry.Kinds.all, &test_fields, &empty).?,
     );
 
     const broken = Form.parse(arena, "faq%5B0%2B%5D=%5B%5D").?;
-    try std.testing.expect(document_of(arena, &test_fields, &broken) == null);
+    try std.testing.expect(document_of(arena, registry.Kinds.all, &test_fields, &broken) == null);
 }
 
 test "the form's paths become the document: lists, groups, repeaters, JSON inside" {
@@ -557,7 +557,7 @@ test "the form's paths become the document: lists, groups, repeaters, JSON insid
         "tags%5B2%5D=t3&seo.description=About&seo.keywords=%5B%22a%22%2C%22b%22%5D&" ++
         "faq%5B0%5D.question=Why&faq%5B1%5D.question=";
     const form = Form.parse(arena, body).?;
-    const text = document_of(arena, &test_fields, &form).?;
+    const text = document_of(arena, registry.Kinds.all, &test_fields, &form).?;
 
     try std.testing.expectEqualStrings(
         "{\"title\":\"Hello\",\"live\":true,\"at\":1788437100000,\"views\":3," ++
@@ -568,18 +568,18 @@ test "the form's paths become the document: lists, groups, repeaters, JSON insid
     );
 
     const blank = Form.parse(arena, "live=1").?;
-    const only_live = document_of(arena, &test_fields, &blank).?;
+    const only_live = document_of(arena, registry.Kinds.all, &test_fields, &blank).?;
     try std.testing.expectEqualStrings("{\"live\":true}", only_live);
 
     const filed = Form.parse(arena, "live=1&topics=t1&topics=&topics=t2&section=s1&section=s2").?;
-    const with_terms = document_of(arena, &test_fields, &filed).?;
+    const with_terms = document_of(arena, registry.Kinds.all, &test_fields, &filed).?;
     try std.testing.expectEqualStrings(
         "{\"live\":true,\"topics\":[\"t1\",\"t2\"],\"section\":\"s1\"}",
         with_terms,
     );
 
     const bad = Form.parse(arena, "views=x").?;
-    try std.testing.expect(document_of(arena, &test_fields, &bad) == null);
+    try std.testing.expect(document_of(arena, registry.Kinds.all, &test_fields, &bad) == null);
 }
 
 test "a repeater inside a group comes back whole from its JSON" {
@@ -614,11 +614,11 @@ test "a repeater inside a group comes back whole from its JSON" {
 
     try std.testing.expectEqualStrings(
         "{\"footer\":{\"heading\":\"Shop\",\"links\":[{\"url\":\"/a\"}]}}",
-        document_of(arena, &fields, &form).?,
+        document_of(arena, registry.Kinds.all, &fields, &form).?,
     );
 
     const broken = Form.parse(arena, "footer.links=%5B").?;
-    try std.testing.expect(document_of(arena, &fields, &broken) == null);
+    try std.testing.expect(document_of(arena, registry.Kinds.all, &fields, &broken) == null);
 }
 
 test "a field the form posted blank is cleared; one it left out is kept" {
@@ -630,7 +630,7 @@ test "a field the form posted blank is cleared; one it left out is kept" {
 
     try std.testing.expectEqualStrings(
         "{\"title\":null,\"live\":true,\"tags\":null}",
-        document_of(arena, &test_fields, &cleared).?,
+        document_of(arena, registry.Kinds.all, &test_fields, &cleared).?,
     );
 }
 
@@ -665,9 +665,11 @@ test "a group left empty but for an unticked checkbox is left out" {
     const untouched = Form.parse(arena, "link.url=").?;
     const ticked = Form.parse(arena, "link.url=&link.new_window=1").?;
 
-    try std.testing.expectEqualStrings("{}", document_of(arena, &link, &untouched).?);
+    const empty = document_of(arena, registry.Kinds.all, &link, &untouched).?;
+
+    try std.testing.expectEqualStrings("{}", empty);
     try std.testing.expectEqualStrings(
         "{\"link\":{\"new_window\":true}}",
-        document_of(arena, &link, &ticked).?,
+        document_of(arena, registry.Kinds.all, &link, &ticked).?,
     );
 }
