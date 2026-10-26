@@ -152,24 +152,28 @@ fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
     return out;
 }
 
-/// The value an editor edits as its view declares it. PTSX lowers no nullable object, so on
-/// the server a value that is none (a new record) or not one of the kind is its zero value;
-/// in the browser it is null.
+/// The value an editor edits as its view declares it: null when there is none (a new record)
+/// or it is not one of the kind, for a view naming it `Place | null`; a view naming it
+/// `Place` gets the zero value then.
 fn value_of(comptime Value: type, value: std.json.Value, arena: std.mem.Allocator) Value {
-    comptime std.debug.assert(@typeInfo(Value) == .@"struct");
+    const optional = @typeInfo(Value) == .optional;
+    const Shape = if (optional) @typeInfo(Value).optional.child else Value;
+    const none: Value = if (optional) null else std.mem.zeroes(Shape);
+
+    comptime std.debug.assert(@typeInfo(Shape) == .@"struct");
 
     const parsed = switch (value) {
-        .null => return std.mem.zeroes(Value),
+        .null => return none,
         // A struct kept as JSON text.
-        .string => |text| std.json.parseFromSliceLeaky(Value, arena, text, .{
+        .string => |text| std.json.parseFromSliceLeaky(Shape, arena, text, .{
             .ignore_unknown_fields = true,
         }),
-        else => std.json.parseFromValueLeaky(Value, arena, value, .{
+        else => std.json.parseFromValueLeaky(Shape, arena, value, .{
             .ignore_unknown_fields = true,
         }),
     };
 
-    return parsed catch std.mem.zeroes(Value);
+    return parsed catch none;
 }
 
 fn part_of(comptime Part: type, from: anytype) Part {
