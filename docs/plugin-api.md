@@ -66,7 +66,7 @@ A missing one fails the build and says where it goes.
 | `limits` | `publr.plugin.Limits` | installed |
 | `depends_on`, `compatible_with` | `&.{ "newsletter@^1.2" }` | both |
 | `remotes` | `&.{ ... }` of `publr.remote.operation`, `.record`, `.event` | both |
-| `field_kinds` | `&.{ ... }` of `publr.field.kind` | built-in |
+| `field_kinds` | `&.{ ... }` of `publr.field.kind` | both |
 | `register_fields` | `&.{ .{ .fields, .location } }` | both |
 | `roles` | `&.{ ... }` of `publr.plugin.Role` | both |
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
@@ -536,6 +536,26 @@ as values change; it applies `<type>.markers`, one `publr.FieldMarkers` item per
   is the main value). Markers of one dimension are drawn together as one pill, `.group`
   first when given (a test's name); the one the editor shows is drawn selected.
 - `.current = "hide"` leaves it out while the editor shows the field at its code.
+
+### Field help
+
+The help under a top-level field may follow the values: the editor applies
+`<type>.<field>.help` when it draws the form and again as values change, with a
+`publr.FieldHelp(Doc)` (`field`, the `record` as the editor holds it, typed, and the `help`
+so far). Set `help`; up to 280 characters, plain text.
+
+```zig
+/// Says under a sample note how much of it is written, as it is typed
+fn note_help(ctx: *publr.Ctx, item: *publr.FieldHelp(Note)) publr.Error!void {
+    item.help = try ctx.print("{d} characters so far.", .{item.record.note.len});
+}
+
+// in define:
+.hooks = &.{publr.modify("notes.note.note.help", note_help)},
+```
+
+`*` stands for one dotted part, and a plugin's type names carry its name
+(`notes.note.note.help`), so `*.*.help` reaches only the site's own types.
 
 ## Hooks and events
 
@@ -1051,8 +1071,15 @@ fn check(value: Location, problems: *publr.Problems(Location)) void {
 ```
 
 Named `<plugin>.<name>`; its storage follows the value (text, a whole number, a number,
-yes or no, a struct kept as JSON); `.validate` runs on every write; `.icon` is optional.
-Field editors are not built: the form shows such a value as JSON.
+yes or no, a struct kept as JSON); `.validate` runs on every write; `.text` is how a value
+reads in list columns, search and templates; `.icon` is optional. Structure offers the kind
+for any type's fields, installed or built in.
+
+`.editor = publr.views.all.LocationEditor` draws the field on the edit form, in the plugin
+frame: a view (`PanelPage`) whose `ctx` is `EditorCtx & { value: Location | null }`
+(`@publr/admin/Document.ptsx`): `value` (null on a new record), `problems` from a refused
+save, `options.placeholder`, and `change(value)`, which hands the value to the form. Without
+one the form shows core's control for the value's shape.
 
 ```zig
 /// Loyalty
@@ -1249,8 +1276,10 @@ return .{
 ```
 
 Installed, `publr plugin build` lowers the plugin's views itself and the host draws every
-design-system component they reach, so the plugin carries none of them. For now a plugin's
-own markup takes no classes (style through the components), and the frame runs no islands.
+design-system component they reach, so the plugin carries none of them; what its views do
+in the browser (state, clicks, `ctx.query`, `ctx.call`, `ctx.navigate`) travels in the
+module and runs in its frame. For now a plugin's own markup takes no classes (style through
+the components).
 Icons named only at runtime go in `ui/icons.txt`. In the page, `publr/operations` gives
 `call("<op>")`, `query("<op>")` and ``query(groq`...`)``; `publr plugin build` writes
 `ui/operations.d.ts`.
