@@ -1139,7 +1139,12 @@ pub fn Editor(comptime domain: Domain) type {
             const form_defs = try varied(session, def.fields, .{
                 .document = document,
             });
-            const rows = try fields.rows_of(context, form_defs, document);
+            const id = if (shape.loaded) |full| full.row.id else "";
+            const rows = try with_panels(session, def.handle, id, document, try fields.rows_of(
+                context,
+                form_defs,
+                document,
+            ));
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
                 .group_visible = model.field_group.applies(def.group, .{
                     .destination = if (comptime std.mem.eql(
@@ -1288,6 +1293,104 @@ pub fn Editor(comptime domain: Domain) type {
                 .impact = null,
             });
         }
+
+        /// The rows with the panels plugins draw under fields as their help (`Panel.field`),
+        /// each in the plugin frame, told the record (none on a new one) and the field's value
+        /// as the form holds it.
+        fn with_panels(
+            session: *Session,
+            handle: []const u8,
+            id: []const u8,
+            document: ?Value,
+            rows: []const fields.Row,
+        ) Error![]const fields.Row {
+            std.debug.assert(handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            const found = try frame_panels.for_type(session, handle);
+            const helped = for (found) |panel| {
+                if (panel.field.len > 0) {
+                    break true;
+                }
+            } else false;
+
+            if (!helped) {
+                return rows;
+            }
+
+            const out = try session.arena.dupe(fields.Row, rows);
+
+            for (out) |*row| {
+                row.panels = try panels_under(session, found, row.name, id, document);
+            }
+
+            return out;
+        }
+
+        fn panels_under(
+            session: *Session,
+            found: []const frame_panels.Panel,
+            field: []const u8,
+            id: []const u8,
+            document: ?Value,
+        ) Error![]const FieldPanel {
+            std.debug.assert(field.len > 0);
+            std.debug.assert(session.signed_in());
+
+            const frame_pages = @import("frame/pages.zig");
+            var items: std.ArrayList(FieldPanel) = .empty;
+
+            for (found) |panel| {
+                if (!std.mem.eql(u8, panel.field, field)) {
+                    continue;
+                }
+
+                // A long value is told once the frame says hello, not in its address.
+                const whole = held_text(session.arena, document, panel.field) catch {
+                    return error.OutOfMemory;
+                };
+                const held = if (whole.len > held_in_address_max) "" else whole;
+                const own = try frame_pages.operations_of(session, panel.plugin);
+                const src = try print(
+                    session.arena,
+                    "/admin/plugin/{s}/panels/{s}/frame?record={s}&type={s}&value={s}",
+                    .{
+                        panel.plugin,
+                        panel.operation,
+                        id,
+                        panel.type,
+                        try admin.query_value(session.arena, held),
+                    },
+                );
+
+                try items.append(session.arena, .{
+                    .label = panel.label,
+                    .plugin = panel.plugin,
+                    .src = src,
+                    .operations = try std.mem.join(session.arena, ",", own),
+                });
+            }
+
+            return items.items;
+        }
+    };
+}
+
+const held_in_address_max: u32 = 2048;
+const frame_panels = @import("frame/panels.zig");
+const FieldPanel = @typeInfo(@FieldType(fields.Row, "panels")).pointer.child;
+
+/// A top-level field's value as the form holds it: its text, any other value as JSON;
+/// empty for none.
+fn held_text(arena: std.mem.Allocator, document: ?Value, field: []const u8) ![]const u8 {
+    std.debug.assert(field.len > 0);
+
+    const value = (document orelse return "").object.get(field) orelse return "";
+
+    return switch (value) {
+        .null => "",
+        .string => |text| text,
+        else => try std.json.Stringify.valueAlloc(arena, value, .{}),
     };
 }
 

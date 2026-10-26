@@ -1,0 +1,16 @@
+import type { EditorCtx } from "@publr/admin/Document.ptsx";
+import { PanelPage } from "@publr/admin/PanelPage.ptsx";
+import { SamplerNoteMeter } from "./SamplerNoteMeter.ptsx";
+
+export type SamplerNoteStrengthProps = {
+  ctx: EditorCtx & { value: string };
+};
+
+/** The sampler's help under a sample note's text, in the plugin frame. */
+export function SamplerNoteStrength({ ctx }: SamplerNoteStrengthProps) {
+  return (
+    <PanelPage title="Note strength">
+      <SamplerNoteMeter ctx={ctx} />
+    </PanelPage>
+  );
+}

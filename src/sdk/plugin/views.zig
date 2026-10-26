@@ -154,13 +154,21 @@ fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
 
 /// The value an editor edits as its view declares it: null when there is none (a new record)
 /// or it is not one of the kind, for a view naming it `Place | null`; a view naming it
-/// `Place` gets the zero value then.
+/// `Place` gets the zero value then. A field's help names its value `string`: the field's
+/// text, empty for none.
 fn value_of(comptime Value: type, value: std.json.Value, arena: std.mem.Allocator) Value {
     const optional = @typeInfo(Value) == .optional;
     const Shape = if (optional) @typeInfo(Value).optional.child else Value;
     const none: Value = if (optional) null else std.mem.zeroes(Shape);
 
-    comptime std.debug.assert(@typeInfo(Shape) == .@"struct");
+    comptime std.debug.assert(@typeInfo(Shape) != .void);
+
+    if (comptime @typeInfo(Shape) != .@"struct") {
+        return switch (value) {
+            .null => none,
+            else => std.json.parseFromValueLeaky(Shape, arena, value, .{}) catch none,
+        };
+    }
 
     const parsed = switch (value) {
         .null => return none,

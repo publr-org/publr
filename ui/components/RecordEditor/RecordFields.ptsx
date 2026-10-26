@@ -18,6 +18,7 @@ import { RecordMedia } from "./RecordMedia.ptsx";
 import { RecordRepeater } from "./RecordRepeater.ptsx";
 import { RecordSingle } from "./RecordSingle.ptsx";
 import { FieldMarkers } from "./FieldMarkers.ptsx";
+import { PluginPanel } from "../PluginPanel.ptsx";
 
 export type RecordFieldsProps = {
   /** The field group's presentation: whether it applies here, and how labels and
@@ -33,6 +34,9 @@ export type RecordFieldsProps = {
     required: boolean;
     /** The line shown under the control, from the field's definition; empty for none. */
     help: string;
+    /** The panels plugins draw under the field as its help, each in the plugin frame and
+     * told the field's value as the form holds it, again as it changes. */
+    panels?: Array<{ label: string; plugin: string; src: string; operations: string }>;
     /** The field's rules written out (or its own hint), beside the help; empty for none. */
     hint: string;
     /** A group or repeater folded away until opened. */
@@ -384,6 +388,10 @@ export function RecordFields({
             add_label={field.add_label}
           />
         )}
+        {(field.panels ?? []).map((panel) => (
+          <PluginPanel src={panel.src} title={panel.label} plugin={panel.plugin} csrf={editor.csrf}
+            operations={panel.operations} field={field.name} />
+        ))}
         </FieldRow>
         <div data-part="shared-mark" hidden>
           <Text as="p" variant="body-sm" tone="muted">{Publr.t("Same in every language")}</Text>

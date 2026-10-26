@@ -279,6 +279,7 @@ fn row_shell(context: Context, def: Def) Error!Row {
         .label = def.label,
         .required = def.validation.required,
         .help = def.help,
+        .panels = &.{},
         .hint = try @import("fields/hint.zig").line(context.session, context.arena, def),
         .collapsed = def.options.container.collapsed,
         .closed = false,

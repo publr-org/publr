@@ -31,6 +31,7 @@ import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
 import { DropdownMenuSubTrigger } from "@publr/ui/DropdownMenuSubTrigger.ptsx";
 import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { tell_problems } from "./PluginEditor.ptsx";
+import { tell_fields } from "./PluginPanel.ptsx";
 
 /** The editor's client half. The form autosaves: every input marks it dirty and, after a
  * pause, posts it as JSON, which answers the new version (or why it could not be saved).
@@ -618,6 +619,7 @@ export const markDirty = () => {
   clearTimeout(timer);
   timer = window.setTimeout(() => { void flush(); }, 800);
   markersSoon();
+  tell_fields();
 };
 
 /** The combobox of a flat taxonomy (RecordTerms) writes hidden inputs without an input

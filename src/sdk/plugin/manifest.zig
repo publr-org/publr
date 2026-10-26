@@ -270,6 +270,7 @@ fn panels_of(comptime Plugin: type) []const sandboxed_plugin.Panel {
                 .type = panel.type,
                 .label = panel.label,
                 .operation = panel.operation.name,
+                .field = panel.field,
             }};
         }
 

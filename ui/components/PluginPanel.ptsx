@@ -10,6 +10,22 @@ export const state = Publr.reactive({
  * from: an edit form may carry panels of several plugins, each knowing only its own. */
 const answered: WeakSet<MessageEvent> = new WeakSet();
 
+/** A field's help: the field's value as the form around it holds it, its text; empty for
+ * none. */
+const held = (frame: HTMLIFrameElement): string => {
+  const form = frame.closest("form");
+  const name = frame.dataset.field ?? "";
+  if (!form || name === "") return "";
+  const value = new FormData(form).get(name);
+  return typeof value === "string" ? value : "";
+};
+
+/** Tells each field's help on the page the field's value as it now stands. */
+export const tell_fields = () => {
+  const frames: HTMLIFrameElement[] = Array.from(document.querySelectorAll("iframe[data-plugin-panel][data-field]"));
+  for (const frame of frames) reply(frame, { kind: "value", value: held(frame) });
+};
+
 export const received = (event: MessageEvent) => {
   const message = event.data;
   if (answered.has(event) || !message || message.publr !== 1) return;
@@ -21,7 +37,10 @@ export const received = (event: MessageEvent) => {
   const csrf = frame.dataset.csrf ?? "";
   const operations = (frame.dataset.operations ?? "").split(",").filter((name) => name !== "");
   const id = Number(message.id);
-  if (message.kind === "hello") reply(frame, { kind: "ready" });
+  if (message.kind === "hello") {
+    reply(frame, { kind: "ready" });
+    if (frame.dataset.field) reply(frame, { kind: "value", value: held(frame) });
+  }
   if (message.kind === "height") {
     const height = Math.min(Math.max(Number(message.height) || 0, 0), 4000);
     state.heights = { ...state.heights, [frame.dataset.key ?? ""]: height };
@@ -38,10 +57,12 @@ export type PluginPanelProps = {
   csrf: string;
   /** The plugin's own operations, comma-joined: the only ones the frame may ask for. */
   operations: string;
+  /** A field's help: the field it is drawn under, told its value as it changes. */
+  field?: string;
 };
 
 /** A plugin's panel on an edit form: the plugin frame, sized to what it shows. */
-export function PluginPanel({ src, title, plugin, csrf, operations }: PluginPanelProps) {
+export function PluginPanel({ src, title, plugin, csrf, operations, field = "" }: PluginPanelProps) {
   return (
     <iframe
       src={src}
@@ -54,6 +75,7 @@ export function PluginPanel({ src, title, plugin, csrf, operations }: PluginPane
       data-plugin={plugin}
       data-csrf={csrf}
       data-operations={operations}
+      data-field={field === "" ? undefined : field}
       onWindowMessage={received}
     ></iframe>
   );

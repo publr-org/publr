@@ -143,7 +143,9 @@ pub fn frame(request: *Request, response: *Response, ctx: *Context) Error!void {
 }
 
 /// A panel's document, `?record=<id>`: the panel's read told the record and the base path.
-/// The record decides the type, so a panel shows only on records of its own type.
+/// The record decides the type, so a panel shows only on records of its own type. A field's
+/// help (`Panel.field`) may be on a new record, `?type=<handle>` then, and its view's
+/// `ctx.value` is `?value=<text>`, the field's value as the form holds it: text.
 pub fn panel_frame(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
@@ -152,25 +154,46 @@ pub fn panel_frame(request: *Request, response: *Response, ctx: *Context) Error!
     const plugin = request.param("plugin") orelse "";
     const operation = request.param("operation") orelse "";
     const record = admin.query_param(&session, "record") orelse "";
+    const asked_type = admin.query_param(&session, "type") orelse "";
 
-    if (plugin.len == 0 or operation.len == 0 or record.len == 0) {
+    if (plugin.len == 0 or operation.len == 0 or (record.len == 0 and asked_type.len == 0)) {
         return response.text(.not_found, "Not Found");
     }
 
     var reading = session;
-    const got = registry.SDK.dispatch(&reading.ctx, records.Get, .{
-        .id = record,
-        .purpose = .edit,
-    }) catch return response.text(.not_found, "Not Found");
-    const panel = try panels.find(&session, plugin, operation, got.record.type) orelse {
+    const handle = if (record.len == 0) asked_type else blk: {
+        const got = registry.SDK.dispatch(&reading.ctx, records.Get, .{
+            .id = record,
+            .purpose = .edit,
+        }) catch return response.text(.not_found, "Not Found");
+
+        break :blk got.record.type;
+    };
+    const panel = try panels.find(&session, plugin, operation, handle) orelse {
         return response.text(.not_found, "Not Found");
     };
+
+    if (record.len == 0 and panel.field.len == 0) {
+        return response.text(.not_found, "Not Found");
+    }
+
     const asked = .{
         .record = record,
         .base = session.project.admin_path(),
     };
 
     look(&session, "");
+
+    if (panel.field.len > 0) {
+        const held = admin.query_param(&session, "value") orelse "";
+
+        session.ctx.view.editor = .{
+            .value = .{
+                .string = held,
+            },
+        };
+    }
+
     try serve_frame(&session, panel.operation, asked, .panel);
 }
 

@@ -36,6 +36,7 @@ const ReadLogs = @import("operations/logs.zig");
 const Page = @import("operations/page.zig");
 const Count = @import("operations/count.zig");
 const NotePanel = @import("operations/note_panel.zig");
+const NoteStrength = @import("operations/note_strength.zig");
 const Wave = @import("operations/wave.zig");
 const Submit = @import("operations/submit.zig");
 const Later = @import("operations/later.zig");
@@ -102,11 +103,16 @@ const native_pages = [_]publr.plugin.Page{.{
 }} ++ pages;
 
 /// A box on each sample note's form, drawn in the plugin frame.
-const panels = [_]publr.plugin.Panel{.{
+const panels = [_]publr.plugin.Panel{ .{
     .type = "sampler.sample_note",
     .label = "Sampler",
     .operation = NotePanel.operation,
-}};
+}, .{
+    .type = "sampler.sample_note",
+    .label = "Note strength",
+    .operation = NoteStrength.operation,
+    .field = "note",
+} };
 
 /// An action on the rows of any page that names a `sampler` slot.
 const row_actions = [_]publr.plugin.RowAction{.{
@@ -171,6 +177,7 @@ const operations = [_]type{
     Page.operation,
     Count.operation,
     NotePanel.operation,
+    NoteStrength.operation,
     Wave.operation,
     Submit.operation,
     Later.operation,

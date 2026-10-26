@@ -97,16 +97,23 @@ fn panels_of(session: *Session, def: Def, id: []const u8) Error!?admin.render.No
 
     const frame_panels = @import("../frame/panels.zig");
     const frame_pages = @import("../frame/pages.zig");
-    const found = try frame_panels.for_type(session, def.handle);
+    var found: std.ArrayList(frame_panels.Panel) = .empty;
 
-    if (found.len == 0) {
+    // A field's help is drawn under the field, not beside the form.
+    for (try frame_panels.for_type(session, def.handle)) |panel| {
+        if (panel.field.len == 0) {
+            try found.append(session.arena, panel);
+        }
+    }
+
+    if (found.items.len == 0) {
         return null;
     }
 
     const Item = views.RecordPanels.PanelsItem;
-    const items = try session.arena.alloc(Item, found.len);
+    const items = try session.arena.alloc(Item, found.items.len);
 
-    for (found, items) |panel, *item| {
+    for (found.items, items) |panel, *item| {
         const operations = try frame_pages.operations_of(session, panel.plugin);
 
         item.* = .{

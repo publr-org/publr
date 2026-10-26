@@ -557,6 +557,34 @@ fn note_help(ctx: *publr.Ctx, item: *publr.FieldHelp(Note)) publr.Error!void {
 `*` stands for one dotted part, and a plugin's type names carry its name
 (`notes.note.note.help`), so `*.*.help` reaches only the site's own types.
 
+Help may also be a view of the plugin's: a panel with `.field` is drawn under that
+top-level field, in the plugin frame, on any type's form (a new record's too). Its view's
+`ctx.value` is the field's text as the form holds it, empty for none, and changes as the
+person types; copy it into the view's own store with `Publr.effect` to redraw:
+
+```zig
+// in define:
+.panels = &.{.{
+    .type = "post",
+    .label = "SEO strength",
+    .operation = SeoStrength, // a read taking `record` (empty on a new one) and `base`
+    .field = "title",
+}},
+```
+
+```tsx
+export function SeoMeter({ ctx }: { ctx: EditorCtx & { value: string } }) {
+  const state = Publr.reactive({ length: ctx.value.length });
+  Publr.effect(() => {
+    state.length = ctx.value.length;
+  });
+  return <p>{state.length > 60 ? "Too long" : "Fine"}</p>;
+}
+```
+
+A view whose root is a layout (`PanelPage`) keeps its store in a component of its own, as
+`SeoMeter` is here.
+
 ## Hooks and events
 
 Publr is event-driven. Every operation emits an event under its own name when it succeeds,
@@ -1257,7 +1285,7 @@ before a page shows it; core writes the `<symbol>` around it.
 
 A panel is a read taking `record` and `base`, answering `html` drawn by its view on the
 `PanelPage` layout (`publr.views.render`), shown in the plugin frame on every record of the
-type. Row actions are built-in only. What the plugin's page in the
+type; with `.field`, under that field as its help (see [Field help](#field-help)). Row actions are built-in only. What the plugin's page in the
 admin says about it is its `//!` past the first line, through the admin's sanitizer.
 
 ### Admin views in PTSX

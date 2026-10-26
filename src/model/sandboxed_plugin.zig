@@ -323,6 +323,8 @@ pub const Panel = struct {
     type: []const u8,
     label: []const u8,
     operation: []const u8,
+    /// The field it is the help of, under which it is drawn; empty for a box beside the form.
+    field: []const u8 = "",
 };
 
 /// A column on a list the plugin doesn't own (`.register_columns`): the field is its own,

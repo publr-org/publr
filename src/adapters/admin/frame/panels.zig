@@ -16,6 +16,8 @@ pub const Panel = struct {
     type: []const u8,
     label: []const u8,
     operation: []const u8,
+    /// The field it is the help of; empty for a box beside the form.
+    field: []const u8 = "",
 };
 
 /// Every panel the viewer may see on a record of `handle`, compiled-in plugins' first.
@@ -34,6 +36,7 @@ pub fn for_type(session: *const Session, handle: []const u8) admin.Error![]const
                 .type = owned.panel.type,
                 .label = owned.panel.label,
                 .operation = owned.panel.operation.name,
+                .field = owned.panel.field,
             });
         }
     }
@@ -55,6 +58,7 @@ pub fn for_type(session: *const Session, handle: []const u8) admin.Error![]const
                     .type = panel.type,
                     .label = panel.label,
                     .operation = panel.operation,
+                    .field = panel.field,
                 });
             }
         }
