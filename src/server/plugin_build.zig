@@ -388,7 +388,8 @@ fn stores_of(init: std.process.Init, views: []const u8) !?[]const u8 {
 
     const arena = init.arena.allocator();
     const path = try std.fs.path.join(arena, &.{ views, "stores.js" });
-    const text = std.Io.Dir.cwd().readFileAlloc(init.io, path, arena, .limited(stores_bytes_max)) catch |err| {
+    const limit: std.Io.Limit = .limited(stores_bytes_max);
+    const text = std.Io.Dir.cwd().readFileAlloc(init.io, path, arena, limit) catch |err| {
         switch (err) {
             error.FileNotFound => return null,
             else => return err,
