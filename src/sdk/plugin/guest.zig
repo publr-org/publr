@@ -657,8 +657,9 @@ pub fn Exports(comptime Plugin: type) type {
             };
             var ctx = context(arena, envelope);
             const views = @import("views.zig");
+            const html = try views.render(&ctx, envelope.in.base, Definition.given.editor, .{});
 
-            try reply(try views.render(&ctx, envelope.in.base, Definition.given.editor, .{}), result);
+            try reply(html, result);
         }
 
         /// A field kind's `.validate` over one stored value: the problems it finds.
