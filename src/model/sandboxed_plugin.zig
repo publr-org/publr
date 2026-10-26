@@ -338,6 +338,8 @@ pub const FieldKind = struct {
     control: kinds.Control,
     validates: bool,
     texts: bool,
+    /// Whether it has an `.editor` view, drawn in its frame on the edit form.
+    edits: bool = false,
 };
 
 const kinds = @import("kinds.zig");

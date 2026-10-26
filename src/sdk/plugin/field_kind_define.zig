@@ -179,8 +179,10 @@ fn Texted(comptime Definition: type) type {
 /// `view.editor` says: the value, its problems and the field's options in its `ctx`.
 fn Edited(comptime Definition: type) type {
     return struct {
-        fn draw(ctx: *anyopaque, base: []const u8) ?[]const u8 {
+        fn draw(ctx: *anyopaque, id: []const u8, base: []const u8) ?[]const u8 {
             const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
+
+            std.debug.assert(id.len > 0);
             var wrapped: plugin_context.PluginCtx = .{
                 .inner = inner,
             };
@@ -238,6 +240,7 @@ pub fn manifested(comptime Definition: type, comptime Docs: type) sandboxed_plug
             .control = control_of(Value),
             .validates = @hasField(@TypeOf(options), "validate"),
             .texts = @hasField(@TypeOf(options), "text"),
+            .edits = @hasField(@TypeOf(options), "editor"),
         };
     }
 }
@@ -245,6 +248,11 @@ pub fn manifested(comptime Definition: type, comptime Docs: type) sandboxed_plug
 /// What an installed kind's `validate` and `text` are handed: the stored value.
 pub const Stored = struct {
     value: std.json.Value,
+};
+
+/// What an installed kind's `editor` is handed: the path its frame is served under.
+pub const Drawn = struct {
+    base: []const u8,
 };
 
 /// The plugin's `.validate` over a stored value read back into `Value`: each problem's
@@ -288,6 +296,7 @@ pub fn installed(id: []const u8, declared: sandboxed_plugin.FieldKind) kinds.Kin
         .control = declared.control,
         .check = if (declared.validates) &installed_check else null,
         .text = if (declared.texts) &installed_text else null,
+        .editor = if (declared.edits) &installed_editor else null,
         .searchable_allowed = declared.texts,
     };
 }
@@ -329,6 +338,24 @@ fn installed_text(ctx: *anyopaque, id: []const u8, value: std.json.Value) ?[]con
     const answered = sandboxed.extra(inner, .kind_text, id, input) catch return null;
 
     std.debug.assert(id.len > 0);
+
+    return std.json.parseFromSliceLeaky([]const u8, inner.arena, answered, .{
+        .allocate = .alloc_always,
+    }) catch null;
+}
+
+/// An installed kind's `.editor` drawn in the sandbox with the caller's view: its document,
+/// or null when it could not be drawn.
+fn installed_editor(ctx: *anyopaque, id: []const u8, base: []const u8) ?[]const u8 {
+    const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
+    const sandboxed = inner.sandboxed_plugins orelse return null;
+    const input = sdk.stringify(inner.arena, Drawn{
+        .base = base,
+    }) catch return null;
+    const answered = sandboxed.extra(inner, .kind_editor, id, input) catch return null;
+
+    std.debug.assert(id.len > 0);
+    std.debug.assert(inner.view.editor != null);
 
     return std.json.parseFromSliceLeaky([]const u8, inner.arena, answered, .{
         .allocate = .alloc_always,

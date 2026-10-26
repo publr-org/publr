@@ -633,7 +633,32 @@ pub fn Exports(comptime Plugin: type) type {
                 .rule_matches => run_rule_matches(item.declaration, input, result, arena),
                 .kind_validate => run_kind_validate(item.declaration, input, result, arena),
                 .kind_text => run_kind_text(item.declaration, input, result, arena),
+                .kind_editor => run_kind_editor(item.declaration, input, result, arena),
             };
+        }
+
+        /// A field kind's `.editor` view drawn whole for its frame, under the `base` asked;
+        /// the value, its problems and the field's options come with the caller's view.
+        fn run_kind_editor(
+            comptime Definition: type,
+            input: []const u8,
+            result: *wire.Result,
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const field_kind = @import("field_kind_define.zig");
+
+            if (comptime !@hasField(@TypeOf(Definition.given), "editor")) {
+                return error.NotFound;
+            }
+
+            const Shape = wire.Envelope(field_kind.Drawn, struct {});
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
+                return error.Invalid;
+            };
+            var ctx = context(arena, envelope);
+            const views = @import("views.zig");
+
+            try reply(try views.render(&ctx, envelope.in.base, Definition.given.editor, .{}), result);
         }
 
         /// A field kind's `.validate` over one stored value: the problems it finds.

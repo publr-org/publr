@@ -18,7 +18,7 @@ pub const Stage = enum { before, after, event, modify };
 
 /// What an installed plugin brings that core runs by name past its jobs: a location rule's
 /// `values` and `matches`, a field kind's `validate` and `text`.
-pub const Part = enum { rule_values, rule_matches, kind_validate, kind_text };
+pub const Part = enum { rule_values, rule_matches, kind_validate, kind_text, kind_editor };
 
 pub const Manifest = @import("../model/sandboxed_plugin.zig").Manifest;
 const sandboxed_plugin = @import("../model/sandboxed_plugin.zig");

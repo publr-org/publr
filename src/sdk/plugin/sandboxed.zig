@@ -32,6 +32,7 @@ pub const Entry = struct {
         rule_matches,
         kind_validate,
         kind_text,
+        kind_editor,
     };
 };
 
@@ -98,6 +99,10 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
                 },
                 .{
                     .stage = .kind_text,
+                    .declaration = Definition,
+                },
+                .{
+                    .stage = .kind_editor,
                     .declaration = Definition,
                 },
             };

@@ -207,7 +207,7 @@ pub fn editor_frame(request: *Request, response: *Response, ctx: *Context) Error
         },
     };
 
-    const html = draw(&session.ctx, base) orelse
+    const html = draw(&session.ctx, id, base) orelse
         "<p class=\"p-8\">This editor could not be drawn.</p>";
 
     try send(&session, base, html);
