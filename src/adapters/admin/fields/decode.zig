@@ -18,25 +18,37 @@ pub const json_bytes_max: u32 = 1 << 20;
 pub const items_max: u32 = model.document.items_max;
 
 /// The form as the JSON text the record operations take; null when it does not parse.
-pub fn document_of(arena: std.mem.Allocator, fields: []const Def, form: *const Form) ?[]const u8 {
+/// `known` is the kinds the project knows (`admin.kinds_of`).
+pub fn document_of(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    fields: []const Def,
+    form: *const Form,
+) ?[]const u8 {
     std.debug.assert(fields.len <= model.field.fields_max);
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    const value = value_of(arena, fields, form) catch return null;
+    const value = value_of(arena, known, fields, form) catch return null;
 
     return std.json.Stringify.valueAlloc(arena, value, .{}) catch null;
 }
 
 /// The form as a JSON object.
-pub fn value_of(arena: std.mem.Allocator, fields: []const Def, form: *const Form) Error!Value {
+pub fn value_of(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    fields: []const Def,
+    form: *const Form,
+) Error!Value {
     std.debug.assert(fields.len <= model.field.fields_max);
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    return object_of(arena, fields, form, "");
+    return object_of(arena, known, fields, form, "");
 }
 
 fn object_of(
     arena: std.mem.Allocator,
+    known: []const Kind,
     fields: []const Def,
     form: *const Form,
     prefix: []const u8,
@@ -53,7 +65,7 @@ fn object_of(
         // Saving keeps a field the document leaves out, so a top-level field the form
         // posted blank (a list under its bare name) is written as null: cleared.
         const posted_blank = prefix.len == 0 and form.get(def.name) != null;
-        const value = (try field_value(arena, def, form, prefix)) orelse
+        const value = (try field_value(arena, known, def, form, prefix)) orelse
             if (posted_blank) Value.null else continue;
 
         object.put(arena, def.name, value) catch return error.OutOfMemory;
@@ -67,6 +79,7 @@ fn object_of(
 /// Null when the field was left empty; an error when what was typed does not parse.
 fn field_value(
     arena: std.mem.Allocator,
+    known: []const Kind,
     def: Def,
     form: *const Form,
     prefix: []const u8,
@@ -75,7 +88,7 @@ fn field_value(
     std.debug.assert(prefix.len <= model.document.path_len_max);
 
     const name = try print(arena, "{s}{s}", .{ prefix, def.name });
-    const kind = model.kinds.lookup(registry.Kinds.all, def.kind);
+    const kind = model.kinds.lookup(known, def.kind);
 
     // A group drawn closed (past the fold) posts its value whole, as JSON.
     if (model.field.is_group(def.kind) and has_exact(form, name)) {
@@ -84,7 +97,7 @@ fn field_value(
 
     if (model.field.is_group(def.kind)) {
         const child_prefix = try print(arena, "{s}.", .{name});
-        const object = try object_of(arena, def.fields, form, child_prefix);
+        const object = try object_of(arena, known, def.fields, form, child_prefix);
 
         return if (filled(object)) object else null;
     }
@@ -95,7 +108,7 @@ fn field_value(
     }
 
     if (model.field.is_repeater(def.kind)) {
-        return entries_value(arena, def, form, name);
+        return entries_value(arena, known, def, form, name);
     }
 
     if (model.field.is_money(def.kind) and !has_exact(form, name)) {
@@ -145,6 +158,7 @@ fn filled(object: Value) bool {
 /// A repeater's items, `name[0].`, `name[1].`, until an index no pair starts with.
 fn entries_value(
     arena: std.mem.Allocator,
+    known: []const Kind,
     def: Def,
     form: *const Form,
     name: []const u8,
@@ -191,7 +205,7 @@ fn entries_value(
             break;
         }
 
-        const item = try object_of(arena, def.fields, form, item_prefix);
+        const item = try object_of(arena, known, def.fields, form, item_prefix);
 
         array.append(item) catch return error.OutOfMemory;
         index += 1;

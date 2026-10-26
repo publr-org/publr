@@ -60,6 +60,7 @@ const Shout = @import("hooks/shout.zig");
 const Announce = @import("hooks/announce.zig");
 const LogNote = @import("hooks/log_note.zig");
 const NoteTitle = @import("hooks/note_title.zig");
+const NoteHelp = @import("hooks/note_help.zig");
 const Double = @import("hooks/double.zig");
 
 const manifest: publr.Manifest = .{
@@ -187,6 +188,7 @@ const hooks = .{
     publr.after(Note.operation, Announce.run),
     publr.on(Noted.event, LogNote.run),
     publr.modify("sampler.sample_note.title", NoteTitle.run),
+    publr.modify("sampler.sample_note.note.help", NoteHelp.run),
     publr.modify("sampler.*", Double.run),
     publr.after(publr.operations.user.List, NoteCount.run),
     publr.after(publr.operations.record.List, Characters.run),

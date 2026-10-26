@@ -86,6 +86,9 @@ pub const modify = @import("sdk/plugin/hook_define.zig").modify;
 /// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
 /// (`.record`), and the `.title` to change.
 pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+/// What a `<type>.<field>.help` modifier takes: the help under one field of a record in the
+/// editor, asked again as its values change; change `help`.
+pub const FieldHelp = @import("sdk/plugin/modify_define.zig").FieldHelp;
 /// What a `<type>.markers` modifier takes: one field of a record in the editor, with the
 /// markers beside its label so far; add yours to `markers`.
 pub const FieldMarkers = struct {

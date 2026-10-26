@@ -202,7 +202,12 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             const form_defs = try varied(session, def.fields, .{});
-            const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
+            const document = fields.decode.document_of(
+                session.arena,
+                admin.kinds_of(session),
+                form_defs,
+                form,
+            ) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
             var in = keyed(operations.Create.In, domain.key, handle, .{
@@ -235,7 +240,12 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             const defs = try varied(session, shape.def.fields, .{});
-            const document = fields.decode.document_of(session.arena, defs, form) orelse {
+            const document = fields.decode.document_of(
+                session.arena,
+                admin.kinds_of(session),
+                defs,
+                form,
+            ) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
             const location = try print(session.arena, "{s}/{s}", .{ back, id });
@@ -606,7 +616,12 @@ pub fn Editor(comptime domain: Domain) type {
 
             const verb = form.text("reshape") orelse return false;
             const defs = try varied(session, shape.def.fields, .{});
-            const posted = fields.decode.value_of(session.arena, defs, form) catch {
+            const posted = fields.decode.value_of(
+                session.arena,
+                admin.kinds_of(session),
+                defs,
+                form,
+            ) catch {
                 try admin.fail(session, error.Invalid, back);
 
                 return true;
@@ -923,8 +938,9 @@ pub fn Editor(comptime domain: Domain) type {
             };
         }
 
-        /// The markers beside each field's label (`record.markers`) for the form as it stands,
-        /// saved or not, as JSON for the editor to draw: asked again as its values change.
+        /// The markers beside each field's label (`record.markers`) and the fields' help
+        /// (`record.help`) for the form as it stands, saved or not, as JSON for the editor to
+        /// draw: asked again as its values change.
         pub fn markers(request: *Request, response: *Response, ctx: *Context) Error!void {
             std.debug.assert(request.method() == .post);
             std.debug.assert(ctx.user_data != null);
@@ -935,21 +951,34 @@ pub fn Editor(comptime domain: Domain) type {
             const handle = form.text("type") orelse return admin.fail(session, error.Invalid, back);
             const def = try definition_of(session, handle) orelse return;
             const defs = try varied(session, def.fields, .{});
-            const document = fields.decode.document_of(session.arena, defs, form) orelse {
+            const document = fields.decode.document_of(
+                session.arena,
+                admin.kinds_of(session),
+                defs,
+                form,
+            ) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
 
             if (comptime !@hasDecl(operations, "Markers")) {
                 return session.response.json(.ok, .{
                     .markers = &[_]u8{},
+                    .helps = &[_]u8{},
                 }) catch error.OutOfMemory;
             } else {
                 const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
                     .type = handle,
                     .document = document,
                 }) catch |err| return admin.fail(session, err, back);
+                const helped = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
+                    .type = handle,
+                    .document = document,
+                }) catch |err| return admin.fail(session, err, back);
 
-                return session.response.json(.ok, found) catch error.OutOfMemory;
+                return session.response.json(.ok, .{
+                    .markers = found.markers,
+                    .helps = helped.helps,
+                }) catch error.OutOfMemory;
             }
         }
 
@@ -989,6 +1018,43 @@ pub fn Editor(comptime domain: Domain) type {
                         .dimension = marker.dimension,
                         .code = marker.code,
                         .current = marker.current,
+                    };
+                }
+
+                return items;
+            }
+        }
+
+        /// The fields' help as plugins give it for `document` as it is drawn (`record.help`).
+        /// None when it cannot be worked out: the type's help shows until the editor asks.
+        fn helps_drawn(
+            session: *Session,
+            handle: []const u8,
+            document: ?Value,
+        ) Error![]const views.RecordEditor.HelpsItem {
+            std.debug.assert(handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            if (comptime !@hasDecl(operations, "Helps")) {
+                return &.{};
+            } else {
+                const value = document orelse return &.{};
+                const text = std.json.Stringify.valueAlloc(session.arena, value, .{}) catch {
+                    return error.OutOfMemory;
+                };
+                const found = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
+                    .type = handle,
+                    .document = text,
+                }) catch return &.{};
+                const items = try session.arena.alloc(
+                    views.RecordEditor.HelpsItem,
+                    found.helps.len,
+                );
+
+                for (found.helps, items) |one, *item| {
+                    item.* = .{
+                        .field = one.field,
+                        .help = one.help,
                     };
                 }
 
@@ -1159,6 +1225,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .impact = null,
                     .dimensions = try pickers_of(session),
                     .markers = try markers_drawn(session, def.handle, document),
+                    .helps = try helps_drawn(session, def.handle, document),
                     .request_by = requested.by,
                     .request_label = requested.label,
                     .request_transition = requested.transition,

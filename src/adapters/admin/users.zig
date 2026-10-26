@@ -287,7 +287,12 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     }
 
     const form_defs = try editor.varied(session, shape.defs, .{});
-    const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
+    const document = fields.decode.document_of(
+        session.arena,
+        admin.kinds_of(session),
+        form_defs,
+        form,
+    ) orelse {
         return admin.fail(session, error.Invalid, back);
     };
     _ = registry.SDK.dispatch(&session.ctx, user_operations.Update, .{
@@ -385,7 +390,12 @@ fn reshaped(session: *Session, shape: *Shape, form: *const admin.Form) Error!boo
 
     const verb = form.text("reshape") orelse return false;
     const form_defs = try editor.varied(session, shape.defs, .{});
-    const posted = fields.decode.value_of(session.arena, form_defs, form) catch {
+    const posted = fields.decode.value_of(
+        session.arena,
+        admin.kinds_of(session),
+        form_defs,
+        form,
+    ) catch {
         try admin.fail(session, error.Invalid, back);
 
         return true;

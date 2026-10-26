@@ -12,11 +12,15 @@ const Kind = model.kinds.Kind;
 const views = admin.views.FieldDefault;
 const Option = views.OptionsItem;
 
-pub fn node(arena: std.mem.Allocator, field: FieldDef) Error!admin.render.Node {
+pub fn node(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    field: FieldDef,
+) Error!admin.render.Node {
     std.debug.assert(field.kind.len <= model.kinds.string_len_max);
     std.debug.assert(field.options.choices.len <= model.field.choices_max);
 
-    const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
+    const kind = model.kinds.lookup(known, field.kind);
     const now = std.mem.eql(u8, field.default, model.defaults.now_text);
 
     return admin.render.view(arena, views, .{

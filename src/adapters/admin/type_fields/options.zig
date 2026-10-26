@@ -23,7 +23,12 @@ const mib: u64 = 1024 * 1024;
 
 /// The form over `base`: name (made from the label when empty), label, settings and
 /// the options of its kind. Options the kind has no control for stay as they are.
-pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Error!FieldDef {
+pub fn field_of(
+    arena: std.mem.Allocator,
+    known: []const model.kinds.Kind,
+    form: *const Form,
+    base: FieldDef,
+) Error!FieldDef {
     std.debug.assert(form.len <= admin.form_pairs_max);
     std.debug.assert(base.fields.len <= model.field.fields_max);
 
@@ -34,14 +39,14 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     }
 
     const label = form.text("label") orelse "";
-    const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
+    const kind = model.kinds.lookup(known, field.kind);
 
     field.label = label;
     field.name = form.text("name") orelse try type_pages.handle_of(arena, label);
     field.validation.required = !model.field.is_layout(field.kind) and form.get("required") != null;
     field.validation.unique = kind.unique_allowed and form.get("unique") != null;
     field.validation.hint = form.text("hint") orelse "";
-    field.searchable = field_pages.can_search(field.kind) and form.get("searchable") != null;
+    field.searchable = field_pages.can_search(known, field.kind) and form.get("searchable") != null;
 
     if (form.get("filterable_offered") != null) {
         field.filterable = form.get("filterable") != null;
@@ -50,7 +55,7 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     // Left as its kind sorts unless ticked otherwise.
     if (form.get("sortable_offered") != null) {
         const wanted = form.get("sortable") != null;
-        const usual = model.field_filter.sorts_by_default(field_pages.family_of(field.kind));
+        const usual = model.field_filter.sorts_by_default(field_pages.family_of(known, field.kind));
 
         field.sortable = if (wanted == usual) null else wanted;
     }
@@ -70,7 +75,7 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     // Single or Multiple is chosen once: the form does not post it when editing, and
     // stored values already have that shape.
     if (form.text("many")) |many| {
-        field.many = field_pages.can_be_many(field.kind) and std.mem.eql(u8, many, "1");
+        field.many = field_pages.can_be_many(known, field.kind) and std.mem.eql(u8, many, "1");
     }
 
     try read_rules(arena, form, kind, &field);

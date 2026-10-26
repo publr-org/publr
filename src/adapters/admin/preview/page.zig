@@ -175,7 +175,11 @@ fn own_entry(
         saved_slug = got.record.slug;
     }
 
-    const document = if (visit.form) |form| try overlaid(visit.arena, base, def, form) else base;
+    const known = registry.kinds(ctx);
+    const document = if (visit.form) |form|
+        try overlaid(visit.arena, known, base, def, form)
+    else
+        base;
     const own_slug = slug_of(def, document) orelse saved_slug orelse "new";
 
     if (!std.mem.eql(u8, own_slug, slug)) {
@@ -282,11 +286,19 @@ fn parsed(arena: std.mem.Allocator, text: []const u8) !Value {
 }
 
 /// The form read as the editor saves it, written over `base`: a field posted blank clears.
-fn overlaid(arena: std.mem.Allocator, base: Value, def: Def, form: *const admin.Form) !Value {
+fn overlaid(
+    arena: std.mem.Allocator,
+    known: []const model.kinds.Kind,
+    base: Value,
+    def: Def,
+    form: *const admin.Form,
+) !Value {
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(base == .object);
 
-    const text = fields.decode.document_of(arena, def.fields, form) orelse return error.Invalid;
+    const text = fields.decode.document_of(arena, known, def.fields, form) orelse {
+        return error.Invalid;
+    };
     const posted = try parsed(arena, text);
     var document = try base.object.clone(arena);
 

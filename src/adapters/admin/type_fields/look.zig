@@ -13,11 +13,15 @@ const views = admin.views.FieldLook;
 const Props = views.Props;
 const LabelField = views.Label_fieldsItem;
 
-pub fn node(arena: std.mem.Allocator, field: FieldDef) Error!admin.render.Node {
+pub fn node(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    field: FieldDef,
+) Error!admin.render.Node {
     std.debug.assert(field.kind.len <= model.kinds.string_len_max);
     std.debug.assert(field.fields.len <= model.field.fields_max);
 
-    const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
+    const kind = model.kinds.lookup(known, field.kind);
     const set = field.options;
     var props: Props = .{
         .help = field.help,

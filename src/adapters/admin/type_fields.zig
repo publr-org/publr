@@ -66,17 +66,20 @@ fn back_label_of(session: *const Session, path: ?[]const u8) Error![]const u8 {
     return if (under.len > 0) under else session.translated("Fields", .{});
 }
 
-/// The kind's descriptor, or the placeholder for a kind no plugin provides any more.
-pub fn text_of(kind: []const u8) Kind {
-    std.debug.assert(kind.len <= model.kinds.string_len_max);
-    std.debug.assert(registry.Kinds.all.len > 0);
+pub const known_of = admin.kinds_of;
 
-    return model.kinds.lookup(registry.Kinds.all, kind);
+/// The kind's descriptor among `known`, or the placeholder for a kind no plugin provides
+/// any more.
+pub fn text_of(known: []const Kind, kind: []const u8) Kind {
+    std.debug.assert(kind.len <= model.kinds.string_len_max);
+    std.debug.assert(known.len > 0);
+
+    return model.kinds.lookup(known, kind);
 }
 
 /// String-like kinds take a length range.
-fn has_length(kind: []const u8) bool {
-    const lengthy = text_of(kind).has.length;
+fn has_length(known: []const Kind, kind: []const u8) bool {
+    const lengthy = text_of(known, kind).has.length;
 
     std.debug.assert(!lengthy or model.field.is_leaf(kind));
     std.debug.assert(lengthy or !std.mem.eql(u8, kind, "string"));
@@ -86,8 +89,8 @@ fn has_length(kind: []const u8) bool {
 
 /// Any kind may hold a list of values, except a slug (unique per type), a group, and a
 /// repeater (the group that already repeats).
-pub fn can_be_many(kind: []const u8) bool {
-    const listable = text_of(kind).many_allowed;
+pub fn can_be_many(known: []const Kind, kind: []const u8) bool {
+    const listable = text_of(known, kind).many_allowed;
 
     std.debug.assert(!listable or model.field.is_leaf(kind));
     std.debug.assert(listable or !std.mem.eql(u8, kind, "string"));
@@ -96,16 +99,16 @@ pub fn can_be_many(kind: []const u8) bool {
 }
 
 /// How lists can filter and order by fields of the kind.
-pub fn family_of(kind: []const u8) model.field_filter.Family {
+pub fn family_of(known: []const Kind, kind: []const u8) model.field_filter.Family {
     std.debug.assert(kind.len > 0);
 
-    return model.field_filter.family_of(model.kinds.lookup(registry.Kinds.all, kind));
+    return model.field_filter.family_of(text_of(known, kind));
 }
 
-pub fn can_search(kind: []const u8) bool {
-    const searchable = text_of(kind).searchable_allowed;
+pub fn can_search(known: []const Kind, kind: []const u8) bool {
+    const searchable = text_of(known, kind).searchable_allowed;
 
-    std.debug.assert(!searchable or text_of(kind).storage != .int);
+    std.debug.assert(!searchable or text_of(known, kind).storage != .int);
     std.debug.assert(searchable or !std.mem.eql(u8, kind, "string"));
 
     return searchable;
@@ -146,7 +149,7 @@ pub fn new_field(request: *Request, response: *Response, ctx: *Context) Error!vo
     const chosen = admin.query_param(&session, "kind");
 
     if (chosen != null) {
-        const kind = registry.Kinds.find_kind(chosen.?) orelse {
+        const kind = model.kinds.find(known_of(&session), chosen.?) orelse {
             return admin.fail(&session, error.NotFound, back);
         };
         const blank: FieldDef = .{
@@ -169,7 +172,7 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
     const type_href = try spaces.hub(session, handle);
     var cards: std.ArrayList(KindCard) = .empty;
 
-    for (registry.Kinds.all) |text| {
+    for (known_of(session)) |text| {
         if (parent.len > 0 and model.field.is_layout(text.id)) {
             continue;
         }
@@ -186,7 +189,7 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
             .icon = std.meta.stringToEnum(
                 @FieldType(KindCard, "icon"),
                 text.icon,
-            ) orelse unreachable,
+            ) orelse .package,
             .label = try session.declared(text.label),
             .description = try session.declared(text.description),
         }) catch return error.OutOfMemory;
@@ -282,7 +285,8 @@ pub fn panel_node(
     std.debug.assert(session.signed_in());
 
     const arena = session.arena;
-    const text = text_of(field.kind);
+    const known = known_of(session);
+    const text = text_of(known, field.kind);
     const links = try links_of(arena, try spaces.hub(session, handle), field, parent, path);
     const set = field.options;
 
@@ -304,15 +308,15 @@ pub fn panel_node(
         .label = field.label,
         .label_count = try room_text(arena, field.label.len, model.field.label_len_max),
         .name_count = try room_text(arena, field.name.len, model.field.name_len_max),
-        .can_be_many = can_be_many(field.kind),
+        .can_be_many = can_be_many(known, field.kind),
         .many = field.many,
-        .can_search = can_search(field.kind),
+        .can_search = can_search(known, field.kind),
         .searchable = field.searchable,
-        .can_filter = family_of(field.kind) != .none,
+        .can_filter = family_of(known, field.kind) != .none,
         .filterable = field.filterable,
-        .can_sort = model.field_filter.sortable(family_of(field.kind)) and !field.many,
+        .can_sort = model.field_filter.sortable(family_of(known, field.kind)) and !field.many,
         .sortable = field.sortable orelse
-            model.field_filter.sorts_by_default(family_of(field.kind)),
+            model.field_filter.sorts_by_default(family_of(known, field.kind)),
         .dimensions = if (model.field.is_layout(field.kind))
             &.{}
         else
@@ -329,8 +333,8 @@ pub fn panel_node(
         .choices = try choice_lines(arena, set.choices, set.labels),
         .on_delete = @tagName(set.reference.on_delete),
         .rules = try rules.node(session, arena, field),
-        .defaults = try default_value.node(arena, field),
-        .look = try look.node(arena, field),
+        .defaults = try default_value.node(arena, known, field),
+        .look = try look.node(arena, known, field),
         .conditions = try @import("field_conditions.zig").node(
             arena,
             field,
@@ -341,7 +345,7 @@ pub fn panel_node(
         ),
         .is_container = !model.field.is_leaf(field.kind),
         .add_child_href = links.add_child_href,
-        .children = try children_of(arena, links.type_href, field),
+        .children = try children_of(arena, known, links.type_href, field),
         // The field a visual type's block editor writes stays while the type is visual.
         .delete_action = if (path != null and parent.len == 0 and
             type_editor.is_edited(def, field.name))
@@ -408,6 +412,7 @@ fn problem_items(
 /// The rows of a group or repeater's own fields, for its page.
 fn children_of(
     arena: std.mem.Allocator,
+    known: []const Kind,
     handle: []const u8,
     field: FieldDef,
 ) Error![]const views.FieldPanel.ChildrenItem {
@@ -417,7 +422,7 @@ fn children_of(
     const rows = try arena.alloc(views.FieldPanel.ChildrenItem, field.fields.len);
 
     for (field.fields, 0..) |child, index| {
-        const row = try columns.row_of(arena, handle, child, field.name, false);
+        const row = try columns.row_of(arena, known, handle, child, field.name, false);
 
         rows[index] = .{
             .path = row.path,

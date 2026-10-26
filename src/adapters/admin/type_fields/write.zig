@@ -45,14 +45,15 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
     const got = try load(session, handle) orelse return;
     const hub = try spaces.hub(session, handle);
     const parent = form.text("parent") orelse "";
-    const kind = registry.Kinds.find_kind(form.text("kind") orelse "") orelse {
+    const known = field_pages.known_of(session);
+    const kind = model.kinds.find(known, form.text("kind") orelse "") orelse {
         return admin.fail(session, error.Invalid, hub);
     };
     const siblings = siblings_of(got.definition, parent) orelse {
         return admin.fail(session, error.NotFound, hub);
     };
     const preview = columns.wants_preview(session);
-    const typed = try field_of(session.arena, form, .{
+    const typed = try field_of(session.arena, field_pages.known_of(session), form, .{
         .name = "",
         .label = "",
         .kind = kind.id,
@@ -100,7 +101,7 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     const place = try unlocked(session, got.definition, path, hub) orelse return;
     const changed = try session.arena.dupe(FieldDef, place.siblings);
     const preview = columns.wants_preview(session);
-    const typed = try field_of(session.arena, form, place.field);
+    const typed = try field_of(session.arena, field_pages.known_of(session), form, place.field);
     const untitled = try session.translated("Untitled field", .{});
     const field = if (preview) columns.presentable(typed, untitled) else typed;
 

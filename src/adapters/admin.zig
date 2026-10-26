@@ -703,6 +703,13 @@ pub const nav = @import("admin/nav.zig");
 pub const settings_nav = @import("admin/settings_nav.zig");
 pub const nav_content = nav.nav_content;
 
+/// The field kinds the session's project knows: the build's, then its installed plugins'.
+pub fn kinds_of(session: *const Session) []const compare.Kind {
+    std.debug.assert(session.signed_in());
+
+    return registry.kinds(&session.ctx);
+}
+
 /// Sign-in required, by an account that may use the admin: answers null after
 /// redirecting to the login page otherwise.
 pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Session {

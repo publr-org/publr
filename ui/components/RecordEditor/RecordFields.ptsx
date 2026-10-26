@@ -265,7 +265,7 @@ export function RecordFields({
           label={field.shape !== "group" && field.shape !== "repeater" && field.shape !== "tab" && field.shape !== "accordion" && field.shape !== "message" && field.shape !== "fixed" ? field.label : ""}
           htmlFor={`field-${field.name}`}
           required={field.required}
-          description={field.help}
+          description={editor.helps[field.name] ?? field.help}
           hint={field.hint}
           error={editor.problems[field.name] ?? ""}
           aside={<FieldMarkers name={field.name} />}

@@ -60,7 +60,7 @@ pub fn described(
             .id = id,
             .label = std.mem.trimEnd(u8, plugin_define.first(Docs, @typeName(Value)).?, "."),
             .description = plugin_define.rest(Docs, @typeName(Value)).?,
-            .icon = if (@hasField(@TypeOf(options), "icon")) options.icon else "box",
+            .icon = if (@hasField(@TypeOf(options), "icon")) options.icon else "package",
             .storage = storage_of(id, Value),
             .control = control_of(Value),
             .check = if (@hasField(@TypeOf(options), "validate"))
@@ -233,7 +233,7 @@ pub fn manifested(comptime Definition: type, comptime Docs: type) sandboxed_plug
             .name = Definition.verb,
             .label = std.mem.trimEnd(u8, plugin_define.first(Docs, @typeName(Value)).?, "."),
             .description = plugin_define.rest(Docs, @typeName(Value)).?,
-            .icon = if (@hasField(@TypeOf(options), "icon")) options.icon else "box",
+            .icon = if (@hasField(@TypeOf(options), "icon")) options.icon else "package",
             .storage = storage_of(Definition.verb, Value),
             .control = control_of(Value),
             .validates = @hasField(@TypeOf(options), "validate"),
