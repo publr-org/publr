@@ -17,6 +17,9 @@ pub const source_section_name = "publr.source";
 /// The plugin's translations (`[Translation]`, PO text and all), when it brings any: read
 /// into the host's catalogues as the plugin loads, kept out of the manifest it re-reads.
 pub const translations_section_name = "publr.translations";
+/// The browser half of the plugin's views, when they keep state or answer clicks: the stores
+/// its lowering registers, served at `<admin>/plugin/<name>/stores.js` for its frame.
+pub const stores_section_name = "publr.stores";
 pub const format = sandboxed_plugin.format;
 
 pub const Manifest = sandboxed_plugin.Manifest;

@@ -20,6 +20,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .stage = &stage,
     .statuses = &statuses_of,
     .kinds = &kinds_of,
+    .stores = &stores_of,
     .remote_off = &remote_off,
     .find = &find,
     .manifests = &manifests,
@@ -54,6 +55,20 @@ fn kinds_of(context: *anyopaque) ?[]const model.kinds.Kind {
     std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
     return host.kinds;
+}
+
+fn stores_of(context: *anyopaque, plugin: []const u8) ?[]const u8 {
+    const host = host_of(context);
+
+    std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
+
+    for (host.stores.items) |one| {
+        if (std.mem.eql(u8, one.plugin, plugin)) {
+            return one.code;
+        }
+    }
+
+    return null;
 }
 
 fn remote_off(context: *anyopaque, plugin: []const u8, name: []const u8) bool {

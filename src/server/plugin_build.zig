@@ -98,7 +98,8 @@ pub fn built_module(init: std.process.Init, request: Request, built: []const u8)
     }
 
     const source = try std.json.Stringify.valueAlloc(init.arena.allocator(), files, .{});
-    const manifest = try write_manifest(init, built, source);
+    const stores = if (views) |folder| try stores_of(init, folder) else null;
+    const manifest = try write_manifest(init, built, source, stores);
 
     try warn_left_out(init, request.name, manifest);
 
@@ -380,10 +381,36 @@ fn stub_names(init: std.process.Init, sdk_dir: []const u8) ![]const []const u8 {
     return names.items;
 }
 
+/// The browser half of the plugin's views (`stores.js` its lowering wrote), or null when they
+/// register nothing: their page loads it in the plugin frame after the admin's.
+fn stores_of(init: std.process.Init, views: []const u8) !?[]const u8 {
+    std.debug.assert(views.len > 0);
+
+    const arena = init.arena.allocator();
+    const path = try std.fs.path.join(arena, &.{ views, "stores.js" });
+    const text = std.Io.Dir.cwd().readFileAlloc(init.io, path, arena, .limited(stores_bytes_max)) catch |err| {
+        switch (err) {
+            error.FileNotFound => return null,
+            else => return err,
+        }
+    };
+
+    return if (std.mem.indexOf(u8, text, "Publr.") == null) null else text;
+}
+
+/// The most browser code a plugin's views may carry.
+const stores_bytes_max = 1 << 20;
+
 /// Reads the manifest by running the module's `publr_manifest` in the sandbox, with no
-/// grants and nothing it could call, and writes it into the module's `publr` section, and
-/// the plugin's source into `publr.source`, for the install gate's checks.
-fn write_manifest(init: std.process.Init, path: []const u8, source: []const u8) ![]const u8 {
+/// grants and nothing it could call, and writes it into the module's `publr` section, the
+/// plugin's source into `publr.source`, for the install gate's checks, and its views' browser
+/// code into `publr.stores`.
+fn write_manifest(
+    init: std.process.Init,
+    path: []const u8,
+    source: []const u8,
+    stores: ?[]const u8,
+) ![]const u8 {
     std.debug.assert(path.len > 0);
 
     const cwd = std.Io.Dir.cwd();
@@ -404,6 +431,10 @@ fn write_manifest(init: std.process.Init, path: []const u8, source: []const u8) 
         const name = plugin_manifest.translations_section_name;
 
         try wasm.section.write(&output.writer, name, translations);
+    }
+
+    if (stores) |code| {
+        try wasm.section.write(&output.writer, plugin_manifest.stores_section_name, code);
     }
 
     try cwd.writeFile(init.io, .{

@@ -723,6 +723,22 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
         installed.write_plugin(arena, set.io, &program, own, callable, out_dir) catch |err| {
             return report(err, "plugin");
         };
+
+        // The plugin's own stores, served at `<admin>/plugin/<name>/stores.js` beside the
+        // admin's, which the page loads first: the runtime two folders up.
+        var own_browser: std.Io.Writer.Allocating = .init(arena);
+
+        try browser_imports(set, &own_browser.writer, own, "../../");
+        try shared_helpers(set, &own_browser.writer, own);
+        program.stores_of = own;
+        program.runtime_path = "../../publr.js";
+        try own_browser.writer.writeAll(program.storesFile(arena) catch |err| {
+            return report(err, "stores.js");
+        });
+        try out_dir.writeFile(set.io, .{
+            .sub_path = "stores.js",
+            .data = own_browser.written(),
+        });
         return;
     }
 
@@ -741,8 +757,8 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     var browser: std.Io.Writer.Allocating = .init(arena);
     // The class book first: every class the stores write is written by its short name.
     try browser.writer.writeAll("import \"./class-book.js\";\n");
-    try browser_imports(set, &browser.writer);
-    try shared_helpers(set, &browser.writer);
+    try browser_imports(set, &browser.writer, null, "./");
+    try shared_helpers(set, &browser.writer, null);
     try browser.writer.writeAll(try program.storesFile(arena));
     const stores = browser.written();
     try out_dir.writeFile(set.io, .{
@@ -821,13 +837,17 @@ fn callable_file(set: *Set) ![]const u8 {
 /// The helpers stores import from other modules: each module's in a scope of its own, so
 /// its private names never meet another's (`const stack` in two of them), answering the
 /// names the stores import, under the names they import them as.
-fn shared_helpers(set: *Set, out: *std.Io.Writer) !void {
+fn shared_helpers(set: *Set, out: *std.Io.Writer, kept: ?[]const []const u8) !void {
     std.debug.assert(set.modules.items.len > 0);
 
     var named: std.ArrayList(Named) = .empty;
 
     for (set.modules.items) |module| {
         if (module.component.store_registration == null) {
+            continue;
+        }
+
+        if (!is_kept(kept, module.component.name)) {
             continue;
         }
 
@@ -1007,27 +1027,53 @@ fn shared_of(set: *const Set, stem: []const u8) ?*const Module {
     return null;
 }
 
+/// Whether `name` is among `kept`; every name is when `kept` is null.
+fn is_kept(kept: ?[]const []const u8, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    const list = kept orelse return true;
+
+    for (list) |one| {
+        if (std.mem.eql(u8, one, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 fn is_runtime(source: []const u8) bool {
     return std.mem.eql(u8, source, runtime_import) or
         std.mem.eql(u8, source, "publr") or std.mem.startsWith(u8, source, "publr/");
 }
 
-fn browser_imports(set: *Set, writer: *std.Io.Writer) !void {
+/// The runtime's modules the stores of `kept` (every module when null) import, from
+/// `prefix` (`./`, or `../../` for an installed plugin's stores).
+fn browser_imports(
+    set: *Set,
+    writer: *std.Io.Writer,
+    kept: ?[]const []const u8,
+    prefix: []const u8,
+) !void {
     std.debug.assert(set.modules.items.len > 0);
     std.debug.assert(set.modules.items.len <= modules_max);
 
     var seen: std.StringHashMapUnmanaged([]const u8) = .empty;
 
     for (set.modules.items) |module| {
+        if (!is_kept(kept, module.component.name)) {
+            continue;
+        }
+
         for (module.component.imports) |entry| {
             if (!is_runtime(entry.source)) {
                 continue;
             }
 
             const source = if (std.mem.eql(u8, entry.source, "publr"))
-                "./publr.js"
+                try std.fmt.allocPrint(set.arena, "{s}publr.js", .{prefix})
             else if (std.mem.startsWith(u8, entry.source, "publr/"))
-                try std.fmt.allocPrint(set.arena, "./publr-{s}.js", .{entry.source[6..]})
+                try std.fmt.allocPrint(set.arena, "{s}publr-{s}.js", .{ prefix, entry.source[6..] })
             else
                 continue;
 

@@ -21,10 +21,41 @@ pub const tabs_of = pages.tabs_of;
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
 
+    router.get(prefix ++ "/:plugin/stores.js", &stores);
     router.get(prefix ++ "/:plugin/:page", &show);
     router.get(prefix ++ "/:plugin/:page/frame", &frame);
     router.get(prefix ++ "/:plugin/panels/:operation/frame", &panel_frame);
     router.get(prefix ++ "/:plugin/kinds/:kind/frame", &editor_frame);
+}
+
+/// An installed plugin's views' browser code, for its frame: loaded after the admin's own
+/// stores, importing the same runtime. Code only, as the admin's scripts are, so it is
+/// served to the frame's opaque origin without signing in.
+pub fn stores(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    const session = Session.open(request, response, ctx);
+    const plugin = request.param("plugin") orelse "";
+    const code = stores_of(&session, plugin) orelse {
+        return response.text(.not_found, "Not Found");
+    };
+
+    try admin.script(response, code);
+}
+
+/// The browser code `plugin`'s views bring when it is installed; null for a compiled-in
+/// plugin, whose views' code is in the admin's own stores.
+fn stores_of(session: *const Session, plugin: []const u8) ?[]const u8 {
+    std.debug.assert(session.ctx.now_ms > 0);
+
+    if (plugin.len == 0) {
+        return null;
+    }
+
+    const sandboxed = session.ctx.sandboxed_plugins orelse return null;
+
+    return sandboxed.stores(plugin);
 }
 
 pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -234,9 +265,16 @@ fn send(session: *Session, base: []const u8, html: []const u8) Error!void {
     std.debug.assert(html.len > 0);
 
     const response = session.response;
+    const plugin = session.request.param("plugin") orelse "";
     var out: std.Io.Writer.Allocating = .init(session.arena);
+    const own: []const u8 = if (stores_of(session, plugin) != null)
+        try std.fmt.allocPrint(session.arena, "{s}{s}/{s}/stores.js", .{ base, prefix, plugin })
+    else
+        "";
 
-    document.write(&out.writer, base, html, session.ctx.view) catch return error.OutOfMemory;
+    document.write(&out.writer, base, html, session.ctx.view, own) catch {
+        return error.OutOfMemory;
+    };
     try response.set_header("Content-Security-Policy", document.policy);
     try response.set_header("Cache-Control", "no-store");
     try response.set_header("Referrer-Policy", "no-referrer");

@@ -47,20 +47,28 @@ fn write_bridge(writer: *std.Io.Writer, view: View) std.Io.Writer.Error!void {
 const view_json_max = 8192;
 
 /// The frame's document: a whole page the plugin drew with the admin's layouts gets the
-/// bridge first in its head; anything else is put in a document linking the stylesheet
+/// bridge first in its head, then `stores` (an installed plugin's views' browser code, its
+/// address; empty for none); anything else is put in a document linking the stylesheet
 /// under `base`.
 pub fn write(
     writer: *std.Io.Writer,
     base: []const u8,
     html: []const u8,
     view: View,
+    stores: []const u8,
 ) std.Io.Writer.Error!void {
     std.debug.assert(base.len == 0 or base[0] == '/');
     std.debug.assert(std.mem.indexOfAny(u8, base, "\"<>&'") == null);
+    std.debug.assert(std.mem.indexOfAny(u8, stores, "\"<>&'") == null);
 
     if (head_end(html)) |at| {
         try write_named(writer, html[0..at]);
         try write_bridge(writer, view);
+
+        if (stores.len > 0) {
+            try writer.print("<script type=\"module\" src=\"{s}\"></script>", .{stores});
+        }
+
         try write_named(writer, html[at..]);
 
         return;
@@ -205,7 +213,7 @@ test "a whole page gets the bridge first in its head" {
     var buffer: [8192]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
 
-    try write(&writer, "", "<!doctype html>\n<html><head><title>T</title></head></html>", .{});
+    try write(&writer, "", "<!doctype html>\n<html><head><title>T</title></head></html>", .{}, "");
 
     const text = writer.buffered();
 
@@ -219,7 +227,7 @@ test "the frame's document links the stylesheet under the base and carries the b
     var buffer: [8192]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
 
-    try write(&writer, "/env/staging", "<p>Hello</p>", .{});
+    try write(&writer, "/env/staging", "<p>Hello</p>", .{}, "");
 
     const text = writer.buffered();
 
@@ -227,6 +235,23 @@ test "the frame's document links the stylesheet under the base and carries the b
     try std.testing.expect(std.mem.indexOf(u8, text, "window.publr") != null);
     try std.testing.expect(std.mem.endsWith(u8, bridge, "})\n"));
     try std.testing.expect(std.mem.endsWith(u8, text, "<p>Hello</p></body></html>"));
+}
+
+test "an installed plugin's stores load after the bridge, before the page's own head" {
+    var buffer: [8192]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    const page = "<!doctype html><html><head><script type=\"module\" src=\"/admin/stores.js\">" ++
+        "</script></head><body></body></html>";
+
+    try write(&writer, "", page, .{}, "/admin/plugin/sampler/stores.js");
+
+    const text = writer.buffered();
+    const own = std.mem.indexOf(u8, text, "src=\"/admin/plugin/sampler/stores.js\"").?;
+    const bridge_end = std.mem.indexOf(u8, text, ");</script>").?;
+    const admin_own = std.mem.indexOf(u8, text, "src=\"/admin/stores.js\"").?;
+
+    try std.testing.expect(bridge_end < own);
+    try std.testing.expect(own < admin_own);
 }
 
 test "the bridge is told who is looking and the page, and they cannot close its script" {
@@ -242,7 +267,7 @@ test "the bridge is told who is looking and the page, and they cannot close its 
             .path = "log",
             .query = "week=2",
         },
-    });
+    }, "");
 
     const text = writer.buffered();
 
@@ -261,7 +286,7 @@ test "a plugin's classes are written by the stylesheet's names" {
     var flex: std.Io.Writer = .fixed(&names);
 
     try class_merge.admin.write_class(&flex, "flex");
-    try write(&writer, "", "<div class=\"flex hand-made\">x</div>", .{});
+    try write(&writer, "", "<div class=\"flex hand-made\">x</div>", .{}, "");
 
     var expected: [64]u8 = undefined;
     const written = try std.fmt.bufPrint(

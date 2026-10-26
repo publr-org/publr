@@ -101,6 +101,8 @@ pub const SandboxedPlugins = struct {
         statuses: *const fn (context: *anyopaque) ?[]const Added,
         /// The build's field kinds with the loaded plugins'; null when they bring none.
         kinds: *const fn (context: *anyopaque) ?[]const Kind,
+        /// The browser half of `plugin`'s views (its `publr.stores`); null when it has none.
+        stores: *const fn (context: *anyopaque, plugin: []const u8) ?[]const u8,
         /// Whether `plugin`'s remote `name` is off: its plugin is not there, or it does not
         /// fit what that plugin is now.
         remote_off: *const fn (context: *anyopaque, plugin: []const u8, name: []const u8) bool,
@@ -253,6 +255,17 @@ pub const SandboxedPlugins = struct {
         std.debug.assert(known.len > 0);
 
         return known;
+    }
+
+    /// The browser code `plugin`'s views run in its frame; null when it brings none.
+    pub fn stores(sandboxed: *const SandboxedPlugins, plugin: []const u8) ?[]const u8 {
+        std.debug.assert(plugin.len > 0);
+
+        const code = sandboxed.vtable.stores(sandboxed.context, plugin) orelse return null;
+
+        std.debug.assert(code.len > 0);
+
+        return code;
     }
 
     pub fn statuses(sandboxed: *const SandboxedPlugins) ?[]const Added {

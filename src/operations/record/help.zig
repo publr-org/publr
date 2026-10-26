@@ -128,7 +128,7 @@ pub fn helps_of(ctx: *Ctx, type_def: model.content_type.Def, record: Value) Erro
             else => continue,
         };
 
-        const help = help_in(items[0]) orelse continue;
+        const help = help_in(items[0], def.name) orelse continue;
         const cut = cut_at(help, model.field.help_len_max);
 
         out.append(arena, .{
@@ -140,8 +140,9 @@ pub fn helps_of(ctx: *Ctx, type_def: model.content_type.Def, record: Value) Erro
     return out.items;
 }
 
-fn help_in(item: Value) ?[]const u8 {
-    std.debug.assert(@intFromEnum(item) <= @intFromEnum(Value.number_string));
+/// The help a modifier left in `item`, if it left one that reads as text.
+fn help_in(item: Value, field: []const u8) ?[]const u8 {
+    std.debug.assert(field.len > 0);
 
     if (item != .object) {
         return null;
