@@ -152,24 +152,25 @@ fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
     return out;
 }
 
-/// The value an editor edits as its view declares it. PTSX lowers no nullable object, so on
-/// the server a value that is none (a new record) or not one of the kind is its zero value;
-/// in the browser it is null.
+/// The value an editor edits as its view declares it (`Place | null`): null when there is
+/// none (a new record) or it is not one of the kind, the same on both sides.
 fn value_of(comptime Value: type, value: std.json.Value, arena: std.mem.Allocator) Value {
-    comptime std.debug.assert(@typeInfo(Value) == .@"struct");
+    const Place = @typeInfo(Value).optional.child;
+
+    comptime std.debug.assert(@typeInfo(Place) == .@"struct");
 
     const parsed = switch (value) {
-        .null => return std.mem.zeroes(Value),
+        .null => return null,
         // A struct kept as JSON text.
-        .string => |text| std.json.parseFromSliceLeaky(Value, arena, text, .{
+        .string => |text| std.json.parseFromSliceLeaky(Place, arena, text, .{
             .ignore_unknown_fields = true,
         }),
-        else => std.json.parseFromValueLeaky(Value, arena, value, .{
+        else => std.json.parseFromValueLeaky(Place, arena, value, .{
             .ignore_unknown_fields = true,
         }),
     };
 
-    return parsed catch std.mem.zeroes(Value);
+    return parsed catch null;
 }
 
 fn part_of(comptime Part: type, from: anytype) Part {
@@ -289,7 +290,7 @@ test "an editor's ctx carries its value, its problems and the field's options" {
         lat: f64,
     };
     const Ctx = struct {
-        value: Place,
+        value: ?Place,
         problems: []const []const u8,
         options: struct {
             placeholder: []const u8,
@@ -309,15 +310,15 @@ test "an editor's ctx carries its value, its problems and the field's options" {
         },
     }, arena);
 
-    try std.testing.expectEqualStrings("Warsaw", told.value.name);
+    try std.testing.expectEqualStrings("Warsaw", told.value.?.name);
     try std.testing.expectEqualStrings("Between -90 and 90.", told.problems[0]);
     try std.testing.expectEqualStrings("Where", told.options.placeholder);
     try std.testing.expect(told.change == null);
 
-    // A new record: no value, the kind's zero value on the server.
+    // A new record: no value.
     const fresh = ctx_of(Ctx, .{
         .editor = .{},
     }, arena);
 
-    try std.testing.expectEqualStrings("", fresh.value.name);
+    try std.testing.expect(fresh.value == null);
 }
