@@ -58,6 +58,7 @@ pub fn Markers(comptime Domain: type) type {
         pub const Out = struct {
             markers: []const Marker,
         };
+        pub const example_signed_in = true;
         pub const example: In = .{
             .type = "post",
             .document = "{\"title\":\"Hello\"}",

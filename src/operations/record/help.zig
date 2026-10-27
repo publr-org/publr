@@ -54,6 +54,7 @@ pub fn Helps(comptime Domain: type) type {
         pub const Out = struct {
             helps: []const Help,
         };
+        pub const example_signed_in = true;
         pub const example: In = .{
             .type = "post",
             .document = "{\"title\":\"Hello\"}",
