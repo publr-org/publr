@@ -18,7 +18,7 @@ const build = @import("build.zig");
 const Project = @import("../../server/project.zig").Project;
 const identity_module = @import("../rest/identity.zig");
 const App = @import("state.zig").App;
-const Place = @import("../../model/variant.zig").Place;
+const Place = @import("../../model/dimension.zig").Place;
 const Island = @import("../../template.zig").Island;
 
 const Request = http.Request;
@@ -105,7 +105,7 @@ fn static_island(
 
     try response.set_header("Access-Control-Allow-Origin", "*");
 
-    const built = if (place.variant.len == 0) build.built_island(app, ctx.arena, key) else null;
+    const built = if (place.code.len == 0) build.built_island(app, ctx.arena, key) else null;
 
     if (built) |html| {
         const cache: apps_adapter.Cache = .{
@@ -220,7 +220,7 @@ fn batch(
             visitor_id = try visitor.ensure(project, request, response, ctx.arena);
         }
 
-        const built = if (found.dynamic or place.variant.len > 0)
+        const built = if (found.dynamic or place.code.len > 0)
             null
         else
             build.built_island(app, ctx.arena, key);

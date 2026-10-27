@@ -24,6 +24,12 @@ pub const hash_len = files_module.hash_len;
 pub const heap_bytes: u32 = if (wasm.in_browser) wasm.heap_bytes_min else 32 << 20;
 pub const sandboxed_plugins_max: u32 = model.sandboxed_plugin.sandboxed_plugins_max;
 
+/// A loaded plugin's views' browser code (`publr.stores`), served to its frame.
+pub const Stores = struct {
+    plugin: []const u8,
+    code: []const u8,
+};
+
 pub const Target = struct {
     sandboxed_plugin: u32,
     entry: u32,
@@ -58,6 +64,9 @@ pub const Host = struct {
     /// The loaded plugins' translations, read from their modules on each load.
     translations_arena: std.heap.ArenaAllocator,
     translations: std.ArrayList(@import("../sdk/plugin.zig").OwnedTranslation) = .empty,
+    /// Each loaded plugin's views' browser code, when it brings any, read beside its
+    /// translations.
+    stores: std.ArrayList(Stores) = .empty,
     /// The catalogues they join, told after every load; none in a process without them.
     languages: ?*Languages = null,
 
@@ -124,6 +133,7 @@ pub const Host = struct {
         host.loaded.clearRetainingCapacity();
         _ = host.translations_arena.reset(.retain_capacity);
         host.translations = .empty;
+        host.stores = .empty;
 
         var arena_state = std.heap.ArenaAllocator.init(host.gpa);
         defer arena_state.deinit();
@@ -176,6 +186,18 @@ pub const Host = struct {
         const brought = try translations_module.of(arena, row.name, bytes);
 
         try host.translations.appendSlice(arena, brought);
+
+        const stores_name = @import("../sdk/plugin/manifest.zig").stores_section_name;
+        const code = wasm.section.find(bytes, stores_name) catch null;
+
+        if (code) |found| {
+            if (found.len > 0) {
+                try host.stores.append(arena, .{
+                    .plugin = try arena.dupe(u8, row.name),
+                    .code = try arena.dupe(u8, found),
+                });
+            }
+        }
 
         const slot = try host.loaded.addOne(host.gpa);
         errdefer _ = host.loaded.pop();

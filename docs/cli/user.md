@@ -160,10 +160,3 @@ The language the admin speaks to the caller: `chosen` (empty: the site's), `site
 the `choices` (English and every language a plugin translates the admin into) and whether
 the caller ever `answered` (the admin's welcome screen asks once). `set_language
 --language <code>` chooses one of the choices, or empty for the site's.
-
-## `user variant` and `user set_variant`
-
-The variant (with the languages plugin: the content language) the caller reads and edits
-content in, in the admin: `chosen`, empty for the main one, and the site's `variants`.
-`set_variant --variant <code>` chooses one, or empty for the main one; lists, the editor
-and the visual editor open in it.

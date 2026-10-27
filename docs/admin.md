@@ -307,13 +307,15 @@ then each language, `user set_language`). The site's default for everyone who pi
 is under Settings › System › General (`project set_admin_language`). A message no
 catalogue has is shown in English.
 
-The content language is apart from it. Where a plugin declares variants with a picker
-(the languages plugin: Content language), it is top right, before the app picker: the
-person's own choice (`user variant`, `user set_variant`), the main language until they
-pick. Lists show titles in it, falling back to the main language's; the editor, the
-media, user and settings forms and the visual editor open in it (`<html data-variant>`);
-their own switches still flip one page. Every record is listed in every language, also
-those of types that leave untranslated records out of the site.
+The content language is apart from it: lists show every record in its main values, and
+the record editor chooses what it shows. Its header has one dropdown naming the
+combination shown (`Polski / Control`); inside it each dimension with more than one value
+(Content language, an A/B test's Variation) opens a dropdown of its values. Each varied
+field then shows its value in that combination, an empty one its fallback as the
+placeholder, and a field no dimension varies is marked as the same everywhere. The
+address keeps the choice under each dimension's own key (`?lang=pl&variation=b`). Each
+field's settings have a switch per dimension, in its own words (Translate, Test
+variations).
 
 Text is marked where it is written, in English, which is the key: `Publr.t("Empty trash")`,
 `Publr.t("Kept for {days} days", { days })`, `Publr.tn("{count} record", "{count}

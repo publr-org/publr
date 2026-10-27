@@ -19,12 +19,6 @@ pub fn of(session: *const Session) ?Node {
 
     var shown: [items_max]Node = undefined;
     var count: u32 = 0;
-    var reading = session.*;
-
-    if (@import("variant.zig").switcher(&reading)) |node| {
-        shown[count] = node;
-        count += 1;
-    }
 
     for (entries_of(session)) |node| {
         if (count + 2 + registry.app_picker_segment.len >= items_max) {

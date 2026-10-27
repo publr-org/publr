@@ -1196,7 +1196,16 @@ pub fn import_line(compiler: *Compiler, line: []const u8) Error!void {
         return compiler.fail("unsupported import: {s}", .{line});
     }
 
-    const path = spec[1 .. spec.len - 1];
+    const quoted_path = spec[1 .. spec.len - 1];
+    // A plugin's component is named without its extension: `plugin:cart/MiniCart`.
+    const named = imports.plugin_component(compiler.arena, quoted_path) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unsupported => return compiler.fail(
+            "a plugin's component is plugin:<plugin>/<Component>: {s}",
+            .{quoted_path},
+        ),
+    };
+    const path = named orelse quoted_path;
 
     if (std.mem.endsWith(u8, path, ".js") or std.mem.endsWith(u8, path, ".ts")) {
         return compiler.script("JavaScript module import", .{});

@@ -263,6 +263,19 @@ pub const VM = struct {
         return module_;
     }
 
+    /// Calls one of the runtime's helpers (`__publr.<name>`).
+    pub fn helper(vm: *VM, name: []const u8, args: []const Value) Error!Value {
+        std.debug.assert(name.len > 0);
+        const global = api.JS_GetGlobalObject(vm.context);
+        defer vm.free(global);
+        const helpers = try vm.get(global, "__publr");
+        defer vm.free(helpers);
+        const function = try vm.get(helpers, name);
+        defer vm.free(function);
+
+        return vm.call(function, args);
+    }
+
     pub fn call(vm: *VM, function: Value, args: []const Value) Error!Value {
         std.debug.assert(args.len <= 65536);
         return vm.check(api.JS_Call(

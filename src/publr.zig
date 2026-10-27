@@ -41,6 +41,21 @@ pub const record = struct {
 };
 /// `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single, .internal, .fields })`,
 /// and what `.register_taxonomies` takes: `.{ .taxonomy, .to }`.
+/// `publr.dimension.define(.{ .name, .label, .help, .list, .priority, .addresses, ... })`,
+/// listed in `.dimensions`; `publr.dimension.Value` is one value its list answers.
+pub const dimension = struct {
+    pub const define = @import("sdk/plugin/dimensions.zig").define;
+    pub const Dimension = @import("sdk/plugin/dimensions.zig").Dimension;
+    pub const Value = @import("sdk/plugin/dimensions.zig").Value;
+};
+
+/// `publr.hook.request(run)` in `.hooks`: a page request before it is drawn.
+pub const hook = struct {
+    pub const request = @import("sdk/plugin/hook_define.zig").request;
+};
+pub const PageRequest = @import("sdk/page_request.zig").PageRequest;
+pub const Answered = @import("sdk/page_request.zig").Answered;
+
 pub const taxonomy = struct {
     pub const define = @import("sdk/plugin/taxonomy_define.zig").define;
     pub const Registration = @import("sdk/plugin/taxonomy_define.zig").Registration;
@@ -71,6 +86,37 @@ pub const modify = @import("sdk/plugin/hook_define.zig").modify;
 /// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
 /// (`.record`), and the `.title` to change.
 pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+/// What a `<type>.<field>.help` modifier takes: the help under one field of a record in the
+/// editor, asked again as its values change; change `help`.
+pub const FieldHelp = @import("sdk/plugin/modify_define.zig").FieldHelp;
+/// What a `<type>.markers` modifier takes: one field of a record in the editor, with the
+/// markers beside its label so far; add yours to `markers`.
+pub const FieldMarkers = struct {
+    field: []const u8,
+    /// The dimensions the field varies by (`language`, a test's).
+    varies_by: []const []const u8 = &.{},
+    /// Each value it must hold before its record goes live: `language` at `pl`.
+    required: []const @import("model/dimension.zig").Pair = &.{},
+    /// The whole record as the editor holds it, every value beside its field.
+    record: @import("std").json.Value = .null,
+    markers: []const Marker = &.{},
+};
+/// A marker beside a field's label: `PL`, `Variant B`. Markers of one `dimension` are drawn
+/// together as one pill, `group` first when given (`Hero test`); one naming a `dimension` is
+/// a link: clicking it shows the field at `code` there (empty: its main).
+pub const Marker = struct {
+    label: []const u8,
+    /// What its dimension's markers are of, drawn once before them: `Hero test`.
+    group: []const u8 = "",
+    /// `outline` (the default), `neutral`, `success`, or `danger` for a value that must be
+    /// filled before going live and is not.
+    tone: []const u8 = "outline",
+    dimension: []const u8 = "",
+    code: []const u8 = "",
+    /// `show` (the default) or `hide` while the field is shown at this very code: a marker
+    /// for going elsewhere is not needed where you are.
+    current: []const u8 = "show",
+};
 /// What a plugin calls when the data its modifier of a name answers from changed:
 /// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages
 /// made with those values.
@@ -203,7 +249,7 @@ pub const operations = struct {
     pub const http = @import("operations/http.zig");
     pub const internal = @import("operations/internal.zig");
     pub const plugin = @import("operations/plugin.zig");
-    pub const variants = @import("operations/variants.zig");
+    pub const dimensions = @import("operations/dimensions.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

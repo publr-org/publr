@@ -8,6 +8,52 @@ const markdown_page = @import("markdown_page.zig");
 
 /// How a template from outside the app is named: `../<folder>/<path>`.
 pub const outside_prefix = "../";
+/// How a plugin's component is named: `plugin:<name>/<Component>.publr`, imported as
+/// `plugin:<name>/<Component>`.
+pub const plugin_prefix = "plugin:";
+
+/// `plugin:<name>/<Component>` (or with `.publr`) as the template it names, or null when
+/// `spec` names no plugin's component: a plugin's name, then a capitalized component name.
+pub fn plugin_component(arena: std.mem.Allocator, spec: []const u8) Error!?[]const u8 {
+    std.debug.assert(spec.len > 0);
+
+    if (!std.mem.startsWith(u8, spec, plugin_prefix)) {
+        return null;
+    }
+
+    const rest = spec[plugin_prefix.len..];
+    const slash = std.mem.indexOfScalar(u8, rest, '/') orelse return error.Unsupported;
+    const plugin = rest[0..slash];
+    const file = rest[slash + 1 ..];
+    const name = if (std.mem.endsWith(u8, file, ".publr")) file[0 .. file.len - 6] else file;
+
+    if (plugin.len == 0 or name.len == 0 or !std.ascii.isUpper(name[0])) {
+        return error.Unsupported;
+    }
+
+    for (plugin) |char| {
+        if (!std.ascii.isLower(char) and !std.ascii.isDigit(char) and char != '_') {
+            return error.Unsupported;
+        }
+    }
+
+    for (name) |char| {
+        if (!std.ascii.isAlphanumeric(char)) {
+            return error.Unsupported;
+        }
+    }
+
+    return try std.fmt.allocPrint(arena, "{s}{s}/{s}.publr", .{ plugin_prefix, plugin, name });
+}
+
+/// The plugin a component's template name (`plugin:cart/MiniCart.publr`) is from.
+pub fn plugin_of(name: []const u8) []const u8 {
+    std.debug.assert(std.mem.startsWith(u8, name, plugin_prefix));
+
+    const rest = name[plugin_prefix.len..];
+
+    return rest[0 .. std.mem.indexOfScalar(u8, rest, '/') orelse rest.len];
+}
 
 pub const segments_max: u32 = 64;
 pub const imports_max: u32 = 256;
@@ -25,6 +71,23 @@ pub fn resolve(
 ) Error![]const u8 {
     std.debug.assert(from.len > 0);
     std.debug.assert(spec.len > 0);
+
+    if (try plugin_component(arena, spec)) |named| {
+        return named;
+    }
+
+    // Inside a plugin's component, `./Other.publr` is another of the plugin's.
+    if (std.mem.startsWith(u8, from, plugin_prefix)) {
+        const base = std.fs.path.basename(spec);
+        const plugin = plugin_of(from);
+        const spec_in = try std.fmt.allocPrint(arena, "{s}{s}/{s}", .{
+            plugin_prefix,
+            plugin,
+            base,
+        });
+
+        return try plugin_component(arena, spec_in) orelse error.Unsupported;
+    }
 
     var segments: std.ArrayList([]const u8) = .empty;
     const dir = from[0 .. std.mem.lastIndexOfScalar(u8, from, '/') orelse 0];
@@ -135,7 +198,10 @@ pub fn specs(
         const literal = statement.source orelse continue;
         const spec = literal.value.string;
 
-        if (!std.mem.endsWith(u8, spec, ".publr") and !std.mem.endsWith(u8, spec, ".js") and
+        const template = std.mem.endsWith(u8, spec, ".publr") or
+            std.mem.startsWith(u8, spec, plugin_prefix);
+
+        if (!template and !std.mem.endsWith(u8, spec, ".js") and
             !std.mem.endsWith(u8, spec, ".ts")) continue;
 
         if (found.items.len == imports_max) {
@@ -283,4 +349,24 @@ test "multiline helper imports and reexports use module grammar" {
     , "lib/helpers.js");
     try std.testing.expectEqual(@as(usize, 3), found.len);
     try std.testing.expectEqualStrings("./setup.js", found[2]);
+}
+
+test "a plugin's component is named by its plugin and its capitalized name" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const named = (try plugin_component(arena, "plugin:cart/MiniCart")).?;
+
+    try std.testing.expectEqualStrings("plugin:cart/MiniCart.publr", named);
+    try std.testing.expectEqualStrings("cart", plugin_of(named));
+    try std.testing.expectEqualStrings(named, (try plugin_component(arena, named)).?);
+    try std.testing.expect(try plugin_component(arena, "../shared/nav.publr") == null);
+    try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:cart/mini"));
+    try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:Cart/Mini"));
+    try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:cart/../X"));
+    try std.testing.expectEqualStrings(
+        "plugin:cart/Line.publr",
+        try resolve(arena, named, "./Line.publr", "shop"),
+    );
 }

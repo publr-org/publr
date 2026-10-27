@@ -4,7 +4,7 @@
 //! header, for the editor drawn again (`editor`) or for a JSON verdict (`json`, the
 //! autosave) instead of a redirect. `content/form.zig` and `terms.zig` instantiate it.
 const std = @import("std");
-const variants_module = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const nouns = @import("nouns.zig");
 const sdk_operation = @import("../../sdk/operation.zig");
 const admin = @import("../admin.zig");
@@ -59,6 +59,8 @@ pub const Shape = struct {
     open: []const []const u8 = &.{},
     /// A preview drawn up to the fold only: past it, no field.
     cut: bool = false,
+    /// Over the problems, when they are not a refused save's: `Not published`.
+    problems_title: []const u8 = "",
 };
 
 pub const Domain = struct {
@@ -200,7 +202,12 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             const form_defs = try varied(session, def.fields, .{});
-            const document = fields.decode.document_of(session.arena, form_defs, form) orelse {
+            const document = fields.decode.document_of(
+                session.arena,
+                admin.kinds_of(session),
+                form_defs,
+                form,
+            ) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
             var in = keyed(operations.Create.In, domain.key, handle, .{
@@ -233,7 +240,12 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             const defs = try varied(session, shape.def.fields, .{});
-            const document = fields.decode.document_of(session.arena, defs, form) orelse {
+            const document = fields.decode.document_of(
+                session.arena,
+                admin.kinds_of(session),
+                defs,
+                form,
+            ) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
             const location = try print(session.arena, "{s}/{s}", .{ back, id });
@@ -278,7 +290,7 @@ pub fn Editor(comptime domain: Domain) type {
                 _ = registry.SDK.dispatch(&session.ctx, operations.Publish, .{
                     .id = id,
                     .expected_version = expected,
-                }) catch |err| return admin.fail(session, err, location);
+                }) catch |err| return move_refused(session, id, err, location);
             } else if (std.mem.eql(u8, verb, "decline")) {
                 if (comptime !@hasDecl(operations, "DeclineRequest")) {
                     return admin.fail(session, error.Invalid, location);
@@ -317,7 +329,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .id = id,
                     .transition = transition,
                     .expected_version = expected,
-                }) catch |err| return admin.fail(session, err, location);
+                }) catch |err| return move_refused(session, id, err, location);
 
                 if (std.mem.eql(u8, moved.status, "destroyed")) {
                     if (fragment) {
@@ -333,6 +345,61 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             try response.redirect(.see_other, location);
+        }
+
+        /// A publish or transition refused: the editor again with each problem under its
+        /// field when the refusal names fields (a value a language requires), else the
+        /// message page.
+        fn move_refused(
+            session: *Session,
+            id: []const u8,
+            err: anyerror,
+            location: []const u8,
+        ) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(location.len > 0);
+
+            const told = session.ctx.problems;
+
+            if (err != error.Invalid or told.len == 0) {
+                return admin.fail(session, err, location);
+            }
+
+            const shape = try load(session, id) orelse return;
+            const document = parse(session.arena, shape.loaded.?.document) orelse {
+                return admin.fail(session, error.Invalid, location);
+            };
+            const problems = try session.arena.alloc(Problem, told.len);
+            // An item or group past the fold holding a problem is drawn open, so it shows.
+            const open = try session.arena.alloc([]const u8, told.len);
+            var opened = shape;
+
+            // Each under its field's label: a value a dimension requires is named by the
+            // field it belongs to (`Body`), the message saying which value (`Polski`).
+            for (told, problems, open) |one, *problem, *code| {
+                const name = model.dimension.split(one.field).name;
+                const label = for (shape.def.fields) |field| {
+                    if (std.mem.eql(u8, field.name, name)) {
+                        break field.label;
+                    }
+                } else one.field;
+
+                problem.* = .{
+                    .code = label,
+                    .text = one.message,
+                };
+                code.* = one.field;
+            }
+
+            opened.open = open;
+            opened.problems_title = try session.translated(
+                "Not published: fill in what is marked, then publish again.",
+                .{},
+            );
+
+            const how: Answer = if (wants_fragment(session)) .fragment else .page;
+
+            try answer(session, opened, document, problems, how);
         }
 
         /// The definition a new document is of, from the query, or a not-found page.
@@ -549,7 +616,12 @@ pub fn Editor(comptime domain: Domain) type {
 
             const verb = form.text("reshape") orelse return false;
             const defs = try varied(session, shape.def.fields, .{});
-            const posted = fields.decode.value_of(session.arena, defs, form) catch {
+            const posted = fields.decode.value_of(
+                session.arena,
+                admin.kinds_of(session),
+                defs,
+                form,
+            ) catch {
                 try admin.fail(session, error.Invalid, back);
 
                 return true;
@@ -866,6 +938,130 @@ pub fn Editor(comptime domain: Domain) type {
             };
         }
 
+        /// The markers beside each field's label (`record.markers`) and the fields' help
+        /// (`record.help`) for the form as it stands, saved or not, as JSON for the editor to
+        /// draw: asked again as its values change.
+        pub fn markers(request: *Request, response: *Response, ctx: *Context) Error!void {
+            std.debug.assert(request.method() == .post);
+            std.debug.assert(ctx.user_data != null);
+
+            var post = try admin.accept(request, response, ctx, back) orelse return;
+            var session = &post.session;
+            const form = &post.form;
+            const handle = form.text("type") orelse return admin.fail(session, error.Invalid, back);
+            const def = try definition_of(session, handle) orelse return;
+            const defs = try varied(session, def.fields, .{});
+            const document = fields.decode.document_of(
+                session.arena,
+                admin.kinds_of(session),
+                defs,
+                form,
+            ) orelse {
+                return admin.fail(session, error.Invalid, back);
+            };
+
+            if (comptime !@hasDecl(operations, "Markers")) {
+                return session.response.json(.ok, .{
+                    .markers = &[_]u8{},
+                    .helps = &[_]u8{},
+                }) catch error.OutOfMemory;
+            } else {
+                const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
+                    .type = handle,
+                    .document = document,
+                }) catch |err| return admin.fail(session, err, back);
+                const helped = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
+                    .type = handle,
+                    .document = document,
+                }) catch |err| return admin.fail(session, err, back);
+
+                return session.response.json(.ok, .{
+                    .markers = found.markers,
+                    .helps = helped.helps,
+                }) catch error.OutOfMemory;
+            }
+        }
+
+        /// The markers beside the fields' labels for `document` as it is drawn, so the editor
+        /// has them from its first frame and keeps them through a redraw. None when they
+        /// cannot be worked out: the editor asks for them again.
+        fn markers_drawn(
+            session: *Session,
+            handle: []const u8,
+            document: ?Value,
+        ) Error![]const views.RecordEditor.MarkersItem {
+            std.debug.assert(handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            if (comptime !@hasDecl(operations, "Markers")) {
+                return &.{};
+            } else {
+                const value = document orelse return &.{};
+                const text = std.json.Stringify.valueAlloc(session.arena, value, .{}) catch {
+                    return error.OutOfMemory;
+                };
+                const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
+                    .type = handle,
+                    .document = text,
+                }) catch return &.{};
+                const items = try session.arena.alloc(
+                    views.RecordEditor.MarkersItem,
+                    found.markers.len,
+                );
+
+                for (found.markers, items) |marker, *item| {
+                    item.* = .{
+                        .field = marker.field,
+                        .label = marker.label,
+                        .group = marker.group,
+                        .tone = marker.tone,
+                        .dimension = marker.dimension,
+                        .code = marker.code,
+                        .current = marker.current,
+                    };
+                }
+
+                return items;
+            }
+        }
+
+        /// The fields' help as plugins give it for `document` as it is drawn (`record.help`).
+        /// None when it cannot be worked out: the type's help shows until the editor asks.
+        fn helps_drawn(
+            session: *Session,
+            handle: []const u8,
+            document: ?Value,
+        ) Error![]const views.RecordEditor.HelpsItem {
+            std.debug.assert(handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            if (comptime !@hasDecl(operations, "Helps")) {
+                return &.{};
+            } else {
+                const value = document orelse return &.{};
+                const text = std.json.Stringify.valueAlloc(session.arena, value, .{}) catch {
+                    return error.OutOfMemory;
+                };
+                const found = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
+                    .type = handle,
+                    .document = text,
+                }) catch return &.{};
+                const items = try session.arena.alloc(
+                    views.RecordEditor.HelpsItem,
+                    found.helps.len,
+                );
+
+                for (found.helps, items) |one, *item| {
+                    item.* = .{
+                        .field = one.field,
+                        .help = one.help,
+                    };
+                }
+
+                return items;
+            }
+        }
+
         /// The fields of an item, group or run drawn closed past the fold, as JSON for the
         /// browser to draw when it is opened: `path` (`faq[60]`, `seo`, `faq[59+]`) and
         /// `value`, what the form holds for it, saved or not.
@@ -943,7 +1139,12 @@ pub fn Editor(comptime domain: Domain) type {
             const form_defs = try varied(session, def.fields, .{
                 .document = document,
             });
-            const rows = try fields.rows_of(context, form_defs, document);
+            const id = if (shape.loaded) |full| full.row.id else "";
+            const rows = try with_panels(session, def.handle, id, document, try fields.rows_of(
+                context,
+                form_defs,
+                document,
+            ));
             const field_rows = try admin.render.view(arena, views.RecordFields, .{
                 .group_visible = model.field_group.applies(def.group, .{
                     .destination = if (comptime std.mem.eql(
@@ -1016,6 +1217,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .versions_href = versions_href,
                     .preview_href = preview_href,
                     .problems = problems,
+                    .problems_title = shape.problems_title,
                     .actions = actions,
                     .has_destructive = has_destructive(actions),
                     .fields = field_rows,
@@ -1026,7 +1228,9 @@ pub fn Editor(comptime domain: Domain) type {
                     .focus = def.kind != .settings,
                     .aside = aside,
                     .impact = null,
-                    .languages = try languages_of(views.RecordEditor.LanguagesItem, session),
+                    .dimensions = try pickers_of(session),
+                    .markers = try markers_drawn(session, def.handle, document),
+                    .helps = try helps_drawn(session, def.handle, document),
                     .request_by = requested.by,
                     .request_label = requested.label,
                     .request_transition = requested.transition,
@@ -1089,6 +1293,104 @@ pub fn Editor(comptime domain: Domain) type {
                 .impact = null,
             });
         }
+
+        /// The rows with the panels plugins draw under fields as their help (`Panel.field`),
+        /// each in the plugin frame, told the record (none on a new one) and the field's value
+        /// as the form holds it.
+        fn with_panels(
+            session: *Session,
+            handle: []const u8,
+            id: []const u8,
+            document: ?Value,
+            rows: []const fields.Row,
+        ) Error![]const fields.Row {
+            std.debug.assert(handle.len > 0);
+            std.debug.assert(session.signed_in());
+
+            const found = try frame_panels.for_type(session, handle);
+            const helped = for (found) |panel| {
+                if (panel.field.len > 0) {
+                    break true;
+                }
+            } else false;
+
+            if (!helped) {
+                return rows;
+            }
+
+            const out = try session.arena.dupe(fields.Row, rows);
+
+            for (out) |*row| {
+                row.panels = try panels_under(session, found, row.name, id, document);
+            }
+
+            return out;
+        }
+
+        fn panels_under(
+            session: *Session,
+            found: []const frame_panels.Panel,
+            field: []const u8,
+            id: []const u8,
+            document: ?Value,
+        ) Error![]const FieldPanel {
+            std.debug.assert(field.len > 0);
+            std.debug.assert(session.signed_in());
+
+            const frame_pages = @import("frame/pages.zig");
+            var items: std.ArrayList(FieldPanel) = .empty;
+
+            for (found) |panel| {
+                if (!std.mem.eql(u8, panel.field, field)) {
+                    continue;
+                }
+
+                // A long value is told once the frame says hello, not in its address.
+                const whole = held_text(session.arena, document, panel.field) catch {
+                    return error.OutOfMemory;
+                };
+                const held = if (whole.len > held_in_address_max) "" else whole;
+                const own = try frame_pages.operations_of(session, panel.plugin);
+                const src = try print(
+                    session.arena,
+                    "/admin/plugin/{s}/panels/{s}/frame?record={s}&type={s}&value={s}",
+                    .{
+                        panel.plugin,
+                        panel.operation,
+                        id,
+                        panel.type,
+                        try admin.query_value(session.arena, held),
+                    },
+                );
+
+                try items.append(session.arena, .{
+                    .label = panel.label,
+                    .plugin = panel.plugin,
+                    .src = src,
+                    .operations = try std.mem.join(session.arena, ",", own),
+                });
+            }
+
+            return items.items;
+        }
+    };
+}
+
+const held_in_address_max: u32 = 2048;
+const frame_panels = @import("frame/panels.zig");
+const FieldPanel = @typeInfo(@FieldType(fields.Row, "panels")).pointer.child;
+
+/// A top-level field's value as the form holds it: its text, any other value as JSON;
+/// empty for none.
+fn held_text(arena: std.mem.Allocator, document: ?Value, field: []const u8) ![]const u8 {
+    std.debug.assert(field.len > 0);
+
+    const value = (document orelse return "").object.get(field) orelse return "";
+
+    return switch (value) {
+        .null => "",
+        .string => |text| text,
+        else => try std.json.Stringify.valueAlloc(arena, value, .{}),
     };
 }
 
@@ -1918,16 +2220,16 @@ fn slug_prefixes_of(session: *Session, def: Def) Error![]const fields.SlugPrefix
         return &.{};
     }
 
-    const others = variants_module.others(&session.ctx) catch return &.{};
+    const others = site_dimensions.others(&session.ctx) catch return &.{};
     const base_url = try definitions.host_url_of(session);
     const out = try session.arena.alloc(fields.SlugPrefix, others.len);
 
-    for (others, out) |variant, *entry| {
+    for (others, out) |value, *entry| {
         entry.* = .{
-            .code = variant.code,
+            .code = value.code,
             .prefix = try print(session.arena, "{s}{s}/{s}/", .{
                 base_url,
-                variant.address,
+                value.address,
                 def.url,
             }),
         };
@@ -1998,10 +2300,10 @@ pub fn user_options(
     return got.users;
 }
 
-/// The fields as the form draws and reads them: each varied field followed by its variants
+/// The fields as the form draws and reads them: each varied field followed by its values
 /// (`name@pl`) on a site with more than one.
 pub const VariedOptions = struct {
-    /// The record being edited: each variant's placeholder is its main value.
+    /// The record being edited: each combination's placeholder is its fallback.
     document: ?Value = null,
 };
 
@@ -2013,36 +2315,108 @@ pub fn varied(
     std.debug.assert(session.signed_in());
     std.debug.assert(defs.len <= model.field.fields_max);
 
-    const codes = try variant_codes(session);
+    const site = try site_dimensions_of(session);
 
-    return fields.variants.expanded(session.arena, defs, codes, options.document);
+    return fields.dimensions.expanded(session.arena, defs, site, options.document);
 }
 
-/// The codes of the site's variants other than the main one; none on a site with one.
-pub fn variant_codes(session: *Session) Error![]const []const u8 {
+/// The codes of the addressed dimension (a language) other than its main one; none on a
+/// site with one.
+pub fn other_codes(session: *Session) Error![]const []const u8 {
     std.debug.assert(session.signed_in());
 
-    const others = variants_module.others(&session.ctx) catch return &.{};
+    const others = site_dimensions.others(&session.ctx) catch return &.{};
     const codes = try session.arena.alloc([]const u8, others.len);
 
-    for (others, codes) |variant, *code| {
-        code.* = variant.code;
+    for (others, codes) |value, *code| {
+        code.* = value.code;
     }
 
     return codes;
+}
+
+/// The site's dimensions with their codes other than the main one, highest priority first:
+/// what the form makes each varied field's combinations of.
+fn site_dimensions_of(session: *Session) Error![]const fields.dimensions.SiteDimension {
+    std.debug.assert(session.signed_in());
+
+    var out: std.ArrayList(fields.dimensions.SiteDimension) = .empty;
+
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
+        var codes: std.ArrayList([]const u8) = .empty;
+
+        for (values) |value| {
+            if (!value.main) {
+                try codes.append(session.arena, value.code);
+            }
+        }
+
+        if (codes.items.len > 0) {
+            try out.append(session.arena, .{
+                .name = dimension.name,
+                .codes = codes.items,
+            });
+        }
+    }
+
+    return out.items;
+}
+
+/// The editor's pickers: each dimension with more than one value, in its picker's word (its
+/// label when it names none), its values the main one first under an empty code.
+fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem {
+    std.debug.assert(session.signed_in());
+
+    const Item = views.RecordEditor.DimensionsItem;
+    const Shown = @typeInfo(@FieldType(Item, "values")).pointer.child;
+    var out: std.ArrayList(Item) = .empty;
+
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
+
+        if (values.len < 2) {
+            continue;
+        }
+
+        const items = try session.arena.alloc(Shown, values.len);
+
+        for (values, items) |value, *item| {
+            item.* = .{
+                .code = if (value.main) "" else value.code,
+                .label = value.label,
+            };
+        }
+
+        const word = if (dimension.picker.len > 0) dimension.picker else dimension.label;
+
+        try out.append(session.arena, .{
+            .name = dimension.name,
+            .param = if (dimension.param.len > 0) dimension.param else dimension.name,
+            .label = try session.declared(word),
+            .values = items,
+        });
+    }
+
+    return out.items;
 }
 
 /// The site's languages for the editor's switch, the main one first under an empty code.
 pub fn languages_of(comptime Item: type, session: *Session) Error![]const Item {
     std.debug.assert(session.signed_in());
 
-    const listed = variants_module.listed(&session.ctx) catch return &.{};
+    const dimension = site_dimensions.setting(&session.ctx) orelse return &.{};
+    const listed = site_dimensions.listed(&session.ctx) catch return &.{};
     const items = try session.arena.alloc(Item, listed.len);
 
-    for (listed, items) |variant, *item| {
+    // Each as the part of a key it is: `language=pl`; the main one empty.
+    for (listed, items) |value, *item| {
         item.* = .{
-            .code = if (variant.main) "" else variant.code,
-            .label = variant.label,
+            .code = if (value.main)
+                ""
+            else
+                try std.fmt.allocPrint(session.arena, "{s}={s}", .{ dimension.name, value.code }),
+            .label = value.label,
         };
     }
 

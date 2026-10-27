@@ -29,6 +29,11 @@
       if (window.publr.refused) window.publr.refused(Array.isArray(answer.problems) ? answer.problems : []);
       return;
     }
+    // A field's help: the field's value as the form now holds it.
+    if (answer.kind === "value") {
+      if (window.publr.told) window.publr.told(answer.value ?? null);
+      return;
+    }
     const caller = pending.get(answer.id);
     if (!caller) return;
     pending.delete(answer.id);

@@ -18,6 +18,16 @@ pub fn Title(comptime Doc: type) type {
     };
 }
 
+/// A field's help in the editor as core applies it, `<type>.<field>.help`: the field's name,
+/// the record as the editor holds it, saved or not, and the help a modifier changes.
+pub fn FieldHelp(comptime Doc: type) type {
+    return struct {
+        field: []const u8,
+        help: []const u8,
+        record: Doc,
+    };
+}
+
 /// The value a modifier's `run` takes: its second parameter, by pointer.
 pub fn ValueOf(comptime run: anytype) type {
     comptime {

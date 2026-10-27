@@ -36,7 +36,7 @@ export type DocumentProps = {
  * frame the body is only as tall as what it shows: the frame is sized to it. */
 export function Document({ title, children }: DocumentProps) {
   return (
-    <html lang={Publr.request.admin.locale} class="h-full bg-background" data-publr-base={Publr.request.admin.base} data-variant={Publr.request.admin.variant}>
+    <html lang={Publr.request.admin.locale} class="h-full bg-background" data-publr-base={Publr.request.admin.base}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

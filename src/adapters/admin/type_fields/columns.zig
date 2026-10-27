@@ -55,7 +55,7 @@ pub fn list_node(session: *Session, handle: []const u8, def: Def) Error!admin.re
 
     const limit = try limit_of(session, def);
     const all = all_fields(session);
-    const rows = try rows_of(arena, hub, def);
+    const rows = try rows_of(arena, field_pages.known_of(session), hub, def);
     const shown = if (all) rows.len else @min(rows.len, @import("../fields.zig").fields_open);
     const more = try print(arena, "{d}", .{rows.len});
 
@@ -219,7 +219,12 @@ pub fn presentable(field: FieldDef, untitled: []const u8) FieldDef {
 }
 
 /// Top-level fields in order, each group or repeater followed by its children.
-fn rows_of(arena: std.mem.Allocator, handle: []const u8, def: Def) Error![]const Row {
+fn rows_of(
+    arena: std.mem.Allocator,
+    known: []const model.kinds.Kind,
+    handle: []const u8,
+    def: Def,
+) Error![]const Row {
     std.debug.assert(handle.len > 0);
     std.debug.assert(def.fields.len <= model.field.fields_max);
 
@@ -228,7 +233,7 @@ fn rows_of(arena: std.mem.Allocator, handle: []const u8, def: Def) Error![]const
     for (def.fields) |field| {
         const is_title = std.mem.eql(u8, def.title_field, field.name);
 
-        rows.append(arena, try row_of(arena, handle, field, "", is_title)) catch {
+        rows.append(arena, try row_of(arena, known, handle, field, "", is_title)) catch {
             return error.OutOfMemory;
         };
 
@@ -237,7 +242,7 @@ fn rows_of(arena: std.mem.Allocator, handle: []const u8, def: Def) Error![]const
         }
 
         for (field.fields) |child| {
-            const row = try row_of(arena, handle, child, field.name, false);
+            const row = try row_of(arena, known, handle, child, field.name, false);
 
             rows.append(arena, row) catch return error.OutOfMemory;
         }
@@ -248,6 +253,7 @@ fn rows_of(arena: std.mem.Allocator, handle: []const u8, def: Def) Error![]const
 
 pub fn row_of(
     arena: std.mem.Allocator,
+    known: []const model.kinds.Kind,
     handle: []const u8,
     field: FieldDef,
     parent: []const u8,
@@ -276,9 +282,9 @@ pub fn row_of(
                 Row,
                 "icon",
             ),
-            text_of(field.kind).icon,
-        ) orelse unreachable,
-        .summary = try summary_of(arena, field, is_title),
+            text_of(known, field.kind).icon,
+        ) orelse .package,
+        .summary = try summary_of(arena, known, field, is_title),
         .nested = nested,
         .locked = field.locked,
         .edit_href = base,
@@ -290,11 +296,16 @@ pub fn row_of(
 
 /// The kind and what matters about it: `Reference (many) to address`, `Select, 3 choices`,
 /// `Text, the title`.
-fn summary_of(arena: std.mem.Allocator, field: FieldDef, is_title: bool) Error![]const u8 {
+fn summary_of(
+    arena: std.mem.Allocator,
+    known: []const model.kinds.Kind,
+    field: FieldDef,
+    is_title: bool,
+) Error![]const u8 {
     std.debug.assert(field.name.len <= model.field.name_len_max);
     std.debug.assert(field.options.choices.len <= model.field.choices_max);
 
-    const kind = text_of(field.kind);
+    const kind = text_of(known, field.kind);
     const label = kind.label;
     const required: []const u8 = if (is_title) ", the title" else "";
     const many: []const u8 = if (field.many) " (many)" else "";

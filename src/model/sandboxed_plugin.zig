@@ -132,8 +132,8 @@ pub const Manifest = struct {
     warnings: []const []const u8 = &.{},
     /// The GROQ texts it prepares, parsed when it is installed.
     queries: []const Query = &.{},
-    /// The variant dimension it declares (`.variants`): a field holds a value per variant.
-    variants: ?@import("variant.zig").Declared = null,
+    /// The dimensions it declares (`.dimensions`): a field holds a value per combination.
+    dimensions: []const @import("dimension.zig").Declared = &.{},
 };
 
 /// A GROQ text the plugin prepares, and where.
@@ -323,6 +323,8 @@ pub const Panel = struct {
     type: []const u8,
     label: []const u8,
     operation: []const u8,
+    /// The field it is the help of, under which it is drawn; empty for a box beside the form.
+    field: []const u8 = "",
 };
 
 /// A column on a list the plugin doesn't own (`.register_columns`): the field is its own,
@@ -338,6 +340,8 @@ pub const FieldKind = struct {
     control: kinds.Control,
     validates: bool,
     texts: bool,
+    /// Whether it has an `.editor` view, drawn in its frame on the edit form.
+    edits: bool = false,
 };
 
 const kinds = @import("kinds.zig");

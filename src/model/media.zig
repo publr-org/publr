@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const content_type = @import("content_type.zig");
+const model_dimension = @import("dimension.zig");
 const files = @import("../lib/files.zig");
 const image = @import("../lib/image.zig");
 
@@ -239,19 +240,19 @@ pub const type_def: content_type.Def = .{
             .validation = .{
                 .required = true,
             },
-            .variants = true,
+            .dimensions = &.{model_dimension.every},
         },
         .{
             .name = "alt",
             .label = "Alt text",
             .kind = "string",
-            .variants = true,
+            .dimensions = &.{model_dimension.every},
         },
         .{
             .name = "caption",
             .label = "Caption",
             .kind = "text",
-            .variants = true,
+            .dimensions = &.{model_dimension.every},
         },
         .{
             .name = "credit",

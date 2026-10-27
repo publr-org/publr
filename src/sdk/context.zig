@@ -256,9 +256,13 @@ pub const Ctx = struct {
     /// edit copy (pending changes, else the record as saved), drafts included, never the
     /// trash, so the site reads as it will once everything edited is published.
     preview: bool = false,
-    /// The variant a page for a visitor or a preview reads documents in (a language code, set
-    /// from the address by the plugin that declares the dimension); empty: the main values.
-    variant: []const u8 = "",
+    /// The code a page for a visitor or a preview is at in the dimension with pages of its
+    /// own (its language), from the address; empty: the main one.
+    address_code: []const u8 = "",
+    /// The combination a page for a visitor or a preview reads documents in, highest
+    /// priority first: the addressed dimension's code from the address, the others as the
+    /// request chose them. Empty: the main values.
+    dimensions: []const @import("../model/dimension.zig").Pair = &.{},
     /// The app a request came through (`app.zon`'s `.name`), empty for the admin, the CLI and
     /// the API: a document created on the way belongs to it.
     app: []const u8 = "",
@@ -421,13 +425,13 @@ pub const Ctx = struct {
         reads.read(reads.context, key);
     }
 
-    /// The language queued work this call queues speaks: the record's as the call reads it
-    /// (`variant`), else the person's (`language`), carried in the job's row.
+    /// The language queued work this call queues speaks: the page's (`address_code`), else
+    /// the person's (`language`), carried in the job's row.
     pub fn language_queued(ctx: *const Ctx) []const u8 {
-        std.debug.assert(ctx.variant.len <= 64);
+        std.debug.assert(ctx.address_code.len <= 64);
         std.debug.assert(ctx.language.locale.len <= 64);
 
-        return if (ctx.variant.len > 0) ctx.variant else ctx.language.locale;
+        return if (ctx.address_code.len > 0) ctx.address_code else ctx.language.locale;
     }
 
     pub fn init(

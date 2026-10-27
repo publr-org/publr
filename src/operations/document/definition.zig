@@ -373,11 +373,18 @@ pub fn Of(comptime Domain: type) type {
                 dropped += try values.delete_field(ctx.db, row.id, path);
             }
 
-            for (plan.unvaried) |path| {
-                const held = try values.count_variants(ctx.db, row.id, path);
+            for (plan.unvaried) |lost| {
+                const held = try values.count_in_dimension(
+                    ctx.db,
+                    row.id,
+                    lost.path,
+                    lost.dimension,
+                );
 
                 if (held > 0 and !drop_content) {
-                    return ctx.fail(try content_held(ctx, path, held, .unvaried));
+                    return ctx.fail(try content_held(ctx, lost.path, held, .{
+                        .unvaried = lost.dimension,
+                    }));
                 }
 
                 dropped += held;
@@ -860,9 +867,10 @@ pub fn Of(comptime Domain: type) type {
     };
 }
 
-const Loss = enum {
+const Loss = union(enum) {
     removed,
-    unvaried,
+    /// The dimension the field stops varying by.
+    unvaried: []const u8,
 };
 
 /// A change refused because `path` holds `held` values it would delete: which, how many,
@@ -877,9 +885,9 @@ fn content_held(ctx: *Ctx, path: []const u8, held: u64, loss: Loss) Error!Failur
             path,
             held,
         }),
-        .unvaried => std.fmt.allocPrint(ctx.arena, "`{s}` holds {d} translation(s) that turning " ++
-            "its variants off deletes: keep its variants on, or send drop_content to delete " ++
-            "them", .{ path, held }),
+        .unvaried => |dimension| std.fmt.allocPrint(ctx.arena, "`{s}` holds {d} value(s) per " ++
+            "{s} that taking {s} off it deletes: keep {s} on it, or send drop_content to " ++
+            "delete them", .{ path, held, dimension, dimension, dimension }),
     } catch return error.OutOfMemory;
 
     return .{

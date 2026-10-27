@@ -119,7 +119,7 @@ const options_known = [_][]const u8{
     "icons",                   "register_statuses",
     "extend",                  "webhooks",
     "register_location_rules", "register_providers",
-    "register_columns",        "variants",
+    "register_columns",        "dimensions",
     "taxonomies",              "register_taxonomies",
 };
 
@@ -454,6 +454,11 @@ fn declared_hooks(comptime Plugin: type) []const type {
 
         if (@hasField(Options, "hooks")) {
             for (Plugin.options.hooks, 0..) |Hook, position| {
+                // A request hook runs before a page, not around an operation.
+                if (hook_define.is_request_hook(Hook)) {
+                    continue;
+                }
+
                 if (!hook_define.is_hook(Hook)) {
                     @compileError("plugin " ++ Plugin.manifest.name ++ ": `.hooks` takes " ++
                         "`publr.before`, `publr.after`, `publr.on` and `publr.modify`: " ++

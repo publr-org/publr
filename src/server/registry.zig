@@ -51,6 +51,37 @@ const mod_operations = @import("../operations/mod.zig");
 const provider_operations = @import("../operations/provider.zig");
 const messaging = @import("../sdk/messaging.zig");
 
+/// A compiled-in plugin's `components/<name>.publr`, which an app imports as
+/// `plugin:<plugin>/<name>`.
+pub const PluginComponent = struct {
+    plugin: []const u8,
+    name: []const u8,
+    text: []const u8,
+};
+
+/// Every compiled-in plugin's components; none in a build listing none.
+pub const plugin_components: []const PluginComponent = listed: {
+    const listed = @import("native_plugins");
+
+    if (!@hasDecl(listed, "components")) {
+        break :listed &.{};
+    }
+
+    var out: [listed.components.len]PluginComponent = undefined;
+
+    for (listed.components, &out) |component, *slot| {
+        slot.* = .{
+            .plugin = component.plugin,
+            .name = component.name,
+            .text = component.text,
+        };
+    }
+
+    const done = out;
+
+    break :listed &done;
+};
+
 /// The compiled-in plugins, each bound to its doc comments.
 pub const bound_plugins = bound: {
     const listed = @import("native_plugins");
@@ -509,7 +540,7 @@ pub const registered_statuses = native_plugins.merged_registered_statuses;
 pub const sign_in_at = native_plugins.merged_sign_in_at;
 pub const admin_brand = native_plugins.merged_admin_brand;
 pub const app_picker_segment = native_plugins.merged_app_picker_segment;
-pub const variants = native_plugins.merged_variants;
+pub const dimensions = native_plugins.merged_dimensions;
 pub const work_start = native_plugins.merged_work_start;
 pub const hosted = native_plugins.merged_hosted;
 pub const translations = native_plugins.merged_translations;

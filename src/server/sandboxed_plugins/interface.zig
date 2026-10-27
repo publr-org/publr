@@ -20,6 +20,7 @@ pub const vtable: sdk.sandboxed_plugins.SandboxedPlugins.VTable = .{
     .stage = &stage,
     .statuses = &statuses_of,
     .kinds = &kinds_of,
+    .stores = &stores_of,
     .remote_off = &remote_off,
     .find = &find,
     .manifests = &manifests,
@@ -54,6 +55,20 @@ fn kinds_of(context: *anyopaque) ?[]const model.kinds.Kind {
     std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
     return host.kinds;
+}
+
+fn stores_of(context: *anyopaque, plugin: []const u8) ?[]const u8 {
+    const host = host_of(context);
+
+    std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
+
+    for (host.stores.items) |one| {
+        if (std.mem.eql(u8, one.plugin, plugin)) {
+            return one.code;
+        }
+    }
+
+    return null;
 }
 
 fn remote_off(context: *anyopaque, plugin: []const u8, name: []const u8) bool {
@@ -274,8 +289,8 @@ fn job(
 }
 
 /// Runs `part` of installed plugin `name`'s plugin (`sampler.has_motto`): its entries
-/// follow the jobs', each rule's `values` then `matches`, then each kind's `validate` then
-/// `text`.
+/// follow the jobs', each rule's `values` then `matches`, then each kind's `validate`,
+/// `text` and `editor`.
 fn extra(
     context: *anyopaque,
     ctx: *sdk.Ctx,
@@ -294,6 +309,12 @@ fn extra(
 
     const rule = part == .rule_values or part == .rule_matches;
     const second = part == .rule_matches or part == .kind_text;
+    const kind_part: u32 = switch (part) {
+        .kind_validate => 0,
+        .kind_text => 1,
+        .kind_editor => 2,
+        .rule_values, .rule_matches => 0,
+    };
     const kinds_first = first + manifest.location_rules.len * 2;
 
     for (manifest.location_rules, 0..) |declared, index| {
@@ -306,7 +327,7 @@ fn extra(
 
     for (manifest.field_kinds, 0..) |declared, index| {
         if (!rule and std.mem.eql(u8, declared.name, own)) {
-            const entry = kinds_first + index * 2 + @intFromBool(second);
+            const entry = kinds_first + index * 3 + kind_part;
 
             return run_entry(loaded, ctx, @intCast(entry), input);
         }

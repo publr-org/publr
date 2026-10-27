@@ -57,7 +57,7 @@ A missing one fails the build and says where it goes.
 | `taxonomies` | `&.{ ... }` of `publr.taxonomy.define` | both |
 | `register_taxonomies` | `.{ .{ .taxonomy, .to } }` | both |
 | `operations` | `&.{ ... }` of `publr.operation.define` | both |
-| `hooks` | `&.{ ... }` of `publr.before`, `publr.after`, `publr.on` and `publr.modify` | both |
+| `hooks` | `&.{ ... }` of `publr.before`, `publr.after`, `publr.on`, `publr.modify` and `publr.hook.request` (built-in for now) | both |
 | `events` | `&.{ ... }` of `publr.event.define` | both |
 | `jobs` | `&.{ ... }` of `publr.job.define` | both |
 | `webhooks` | `&.{ ... }` of `publr.webhook.define`, see [Webhooks](#webhooks) | both |
@@ -66,12 +66,12 @@ A missing one fails the build and says where it goes.
 | `limits` | `publr.plugin.Limits` | installed |
 | `depends_on`, `compatible_with` | `&.{ "newsletter@^1.2" }` | both |
 | `remotes` | `&.{ ... }` of `publr.remote.operation`, `.record`, `.event` | both |
-| `field_kinds` | `&.{ ... }` of `publr.field.kind` | built-in |
+| `field_kinds` | `&.{ ... }` of `publr.field.kind` | both |
 | `register_fields` | `&.{ .{ .fields, .location } }` | both |
 | `roles` | `&.{ ... }` of `publr.plugin.Role` | both |
 | `pages`, `panels`, `menu`, `icons` | see [Admin entries](#admin-entries) | both |
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
-| `variants` | `.{ .label, .help, .picker, .list, .untranslated }`: the one variant dimension | both |
+| `dimensions` | `&.{ ... }` of `publr.dimension.define`, see [Dimensions](#dimensions) | both |
 | `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
 | `row_actions` | see [Built-in only](#built-in-only) | built-in |
 
@@ -467,6 +467,124 @@ plugin's page says so; a plugin that must have the type says so in `.depends_on`
 A plugin's own taxonomies are its own as its types are: reading and writing their terms takes
 no permission. Uninstalling offers them, with their terms, among its data.
 
+### Dimensions
+
+A field may hold a value per combination of dimensions: a site's languages, an A/B test's
+variations. A plugin declares a dimension; the core draws a switch for it in every field's
+settings, a picker in the editor, stores each value beside the field
+(`title@language=pl,variation=b`) and reads it with fallback.
+
+```zig
+/// Content per variation of the site's A/B test, chosen per visitor.
+const variation = publr.dimension.define(.{
+    .name = "variation",
+    .priority = 10,
+    .label = "Test variations",
+    .picker = "Variation",
+    .help = "A value for each variation of the A/B test; one left empty shows the control's.",
+    .list = Variations.List,
+});
+
+// in define:
+.dimensions = &.{variation},
+```
+
+- `.name` is what values are stored and asked for under: `--variation b`, `"variation": "b"`.
+- `.param` is its key in an address's query, where the editor keeps what it shows
+  (`?lang=pl`); its name when left out.
+- `.list` is a read of the plugin's own answering `values`, each a `publr.dimension.Value`
+  (`code`, `label`, `address`, `main`), the main one first.
+- `.priority`: a read with no value in a combination drops the lowest priority dimension
+  first. The languages plugin's `language` is 100.
+- `.addresses = true`: the values have pages of their own under their `address` (`/pl`).
+  At most one on a site.
+- `.untranslated` names the type setting for records with no value in it.
+- `.required = true`: every value must be filled before a record goes live. A value says
+  otherwise with its own `required` (true or false), a type with `required_in` or
+  `optional_in`, a field the same way; the most specific one that says anything wins. The
+  main value is the field's own `required`. Checked when a record is published or moves to
+  a live status, each missing value refused under its key (`body@language=pl`,
+  `Required in Polski`); drafts always save.
+- `.required_label` names the type and field setting that requires the values (`Required
+  in every language`); without it, neither offers one.
+
+Up to 64 dimensions on a site, from different plugins, combine: a field varying by
+`language` and `variation` holds a value for each pair, one value naming at most four of
+them. A read looks only at the values a field holds, so many dimensions cost a field no
+more than its own.
+
+### Field markers
+
+Beside each field's label in the editor, plugins put markers: the languages plugin a pill
+per language, green where the field holds a value in it; an A/B test the variations that
+change it. The editor asks `record.markers` with the record as it stands, saved or not,
+as values change; it applies `<type>.markers`, one `publr.FieldMarkers` item per field
+(`field`, the dimensions it `varies_by`, the values it is `required` to hold, the whole
+`record`, the `markers` so far), for modifiers to add their own `publr.Marker`:
+
+```zig
+// in define:
+.hooks = &.{
+    publr.modify("*.markers", Markers.run),
+    publr.modify("*.*.markers", Markers.run),
+},
+```
+
+- `.label`, and `.tone`: `outline`, `neutral`, `success`, or `danger` for a value that must
+  be filled and is not.
+- `.dimension` and `.code` make it a link: clicking it shows the field there (an empty code
+  is the main value). Markers of one dimension are drawn together as one pill, `.group`
+  first when given (a test's name); the one the editor shows is drawn selected.
+- `.current = "hide"` leaves it out while the editor shows the field at its code.
+
+### Field help
+
+The help under a top-level field may follow the values: the editor applies
+`<type>.<field>.help` when it draws the form and again as values change, with a
+`publr.FieldHelp(Doc)` (`field`, the `record` as the editor holds it, typed, and the `help`
+so far). Set `help`; up to 280 characters, plain text.
+
+```zig
+/// Says under a sample note how much of it is written, as it is typed
+fn note_help(ctx: *publr.Ctx, item: *publr.FieldHelp(Note)) publr.Error!void {
+    item.help = try ctx.print("{d} characters so far.", .{item.record.note.len});
+}
+
+// in define:
+.hooks = &.{publr.modify("notes.note.note.help", note_help)},
+```
+
+`*` stands for one dotted part, and a plugin's type names carry its name
+(`notes.note.note.help`), so `*.*.help` reaches only the site's own types.
+
+Help may also be a view of the plugin's: a panel with `.field` is drawn under that
+top-level field, in the plugin frame, on any type's form (a new record's too). Its view's
+`ctx.value` is the field's text as the form holds it, empty for none, and changes as the
+person types; copy it into the view's own store with `Publr.effect` to redraw:
+
+```zig
+// in define:
+.panels = &.{.{
+    .type = "post",
+    .label = "SEO strength",
+    .operation = SeoStrength, // a read taking `record` (empty on a new one) and `base`
+    .field = "title",
+}},
+```
+
+```tsx
+export function SeoMeter({ ctx }: { ctx: EditorCtx & { value: string } }) {
+  const state = Publr.reactive({ length: ctx.value.length });
+  Publr.effect(() => {
+    state.length = ctx.value.length;
+  });
+  return <p>{state.length > 60 ? "Too long" : "Fine"}</p>;
+}
+```
+
+A view whose root is a layout (`PanelPage`) keeps its store in a component of its own, as
+`SeoMeter` is here.
+
 ## Hooks and events
 
 Publr is event-driven. Every operation emits an event under its own name when it succeeds,
@@ -606,6 +724,32 @@ running out), one fact per record in a call over many, or something nobody calle
 session expiring); "X was done" is the operation's own event. `before` and `after` are part
 of the write, in its transaction; `on` hooks, compiled in or installed, hear operations and
 events alike from the queue the server's worker process works through, beside the server.
+
+### Request hooks
+
+`publr.hook.request(run)` sees a page request before the page is drawn. It reads the path,
+headers, cookies and the address's query; it may set a header, choose a dimension's value
+for the page, redirect (301, 302, 303) or refuse (403, 503). It reads only and never calls
+out: a page waits on it. Hooks run in plugin order until one redirects or refuses.
+
+```zig
+/// Reads each page in the visitor's variation of the A/B test
+fn bucket(ctx: *publr.Ctx, request: *publr.PageRequest) publr.Error!publr.Answered {
+    const kept = request.cookie("publr_variation") orelse "control";
+
+    if (!publr.text.equals(kept, "control")) {
+        request.choose("variation", kept);
+    }
+
+    return request.next();
+}
+
+// in define:
+.hooks = &.{publr.hook.request(bucket)},
+```
+
+A page read in a value a hook chose is drawn live and kept out of shared caches; the built
+page stays the main one's. Compiled-in plugins only, for now.
 
 ## Jobs
 
@@ -955,8 +1099,15 @@ fn check(value: Location, problems: *publr.Problems(Location)) void {
 ```
 
 Named `<plugin>.<name>`; its storage follows the value (text, a whole number, a number,
-yes or no, a struct kept as JSON); `.validate` runs on every write; `.icon` is optional.
-Field editors are not built: the form shows such a value as JSON.
+yes or no, a struct kept as JSON); `.validate` runs on every write; `.text` is how a value
+reads in list columns, search and templates; `.icon` is optional. Structure offers the kind
+for any type's fields, installed or built in.
+
+`.editor = publr.views.all.LocationEditor` draws the field on the edit form, in the plugin
+frame: a view (`PanelPage`) whose `ctx` is `EditorCtx & { value: Location | null }`
+(`@publr/admin/Document.ptsx`): `value` (null on a new record), `problems` from a refused
+save, `options.placeholder`, and `change(value)`, which hands the value to the form. Without
+one the form shows core's control for the value's shape.
 
 ```zig
 /// Loyalty
@@ -1134,7 +1285,7 @@ before a page shows it; core writes the `<symbol>` around it.
 
 A panel is a read taking `record` and `base`, answering `html` drawn by its view on the
 `PanelPage` layout (`publr.views.render`), shown in the plugin frame on every record of the
-type. Row actions are built-in only. What the plugin's page in the
+type; with `.field`, under that field as its help (see [Field help](#field-help)). Row actions are built-in only. What the plugin's page in the
 admin says about it is its `//!` past the first line, through the admin's sanitizer.
 
 ### Admin views in PTSX
@@ -1153,8 +1304,10 @@ return .{
 ```
 
 Installed, `publr plugin build` lowers the plugin's views itself and the host draws every
-design-system component they reach, so the plugin carries none of them. For now a plugin's
-own markup takes no classes (style through the components), and the frame runs no islands.
+design-system component they reach, so the plugin carries none of them; what its views do
+in the browser (state, clicks, `ctx.query`, `ctx.call`, `ctx.navigate`) travels in the
+module and runs in its frame. For now a plugin's own markup takes no classes (style through
+the components).
 Icons named only at runtime go in `ui/icons.txt`. In the page, `publr/operations` gives
 `call("<op>")`, `query("<op>")` and ``query(groq`...`)``; `publr plugin build` writes
 `ui/operations.d.ts`.

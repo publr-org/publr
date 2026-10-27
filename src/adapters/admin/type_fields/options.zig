@@ -23,7 +23,12 @@ const mib: u64 = 1024 * 1024;
 
 /// The form over `base`: name (made from the label when empty), label, settings and
 /// the options of its kind. Options the kind has no control for stay as they are.
-pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Error!FieldDef {
+pub fn field_of(
+    arena: std.mem.Allocator,
+    known: []const model.kinds.Kind,
+    form: *const Form,
+    base: FieldDef,
+) Error!FieldDef {
     std.debug.assert(form.len <= admin.form_pairs_max);
     std.debug.assert(base.fields.len <= model.field.fields_max);
 
@@ -34,14 +39,14 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     }
 
     const label = form.text("label") orelse "";
-    const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
+    const kind = model.kinds.lookup(known, field.kind);
 
     field.label = label;
     field.name = form.text("name") orelse try type_pages.handle_of(arena, label);
     field.validation.required = !model.field.is_layout(field.kind) and form.get("required") != null;
     field.validation.unique = kind.unique_allowed and form.get("unique") != null;
     field.validation.hint = form.text("hint") orelse "";
-    field.searchable = field_pages.can_search(field.kind) and form.get("searchable") != null;
+    field.searchable = field_pages.can_search(known, field.kind) and form.get("searchable") != null;
 
     if (form.get("filterable_offered") != null) {
         field.filterable = form.get("filterable") != null;
@@ -50,15 +55,14 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     // Left as its kind sorts unless ticked otherwise.
     if (form.get("sortable_offered") != null) {
         const wanted = form.get("sortable") != null;
-        const usual = model.field_filter.sorts_by_default(field_pages.family_of(field.kind));
+        const usual = model.field_filter.sorts_by_default(field_pages.family_of(known, field.kind));
 
         field.sortable = if (wanted == usual) null else wanted;
     }
 
-    // Turned on and off only where the form offers it: a site with one language keeps it.
-    if (form.get("variants_offered") != null) {
-        field.variants = !model.field.is_layout(field.kind) and form.get("variants") != null;
-    }
+    field.dimensions = try dimensions_of(arena, form, field);
+    field.required_in = try requiring_of(arena, form, field.required_in, "required");
+    field.optional_in = try requiring_of(arena, form, field.optional_in, "optional");
 
     field.help = form.text("help") orelse "";
 
@@ -71,7 +75,7 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
     // Single or Multiple is chosen once: the form does not post it when editing, and
     // stored values already have that shape.
     if (form.text("many")) |many| {
-        field.many = field_pages.can_be_many(field.kind) and std.mem.eql(u8, many, "1");
+        field.many = field_pages.can_be_many(known, field.kind) and std.mem.eql(u8, many, "1");
     }
 
     try read_rules(arena, form, kind, &field);
@@ -89,6 +93,93 @@ pub fn field_of(arena: std.mem.Allocator, form: *const Form, base: FieldDef) Err
 
 /// The default as the text its control posts: a switch posts nothing when off; a date
 /// and time field may take the moment of creation instead.
+/// The dimensions the field varies by: each the form offers a switch for
+/// (`dimension_offered.<name>`) as ticked (`dimension.<name>`); each it does not offer as the
+/// field had it, so a site with one value in a dimension keeps what was there.
+fn dimensions_of(
+    arena: std.mem.Allocator,
+    form: *const Form,
+    field: FieldDef,
+) Error![]const []const u8 {
+    std.debug.assert(form.len <= admin.form_pairs_max);
+    std.debug.assert(field.dimensions.len <= model.dimension.dimensions_max + 1);
+
+    const prefix = "dimension_offered.";
+    var out: std.ArrayList([]const u8) = .empty;
+    var offered: std.ArrayList([]const u8) = .empty;
+
+    for (form.pairs[0..form.len]) |pair| {
+        if (!std.mem.startsWith(u8, pair.name, prefix)) {
+            continue;
+        }
+
+        const name = pair.name[prefix.len..];
+        const key = try std.mem.concat(arena, u8, &.{ "dimension.", name });
+
+        if (!model.dimension.valid_name(name) or offered.items.len == 4) {
+            continue;
+        }
+
+        try offered.append(arena, name);
+
+        if (!model.field.is_layout(field.kind) and form.get(key) != null) {
+            try out.append(arena, name);
+        }
+    }
+
+    for (field.dimensions) |kept| {
+        const shown = for (offered.items) |name| {
+            if (std.mem.eql(u8, name, kept)) {
+                break true;
+            }
+        } else false;
+        const every = std.mem.eql(u8, kept, model.dimension.every);
+
+        if (!shown and !(every and offered.items.len > 0)) {
+            try out.append(arena, kept);
+        }
+    }
+
+    return out.items;
+}
+
+/// The dimensions a form says are `chosen` (`required` or `optional`) under
+/// `dimension_required.<name>`; each it does not offer kept from `kept`.
+pub fn requiring_of(
+    arena: std.mem.Allocator,
+    form: *const Form,
+    kept: []const []const u8,
+    chosen: []const u8,
+) Error![]const []const u8 {
+    std.debug.assert(form.len <= admin.form_pairs_max);
+    std.debug.assert(chosen.len > 0);
+
+    const prefix = "dimension_required.";
+    var out: std.ArrayList([]const u8) = .empty;
+
+    for (form.pairs[0..form.len]) |pair| {
+        if (!std.mem.startsWith(u8, pair.name, prefix)) {
+            continue;
+        }
+
+        const name = pair.name[prefix.len..];
+
+        if (model.dimension.valid_name(name) and std.mem.eql(u8, pair.value, chosen)) {
+            try out.append(arena, name);
+        }
+    }
+
+    for (kept) |name| {
+        const key = try std.mem.concat(arena, u8, &.{ prefix, name });
+
+        if (form.get(key) == null and !model.dimension.lists(out.items, name)) {
+            try out.append(arena, name);
+        }
+    }
+
+    return out.items;
+}
+
 fn default_of(kind: Kind, form: *const Form) []const u8 {
     std.debug.assert(kind.default_allowed);
     std.debug.assert(form.len <= admin.form_pairs_max);
@@ -291,7 +382,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     const form = Form.parse(arena, "label=SKU&required=1&unique=1&limit_length=1&min_len=2" ++
         "&max_len=12&length_message=Two+to+twelve&help=As+printed&default=x&limit_pattern=1" ++
         "&preset=uppercase&pattern=SKU-%23%23%23%23&placeholder=SKU-0000").?;
-    const sku = try field_of(arena, &form, .{
+    const sku = try field_of(arena, registry.Kinds.all, &form, .{
         .name = "",
         .label = "",
         .kind = "string",
@@ -308,7 +399,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     try std.testing.expectEqualStrings("SKU-0000", sku.options.placeholder);
 
     const off = Form.parse(arena, "label=SKU&min_len=2&pattern=x").?;
-    const loose = try field_of(arena, &off, sku);
+    const loose = try field_of(arena, registry.Kinds.all, &off, sku);
     try std.testing.expect(loose.validation.min_len == null);
     try std.testing.expectEqual(@as(usize, 0), loose.validation.messages.length.len);
     try std.testing.expect(!loose.validation.unique);
@@ -316,7 +407,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
 
     const dated = Form.parse(arena, "label=When&limit_range=1&min=1970-01-02&max=1970-01-02" ++
         "&date_format=date&from_now=1&default_now=1&default=1970-01-02").?;
-    const when = try field_of(arena, &dated, .{
+    const when = try field_of(arena, registry.Kinds.all, &dated, .{
         .name = "",
         .label = "",
         .kind = "datetime",
@@ -330,7 +421,7 @@ test "a field form becomes a definition: rules only while ticked, sizes in bytes
     const filed = Form.parse(arena, "label=Cover&limit_size=1&size_max=2&size_max_unit=mb" ++
         "&limit_types=1&media_types=image&media_types=video&limit_dimensions=1&width_min=800" ++
         "&media_link=1").?;
-    const cover = try field_of(arena, &filed, .{
+    const cover = try field_of(arena, registry.Kinds.all, &filed, .{
         .name = "",
         .label = "",
         .kind = "media",
@@ -349,7 +440,7 @@ test "lists, listed numbers and the number of values" {
 
     const tags = Form.parse(arena, "label=Tags&many=1&limit_items=1&items_min=1&items_max=5" ++
         "&distinct=1&items_message=One+to+five").?;
-    const tagged = try field_of(arena, &tags, .{
+    const tagged = try field_of(arena, registry.Kinds.all, &tags, .{
         .name = "",
         .label = "",
         .kind = "string",
@@ -359,7 +450,7 @@ test "lists, listed numbers and the number of values" {
     try std.testing.expectEqualStrings("One to five", tagged.validation.messages.items);
 
     const sizes = Form.parse(arena, "label=Size&limit_choices=1&number_choices=1%0A2%0A5").?;
-    const sized = try field_of(arena, &sizes, .{
+    const sized = try field_of(arena, registry.Kinds.all, &sizes, .{
         .name = "",
         .label = "",
         .kind = "integer",
@@ -369,7 +460,7 @@ test "lists, listed numbers and the number of values" {
 
     const link = Form.parse(arena, "label=Site&limit_schemes=1&schemes=https&schemes=mailto" ++
         "&limit_hosts=1&hosts=a.io%0Ab.io&host_message=Ours+only").?;
-    const site = try field_of(arena, &link, .{
+    const site = try field_of(arena, registry.Kinds.all, &link, .{
         .name = "",
         .label = "",
         .kind = "url",
@@ -379,7 +470,7 @@ test "lists, listed numbers and the number of values" {
     try std.testing.expectEqualStrings("Ours only", site.validation.messages.host);
 
     const mail = Form.parse(arena, "label=Mail&limit_domains=1&domains=publr.dev&lowercase=1").?;
-    const mailed = try field_of(arena, &mail, .{
+    const mailed = try field_of(arena, registry.Kinds.all, &mail, .{
         .name = "",
         .label = "",
         .kind = "email",
@@ -389,7 +480,7 @@ test "lists, listed numbers and the number of values" {
 
     const path = Form.parse(arena, "label=Slug&limit_reserved=1&reserved=admin%0Aapi" ++
         "&lock_on_publish=1").?;
-    const slugged = try field_of(arena, &path, .{
+    const slugged = try field_of(arena, registry.Kinds.all, &path, .{
         .name = "",
         .label = "",
         .kind = "slug",

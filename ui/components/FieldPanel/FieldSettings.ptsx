@@ -21,10 +21,10 @@ export type FieldSettingsProps = {
   /** Lists can order by fields of the kind; whether this one is offered. */
   can_sort: boolean;
   sortable: boolean;
-  can_translate?: boolean;
-  translates?: boolean;
-  translate_label?: string;
-  translate_help?: string;
+  /** A switch per dimension the field may vary by, in its own words; with `required_label`,
+   * whether each of its values must be filled before going live: `required`, `optional`,
+   * or empty for as the type says. */
+  dimensions?: Array<{ name: string; label: string; help: string; on: boolean; required_label: string; required: string }>;
   has_target: boolean;
   targets: Array<{
     value: string;
@@ -54,10 +54,7 @@ export function FieldSettings({
   filterable,
   can_sort,
   sortable,
-  can_translate = false,
-  translates = false,
-  translate_label = "",
-  translate_help = "",
+  dimensions = [],
   has_target,
   targets,
   has_taxonomy,
@@ -85,18 +82,29 @@ export function FieldSettings({
             />
           </div>
         )}
-        {can_translate && (
-          <div>
-            <input type="hidden" name="variants_offered" value="1" />
+        {dimensions.map((dimension) => (
+          <div key={dimension.name}>
+            <input type="hidden" name={"dimension_offered." + dimension.name} value="1" />
             <CheckboxField
-              id="variants"
-              name="variants"
-              checked={translates}
-              label={translate_label}
-              description={translate_help}
+              id={"dimension." + dimension.name}
+              name={"dimension." + dimension.name}
+              checked={dimension.on}
+              label={dimension.label}
+              description={dimension.help}
             />
+            {dimension.required_label !== "" && (
+              <Field classes="mt-3 pl-7">
+                <FieldLabel htmlFor={"dimension_required." + dimension.name}>{dimension.required_label}</FieldLabel>
+                <NativeSelect id={"dimension_required." + dimension.name} name={"dimension_required." + dimension.name}>
+                  <option value="" selected={dimension.required === ""}>{Publr.t("As the type says")}</option>
+                  <option value="required" selected={dimension.required === "required"}>{Publr.t("Required")}</option>
+                  <option value="optional" selected={dimension.required === "optional"}>{Publr.t("Not required")}</option>
+                </NativeSelect>
+                <FieldDescription>{Publr.t("Checked when the record is published; drafts always save.")}</FieldDescription>
+              </Field>
+            )}
           </div>
-        )}
+        ))}
         {can_search && (
           <CheckboxField
             id="searchable"

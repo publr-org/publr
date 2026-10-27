@@ -7,7 +7,7 @@ const std = @import("std");
 const field = @import("field.zig");
 const kinds = @import("kinds.zig");
 const currency = @import("currency.zig");
-const variant = @import("variant.zig");
+const dimension = @import("dimension.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -113,33 +113,33 @@ const Flattener = struct {
                 try flattener.walk_value(def, value, prefix, def.name, ordinal);
             }
 
-            if (def.variants) {
-                try flattener.walk_variants(def, object, prefix, ordinal);
+            if (def.dimensions.len > 0) {
+                try flattener.walk_combinations(def, object, prefix, ordinal);
             }
         }
     }
 
-    /// Each `name@code` key beside the field, stored under that key as its path.
-    fn walk_variants(
+    /// Each `name@<combination>` key beside the field, stored under that key as its path.
+    fn walk_combinations(
         flattener: *Flattener,
         def: Def,
         object: std.json.ObjectMap,
         prefix: []const u8,
         ordinal: u32,
     ) Error!void {
-        std.debug.assert(def.variants);
+        std.debug.assert(def.dimensions.len > 0);
         std.debug.assert(prefix.len <= path_len_max);
 
         var entries = object.iterator();
 
         while (entries.next()) |entry| {
-            const key = variant.split(entry.key_ptr.*);
+            const key = dimension.split(entry.key_ptr.*);
 
-            if (key.code.len == 0 or !std.mem.eql(u8, key.name, def.name)) {
+            if (key.combination.len == 0 or !std.mem.eql(u8, key.name, def.name)) {
                 continue;
             }
 
-            if (!variant.valid_code(key.code)) {
+            if (!dimension.fits(def.dimensions, key.combination)) {
                 return error.Invalid;
             }
 
@@ -371,11 +371,13 @@ fn assemble_fields(
     for (fields) |def| {
         try assemble_key(known, arena, def, rows, prefix, def.name, ordinal, &object);
 
-        if (def.variants) {
-            const codes = try codes_under(arena, rows, prefix, def.name);
+        if (def.dimensions.len > 0) {
+            const combinations = try combinations_under(arena, rows, prefix, def);
 
-            for (codes) |code| {
-                const key = try variant.key_of(arena, def.name, code);
+            for (combinations) |combination| {
+                const key = std.mem.concat(arena, u8, &.{ def.name, "@", combination }) catch {
+                    return error.OutOfMemory;
+                };
 
                 try assemble_key(known, arena, def, rows, prefix, key, ordinal, &object);
             }
@@ -419,37 +421,38 @@ fn assemble_key(
     }
 }
 
-/// The variant codes rows hold for `name` at this level: `prefix.name@code`, alone or
+/// The combinations rows hold for `def` at this level: `prefix.name@<combination>`, alone or
 /// followed by a deeper path. Each once.
-fn codes_under(
+fn combinations_under(
     arena: std.mem.Allocator,
     rows: []const Row,
     prefix: []const u8,
-    name: []const u8,
+    def: Def,
 ) Error![]const []const u8 {
-    std.debug.assert(name.len > 0);
+    std.debug.assert(def.name.len > 0);
     std.debug.assert(rows.len <= rows_max);
 
     var head_buffer: [path_len_max]u8 = undefined;
-    const path = try join(&head_buffer, prefix, name);
+    const path = try join(&head_buffer, prefix, def.name);
     var found: std.ArrayList([]const u8) = .empty;
 
     for (rows) |row| {
         const under = row.field.len > path.len + 1 and std.mem.startsWith(u8, row.field, path) and
-            row.field[path.len] == variant.separator;
+            row.field[path.len] == dimension.separator;
 
         if (!under) {
             continue;
         }
 
         const rest = row.field[path.len + 1 ..];
-        const code = rest[0 .. std.mem.indexOfScalar(u8, rest, '.') orelse rest.len];
+        const combination = rest[0 .. std.mem.indexOfScalar(u8, rest, '.') orelse rest.len];
+        const fitting = dimension.fits(def.dimensions, combination);
 
-        if (!variant.valid_code(code) or has_code(found.items, code)) {
+        if (!fitting or has_code(found.items, combination)) {
             continue;
         }
 
-        found.append(arena, code) catch return error.OutOfMemory;
+        found.append(arena, combination) catch return error.OutOfMemory;
     }
 
     return found.items;
@@ -722,10 +725,10 @@ pub fn find_path(fields: []const field.Def, path: []const u8) ?*const field.Def 
     std.debug.assert(path.len <= 64 << 10);
 
     const dot = std.mem.indexOfScalar(u8, path, '.');
-    const key = variant.split(if (dot) |index| path[0..index] else path);
+    const key = dimension.split(if (dot) |index| path[0..index] else path);
     const found = find_field(fields, key.name) orelse return null;
 
-    if (key.code.len > 0 and (!found.variants or !variant.valid_code(key.code))) {
+    if (key.combination.len > 0 and !dimension.fits(found.dimensions, key.combination)) {
         return null;
     }
 
@@ -794,23 +797,24 @@ test "money: one row per currency, assembled back, and its paths" {
     try std.testing.expect(find_path(&fields, "price.ZZZ") == null);
 }
 
-test "variants: stored under name@code beside the field, nested too, and read back" {
+test "combinations: stored under name@<combination> beside the field, nested too, read back" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
+    const language = &[_][]const u8{"language"};
     const items = [_]Def{.{
         .name = "heading",
         .label = "Heading",
         .kind = "string",
-        .variants = true,
+        .dimensions = language,
     }};
     const fields = [_]Def{
         .{
             .name = "name",
             .label = "Name",
             .kind = "string",
-            .variants = true,
+            .dimensions = &.{ "language", "variation" },
         },
         .{
             .name = "sku",
@@ -822,13 +826,14 @@ test "variants: stored under name@code beside the field, nested too, and read ba
             .label = "Sections",
             .kind = "repeater",
             .fields = &items,
-            .variants = true,
+            .dimensions = language,
         },
     };
     const text =
-        \\{"name":"Mug","name@pl":"Kubek","name@en-gb":"Mug","sku":"M1","sku@pl":"ignored",
-        \\"sections":[{"heading":"One","heading@pl":"Jeden"}],
-        \\"sections@de":[{"heading":"Eins"},{"heading":"Zwei"}]}
+        \\{"name":"Mug","name@language=pl":"Kubek","name@language=pl,variation=b":"Kubek!",
+        \\"sku":"M1","sku@language=pl":"ignored",
+        \\"sections":[{"heading":"One","heading@language=pl":"Jeden"}],
+        \\"sections@language=de":[{"heading":"Eins"},{"heading":"Zwei"}]}
     ;
     const value = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
     const flat = try collected(arena, &kinds.core, &fields, value);
@@ -847,23 +852,36 @@ test "variants: stored under name@code beside the field, nested too, and read ba
 
     const back = try assemble(&kinds.core, arena, &fields, rows);
 
-    try std.testing.expectEqualStrings("Kubek", back.object.get("name@pl").?.string);
-    try std.testing.expectEqualStrings("Mug", back.object.get("name@en-gb").?.string);
-    try std.testing.expect(back.object.get("sku@pl") == null);
+    try std.testing.expectEqualStrings("Kubek", back.object.get("name@language=pl").?.string);
+    try std.testing.expectEqualStrings(
+        "Kubek!",
+        back.object.get("name@language=pl,variation=b").?.string,
+    );
+    try std.testing.expect(back.object.get("sku@language=pl") == null);
 
     const sections = back.object.get("sections").?.array.items;
-    const german = back.object.get("sections@de").?.array.items;
+    const german = back.object.get("sections@language=de").?.array.items;
+    const heading = sections[0].object.get("heading@language=pl").?.string;
 
-    try std.testing.expectEqualStrings("Jeden", sections[0].object.get("heading@pl").?.string);
+    try std.testing.expectEqualStrings("Jeden", heading);
     try std.testing.expectEqualStrings("Zwei", german[1].object.get("heading").?.string);
-    try std.testing.expect(find_path(&fields, "name@pl") != null);
-    try std.testing.expect(find_path(&fields, "sku@pl") == null);
-    try std.testing.expect(find_path(&fields, "name@PL") == null);
-    try std.testing.expect(find_path(&fields, "sections.heading@pl") != null);
+    try std.testing.expect(find_path(&fields, "name@language=pl") != null);
+    try std.testing.expect(find_path(&fields, "sku@language=pl") == null);
+    try std.testing.expect(find_path(&fields, "name@language=PL") == null);
+    try std.testing.expect(find_path(&fields, "name@pl") == null);
+    try std.testing.expect(find_path(&fields, "sections.heading@language=pl") != null);
 
-    const bad = try std.json.parseFromSliceLeaky(Value, arena, "{\"name@PL\":\"x\"}", .{});
+    const texts = [_][]const u8{
+        "{\"name@language=PL\":\"x\"}",
+        "{\"sections@variation=b\":[]}",
+        "{\"name@variation=b,language=pl\":\"x\"}",
+    };
 
-    try std.testing.expectError(error.Invalid, collected(arena, &kinds.core, &fields, bad));
+    for (texts) |bad_text| {
+        const bad = try std.json.parseFromSliceLeaky(Value, arena, bad_text, .{});
+
+        try std.testing.expectError(error.Invalid, collected(arena, &kinds.core, &fields, bad));
+    }
 }
 
 /// The rows of a document, each path copied to outlive the walk: what a test reads.

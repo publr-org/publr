@@ -277,7 +277,7 @@ pub const Get = struct {
         id: []const u8,
         purpose: Purpose = .delivery,
         slot: ?[]const u8 = null,
-        variant: ?[]const u8 = null,
+        dimensions: sdk.Dimensions = .{},
     };
     pub const Out = struct {
         term: Term,
@@ -298,7 +298,7 @@ pub const Get = struct {
         .id = "The term id",
         .purpose = "`delivery` or `edit`",
         .slot = "Read this copy instead (`live`, `pending`, ...); signed-in callers only",
-        .variant = "Read each field in this variant (a language code: `pl`), as `record get`",
+        .dimensions = "Read each field in a combination (`--language pl`), as `record get`",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -316,8 +316,8 @@ pub const Get = struct {
 
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
-        if (try domain.variants.code_of(ctx, in.variant)) |code| {
-            try domain.variants.resolve_one(ctx, &got.record, &got.document, code);
+        if (try domain.dimensions.wanted_of(ctx, in.dimensions)) |wanted| {
+            try domain.dimensions.resolve_one(ctx, &got.record, &got.document, wanted);
         }
 
         const parent = try terms.parent_of(ctx.db, ctx.arena, got.record.id);
@@ -423,7 +423,7 @@ pub const List = struct {
         order: Order = .title_asc,
         limit: u32 = 50,
         offset: u32 = 0,
-        variant: ?[]const u8 = null,
+        dimensions: sdk.Dimensions = .{},
     };
     pub const Out = struct {
         terms: []const Term,
@@ -446,7 +446,7 @@ pub const List = struct {
         .order = "`title_asc` (default), `updated_desc` or `created_desc`",
         .limit = "Page size, up to 200",
         .offset = "Rows to skip",
-        .variant = "Titles and slugs in this variant (a language code: `pl`)",
+        .dimensions = "Titles and slugs in a combination (`--language pl`)",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -458,6 +458,7 @@ pub const List = struct {
 
         try changes.listed(ctx, .terms, in.taxonomy, in.taxonomies);
 
+        const wanted = try domain.dimensions.wanted_of(ctx, in.dimensions);
         const listed = try crud.list(ctx, granted, .{
             .definition = in.taxonomy,
             .definitions = in.taxonomies,
@@ -469,16 +470,19 @@ pub const List = struct {
             .order = in.order,
             .limit = in.limit,
             .offset = in.offset,
-            .variant = (try domain.variants.code_of(ctx, in.variant)) orelse "",
+            .address_code = if (wanted) |pairs|
+                domain.dimensions.addressed_code(ctx, pairs)
+            else
+                "",
         });
 
-        if (try domain.variants.code_of(ctx, in.variant)) |code| {
-            if (code.len > 0) {
+        if (wanted) |pairs| {
+            if (pairs.len > 0) {
                 const texts = try domain.listed.documents_of(ctx, listed);
 
                 const writable = @constCast(texts);
 
-                try domain.variants.resolve_listed(ctx, @constCast(listed), writable, code);
+                try domain.dimensions.resolve_listed(ctx, @constCast(listed), writable, pairs);
             }
         }
 

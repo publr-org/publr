@@ -79,11 +79,18 @@ pub const items_max: u32 = 4;
 /// `html`, a view of its own on the `PanelPage` layout; markup of its own is refused. The
 /// plugin reads whatever else it needs itself, as it may. Shown to whoever may call the
 /// read, on records of that type, when the type is there.
+///
+/// With `.field`, the panel is that field's help: drawn under the field, on a new record
+/// too (`In.record` empty then), its view's `ctx.value` the field's value as the form holds
+/// it, its text, empty for none, told again as the person types
+/// (`ctx: EditorCtx & { value: string }`).
 pub const Panel = struct {
     /// The content type's handle.
     type: []const u8,
     label: []const u8,
     operation: type,
+    /// One of the type's top-level fields, by name; empty for a box beside the form.
+    field: []const u8 = "",
 };
 
 pub const panels_max: u32 = 8;

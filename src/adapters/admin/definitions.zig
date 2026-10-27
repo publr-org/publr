@@ -7,7 +7,7 @@ const sdk_operation = @import("../../sdk/operation.zig");
 const type_editor = @import("type_editor.zig");
 const type_placement = @import("type_placement.zig");
 const type_names = @import("type_names.zig");
-const variants = @import("../../operations/variants.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const admin = @import("../admin.zig");
 const settings_nav = @import("settings_nav.zig");
 const registry = @import("../../server/registry.zig");
@@ -487,7 +487,8 @@ pub fn Pages(comptime domain: Domain) type {
                 .keep_help = try session.declared(untranslated.keep_help),
                 .omit_label = try session.declared(untranslated.omit),
                 .omit_help = try session.declared(untranslated.omit_help),
-                .falls_back = def.variant_fallback,
+                .falls_back = def.fallback_to_main,
+                .requiring = try requiring_items(session, def),
                 .visual = model.editor.is_visual(def.editor),
                 .rich_fields = try type_editor.choices(arena, def),
                 .delete_action = delete_action,
@@ -1015,16 +1016,54 @@ test "handles are made from names; an input is keyed under the domain's name" {
     try std.testing.expect(!in.drop_content);
 }
 
-/// The untranslated-records setting's words, on a site with more than one variant whose
-/// dimension names it; unnamed hides it.
+/// The untranslated-records setting's words, on a site whose addressed dimension (a
+/// language) has more than one value and names the setting; unnamed hides it.
 fn untranslated_of(session: *Session) Error!Untranslated {
     std.debug.assert(session.signed_in());
 
-    const dimension = variants.setting(&session.ctx) orelse return .{};
+    const dimension = site_dimensions.setting(&session.ctx) orelse return .{};
     const named = dimension.untranslated;
-    const others = variants.others(&session.ctx) catch return .{};
+    const others = site_dimensions.others(&session.ctx) catch return .{};
 
     return if (others.len == 0) .{} else named;
 }
 
-const Untranslated = @import("../../sdk/plugin/variants.zig").Untranslated;
+const Untranslated = @import("../../sdk/plugin/dimensions.zig").Untranslated;
+
+/// Each dimension with more than one value that offers requiring them, in its own words, as
+/// the type says; none for a type whose entries are not records.
+fn requiring_items(session: *Session, def: Def) Error![]const views.TypeForm.RequiringItem {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(def.required_in.len <= model.dimension.dimensions_max);
+
+    var out: std.ArrayList(views.TypeForm.RequiringItem) = .empty;
+
+    if (def.kind != .record) {
+        return out.items;
+    }
+
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        if (dimension.required_label.len == 0) {
+            continue;
+        }
+
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
+
+        if (values.len < 2) {
+            continue;
+        }
+
+        try out.append(session.arena, .{
+            .name = dimension.name,
+            .label = try session.declared(dimension.required_label),
+            .required = if (model.dimension.lists(def.required_in, dimension.name))
+                "required"
+            else if (model.dimension.lists(def.optional_in, dimension.name))
+                "optional"
+            else
+                "",
+        });
+    }
+
+    return out.items;
+}

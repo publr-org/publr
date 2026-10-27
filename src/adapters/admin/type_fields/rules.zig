@@ -36,7 +36,7 @@ pub fn node(
     std.debug.assert(field.kind.len <= model.kinds.string_len_max);
     std.debug.assert(field.options.choices.len <= model.field.choices_max);
 
-    const kind = model.kinds.lookup(registry.Kinds.all, field.kind);
+    const kind = model.kinds.lookup(registry.kinds(&session.ctx), field.kind);
     var written_out = field;
 
     // The line the rules write when the field gives none: the input's placeholder.

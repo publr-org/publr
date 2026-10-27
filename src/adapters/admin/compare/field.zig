@@ -1,7 +1,6 @@
 //! A field of a content type compared as the type's field list shows it: its kind's icon,
 //! its label and what matters about it (`Reference (many) to lesson`), the rest in words.
 const std = @import("std");
-const registry = @import("../../../server/registry.zig");
 const kinds = @import("../../../model/kinds.zig");
 const model_field = @import("../../../model/field.zig");
 
@@ -34,8 +33,9 @@ const said = [_][]const u8{ "name", "label", "kind", "many", "required", "option
 const options_said = [_][]const u8{ "to", "taxonomy", "choices" };
 const settings_max: u32 = 256;
 
-/// The value as a field's row; null for a value that is not a field's definition.
-pub fn of(arena: std.mem.Allocator, json: []const u8) !?Shown {
+/// The value as a field's row, its kind among `known`; null for a value that is not a
+/// field's definition.
+pub fn of(arena: std.mem.Allocator, known: []const kinds.Kind, json: []const u8) !?Shown {
     std.debug.assert(json.len <= 1 << 20);
 
     if (json.len == 0 or json[0] != '{') {
@@ -59,9 +59,9 @@ pub fn of(arena: std.mem.Allocator, json: []const u8) !?Shown {
         .card = false,
         .title = text_in(parsed.object, "label") orelse name,
         .definition = true,
-        .icon = kinds.lookup(registry.Kinds.all, kind_id).icon,
+        .icon = kinds.lookup(known, kind_id).icon,
         .required = flag_in(parsed.object, "required"),
-        .summary = try summary_of(arena, parsed.object, kind_id, options),
+        .summary = try summary_of(arena, known, parsed.object, kind_id, options),
         .name = name,
         .details = try details_of(arena, parsed.object, options),
     };
@@ -70,13 +70,14 @@ pub fn of(arena: std.mem.Allocator, json: []const u8) !?Shown {
 /// The kind and what matters about it, as the field list says it.
 fn summary_of(
     arena: std.mem.Allocator,
+    known: []const kinds.Kind,
     definition: std.json.ObjectMap,
     kind_id: []const u8,
     options: std.json.Value,
 ) ![]const u8 {
     std.debug.assert(kind_id.len > 0);
 
-    const kind = kinds.lookup(registry.Kinds.all, kind_id);
+    const kind = kinds.lookup(known, kind_id);
     var summary: std.ArrayList(u8) = .empty;
 
     try summary.appendSlice(arena, kind.label);
@@ -266,11 +267,13 @@ test "a field's definition reads as its row, anything else is not one" {
         \\{"name":"chapters","label":"Chapters","kind":"reference","many":true,
         \\"options":{"to":["chapter"]},"help":"Shown below"}
     ;
-    const shown = (try of(arena, json)).?;
+    const shown = (try of(arena, registry_kinds, json)).?;
 
     try std.testing.expectEqualStrings("Chapters", shown.title);
     try std.testing.expectEqualStrings("Reference (many) to chapter", shown.summary);
     try std.testing.expectEqualStrings("Help: Shown below", shown.details[0]);
-    try std.testing.expect(try of(arena, "\"text\"") == null);
-    try std.testing.expect(try of(arena, "{\"title\":\"x\"}") == null);
+    try std.testing.expect(try of(arena, registry_kinds, "\"text\"") == null);
+    try std.testing.expect(try of(arena, registry_kinds, "{\"title\":\"x\"}") == null);
 }
+
+const registry_kinds = @import("../../../server/registry.zig").Kinds.all;

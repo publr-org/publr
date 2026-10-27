@@ -36,6 +36,7 @@ const ReadLogs = @import("operations/logs.zig");
 const Page = @import("operations/page.zig");
 const Count = @import("operations/count.zig");
 const NotePanel = @import("operations/note_panel.zig");
+const NoteStrength = @import("operations/note_strength.zig");
 const Wave = @import("operations/wave.zig");
 const Submit = @import("operations/submit.zig");
 const Later = @import("operations/later.zig");
@@ -54,12 +55,13 @@ const Remind = @import("jobs/remind.zig");
 
 const Ping = @import("webhooks/ping.zig");
 
-const Editions = @import("variants/editions.zig");
+const Editions = @import("dimensions/editions.zig");
 
 const Shout = @import("hooks/shout.zig");
 const Announce = @import("hooks/announce.zig");
 const LogNote = @import("hooks/log_note.zig");
 const NoteTitle = @import("hooks/note_title.zig");
+const NoteHelp = @import("hooks/note_help.zig");
 const Double = @import("hooks/double.zig");
 
 const manifest: publr.Manifest = .{
@@ -101,11 +103,16 @@ const native_pages = [_]publr.plugin.Page{.{
 }} ++ pages;
 
 /// A box on each sample note's form, drawn in the plugin frame.
-const panels = [_]publr.plugin.Panel{.{
+const panels = [_]publr.plugin.Panel{ .{
     .type = "sampler.sample_note",
     .label = "Sampler",
     .operation = NotePanel.operation,
-}};
+}, .{
+    .type = "sampler.sample_note",
+    .label = "Note strength",
+    .operation = NoteStrength.operation,
+    .field = "note",
+} };
 
 /// An action on the rows of any page that names a `sampler` slot.
 const row_actions = [_]publr.plugin.RowAction{.{
@@ -170,6 +177,7 @@ const operations = [_]type{
     Page.operation,
     Count.operation,
     NotePanel.operation,
+    NoteStrength.operation,
     Wave.operation,
     Submit.operation,
     Later.operation,
@@ -187,6 +195,7 @@ const hooks = .{
     publr.after(Note.operation, Announce.run),
     publr.on(Noted.event, LogNote.run),
     publr.modify("sampler.sample_note.title", NoteTitle.run),
+    publr.modify("sampler.sample_note.note.help", NoteHelp.run),
     publr.modify("sampler.*", Double.run),
     publr.after(publr.operations.user.List, NoteCount.run),
     publr.after(publr.operations.record.List, Characters.run),
@@ -251,7 +260,7 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .register_columns = columns,
         .jobs = &jobs,
         .webhooks = &webhooks,
-        .variants = Editions.dimension,
+        .dimensions = &.{Editions.dimension},
         .register_fields = field_groups,
         .operations = native_operations,
         .hooks = hooks,
@@ -275,7 +284,7 @@ else
         .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .webhooks = &webhooks,
-        .variants = Editions.dimension,
+        .dimensions = &.{Editions.dimension},
         .register_fields = field_groups,
         .register_columns = columns,
         .operations = operations,

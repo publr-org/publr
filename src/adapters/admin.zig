@@ -197,7 +197,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 167 + preview_pages.routes_count +
+pub const routes_count: u32 = 168 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
@@ -266,6 +266,7 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/content/pick", &content_pages.pick);
     router.post("/admin/content/create", &content_pages.create);
     router.post("/admin/content/cells", &content_pages.cells);
+    router.post("/admin/content/markers", &content_pages.markers);
     router.get("/admin/content/:id", &content_pages.edit);
     router.get("/admin/content/:id/editor", &content_pages.editor_fragment);
     router.post("/admin/content/:id/save", &content_pages.save);
@@ -386,7 +387,6 @@ fn register_assets(router: *http.Router) void {
     router.get("/admin/editor/*", &editor_file);
     router.get("/admin/messages/*", &@import("admin/language.zig").messages);
     router.post("/admin/language", &@import("admin/language.zig").choose);
-    router.post("/admin/variant", &@import("admin/variant.zig").choose);
     router.get("/admin/welcome", &@import("admin/welcome.zig").page);
     router.post("/admin/welcome", &@import("admin/welcome.zig").save);
 
@@ -473,7 +473,7 @@ fn class_book(request: *Request, response: *Response, ctx: *Context) Error!void 
     try script(response, class_book_js);
 }
 
-fn script(response: *Response, source: []const u8) Error!void {
+pub fn script(response: *Response, source: []const u8) Error!void {
     std.debug.assert(source.len > 0);
     std.debug.assert(response.body.len == 0);
 
@@ -702,6 +702,13 @@ pub const nav = @import("admin/nav.zig");
 /// The Settings sidebar, for a plugin's settings page to show like the core's.
 pub const settings_nav = @import("admin/settings_nav.zig");
 pub const nav_content = nav.nav_content;
+
+/// The field kinds the session's project knows: the build's, then its installed plugins'.
+pub fn kinds_of(session: *const Session) []const compare.Kind {
+    std.debug.assert(session.signed_in());
+
+    return registry.kinds(&session.ctx);
+}
 
 /// Sign-in required, by an account that may use the admin: answers null after
 /// redirecting to the login page otherwise.
@@ -1287,12 +1294,10 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, changed.body, publish_changes) != null);
     try std.testing.expect(std.mem.indexOf(u8, changed.body, discard_changes) != null);
 
-    const invalid_body = try std.fmt.allocPrint(arena, "csrf={s}&type=post", .{csrf_token});
-    const invalid = try flow.call("POST", "/admin/content/create", invalid_body);
-    const problem_path = ">title</code>";
-    const problem_message = ">required</span>";
-    try std.testing.expect(std.mem.indexOf(u8, invalid.body, problem_path) != null);
-    try std.testing.expect(std.mem.indexOf(u8, invalid.body, problem_message) != null);
+    // A draft without its required title saves; only publishing asks for it.
+    const untitled_body = try std.fmt.allocPrint(arena, "csrf={s}&type=post", .{csrf_token});
+    const untitled = try flow.call("POST", "/admin/content/create", untitled_body);
+    try std.testing.expect(std.mem.indexOf(u8, untitled.body, ">required</span>") == null);
 
     const apply_body = try std.fmt.allocPrint(
         arena,

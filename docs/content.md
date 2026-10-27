@@ -62,7 +62,10 @@ a single rich text field is refused. The block editor is being rebuilt (`../edit
 it lands, a visual type's records open in the form and rich text in a plain box.
 
 A record is one record of one type in one status. Its document is a JSON
-object shaped by the type's fields. It is validated on every write and stored
+object shaped by the type's fields. It is validated on every write, except
+that a draft (a record not live, or the pending changes of a live one) may leave
+required values and the title empty: those are asked for when it goes live,
+published or moved to a live status, refused under each field. It is stored
 as rows, one row per field value (`records` + `record_values`). So every
 field can be filtered and sorted (a `many` field is a list of values of its
 kind, one row each), references and media are pointers to the
@@ -158,30 +161,42 @@ it is about whether or when the record is live, it is a status; if it is a
 grouping or an editing state, it is derived from records (release membership
 via references, pending edits via `changed`).
 
-## Languages and other variants
+## Languages and other dimensions
 
-A field may hold a value per **variant** beside its own (`variants: true`): the value in a
-variant is stored under the field's name with the variant's code appended, `name@pl` beside
-`name`, in the same rows as any value; the plain name holds the main value. A nested field
-carries the code on its own segment (`faq.question@pl`), a group or repeater marked as a
-whole on its own (`sections@pl`, its items then a structure of their own). A record is
-one record in every variant: a field not marked holds one value for all of them.
+A field may hold a value per **combination of dimensions** beside its own: it lists the
+dimensions it varies by (`"dimensions": ["language"]`, or `["*"]` for every one the site
+has). A value in a combination is stored under the field's name with the combination
+appended, `name@language=pl` beside `name` (two dimensions: `name@language=pl,variation=b`,
+sorted by name), in the same rows as any value; the plain name holds the main value. A
+nested field carries the combination on its own segment (`faq.question@language=pl`), a
+group or repeater marked as a whole on its own (`sections@language=pl`, its items then a
+structure of their own). A record is one record in every combination: a field that lists
+no dimension holds one value for all of them.
 
-What a variant is belongs to the plugin that declares the dimension; the languages plugin
-makes each language a variant, and labels the field setting Translate. The core stores,
-validates (a variant's value by the field's own rules, never required), reads and picks
-them:
+What a dimension is belongs to the plugin that declares it; the languages plugin declares
+`language`, and labels the field setting Translate. The core stores, validates (a
+combination's value by the field's own rules, never required on a save), reads and picks them:
 
-- Read whole (the admin, the API, `record get`), a document carries every variant beside
-  its field.
-- Read in a variant (`record get --variant pl`, `record list --variant pl`, and every page
-  drawn under a language's address), each field gives the variant's value, else the code
-  without its region's (`en-gb` reads `en`), else the main value; the listed title and
-  slug follow. `--slug` with `--variant` matches the variant's slug first.
-- A type's `variant_fallback` (default true) says what a record with nothing written in a
-  variant does there: shows in its main values, or is left out (not listed; not found).
-- Changing a type keeps every variant's value; turning a field's variants off drops them,
-  asked first as removing a field with content is (`--drop_content`).
+- Read whole (the admin, the API, `record get`), a document carries every combination
+  beside its field.
+- Read in a combination (a flag per dimension: `record get --language pl --variation b`,
+  `record list --language pl`; `"language": "pl"` in JSON; and every page drawn under a
+  language's address, in whatever a request hook chose), each field gives the
+  combination's value, else falls back: within a dimension to the code without its region
+  (`en-gb` reads `en`), then to its main value, the dimension with the lowest priority
+  first, so Polish in variation `b` with no such value reads Polish. The listed title and
+  slug follow. `--slug` with `--language` matches that language's slug first.
+- A type's `fallback_to_main` (default true) says what a record with nothing written in
+  the language its page's address chose does there: shows in its main values, or is left
+  out (not listed; not found).
+- A value may be **required** before a record goes live (the languages plugin's Required
+  per language). A type's `required_in` and `optional_in` list dimensions whose every value
+  its fields must, or never must, hold; a field's own lists say the same for it alone and
+  win over the type's. A missing one refuses publishing (or a move to a live status) under
+  its key, `Required in Polski`; a draft always saves.
+- Changing a type keeps every combination's value; taking a dimension off a field drops its
+  values in that dimension, asked first as removing a field with content is
+  (`--drop_content`).
 
 ## Taxonomies
 

@@ -343,7 +343,7 @@ pub const Get = struct {
         id: []const u8,
         purpose: Purpose = .delivery,
         slot: ?[]const u8 = null,
-        variant: ?[]const u8 = null,
+        dimensions: sdk.Dimensions = .{},
     };
     pub const Out = crud_module.Got;
     pub const example: In = .{
@@ -358,8 +358,9 @@ pub const Get = struct {
         .id = "The record id",
         .purpose = "`delivery` or `edit`",
         .slot = "Read this copy instead (`live`, `pending`, ...); signed-in callers only",
-        .variant = "Read each field in this variant (a language code: `pl`), falling back " ++
-            "to the code without its region, then the main value; empty: the main values",
+        .dimensions = "Read each field in a combination: `--language pl` (and a flag per " ++
+            "other dimension the site has), falling back to the code without its region, " ++
+            "then the main value; an empty code asks for the main value",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -377,8 +378,8 @@ pub const Get = struct {
 
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
-        if (try domain.variants.code_of(ctx, in.variant)) |code| {
-            try domain.variants.resolve_one(ctx, &got.record, &got.document, code);
+        if (try domain.dimensions.wanted_of(ctx, in.dimensions)) |wanted| {
+            try domain.dimensions.resolve_one(ctx, &got.record, &got.document, wanted);
         }
 
         // What a site or the API reads shows virtual fields worked out; the editor gets
@@ -509,7 +510,7 @@ pub const List = struct {
         expand: bool = true,
         /// With `documents`: `edit` gives the pending copy of a record with changes.
         purpose: Purpose = .delivery,
-        variant: ?[]const u8 = null,
+        dimensions: sdk.Dimensions = .{},
     };
     pub const Out = struct {
         records: []const Record,
@@ -564,8 +565,8 @@ pub const List = struct {
         .documents = "Also return each record's live document, read with the page in one go",
         .expand = "With documents: virtual fields as the records they stand for (default)",
         .purpose = "With documents: `edit` reads pending copies where there are changes",
-        .variant = "Titles, slugs and documents in this variant (a language code: `pl`); " ++
-            "`slug` then matches the variant's slug first",
+        .dimensions = "Titles, slugs and documents in a combination: `--language pl` (and a " ++
+            "flag per other dimension); `slug` then matches that language's slug first",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -577,7 +578,7 @@ pub const List = struct {
 
         try changes.listed(ctx, .records, in.type, in.types);
 
-        const code = try domain.variants.code_of(ctx, in.variant);
+        const wanted = try domain.dimensions.wanted_of(ctx, in.dimensions);
         const input: crud_module.ListInput = .{
             .definition = in.type,
             .definitions = in.types,
@@ -593,11 +594,14 @@ pub const List = struct {
             .sort = in.sort,
             .limit = in.limit,
             .offset = in.offset,
-            .variant = code orelse "",
+            .address_code = if (wanted) |pairs|
+                domain.dimensions.addressed_code(ctx, pairs)
+            else
+                "",
         };
         const listed = try crud.list(ctx, granted, input);
         const total = if (in.count) try crud.count(ctx, granted, input) else 0;
-        const resolving = code != null and code.?.len > 0;
+        const resolving = wanted != null and wanted.?.len > 0;
 
         if (!in.documents and !resolving) {
             return .{
@@ -613,10 +617,10 @@ pub const List = struct {
         var records_shown: []const Record = listed;
         var documents = read;
 
-        if (code) |variant_code| {
-            const kept = try domain.variants.kept_in(ctx, listed, read, variant_code);
+        if (wanted) |pairs| {
+            const kept = try domain.dimensions.kept_in(ctx, listed, read, pairs);
 
-            try domain.variants.resolve_listed(ctx, kept.records, kept.texts, variant_code);
+            try domain.dimensions.resolve_listed(ctx, kept.records, kept.texts, pairs);
             records_shown = kept.records;
             documents = kept.texts;
         }
@@ -733,12 +737,15 @@ pub const Validate = struct {
 };
 
 pub const Shown = @import("record/shown.zig").Shown(List, example_id);
+pub const Markers = @import("record/markers.zig").Markers(domain);
+pub const Helps = @import("record/help.zig").Helps(domain);
 pub const Query = @import("record/query.zig").Query;
 
 pub const Reach = @import("record/reach.zig").Reach;
 
 test {
     _ = @import("record/reach.zig");
+    _ = @import("record/help.zig");
     _ = @import("record/many.zig");
     _ = @import("record/flow_tests.zig");
     _ = @import("record/requests_tests.zig");
@@ -749,7 +756,8 @@ test {
 pub const operations = [_]type{
     Create,    Get,    Save,           Transition,     Publish,      List,
     Referrers, Delete, DiscardChanges, Purge,          Validate,     Shown,
-    Query,     Reach,  TransitionMany, DeclineRequest, TransitionAt,
+    Query,     Reach,  TransitionMany, DeclineRequest, TransitionAt, Markers,
+    Helps,
 };
 
 const SDK = registry.SDK;
@@ -823,24 +831,31 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     );
     try std.testing.expectError(error.Conflict, stale);
 
-    const invalid = SDK.dispatch(
-        &editor,
-        Save,
-        .{
-            .id = first.id,
-            .document = "{\"title\":\"\",\"body\":\"no title\"}",
-        },
-    );
-    try std.testing.expectError(error.Invalid, invalid);
-    // Refused with the field it was about, as every caller is answered.
+    // A draft saves with its required title left out; publishing it is refused with the
+    // field it was about, as every caller is answered.
+    _ = try SDK.dispatch(&editor, Save, .{
+        .id = first.id,
+        .document = "{\"title\":\"\",\"body\":\"no title\"}",
+    });
+
+    const incomplete = SDK.dispatch(&editor, Transition, .{
+        .id = first.id,
+        .transition = "publish",
+    });
+
+    try std.testing.expectError(error.Invalid, incomplete);
     try std.testing.expectEqualStrings("title", editor.problems[0].field);
+    _ = try SDK.dispatch(&editor, Save, .{
+        .id = first.id,
+        .document = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+    });
 
     const published = try SDK.dispatch(&editor, Transition, .{
         .id = first.id,
         .transition = "publish",
     });
     try std.testing.expectEqualStrings("published", published.status);
-    try std.testing.expectEqual(@as(i64, 3), published.version);
+    try std.testing.expectEqual(@as(i64, 5), published.version);
     const bad_move = SDK.dispatch(&editor, Transition, .{
         .id = first.id,
         .transition = "nope",

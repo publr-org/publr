@@ -1,0 +1,49 @@
+import { Badge } from "@publr/ui/Badge.ptsx";
+import { BadgeGroup } from "@publr/ui/BadgeGroup.ptsx";
+import { state as editor, onDimension } from "../RecordEditor.ptsx";
+
+export type FieldMarkersProps = {
+  /** The field's name; a combination's copy (`headline@language=pl`) shows its field's. */
+  name: string;
+};
+
+type Marker = { field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string };
+
+/** The markers of one field, by dimension: each dimension's together, its group label
+ * first, the one the form shows selected; a marker that hides while current left out. */
+const groupsOf = (markers: Marker[], chosen: string, name: string) => {
+  const field = name.split("@")[0];
+  const groups: Array<{ key: string; label: string; markers: Array<Marker & { selected: boolean }> }> = [];
+  for (const marker of markers) {
+    if (marker.field !== field) continue;
+    const pair = chosen.split(",").find((one) => one.startsWith(marker.dimension + "=")) ?? marker.dimension + "=";
+    const selected = marker.dimension !== "" && pair === marker.dimension + "=" + marker.code;
+    if (marker.current === "hide" && selected) continue;
+    const key = marker.dimension === "" ? marker.label : marker.dimension;
+    const group = groups.find((one) => one.key === key);
+    const shown = { ...marker, selected };
+    if (group) group.markers.push(shown);
+    else groups.push({ key, label: marker.group, markers: [shown] });
+  }
+  return groups;
+};
+
+/** The markers plugins put beside a field's label, as the editor last asked for them: one
+ * pill per dimension (`Variation | Control | Variation B`, `EN | PL`), following the values
+ * as they change. A marker naming a dimension shows the field there when clicked. */
+export function FieldMarkers({ name }: FieldMarkersProps) {
+  return (
+    <span class="flex h-5 flex-wrap items-center gap-1.5 overflow-visible" data-part="field-markers">
+      {groupsOf(editor.markers, editor.chosen, name).map((group) => (
+        <BadgeGroup label={group.label}>
+          {group.markers.map((marker) => (
+            <button type="button" class="inline-flex h-full cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
+              data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
+              <Badge shape="segment" selected={marker.selected} tone={marker.tone === "success" ? "success" : marker.tone === "danger" ? "danger" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+            </button>
+          ))}
+        </BadgeGroup>
+      ))}
+    </span>
+  );
+}

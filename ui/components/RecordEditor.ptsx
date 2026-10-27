@@ -24,8 +24,14 @@ import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
-import { TextToggle } from "@publr/ui/TextToggle.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
+import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
+import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
+import { DropdownMenuSubTrigger } from "@publr/ui/DropdownMenuSubTrigger.ptsx";
+import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
 import { tell_problems } from "./PluginEditor.ptsx";
+import { tell_fields } from "./PluginPanel.ptsx";
 
 /** The editor's client half. The form autosaves: every input marks it dirty and, after a
  * pause, posts it as JSON, which answers the new version (or why it could not be saved).
@@ -95,12 +101,27 @@ export const state = Publr.reactive({
   values_near: false,
   values_over: false,
   values_text: "",
-  /** The language the translated fields show, by code; empty for the main one. */
-  language: "",
-  languages: [] as Array<{ code: string; label: string }>,
+  /** The combination the varied fields show (`language=pl,variation=b`); empty for the main
+   * values. */
+  chosen: "",
+  /** The site's dimensions with more than one value, each with its values, the main one
+   * first with an empty code. */
+  dimensions: [] as Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>,
+  /** The markers plugins put beside fields' labels, for the values as they stand. */
+  markers: [] as Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
+  /** The help plugins give top-level fields for the values as they stand, by name; a field
+   * not here shows its type's help. */
+  helps: {} as Record<string, string>,
 });
+
+/** Each field's help as plugins left it, by the field's name. */
+const helps_by_field = (list: Array<{ field: string; help: string }>) => {
+  const by_field: Record<string, string> = {};
+  for (const item of list) by_field[item.field] = item.help;
+  return by_field;
+};
 
 /** Each refused path under its top-level field (`gallery[2].caption` under `gallery`), the
  * first problem a field has. */
@@ -152,12 +173,16 @@ export const form_ref = Publr.ref<HTMLFormElement>((form) => {
   };
 });
 export const root_ref = Publr.ref<HTMLElement>((root) => {
-  state.language = languageOfAddress();
+  state.chosen = chosenOfAddress();
+  markersSoon();
   arrangeLayout(root);
   refreshConditions(root);
-  // The visual editor switches the language from its own top bar; the form follows.
+  // The visual editor switches the language from its own top bar (`language=pl`, empty
+  // for the main one); the form follows.
   const follow = (event: Event) => {
-    state.language = String((event as CustomEvent).detail ?? "");
+    const pair = String((event as CustomEvent).detail ?? "");
+    const dimension = pair === "" ? state.dimensions[0]?.name ?? "" : pair.split("=")[0];
+    state.chosen = withPair(state.chosen, dimension, pair);
     refreshConditions(root);
   };
   window.addEventListener("publr:language", follow);
@@ -230,59 +255,85 @@ const conditionValue = (form: HTMLFormElement, name: string): unknown => {
   if (!many && kind === "boolean") return values[0] ?? false;
   return many ? values : values[0];
 };
-/** The language asked for in the address (`?lang=pl`), else the content language chosen
- * top right (`<html data-variant>`), when the site has it. */
-const languageOfAddress = () => {
-  const asked = new URLSearchParams(location.search).get("lang") ?? document.documentElement.dataset.variant ?? "";
-  return state.languages.some((language) => language.code === asked) ? asked : "";
+/** A key's combination as pairs: `language=pl,variation=b`. */
+const pairsOf = (text: string) => text === "" ? [] : text.split(",").map((part) => part.split("="));
+/** Pairs as a key's combination: the main values left out, sorted by dimension. */
+const textOf = (pairs: string[][]) => pairs.filter((pair) => pair[1] !== "")
+  .sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0)
+  .map((pair) => pair.join("=")).join(",");
+/** A field path's combination: `name@language=pl` gives `language=pl`; `name` gives none. */
+const combinationOfPath = (path: string) => {
+  const last = path.slice(path.lastIndexOf(".") + 1);
+  const at = last.indexOf("@");
+  return at < 0 ? null : last.slice(at + 1).replace(/\[.*$/, "");
+};
+/** The combination shown, narrowed to the dimensions a field varies by. */
+const shownFor = (dimensions: Set<string>, chosen: string) =>
+  textOf(pairsOf(chosen).filter((pair) => dimensions.has(pair[0])));
+/** `chosen` with `pair` (`language=pl`, or `language=` for its main value) in it. */
+const withPair = (chosen: string, dimension: string, pair: string) =>
+  textOf(pairsOf(chosen).filter((one) => one[0] !== dimension).concat(pair === "" ? [] : [pair.split("=")]));
+/** Each varied field's path and the dimensions its values are kept in. */
+const variedPaths = (root: HTMLElement) => {
+  const paths = new Map<string, Set<string>>();
+  for (const element of root.querySelectorAll<HTMLElement>("[data-field-path]")) {
+    const path = element.dataset.fieldPath ?? "";
+    const combination = combinationOfPath(path);
+    if (combination === null) continue;
+    const base = path.slice(0, path.lastIndexOf("@"));
+    const dimensions = paths.get(base) ?? new Set<string>();
+    for (const pair of pairsOf(combination)) dimensions.add(pair[0]);
+    paths.set(base, dimensions);
+  }
+  return paths;
+};
+/** The combination asked for in the address: each dimension under its own key
+ * (`?lang=pl&variation=b`); one left out is at its main value. */
+const chosenOfAddress = () => {
+  const asked = new URLSearchParams(location.search);
+  return textOf(state.dimensions.map((dimension) => [dimension.name, asked.get(dimension.param) ?? ""]));
 };
 
-/** Switching the language the translated fields show: the address keeps it, so a reload,
- * a link or the editor drawn again stays in it. */
-export const onLanguage = (event: MouseEvent) => {
-  const label = (event.currentTarget as HTMLElement).textContent?.trim() ?? "";
-  state.language = state.languages.find((language) => language.label === label)?.code ?? "";
+/** A dimension's value the fields show, by its label: `Polski`. */
+const labelIn = (dimension: { name: string; values: Array<{ code: string; label: string }> }, chosen: string) => {
+  const code = pairsOf(chosen).find((pair) => pair[0] === dimension.name)?.[1] ?? "";
+  return dimension.values.find((value) => value.code === code)?.label ?? dimension.values[0]?.label ?? "";
+};
+
+/** Switching a dimension the varied fields show: the address keeps the combination, so a
+ * reload, a link or the editor drawn again stays in it. */
+export const onDimension = (event: MouseEvent) => {
+  const item = event.currentTarget as HTMLElement;
+  const dimension = item.dataset.dimension ?? "";
+  const code = item.dataset.code ?? "";
+  state.chosen = withPair(state.chosen, dimension, code === "" ? "" : `${dimension}=${code}`);
+  const param = state.dimensions.find((one) => one.name === dimension)?.param ?? dimension;
   const address = new URL(location.href);
-  if (state.language === "") address.searchParams.delete("lang");
-  else address.searchParams.set("lang", state.language);
+  if (code === "") address.searchParams.delete(param);
+  else address.searchParams.set(param, code);
   history.replaceState(history.state, "", address);
   const root = root_of();
   if (root) refreshConditions(root);
 };
 
-/** A field path's language: `name@pl` is Polish; `name` is none. */
-const languageOfPath = (path: string) => {
-  const last = path.slice(path.lastIndexOf(".") + 1);
-  const at = last.indexOf("@");
-  return at < 0 ? null : last.slice(at + 1).replace(/\[.*$/, "");
-};
-
-/** Whether a field is out of the language shown: another language's value, or the main
- * value of a translated field while another language is shown. Fields shared by every
- * language stay, marked as shared. */
-const outOfLanguage = (element: HTMLElement, translated: Set<string>) => {
+/** Whether a field is out of the combination shown: another combination's value, or the
+ * main value of a varied field while another is shown. Fields no dimension varies stay,
+ * marked as shared. */
+const outOfLanguage = (element: HTMLElement, varied: Map<string, Set<string>>) => {
   const path = element.dataset.fieldPath ?? "";
-  const own = languageOfPath(path);
-  const shared = own === null && !translated.has(path);
+  const own = combinationOfPath(path);
+  const base = own === null ? path : path.slice(0, path.lastIndexOf("@"));
+  const dimensions = varied.get(base);
   const mark = element.querySelector<HTMLElement>(':scope > [data-part="shared-mark"]');
-  if (mark) mark.hidden = !(shared && state.language !== "" && state.languages.length > 1);
-  if (own !== null) return own !== state.language;
-  return !shared && state.language !== "";
-};
-
-const translatedPaths = (root: HTMLElement) => {
-  const paths = new Set<string>();
-  for (const element of root.querySelectorAll<HTMLElement>("[data-field-path]")) {
-    const path = element.dataset.fieldPath ?? "";
-    if (languageOfPath(path) !== null) paths.add(path.slice(0, path.lastIndexOf("@")));
-  }
-  return paths;
+  if (mark) mark.hidden = !(dimensions === undefined && state.chosen !== "" && state.dimensions.length > 0);
+  if (dimensions === undefined) return false;
+  return (own ?? "") !== shownFor(dimensions, state.chosen);
 };
 
 const refreshConditions = (root: HTMLElement) => {
   const form = root.querySelector<HTMLFormElement>('[data-part="record-form"]');
   if (!form) return;
-  const translated = translatedPaths(root);
+  const translated = variedPaths(root);
   for (const element of root.querySelectorAll<HTMLElement>("[data-conditions]")) {
     const groups = JSON.parse(element.dataset.conditions ?? "[]") as Array<{
       rules: Array<{ field: string; operator: string; value: string }>
@@ -530,14 +581,45 @@ export const onPreview = (event: MouseEvent) => {
   window.open(link.href, "_blank");
 };
 
+/** The markers beside the fields' labels and the fields' help for the form as it stands,
+ * saved or not: plugins work them out on the server, the editor draws them. An answer that comes late for an older
+ * form is dropped. */
+let markers_timer = 0;
+let markers_asked = 0;
+const refreshMarkers = async () => {
+  const form = form_of();
+  if (!form || disposed || state.type === "") return;
+  const asked = ++markers_asked;
+  try {
+    const response = await post(`${state.base_url}/markers`, body_of(form, { type: state.type }), "json");
+    if (!response.ok || response.redirected) return;
+    const answer = await response.json() as {
+      markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>;
+      helps?: Array<{ field: string; help: string }>;
+    };
+    if (disposed || asked !== markers_asked) return;
+    state.markers = answer.markers ?? [];
+    state.helps = helps_by_field(answer.helps ?? []);
+  } catch {
+    // Markers are a hint: without an answer the labels keep the ones they had.
+  }
+};
+const markersSoon = () => {
+  clearTimeout(markers_timer);
+  markers_timer = window.setTimeout(() => { void refreshMarkers(); }, 250);
+};
+
 /** An edit anywhere in the record's form: the form itself, or a control in the aside
- * that posts with it (`form="record"`). The autosave follows after a pause. */
+ * that posts with it (`form="record"`). The autosave follows after a pause; the markers
+ * sooner. */
 export const markDirty = () => {
   state.edit_revision++;
   state.dirty = true;
   state.saved_text = Publr.t("Unsaved changes");
   clearTimeout(timer);
   timer = window.setTimeout(() => { void flush(); }, 800);
+  markersSoon();
+  tell_fields();
 };
 
 /** The combobox of a flat taxonomy (RecordTerms) writes hidden inputs without an input
@@ -586,6 +668,14 @@ export const cancel_destroy = () => {
   state.destroy_armed = false;
 };
 
+// The same record keeps the address's query: what the editor shows in (`?lang=pl`) stays
+// across a publish or a transition.
+const kept_query = (location: string) => {
+  const next = new URL(location, window.location.href);
+  if (next.pathname === window.location.pathname && next.search === "") next.search = window.location.search;
+  return next.pathname + next.search + next.hash;
+};
+
 const submit = mutation(async (
   url: string,
   params: URLSearchParams,
@@ -601,7 +691,7 @@ const submit = mutation(async (
     if (location) window.location.assign(location);
     return;
   }
-  if (location && !state.in_drawer) history.replaceState(null, "", location);
+  if (location && !state.in_drawer) history.replaceState(null, "", kept_query(location));
   replace(html, memo, then_save);
 });
 
@@ -710,6 +800,8 @@ export type RecordEditorProps = {
   preview_href: string;
   /** What was refused, by path, when the last post did not go through. */
   problems: Array<{ code: string; text: string }>;
+  /** Over the problems when they are not a refused save's: a refused publish. */
+  problems_title?: string;
   /** The status actions, each its own form to the record's action route; the primary one
    * is the split button's face, the rest its menu. */
   actions: Array<{
@@ -733,9 +825,15 @@ export type RecordEditorProps = {
   aside?: JSX.Element;
   /** The dependency dialog for the aside, rendered by the adapter under `serve --dev`. */
   impact?: JSX.Element;
-  /** The site's languages, the main one first with an empty code: the switch between the
-   * values of translated fields. Fewer than two: no switch. */
-  languages?: Array<{ code: string; label: string }>;
+  /** The site's dimensions with more than one value (a language, a variation), each with
+   * its picker's word and its values, the main one first with an empty code: a picker each
+   * for which values the varied fields show. None: no pickers. */
+  dimensions?: Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>;
+  /** The markers beside the fields' labels for the values drawn: the editor asks again as
+   * they change, and a redraw keeps them in place. */
+  markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>;
+  /** The help plugins give fields for the values drawn, asked for again with the markers. */
+  helps?: Array<{ field: string; help: string }>;
   /** One column: the record's editor in a visual record's Entry panel. */
   stacked?: boolean;
   /** The values the entry holds, and the most it may; 0 for no count shown. */
@@ -780,6 +878,7 @@ export function RecordEditor({
   versions_href,
   preview_href,
   problems,
+  problems_title = "",
   actions,
   has_destructive,
   fields,
@@ -789,7 +888,9 @@ export function RecordEditor({
   focus = true,
   aside,
   impact,
-  languages = [],
+  dimensions = [],
+  markers = [],
+  helps = [],
   values_count = 0,
   values_max = 0,
   request_by = "",
@@ -822,7 +923,9 @@ export function RecordEditor({
   state.has_destructive = has_destructive;
   state.actions = actions;
   state.has_primary = actions.some((item) => item.primary);
-  state.languages = languages;
+  state.dimensions = dimensions;
+  state.markers = markers;
+  state.helps = helps_by_field(helps);
   state.problems = problems_by_field(problems.map((problem) => ({ field: problem.code, message: problem.text })));
 
   return (
@@ -854,11 +957,28 @@ export function RecordEditor({
               {state.changed && <Status tone="warning">{Publr.t("unpublished changes")}</Status>}
             </StatusStrip>
             <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>{Publr.t("Retry save")}</Button>
-            {state.languages.length > 1 && (
-              <div class="ml-auto flex items-center gap-3" role="group" aria-label={Publr.t("Language")} data-part="language-switch">
-                {state.languages.map((language) => (
-                  <TextToggle label={language.label} pressed={state.language === language.code} onClick={onLanguage} />
-                ))}
+            {dimensions.length > 0 && (
+              <div class="ml-auto shrink-0" data-part="dimension-picker">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" hierarchy="secondary" size="sm">
+                      <span>{state.dimensions.map((dimension) => labelIn(dimension, state.chosen)).join(" / ")}</span>
+                      <Icon name="chevron-down" size="sm" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="right" classes="min-w-56">
+                    {dimensions.map((dimension) => (
+                      <DropdownMenu sub>
+                        <DropdownMenuSubTrigger>{dimension.label}</DropdownMenuSubTrigger>
+                        <DropdownMenuContent align="sub" classes="min-w-48">
+                          {dimension.values.map((value) => (
+                            <DropdownMenuItem data-dimension={dimension.name} data-code={value.code} onClick={onDimension}>{value.label}</DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           </div>
@@ -926,7 +1046,7 @@ export function RecordEditor({
           ) : undefined
         }
         problems={problems}
-        problems_title={Publr.t("The record was not saved.")}
+        problems_title={problems_title !== "" ? problems_title : Publr.t("The record was not saved.")}
         side={
           <RecordActions
             in_drawer={in_drawer}

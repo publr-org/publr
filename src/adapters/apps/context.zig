@@ -3,12 +3,13 @@
 //! records of public types. Every read is written down in `Deps` when a build asks for it.
 
 const std = @import("std");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const jit = @import("publr_jit");
 const template_render = @import("../../template/render.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
-const model_variant = @import("../../model/variant.zig");
+const model_dimension = @import("../../model/dimension.zig");
 const record_operations = @import("../../operations/record.zig");
 const user_operations = @import("../../operations/user.zig");
 const http = @import("../../lib/http.zig");
@@ -271,14 +272,8 @@ pub const Context = struct {
 
             const value = data.document.object.get(key) orelse return null;
 
-            if (data.owner) |owner| {
-                const project = owner.sdk_context();
-
-                if (kinds_with_text(registry.kinds(&project))) {
-                    if (owner.kind_text(data.type, key, value)) |text| {
-                        return text;
-                    }
-                }
+            if (data.getKindText(key)) |text| {
+                return text;
             }
 
             return switch (value) {
@@ -288,6 +283,22 @@ pub const Context = struct {
                 .bool => |flag| if (flag) "true" else "false",
                 else => null,
             };
+        }
+
+        /// A field of a plugin's kind as the kind's `.text`; null for any other field.
+        pub fn getKindText(data: Data, key: []const u8) ?[]const u8 {
+            std.debug.assert(key.len > 0);
+            std.debug.assert(data.document == .object);
+
+            const value = data.document.object.get(key) orelse return null;
+            const owner = data.owner orelse return null;
+            const project = owner.sdk_context();
+
+            if (!kinds_with_text(registry.kinds(&project))) {
+                return null;
+            }
+
+            return owner.kind_text(data.type, key, value);
         }
 
         /// A reference field's targets: one id, or a list of ids in the order stored, up
@@ -400,7 +411,7 @@ pub const Context = struct {
     preview_base: ?[]const u8 = null,
     /// The language the page is in: its documents read in it, its root paths under its
     /// address (`/pl`), its `<html lang>`.
-    place: model_variant.Place = .{},
+    place: model_dimension.Place = .{},
     /// The route the page answers, for its address in the other languages; null for a
     /// fragment or a page drawn outside a route.
     route: ?*const engine.Route = null,
@@ -993,7 +1004,7 @@ pub const Context = struct {
     /// `Publr.build.locale()`: the language the page is in (`pl`, the main one's `en`);
     /// empty on a site without languages.
     pub fn locale(ctx: *const Context) []const u8 {
-        std.debug.assert(ctx.place.locale.len <= model_variant.code_len_max);
+        std.debug.assert(ctx.place.locale.len <= model_dimension.code_len_max);
         std.debug.assert(ctx.place.address.len == 0 or ctx.place.locale.len > 0);
 
         return ctx.place.locale;
@@ -1241,7 +1252,12 @@ pub const Context = struct {
         sdk_ctx.app = ctx.app.spec.name;
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
-        sdk_ctx.variant = ctx.place.variant;
+        sdk_ctx.address_code = ctx.place.code;
+        sdk_ctx.dimensions = site_dimensions.page_pairs(
+            &sdk_ctx,
+            ctx.place.code,
+            ctx.place.chosen,
+        );
 
         if (ctx.deps) |deps| {
             sdk_ctx.reads = deps.reads();

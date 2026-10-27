@@ -1,4 +1,5 @@
 const std = @import("std");
+const site_dimensions = @import("../../operations/dimensions.zig");
 const report_module = @import("../../lib/report.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
@@ -9,8 +10,8 @@ const context_module = @import("context.zig");
 const build = @import("build.zig");
 const artifacts = @import("artifacts.zig");
 const languages = @import("languages.zig");
-const model_variant = @import("../../model/variant.zig");
-const Place = model_variant.Place;
+const model_dimension = @import("../../model/dimension.zig");
+const Place = model_dimension.Place;
 const Project = @import("../../server/project.zig").Project;
 const App = @import("state.zig").App;
 
@@ -115,7 +116,7 @@ fn locate(project: *const Project, arena: std.mem.Allocator, url: []const u8) Lo
             continue;
         }
 
-        if (model_variant.beneath(place.address, url)) |rest| {
+        if (model_dimension.beneath(place.address, url)) |rest| {
             return .{
                 .path = rest,
                 .place = place,
@@ -181,7 +182,10 @@ pub fn record_pages(
             var sdk_ctx = identity_module.context(project, arena, .anonymous);
             const got = registry.SDK.dispatch(&sdk_ctx, record_operations.Get, .{
                 .id = key[prefix.len..],
-                .variant = if (place.variant.len > 0) place.variant else null,
+                .dimensions = if (place.code.len > 0)
+                    site_dimensions.asked_in(&sdk_ctx, place.code)
+                else
+                    .{},
             }) catch continue;
             const slug = got.record.slug orelse continue;
 
@@ -220,7 +224,7 @@ fn routes_of(
         }
 
         const in_app = engine.substitute(arena, route.pattern, slug) catch return written;
-        const url = model_variant.under(arena, place.address, in_app) catch return written;
+        const url = model_dimension.under(arena, place.address, in_app) catch return written;
         const params: context_module.Params = .{
             .slug = slug,
         };

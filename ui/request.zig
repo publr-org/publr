@@ -60,9 +60,6 @@ pub fn Shape(comptime Node: type) type {
             locale: []const u8 = "en",
             /// Where the catalogue's script is, with its version; empty for English.
             messages: []const u8 = "",
-            /// The variant content opens in, the person's choice (`pl`); empty for the main
-            /// one. `<html data-variant>`, read by the editors' switches.
-            variant: []const u8 = "",
             /// The account menu's languages, while a plugin translates the admin.
             language_menu: ?Node = null,
         },

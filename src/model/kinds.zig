@@ -47,10 +47,10 @@ pub const Check = checks.Check;
 /// kind runs by it), null when the value isn't one of the kind.
 pub const Text = *const fn (ctx: *anyopaque, id: []const u8, value: std.json.Value) ?[]const u8;
 
-/// A plugin kind's editor, drawn whole for the plugin frame under `base`: `ctx` is the
-/// caller's `*sdk.Ctx`, whose view says the value, its problems and the field's options.
+/// A plugin kind's editor (kind `id`), drawn whole for the plugin frame under `base`: `ctx` is
+/// the caller's `*sdk.Ctx`, whose view says the value, its problems and the field's options.
 /// Null when it cannot be drawn.
-pub const Editor = *const fn (ctx: *anyopaque, base: []const u8) ?[]const u8;
+pub const Editor = *const fn (ctx: *anyopaque, id: []const u8, base: []const u8) ?[]const u8;
 
 pub const Kind = struct {
     id: []const u8,

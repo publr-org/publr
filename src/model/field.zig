@@ -1,6 +1,7 @@
 const std = @import("std");
 const kinds = @import("kinds.zig");
 const defaults = @import("defaults.zig");
+const dimension = @import("dimension.zig");
 
 pub const options = @import("field/options.zig");
 pub const validation = @import("field/validation.zig");
@@ -44,9 +45,13 @@ pub const Def = struct {
     filterable: bool = true,
     /// Lists can order by it; null: as its kind does (numbers, money, dates, times).
     sortable: ?bool = null,
-    /// Holds a value per variant beside the main one (`name@pl`, see `variant.zig`): what a
-    /// variant is belongs to the plugin that declares the dimension, a language for one.
-    variants: bool = false,
+    /// The dimensions it holds a value per combination of, beside the main one
+    /// (`name@language=pl`, see `dimension.zig`); `"*"` for every one the site has.
+    dimensions: []const []const u8 = &.{},
+    /// The dimensions whose every value it must hold before its record goes live, whatever
+    /// the type or the dimension says; `optional_in` the ones it never must.
+    required_in: []const []const u8 = &.{},
+    optional_in: []const []const u8 = &.{},
     /// Declared in code by the type's owner: shown, never edited or removed by hand.
     locked: bool = false,
     many: bool = false,
@@ -77,6 +82,18 @@ pub const Problems = struct {
     /// The caller's `*sdk.Ctx` while a write is checked: an installed plugin's kind checks
     /// its values in the sandbox with it. Without it those checks can't run, and say so.
     reader: ?*anyopaque = null,
+    /// A draft is checked: a value left out is fine until the record goes live, when the
+    /// whole document is checked again without this.
+    drafting: bool = false,
+
+    /// A required value left out: a problem, unless a draft is checked.
+    pub fn missing(problems: *Problems, path: []const u8) void {
+        std.debug.assert(path.len > 0);
+
+        if (!problems.drafting) {
+            problems.add(path, "required");
+        }
+    }
 
     pub fn add(problems: *Problems, path: []const u8, message: []const u8) void {
         std.debug.assert(message.len > 0);
@@ -383,6 +400,7 @@ fn validate_kind_rules(
     validate_bounds(def, problems);
     validate_shape(kind, def, problems);
     validate_lists(kind, def, problems);
+    validate_dimensions(def, problems);
 
     if (kind.has.media) {
         validate_media(def, problems);
@@ -492,6 +510,46 @@ fn validate_lists(kind: kinds.Kind, def: Def, problems: *Problems) void {
 
             return;
         }
+    }
+}
+
+/// Each a dimension's name (or `"*"`), once, at most as many as a site has.
+fn validate_dimensions(def: Def, problems: *Problems) void {
+    std.debug.assert(problems.len <= problems_max);
+    std.debug.assert(def.name.len > 0);
+
+    const names = def.dimensions;
+
+    if (names.len > dimension.dimensions_max) {
+        problems.add(def.name, "at most 64 dimensions");
+
+        return;
+    }
+
+    for (names, 0..) |name, index| {
+        const known = std.mem.eql(u8, name, dimension.every) or dimension.valid_name(name);
+
+        if (!known) {
+            problems.add(def.name, "a dimension is named in lowercase letters, digits and _");
+
+            return;
+        }
+
+        for (names[0..index]) |before| {
+            if (std.mem.eql(u8, before, name)) {
+                problems.add(def.name, "each dimension once");
+
+                return;
+            }
+        }
+    }
+
+    if (is_layout(def.kind) and names.len > 0) {
+        problems.add(def.name, "a layout field holds no values to vary");
+    }
+
+    if (!dimension.valid_names(def.required_in) or !dimension.valid_names(def.optional_in)) {
+        problems.add(def.name, "a required dimension is named in lowercase letters, digits and _");
     }
 }
 

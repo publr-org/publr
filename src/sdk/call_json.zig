@@ -21,7 +21,10 @@ pub fn call(comptime SDK: type, ctx: *Ctx, name: []const u8, input: []const u8) 
 
     inline for (SDK.operations) |Operation| {
         if (std.mem.eql(u8, Operation.name, name)) {
-            const in = json.parse(Operation.In, ctx.arena, input, .{
+            // A key per dimension beside the operation's own (`"language": "pl"`).
+            const lift = @import("dimension_input.zig").lift;
+            const given = lift(Operation.In, ctx.arena, input) catch return error.OutOfMemory;
+            const in = json.parse(Operation.In, ctx.arena, given, .{
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
             const out = try SDK.dispatch(ctx, Operation, in);

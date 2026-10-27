@@ -17,6 +17,9 @@ pub const source_section_name = "publr.source";
 /// The plugin's translations (`[Translation]`, PO text and all), when it brings any: read
 /// into the host's catalogues as the plugin loads, kept out of the manifest it re-reads.
 pub const translations_section_name = "publr.translations";
+/// The browser half of the plugin's views, when they keep state or answer clicks: the stores
+/// its lowering registers, served at `<admin>/plugin/<name>/stores.js` for its frame.
+pub const stores_section_name = "publr.stores";
 pub const format = sandboxed_plugin.format;
 
 pub const Manifest = sandboxed_plugin.Manifest;
@@ -71,7 +74,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
             .queries = @import("prepared_queries.zig").of(docs_of(Plugin)),
-            .variants = @import("variants.zig").declared_of(Plugin),
+            .dimensions = @import("dimensions.zig").declared_of(Plugin),
             .warnings = if (@hasDecl(docs_of(Plugin), "warnings"))
                 &docs_of(Plugin).warnings
             else
@@ -267,6 +270,7 @@ fn panels_of(comptime Plugin: type) []const sandboxed_plugin.Panel {
                 .type = panel.type,
                 .label = panel.label,
                 .operation = panel.operation.name,
+                .field = panel.field,
             }};
         }
 
@@ -304,7 +308,8 @@ fn hooks_of(comptime Plugin: type) []const Hook {
             const Declared = entry.declaration;
             const stage: Hook.Stage = switch (entry.stage) {
                 .operation, .job => continue,
-                .rule_values, .rule_matches, .kind_validate, .kind_text => continue,
+                .rule_values, .rule_matches => continue,
+                .kind_validate, .kind_text, .kind_editor => continue,
                 .before => .before,
                 .after => .after,
                 .event => .event,

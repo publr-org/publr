@@ -305,7 +305,9 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
             "text"
         else
             "list of " ++ type_label_depth(pointer.child, depth + 1),
-        .@"struct" => |info| if (@hasDecl(Type, "handle"))
+        .@"struct" => |info| if (Type == @import("dimension_input.zig").Dimensions)
+            "a code per dimension"
+        else if (@hasDecl(Type, "handle"))
             "id of " ++ Type.handle
         else if (@hasDecl(Type, "reference"))
             "id of any record"

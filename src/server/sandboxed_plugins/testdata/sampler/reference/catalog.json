@@ -118,18 +118,18 @@
         "look_for": "The port serve noted, and how many pings."
       },
       {
-        "name": ".variants",
-        "summary": "The one variant dimension: every field gets a setting to keep a value per variant, and the admin a picker. The sampler's are editions, web and print; on a real site it is the languages plugin's.",
+        "name": ".dimensions",
+        "summary": "Dimensions a field may vary by, each made with publr.dimension.define: every field gets a switch per dimension, the editor a picker. The sampler's are editions, web and print; a site's languages and an A/B test's variations are others.",
         "code": [
           {
-            "file": "variants/editions.zig",
+            "file": "dimensions/editions.zig",
             "decl": "dimension"
           }
         ],
         "see": [
           "Open Structure, then Sample notes, then a field."
         ],
-        "look_for": "Per edition under the field, and Edition at the top right of the admin."
+        "look_for": "Per edition in the field's settings, and an Edition picker in a sample note's editor."
       }
     ],
     "tour": [
@@ -1218,7 +1218,7 @@
       "Open Content, then Sample note under Sample notes.",
       "Open Note: HELLO."
     ],
-    "look_for": "A Sampler box beside the form: Note <id>, one of <n>, looked at by you, from its view's ctx. Compiled in, Add a note writes through ctx.call and the count is read again through ctx.query; installed, its browser code is not there yet.",
+    "look_for": "A Sampler box beside the form: Note <id>, one of <n>, looked at by you, from its view's ctx. Add a note writes through ctx.call and the count is read again through ctx.query, compiled in and installed.",
     "options": [],
     "tour": [
       {
@@ -1229,6 +1229,38 @@
       {
         "find": "css:iframe[src*='note_panel']",
         "say": "The Sampler box, drawn by the sampler's read with its own view in the plugin frame."
+      }
+    ]
+  },
+  {
+    "id": "field_help_views",
+    "group": "Admin",
+    "name": "publr.Panel .field",
+    "summary": "Help as a view: a panel with .field is drawn under that field in the plugin frame, its ctx.value the field's text, told again as the person types.",
+    "code": [
+      {
+        "file": "main.zig",
+        "decl": "panels"
+      },
+      {
+        "file": "operations/note_strength.zig",
+        "decl": "run"
+      }
+    ],
+    "see": [
+      "Open Content, then Sample note under Sample notes, and add one.",
+      "Type into Note."
+    ],
+    "look_for": "Under Note: Weak note in red, Fair note in orange from 10 characters, Strong note in green from 40, changing as you type.",
+    "options": [],
+    "tour": [
+      {
+        "go": "/admin/content/new?type=sampler.sample_note",
+        "say": "A new note."
+      },
+      {
+        "find": "css:iframe[src*='note_strength']",
+        "say": "The sampler's help under Note, drawn by its read and following the text as it is typed."
       }
     ]
   },

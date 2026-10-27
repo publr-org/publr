@@ -81,6 +81,7 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
     }
 
     source.appendSlice(builder.allocator, "};\n") catch @panic("OOM");
+    append_components(builder, &source, dir, names);
 
     const root = listing.add("plugins.zig", source.items);
     const plugins = builder.createModule(.{
@@ -108,6 +109,51 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
 
     add_interfaces(builder, library, dir, names, modules[0..names.len]);
     library.addImport("native_plugins", plugins);
+}
+
+/// Each compiled-in plugin's `components/*.publr`, the templates an app imports as
+/// `plugin:<name>/<Component>`: `components`, their text read when the build is set up.
+fn append_components(
+    builder: *std.Build,
+    source: *std.ArrayList(u8),
+    dir: []const u8,
+    names: []const []const u8,
+) void {
+    std.debug.assert(dir.len > 0);
+    std.debug.assert(names.len <= plugins_max);
+
+    const io = builder.graph.io;
+    const arena = builder.allocator;
+
+    source.appendSlice(arena, "\n/// The plugins' components, as `plugin:<name>/<Component>`.\n" ++
+        "pub const components = [_]struct { plugin: []const u8, name: []const u8, " ++
+        "text: []const u8 }{\n") catch @panic("OOM");
+
+    for (names) |name| {
+        const folder = builder.pathJoin(&.{ dir, name, "components" });
+        var handle = builder.build_root.handle.openDir(io, folder, .{
+            .iterate = true,
+        }) catch continue;
+        defer handle.close(io);
+
+        var entries = handle.iterate();
+
+        while (entries.next(io) catch @panic("components: reading the folder failed")) |entry| {
+            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".publr")) {
+                continue;
+            }
+
+            const text = handle.readFileAlloc(io, entry.name, arena, .limited(1 << 20)) catch
+                @panic("components: reading a component failed");
+            const component = entry.name[0 .. entry.name.len - ".publr".len];
+            const line = builder.fmt("    .{{ .plugin = \"{s}\", .name = \"{s}\", " ++
+                ".text = \"{f}\" }},\n", .{ name, component, std.zig.fmtString(text) });
+
+            source.appendSlice(arena, line) catch @panic("OOM");
+        }
+    }
+
+    source.appendSlice(arena, "};\n") catch @panic("OOM");
 }
 
 /// The plugin's doc comments as a module of their own, which the plugin never imports: the

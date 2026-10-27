@@ -1,0 +1,22 @@
+import { Publr } from "publr-jsx";
+import type { EditorCtx } from "@publr/admin/Document.ptsx";
+
+export type SamplerNoteMeterProps = {
+  ctx: EditorCtx & { value: string };
+};
+
+/** How full the note is, its colour changing as it is typed. */
+export function SamplerNoteMeter({ ctx }: SamplerNoteMeterProps) {
+  const state = Publr.reactive({ length: ctx.value.length });
+  // The form tells the frame the text as it is typed, and `ctx.value` follows.
+  Publr.effect(() => {
+    state.length = ctx.value.length;
+  });
+
+  return (
+    <p data-sampler="note-strength"
+      style={`margin:0;font-size:13px;color:${state.length >= 40 ? "#15803d" : state.length >= 10 ? "#b45309" : "#b91c1c"}`}>
+      {state.length >= 40 ? "Strong note" : state.length >= 10 ? "Fair note" : "Weak note"}
+    </p>
+  );
+}

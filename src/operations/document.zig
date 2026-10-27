@@ -49,7 +49,7 @@ pub fn Domain(comptime domain_config: Config) type {
         pub const crud = @import("document/crud.zig").Of(@This());
         pub const many = @import("document/many.zig").Of(@This());
         pub const listed = @import("document/listed.zig").Of(@This());
-        pub const variants = @import("document/variants.zig").Of(@This());
+        pub const dimensions = @import("document/dimensions.zig").Of(@This());
         pub const definition = @import("document/definition.zig").Of(@This());
     };
 }

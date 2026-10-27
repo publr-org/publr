@@ -99,6 +99,8 @@ pub const Project = struct {
     outside: outside_model.Rule = .{},
     /// Asked before an app delivers a page or an island: the plugins' gates.
     delivery_gates: []const sdk.delivery.Gate = registry.native_plugins.merged_delivery_gates,
+    /// Run before a page is drawn: the plugins' `publr.hook.request`s.
+    request_hooks: []const sdk.page_request.Hook = registry.native_plugins.merged_request_hooks,
 
     pub fn of(ctx: *const http.Context) *Project {
         std.debug.assert(ctx.user_data != null);
@@ -116,7 +118,7 @@ pub const Project = struct {
         /// The path in the app, without the language's address.
         path: []const u8,
         /// The language the page is in, and its address (`/pl`), on a site with languages.
-        place: @import("../model/variant.zig").Place = .{},
+        place: @import("../model/dimension.zig").Place = .{},
     };
 
     /// Which app answers `path` on `host`: the subdomain's app, else the longest path mount.

@@ -234,7 +234,7 @@ pub const HostApi = struct {
         return if (self.inner.language.locale.len > 0)
             self.inner.language.locale
         else
-            self.inner.variant;
+            self.inner.address_code;
     }
 
     fn said(

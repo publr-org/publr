@@ -203,6 +203,8 @@ fn read_app(
             folder,
             try read_templates(arena, io, app_dir),
             templates_max,
+            registry.plugin_components,
+            config.plugins,
         ),
         .assets = if (compiled) |built| built.assets else spec_module.common_assets,
         .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{

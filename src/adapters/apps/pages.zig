@@ -5,6 +5,7 @@
 const std = @import("std");
 const http = @import("../../lib/http.zig");
 const delivery = @import("delivery.zig");
+const request_hooks = @import("request_hooks.zig");
 const middleware = @import("middleware.zig");
 const edge = @import("edge.zig");
 const engine = @import("../../template.zig");
@@ -27,7 +28,7 @@ const Request = http.Request;
 const Response = http.Response;
 const HttpContext = http.Context;
 const Context = context_module.Context;
-const model_variant = @import("../../model/variant.zig");
+const model_dimension = @import("../../model/dimension.zig");
 
 pub const Renderer = engine.Renderer(Context);
 
@@ -38,7 +39,7 @@ pub const page_stale: u32 = 24 * 60 * 60;
 
 /// The renderer for a page or fragment in `place`'s language: its islands are asked for
 /// under the language's address, so they read in it too.
-pub fn renderer(arena: std.mem.Allocator, app: *const App, place: model_variant.Place) Renderer {
+pub fn renderer(arena: std.mem.Allocator, app: *const App, place: model_dimension.Place) Renderer {
     std.debug.assert(app.pages().templates.len > 0);
     std.debug.assert(app.pages().options.pjsx.len == app.spec.pjsx_renders.len);
 
@@ -253,13 +254,20 @@ fn serve(
         return response.text(.not_found, "Not Found");
     }
 
-    if (matched) |found| {
-        try render(project, target, found, .ok, request, response, ctx);
-    } else {
-        try not_found(project, target, request, response, ctx);
+    var hooked = target;
+
+    if (try request_hooks.run(project, &hooked, request, response, ctx.arena)) {
+        return;
     }
 
-    if (door == .private) {
+    if (matched) |found| {
+        try render(project, hooked, found, .ok, request, response, ctx);
+    } else {
+        try not_found(project, hooked, request, response, ctx);
+    }
+
+    // A page read in what a hook chose is this visitor's own.
+    if (door == .private or hooked.place.chosen.len > 0) {
         try delivery.keep_private(response);
     }
 }
@@ -296,9 +304,10 @@ fn render(
     const app = target.app;
     const route = matched.route;
 
-    const full_path = try model_variant.under(ctx.arena, target.place.address, target.path);
+    const full_path = try model_dimension.under(ctx.arena, target.place.address, target.path);
 
-    if (!route.live) {
+    // A value a request hook chose is read live: the built page is the main one's.
+    if (!route.live and target.place.chosen.len == 0) {
         if (build.built_page(app, ctx.arena, full_path)) |html| {
             // An app's middleware may answer a page differently for each visitor (sign in
             // first, onboarding done): every use asks again, so its answer is never skipped.

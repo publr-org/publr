@@ -4,6 +4,7 @@ const std = @import("std");
 const registry = @import("../../server/registry.zig");
 const diff = @import("../../model/diff.zig");
 const field = @import("compare/field.zig");
+pub const Kind = @import("../../model/kinds.zig").Kind;
 pub const plugin = @import("compare/plugin.zig");
 
 /// A value as a version holds it: its JSON, its text, and for a document it points at, that
@@ -24,14 +25,15 @@ pub const Shown = field.Shown;
 
 const values_max: u32 = 4096;
 
-/// Each value as people see it, unmarked.
-pub fn shown(arena: std.mem.Allocator, values: []const Value) ![]const Shown {
+/// Each value as people see it, unmarked; a field's definition named by `known`, the kinds
+/// the project knows (`admin.kinds_of`).
+pub fn shown(arena: std.mem.Allocator, known: []const Kind, values: []const Value) ![]const Shown {
     std.debug.assert(values.len <= values_max);
 
     const found = try arena.alloc(Shown, values.len);
 
     for (values, found) |value, *item| {
-        item.* = try one(arena, value, "same");
+        item.* = try one(arena, known, value, "same");
     }
 
     std.debug.assert(found.len == values.len);
@@ -40,7 +42,12 @@ pub fn shown(arena: std.mem.Allocator, values: []const Value) ![]const Shown {
 }
 
 /// One value as people see it, marked `same`, `added` or `removed`.
-pub fn one(arena: std.mem.Allocator, value: Value, mark: []const u8) !Shown {
+pub fn one(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    value: Value,
+    mark: []const u8,
+) !Shown {
     std.debug.assert(mark.len > 0);
     std.debug.assert(value.json.len > 0 or value.text.len == 0);
 
@@ -49,7 +56,8 @@ pub fn one(arena: std.mem.Allocator, value: Value, mark: []const u8) !Shown {
         .mark = mark,
     }});
 
-    const definition = try field.of(arena, value.json) orelse try plugin.of(arena, value.json);
+    const definition = try field.of(arena, known, value.json) orelse
+        try plugin.of(arena, value.json);
 
     if (definition) |found| {
         var card = found;

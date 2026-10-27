@@ -36,7 +36,7 @@ pub const delete_reference = Store.delete_reference;
 pub const read_text = Store.read_text;
 pub const delete_field = Store.delete_field;
 pub const count_field = Store.count_field;
-pub const count_variants = Store.count_variants;
+pub const count_in_dimension = Store.count_in_dimension;
 
 const record_terms = @import("record_terms.zig");
 const taxonomy = @import("../model/taxonomy.zig");

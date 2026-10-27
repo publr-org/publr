@@ -3,7 +3,7 @@ const field = @import("field.zig");
 const kinds = @import("kinds.zig");
 const convert = @import("convert.zig");
 const document_module = @import("document.zig");
-const variant = @import("variant.zig");
+const dimension = @import("dimension.zig");
 
 const Def = field.Def;
 const Kind = kinds.Kind;
@@ -17,8 +17,15 @@ pub const Plan = struct {
     allowed: bool,
     needs_rewrite: bool,
     removed: []const []const u8,
-    /// Fields that stop holding variants: their `@` values go with the rewrite.
-    unvaried: []const []const u8 = &.{},
+    /// Dimensions fields stop varying by: their values in them go with the rewrite.
+    unvaried: []const Unvaried = &.{},
+};
+
+/// A field that stops varying by a dimension.
+pub const Unvaried = struct {
+    path: []const u8,
+    /// The dimension's name, or `"*"` for a field that stopped varying by every one.
+    dimension: []const u8,
 };
 
 const Leaf = struct {
@@ -54,19 +61,19 @@ pub fn plan(
         const same_kind = std.mem.eql(u8, before.def.kind, after.def.kind);
         const same_many = before.def.many == after.def.many;
         const same_search = before.def.searchable == after.def.searchable;
-        const same_variants = before.def.variants == after.def.variants;
+        const same_varied = same_dimensions(before.def.dimensions, after.def.dimensions);
 
         if (!same_kind and !convert.allowed(known, before.def.kind, after.def.kind)) {
             allowed = false;
         }
 
-        if (!same_kind or !same_many or !same_search or !same_variants) {
+        if (!same_kind or !same_many or !same_search or !same_varied) {
             needs_rewrite = true;
         }
     }
 
-    var unvaried: std.ArrayList([]const u8) = .empty;
-    const varied = try variants_changed(arena, old, new, "", &unvaried);
+    var unvaried: std.ArrayList(Unvaried) = .empty;
+    const varied = try dimensions_changed(arena, old, new, "", &unvaried);
 
     return .{
         .allowed = allowed,
@@ -76,14 +83,14 @@ pub fn plan(
     };
 }
 
-/// Whether any field, at any depth, starts or stops holding variants; the paths of those that
-/// stop go in `unvaried`.
-fn variants_changed(
+/// Whether any field, at any depth, changes the dimensions it varies by; each one a field
+/// stops varying by goes in `unvaried`.
+fn dimensions_changed(
     arena: std.mem.Allocator,
     old: []const Def,
     new: []const Def,
     prefix: []const u8,
-    unvaried: *std.ArrayList([]const u8),
+    unvaried: *std.ArrayList(Unvaried),
 ) !bool {
     std.debug.assert(prefix.len <= document_module.path_len_max);
     std.debug.assert(new.len <= field.fields_max);
@@ -95,21 +102,59 @@ fn variants_changed(
         var buffer: [document_module.path_len_max]u8 = undefined;
         const path = try arena.dupe(u8, try document_module.join(&buffer, prefix, after.name));
 
-        if (before.variants != after.variants) {
+        if (!same_dimensions(before.dimensions, after.dimensions)) {
             changed = true;
         }
 
-        if (before.variants and !after.variants) {
-            try unvaried.append(arena, path);
+        for (before.dimensions) |name| {
+            if (!kept_by(after.dimensions, name)) {
+                try unvaried.append(arena, .{
+                    .path = path,
+                    .dimension = name,
+                });
+            }
         }
 
         if (field.is_container(after.kind) and field.is_container(before.kind)) {
-            changed = try variants_changed(arena, before.fields, after.fields, path, unvaried) or
+            changed = try dimensions_changed(arena, before.fields, after.fields, path, unvaried) or
                 changed;
         }
     }
 
     return changed;
+}
+
+/// The same dimensions, in any order.
+fn same_dimensions(before: []const []const u8, after: []const []const u8) bool {
+    std.debug.assert(before.len <= dimension.dimensions_max + 1);
+    std.debug.assert(after.len <= dimension.dimensions_max + 1);
+
+    if (before.len != after.len) {
+        return false;
+    }
+
+    for (before) |name| {
+        if (!kept_by(after, name)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// Whether a field varying by `after` still varies by `name`: listed itself, or by `"*"`
+/// (which keeps a named dimension, never the other way round).
+fn kept_by(after: []const []const u8, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(after.len <= dimension.dimensions_max + 1);
+
+    for (after) |kept| {
+        if (std.mem.eql(u8, kept, name) or std.mem.eql(u8, kept, dimension.every)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn flatten(
@@ -164,15 +209,17 @@ pub fn convert_document(
 
     var entries = document.object.iterator();
 
-    // Each value under its key: the field's own, and with its variants (`name@pl`) while
-    // the field still holds them; turning variants off drops them.
+    // Each value under its key: the field's own, and each in a combination
+    // (`name@language=pl`) the field still varies by; one it stopped varying by goes.
     while (entries.next()) |entry| {
-        const key = variant.split(entry.key_ptr.*);
+        const key = dimension.split(entry.key_ptr.*);
         const after = find_def(new, key.name) orelse continue;
         const before = find_def(old, key.name) orelse continue;
         const value = entry.value_ptr.*;
+        const fits = dimension.fits(before.dimensions, key.combination) and
+            dimension.fits(after.dimensions, key.combination);
 
-        if (value == .null or (key.code.len > 0 and !(before.variants and after.variants))) {
+        if (value == .null or (key.combination.len > 0 and !fits)) {
             continue;
         }
 

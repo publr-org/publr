@@ -109,9 +109,8 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "custom_fields", "get", "--group", "sampler" },
     &.{ "--as", admin, "role", "list" },
     // The variant dimension sampler declares, read and chosen through core's own operations.
-    &.{ "--as", admin, "user", "variant" },
-    &.{ "--as", admin, "user", "set_variant", "--variant", "print" },
-    &.{ "--as", admin, "user", "variant" },
+    &.{ "--as", admin, "record", "list", "--type", "sampler.sample_note", "--edition", "print" },
+    &.{ "--as", admin, "record", "list", "--type", "sampler.sample_note", "--edition", "nope" },
     &.{ "--as", admin, "secret", "list" },
     &.{ "--as", admin, "content_type", "get", "--handle", "greeter.salutation" },
     // Its own field group written, and a group its location rule places on accounts with a
