@@ -197,7 +197,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 168 + preview_pages.routes_count +
+pub const routes_count: u32 = 169 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
@@ -254,6 +254,7 @@ pub fn register(router: *http.Router) void {
     router.get("/admin/terms/new/editor", &term_pages.new_editor);
     router.post("/admin/terms/create", &term_pages.create);
     router.post("/admin/terms/cells", &term_pages.cells);
+    router.post("/admin/terms/markers", &term_pages.markers);
     router.get("/admin/terms/:id", &term_pages.edit);
     router.get("/admin/terms/:id/editor", &term_pages.editor_fragment);
     router.post("/admin/terms/:id/save", &term_pages.save);
