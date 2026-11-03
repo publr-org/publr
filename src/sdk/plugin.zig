@@ -634,7 +634,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var sign_in_at: []const type = &.{};
         var admin_brand: []const type = &.{};
         var app_picker_segment: []const type = &.{};
-        var dimension_list: []const dimensions.Dimension = &.{};
+        var dimension_list: []const dimensions.Native = &.{};
         var request_hooks: []const @import("page_request.zig").Hook = &.{};
         var work_start: ?[]const u8 = null;
         var hosted = false;
@@ -761,7 +761,7 @@ pub fn Merged(comptime plugins: anytype) type {
 
             for (dimensions.of(Plugin)) |declared| {
                 for (dimension_list) |known| {
-                    if (std.mem.eql(u8, known.name, declared.name)) {
+                    if (std.mem.eql(u8, known.setting.name, declared.name)) {
                         @compileError("two plugins declare the dimension `" ++ declared.name ++
                             "`");
                     }
@@ -776,7 +776,10 @@ pub fn Merged(comptime plugins: anytype) type {
                 resolved.list = own_operation(Plugin, declared.list) orelse
                     @compileError("plugin " ++ Plugin.manifest.name ++ ": dimension `" ++
                         declared.name ++ "`'s list is one of its own operations");
-                dimension_list = dimension_list ++ &[_]dimensions.Dimension{resolved};
+                dimension_list = dimension_list ++ &[_]dimensions.Native{.{
+                    .setting = dimensions.declared(resolved, Plugin.docs, Plugin.manifest.name),
+                    .api = resolved.api,
+                }};
             }
 
             if (plugin_define.has(Plugin, "hosted")) {
@@ -906,6 +909,10 @@ pub fn Merged(comptime plugins: anytype) type {
                         declared.def.handle);
                 }
             }
+        }
+
+        for (content_types ++ taxonomies ++ custom_fields) |declared| {
+            dimensions.check_wrapped(dimension_list, declared.def.handle, declared.def.fields);
         }
 
         return struct {

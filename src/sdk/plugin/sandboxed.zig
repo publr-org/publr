@@ -33,6 +33,7 @@ pub const Entry = struct {
         kind_validate,
         kind_text,
         kind_editor,
+        dimension_options,
     };
 };
 
@@ -108,9 +109,21 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             };
         }
 
+        // Each dimension's `.options` view, drawn for the field panel's frame.
+        for (@import("dimensions.zig").of(Plugin)) |declared| {
+            const Dimension = struct {
+                pub const dimension = declared;
+            };
+
+            entries = entries ++ &[_]Entry{.{
+                .stage = .dimension_options,
+                .declaration = Dimension,
+            }};
+        }
+
         if (entries.len > entries_max) {
             @compileError("plugin " ++ Plugin.manifest.name ++ ": too many operations, hooks, " ++
-                "jobs, rules and kinds");
+                "jobs, rules, kinds and dimensions");
         }
 
         return entries;

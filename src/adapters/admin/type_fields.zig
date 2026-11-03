@@ -670,9 +670,9 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-/// A switch per dimension with more than one value, in its own words: whether the field
-/// varies by it. A new field starts varying by the dimension with pages of its own when it
-/// holds words, by none of the others.
+/// A choice per dimension with more than one value, in its own words: how the field holds
+/// values per it. A new field starts holding the dimension with pages of its own falling back
+/// when it holds words, and one value for all of the others.
 fn switches_of(
     session: *Session,
     field: model.field.Def,
@@ -681,35 +681,51 @@ fn switches_of(
     std.debug.assert(session.signed_in());
     std.debug.assert(field.kind.len > 0);
 
+    const Choice = @typeInfo(@FieldType(views.FieldPanel.DimensionsItem, "choices")).pointer.child;
     var out: std.ArrayList(views.FieldPanel.DimensionsItem) = .empty;
 
     for (site_dimensions.all(&session.ctx)) |dimension| {
-        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
+        // A family (each A/B test its own) is offered before it has a member.
+        if (!dimension.each) {
+            const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
 
-        if (values.len < 2) {
-            continue;
+            if (values.len < 2) {
+                continue;
+            }
         }
 
-        const on = if (is_new)
-            dimension.addresses and translated_by_default(field.kind)
+        const holds: model.dimension.Holds = if (!is_new)
+            model.dimension.holds_of(field, dimension.name)
+        else if (dimension.addresses and translated_by_default(field.kind))
+            .fallback
         else
-            model.dimension.varies_by(field.dimensions, dimension.name);
+            dimension.default;
+        const chosen = model.dimension.choice_holding(dimension.field, holds);
+        const value = if (chosen) |choice| choice.value else "";
+        const choices = try session.arena.alloc(Choice, dimension.field.choices.len);
+
+        for (dimension.field.choices, choices) |choice, *shown| {
+            shown.* = .{
+                .value = choice.value,
+                .title = try session.declared(choice.title),
+                .description = try session.declared(choice.description),
+            };
+        }
 
         try out.append(session.arena, .{
             .name = dimension.name,
-            .label = try session.declared(dimension.label),
-            .help = try session.declared(dimension.help),
-            .on = on,
-            .required_label = if (dimension.required_label.len > 0)
-                try session.declared(dimension.required_label)
+            .label = try session.declared(dimension.field.label),
+            .help = try session.declared(dimension.field.help),
+            .value = value,
+            .src = if (dimension.field.drawn)
+                try print(session.arena, "/admin/plugin/{s}/dimensions/{s}/frame?value={s}", .{
+                    dimension.plugin,
+                    dimension.name,
+                    try admin.query_value(session.arena, value),
+                })
             else
                 "",
-            .required = if (model.dimension.lists(field.required_in, dimension.name))
-                "required"
-            else if (model.dimension.lists(field.optional_in, dimension.name))
-                "optional"
-            else
-                "",
+            .choices = choices,
         });
     }
 

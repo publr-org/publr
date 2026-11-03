@@ -71,7 +71,8 @@ pub fn main(init: std.process.Init) !u8 {
 /// webhooks for `webhook list` and `webhook run_again`; `project put` and `mod changed` answer only
 /// a plugin's call; asking the marketplace answers a new id each time, and `job answer` reads only
 /// an id someone was given; a plugin's field group values read and written are the sampler's own
-/// group, which the seeded project has none of.
+/// group, which the seeded project has none of; holding back a combination names a dimension's
+/// value (`language=pl`), and the fixture compiles in no plugin declaring a dimension.
 const skips = [_][]const u8{
     "ai.ask",
     "ai.reply",
@@ -114,6 +115,7 @@ const skips = [_][]const u8{
     "custom_fields.values",
     "custom_fields.save_values",
     "mod.changed",
+    "record.hold_back",
 };
 
 fn skipped(comptime name: []const u8) bool {

@@ -7,6 +7,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const site_dimensions = @import("../dimensions.zig");
+const live = @import("../../model/dimension/live.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -27,6 +28,8 @@ pub const Marker = struct {
     code: []const u8 = "",
     /// `show`, or `hide` while the editor shows the field at this code.
     current: []const u8 = "show",
+    /// A page of the admin it opens instead (`/admin/plugin/ab_test/attach?…`); empty: none.
+    href: []const u8 = "",
 };
 
 pub const markers_max: u32 = 256;
@@ -54,6 +57,8 @@ pub fn Markers(comptime Domain: type) type {
         pub const In = struct {
             type: []const u8,
             document: []const u8,
+            /// The record, saved: what it holds back is never required.
+            id: []const u8 = "",
         };
         pub const Out = struct {
             markers: []const Marker,
@@ -69,6 +74,7 @@ pub fn Markers(comptime Domain: type) type {
         pub const field_docs: sdk.operation.Docs(In) = .{
             .type = "The record's type",
             .document = "Its fields as JSON, as the editor holds them",
+            .id = "The record's id once saved: a combination it holds back is never required",
         };
         pub const output_docs: sdk.operation.Docs(Out) = .{
             .markers = "Each marker: the `field`, its `label` and `tone`",
@@ -93,8 +99,15 @@ pub fn Markers(comptime Domain: type) type {
             const record = @import("../../lib/json.zig").parse(Value, ctx.arena, in.document, .{
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
+            const held_back = if (in.id.len == 0) "" else blk: {
+                const found = try Domain.access.load(ctx, in.id, granted) orelse {
+                    return error.NotFound;
+                };
+
+                break :blk found.pending_held_back orelse found.held_back;
+            };
             var batch: mods.Batch = .{
-                .items = try items_of(ctx, row.def, record),
+                .items = try items_of(ctx, row.def, record, held_back, in.id),
             };
 
             try registry.SDK.modify(ctx, marked, &batch);
@@ -106,12 +119,15 @@ pub fn Markers(comptime Domain: type) type {
     };
 }
 
-/// One item per field: `{ field, varies_by, required, record, markers: [] }`, `required`
-/// each value it must hold before going live (`{ dimension, code }`).
+/// One item per field: `{ field, varies_by, required, type, id, record, markers: [] }`,
+/// `required` each value it must hold before going live (`{ dimension, code }`), but in a
+/// combination the record holds back (`held_back`); `id` empty before it is saved.
 fn items_of(
     ctx: *Ctx,
     type_def: @import("../../model.zig").content_type.Def,
     record: Value,
+    held_back: []const u8,
+    id: []const u8,
 ) Error![]Value {
     std.debug.assert(type_def.fields.len <= @import("../../model.zig").field.fields_max);
 
@@ -124,7 +140,17 @@ fn items_of(
         var varies_by = std.json.Array.init(arena);
         var required = std.json.Array.init(arena);
 
-        for (try site_dimensions.required_of(ctx, type_def, def)) |one| {
+        for (try site_dimensions.required_of(ctx, def)) |one| {
+            var buffer: [live.combination_len_max + 2]u8 = undefined;
+            const combination = live.combination_of(&buffer, &.{.{
+                .dimension = one.dimension,
+                .code = one.code,
+            }}) orelse continue;
+
+            if (live.held(held_back, combination)) {
+                continue;
+            }
+
             var pair: std.json.ObjectMap = .empty;
 
             pair.put(arena, "dimension", .{
@@ -152,6 +178,12 @@ fn items_of(
         }) catch return error.OutOfMemory;
         object.put(arena, "required", .{
             .array = required,
+        }) catch return error.OutOfMemory;
+        object.put(arena, "type", .{
+            .string = type_def.handle,
+        }) catch return error.OutOfMemory;
+        object.put(arena, "id", .{
+            .string = id,
         }) catch return error.OutOfMemory;
         object.put(arena, "record", record) catch return error.OutOfMemory;
         object.put(arena, "markers", .{
@@ -201,11 +233,28 @@ fn collected(arena: std.mem.Allocator, items: []const Value) Error![]const Marke
                     "hide"
                 else
                     "show",
+                .href = href_of(text_of(marker, "href") orelse ""),
             }) catch return error.OutOfMemory;
         }
     }
 
     return out.items;
+}
+
+/// A marker's link when it is a page of the admin's own, else none.
+fn href_of(href: []const u8) []const u8 {
+    std.debug.assert(href.len <= 64 << 10);
+
+    const admin = "/admin/";
+    const own = std.mem.startsWith(u8, href, admin) and href.len < 2048;
+
+    for (href) |char| {
+        if (char < 0x20 or char == 0x7f or char == '\\') {
+            return "";
+        }
+    }
+
+    return if (own and !std.mem.startsWith(u8, href, admin ++ "/")) href else "";
 }
 
 fn text_of(value: Value, key: []const u8) ?[]const u8 {

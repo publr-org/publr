@@ -290,7 +290,7 @@ fn job(
 
 /// Runs `part` of installed plugin `name`'s plugin (`sampler.has_motto`): its entries
 /// follow the jobs', each rule's `values` then `matches`, then each kind's `validate`,
-/// `text` and `editor`.
+/// `text` and `editor`, then each dimension's `options`.
 fn extra(
     context: *anyopaque,
     ctx: *sdk.Ctx,
@@ -313,7 +313,7 @@ fn extra(
         .kind_validate => 0,
         .kind_text => 1,
         .kind_editor => 2,
-        .rule_values, .rule_matches => 0,
+        .rule_values, .rule_matches, .dimension_options => 0,
     };
     const kinds_first = first + manifest.location_rules.len * 2;
 
@@ -326,10 +326,18 @@ fn extra(
     }
 
     for (manifest.field_kinds, 0..) |declared, index| {
-        if (!rule and std.mem.eql(u8, declared.name, own)) {
+        if (!rule and part != .dimension_options and std.mem.eql(u8, declared.name, own)) {
             const entry = kinds_first + index * 3 + kind_part;
 
             return run_entry(loaded, ctx, @intCast(entry), input);
+        }
+    }
+
+    const dimensions_first = kinds_first + manifest.field_kinds.len * 3;
+
+    for (manifest.dimensions, 0..) |declared, index| {
+        if (part == .dimension_options and std.mem.eql(u8, declared.name, own)) {
+            return run_entry(loaded, ctx, @intCast(dimensions_first + index), input);
         }
     }
 

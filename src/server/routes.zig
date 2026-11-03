@@ -178,7 +178,7 @@ fn next_due(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const store = @import("../store.zig");
     const jobs = store.job_queue.next_due(project.connection) catch null;
-    const transitions = store.scheduled_transitions.next_due(project.connection) catch null;
+    const transitions = store.scheduled_changes.next_due(project.connection) catch null;
     const due = if (jobs != null and transitions != null)
         @min(jobs.?, transitions.?)
     else

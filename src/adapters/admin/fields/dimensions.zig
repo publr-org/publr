@@ -17,6 +17,9 @@ pub const Error = error{OutOfMemory};
 pub const SiteDimension = struct {
     name: []const u8,
     codes: []const []const u8,
+    /// The top-level fields it shows on (an A/B test's, on one record); null: every field
+    /// varying by it.
+    only: ?[]const []const u8 = null,
 };
 
 /// The most combinations one field's form draws.
@@ -89,6 +92,12 @@ fn combinations_of(
     for (site) |dimension| {
         if (!model.dimension.varies_by(def.dimensions, dimension.name)) {
             continue;
+        }
+
+        if (dimension.only) |only| {
+            if (!model.dimension.lists(only, def.name)) {
+                continue;
+            }
         }
 
         var grown: std.ArrayList([]const Pair) = .empty;

@@ -29,14 +29,27 @@ pub const Got = struct {
     record: Record,
     slot: []const u8,
     document: []const u8,
-    /// The transition scheduled for it (`record.transition_at`), read for the editor.
-    scheduled: ?Scheduled = null,
+    /// What is scheduled for it (`record.transition_at`), soonest first; read for the editor.
+    scheduled: []const Scheduled = &.{},
 };
 pub const Scheduled = struct {
+    /// Its id, for `record.unschedule`.
+    entry: i64,
     transition: []const u8,
     at: i64,
     /// The person it is made as.
     by: []const u8,
+    /// A scheduled publish of changes rather than a plain transition.
+    version: bool = false,
+    /// The scheduled change it builds on; 0 for what is live.
+    base: i64 = 0,
+    /// A scheduled publish's changes: the keys it publishes (`title@language=pl`).
+    changes: []const []const u8 = &.{},
+    /// What it holds back once made, when that changes; null leaves it.
+    held_back: ?[]const u8 = null,
+    /// `waiting`, or `failed` with `problem` saying why.
+    state: []const u8 = "waiting",
+    problem: []const u8 = "",
 };
 pub const Saved = @import("save.zig").Saved;
 pub const Referrer = struct {
@@ -258,6 +271,7 @@ pub fn Of(comptime Domain: type) type {
         }
 
         pub const save = @import("save.zig").Of(Domain).save;
+        pub const same_as_live = @import("save.zig").Of(Domain).same_as_live;
 
         pub fn list(ctx: *Ctx, granted: *const Grant, in: ListInput) Error![]const Record {
             if (in.definitions.len > 64 << 10) {

@@ -186,14 +186,20 @@ combination's value by the field's own rules, never required on a save), reads a
   (`en-gb` reads `en`), then to its main value, the dimension with the lowest priority
   first, so Polish in variation `b` with no such value reads Polish. The listed title and
   slug follow. `--slug` with `--language` matches that language's slug first.
-- A type's `fallback_to_main` (default true) says what a record with nothing written in
-  the language its page's address chose does there: shows in its main values, or is left
-  out (not listed; not found).
-- A value may be **required** before a record goes live (the languages plugin's Required
-  per language). A type's `required_in` and `optional_in` list dimensions whose every value
-  its fields must, or never must, hold; a field's own lists say the same for it alone and
-  win over the type's. A missing one refuses publishing (or a move to a live status) under
-  its key, `Required in Polski`; a draft always saves.
+- Each record says what of it goes live: every combination of the dimensions its fields
+  vary by, but the ones it holds back (`record hold_back --id <id> --combinations
+  language=pl`, `held_back` in `record get`; the editor's "Goes live" ticks). A value the
+  site adds later goes live. Held back where the dimension has pages of its own, the
+  record is not at that address (not listed; not found); held back where a visitor is given
+  a value (a variation), it reads as if the other dimensions were at their main values.
+  A live record's choice waits with its pending changes (`pending_held_back`) until it is
+  published, which checks it, or discarded; any other record's takes effect at once.
+- Each field says how it holds each dimension it varies by, one choice per dimension:
+  every value going live must be filled (`required_in`), an empty value shows nothing
+  (`empty_in`), or (listed only in `dimensions`) an empty value shows what it falls back
+  to. A missing required value refuses publishing (or a move to a live status) under its
+  key, `Required in Polski`, but where the record holds that value back; a draft always
+  saves. Nothing type-wide or site-wide.
 - Changing a type keeps every combination's value; taking a dimension off a field drops its
   values in that dimension, asked first as removing a field with content is
   (`--drop_content`).

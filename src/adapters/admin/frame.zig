@@ -7,6 +7,11 @@ const pages = @import("frame/pages.zig");
 const panels = @import("frame/panels.zig");
 const records = @import("../../operations/record.zig");
 const document = @import("frame/document.zig");
+const sdk = @import("../../sdk.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
+const plugin_context = @import("../../sdk/plugin/context.zig");
+const views = @import("../../sdk/plugin/views.zig");
+const field_kinds = @import("../../sdk/plugin/field_kind_define.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -26,6 +31,7 @@ pub fn register(router: anytype) void {
     router.get(prefix ++ "/:plugin/:page/frame", &frame);
     router.get(prefix ++ "/:plugin/panels/:operation/frame", &panel_frame);
     router.get(prefix ++ "/:plugin/kinds/:kind/frame", &editor_frame);
+    router.get(prefix ++ "/:plugin/dimensions/:dimension/frame", &options_frame);
 }
 
 /// An installed plugin's views' browser code, for its frame: loaded after the admin's own
@@ -234,6 +240,69 @@ pub fn editor_frame(request: *Request, response: *Response, ctx: *Context) Error
         "<p class=\"p-8\">This editor could not be drawn.</p>";
 
     try send(&session, base, html);
+}
+
+/// A dimension's setting on the field panel, `?value=<value>`: the owner's `.options` view
+/// drawn with the value of its field option the field holds (null for none) in its `ctx`.
+pub fn options_frame(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = try admin.require(request, response, ctx) orelse return;
+    const plugin = request.param("plugin") orelse "";
+    const name = request.param("dimension") orelse "";
+    const dimension = site_dimensions.find(&session.ctx, name) orelse {
+        return response.text(.not_found, "Not Found");
+    };
+
+    if (!dimension.field.drawn or !std.mem.eql(u8, dimension.plugin, plugin)) {
+        return response.text(.not_found, "Not Found");
+    }
+
+    const held = admin.query_param(&session, "value") orelse "";
+    const base = session.project.admin_path();
+
+    look(&session, "");
+    session.ctx.view.editor = .{
+        .value = if (held.len == 0) .null else .{
+            .string = held,
+        },
+    };
+
+    const html = options_drawn(&session.ctx, dimension, base) orelse
+        "<p class=\"p-8\">This setting could not be drawn.</p>";
+
+    try send(&session, base, html);
+}
+
+/// The owner's `.options` view drawn whole: compiled in, here; installed, in its sandbox.
+fn options_drawn(ctx: *sdk.Ctx, dimension: site_dimensions.Setting, base: []const u8) ?[]const u8 {
+    std.debug.assert(dimension.field.drawn);
+    std.debug.assert(ctx.view.editor != null);
+
+    inline for (registry.dimensions) |native| {
+        if (comptime native.api.field.drawn) {
+            if (std.mem.eql(u8, native.setting.name, dimension.name)) {
+                var wrapped: plugin_context.PluginCtx = .{
+                    .inner = ctx,
+                };
+
+                return views.render(&wrapped, base, native.api.field.view, .{}) catch null;
+            }
+        }
+    }
+
+    const sandboxed = ctx.sandboxed_plugins orelse return null;
+    const id = std.fmt.allocPrint(ctx.arena, "{s}.{s}", .{ dimension.plugin, dimension.name }) catch
+        return null;
+    const input = sdk.stringify(ctx.arena, field_kinds.Drawn{
+        .base = base,
+    }) catch return null;
+    const answered = sandboxed.extra(ctx, .dimension_options, id, input) catch return null;
+
+    return std.json.parseFromSliceLeaky([]const u8, ctx.arena, answered, .{
+        .allocate = .alloc_always,
+    }) catch null;
 }
 
 /// The frame's read is told who is looking and the page, for its view's `ctx`.

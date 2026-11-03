@@ -5,7 +5,6 @@ const admin = @import("../admin.zig");
 const model = @import("../../model.zig");
 const app_scope = @import("app_scope.zig");
 const values_of = @import("type_fields/settings.zig").values_of;
-const requiring_of = @import("type_fields/options.zig").requiring_of;
 const registry = @import("../../server/registry.zig");
 
 const Error = admin.Error;
@@ -112,13 +111,6 @@ pub fn read(arena: std.mem.Allocator, form: *const Form, base: Def) Error!Def {
         def.public = std.mem.eql(u8, access, "public");
         def.roles = if (def.public) &.{} else try values_of(arena, form, "roles");
     }
-
-    if (form.get("untranslated")) |chosen| {
-        def.fallback_to_main = !std.mem.eql(u8, chosen, "omit");
-    }
-
-    def.required_in = try requiring_of(arena, form, def.required_in, "required");
-    def.optional_in = try requiring_of(arena, form, def.optional_in, "optional");
 
     const share = form.text("share") orelse return def;
 

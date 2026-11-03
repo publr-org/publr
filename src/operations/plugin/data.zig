@@ -1,16 +1,19 @@
-//! What a plugin's data is, read from the database: the content types it owns with their
-//! records, the taxonomies with their terms, the collections of internal records it keeps,
-//! the custom field groups and the roles it declared. Each a piece with a key
+//! What a plugin's data is, read from the database by owner: the content types it owns with
+//! their records, the taxonomies with their terms, the collections of internal records it
+//! keeps, the custom field groups and the roles it declared. Each a piece with a key
 //! (`type:<handle>`, `taxonomy:<handle>`, `internal:<collection>`, `fields:<group>`,
-//! `role:<name>`), so an administrator chooses which go when it is
-//! removed, and the removal takes those into the plugin's trash entry.
+//! `role:<name>`). Found by owner, so a plugin's data is still listed after it is uninstalled.
+//! Uninstalling decides each piece: kept where it is, moved to the trash (its own entry,
+//! keyed `<plugin>/<piece>`), or erased for good. What is kept or in the trash stays listed
+//! under the plugin's name until it is purged or brought back.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
-const state = @import("state.zig");
 const record = @import("../record.zig");
 const role_rows = @import("../role/rows.zig");
 const changes = @import("../project/changes.zig");
+const trash = @import("../trash.zig");
+const registry = @import("../../server/registry.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -19,6 +22,9 @@ const definition = record.domain.definition;
 const taxonomy_definition = @import("../term.zig").domain.definition;
 
 pub const pieces_max: u32 = 96;
+
+/// The trash entries of plugins' data are this kind, keyed `<plugin>/<piece>`.
+pub const trash_kind = "plugin_data";
 
 pub const Kind = enum { type, taxonomy, internal, fields, role };
 
@@ -30,148 +36,327 @@ pub const Piece = struct {
     /// Records, terms or internal records it holds, the accounts holding a role; 0 for a
     /// field group.
     count: u32,
-    /// Chosen to go with the plugin when it is removed.
-    chosen: bool,
+    /// Its trash entry when it is in the trash; empty when it is kept where it is.
+    trash: []const u8 = "",
 };
 
-pub fn pieces_of(ctx: *Ctx, decoded: state.Decoded) Error![]Piece {
-    std.debug.assert(decoded.manifest.name.len > 0);
+/// What happens to a piece when its plugin is uninstalled.
+pub const Fate = enum { keep, trash, erase };
+
+/// The plugin's pieces where they are, then those in the trash.
+pub fn pieces_of(ctx: *Ctx, name: []const u8) Error![]Piece {
+    std.debug.assert(name.len > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    const name = decoded.manifest.name;
-    const chosen = try chosen_of(ctx, name);
     var pieces: std.ArrayList(Piece) = .empty;
 
-    for (decoded.manifest.content_types) |def| {
-        const row = try store.content_types.get_by_handle(ctx.db, ctx.arena, def.handle) orelse
-            continue;
-
-        if (!std.mem.eql(u8, row.def.owner, name)) {
+    for (try store.content_types.list_briefs(ctx.db, ctx.arena)) |brief| {
+        if (!std.mem.eql(u8, brief.owner, name)) {
             continue;
         }
 
-        const key = try key_of(ctx, "type", def.handle);
-
         try append(ctx, &pieces, .{
-            .key = key,
+            .key = try key_of(ctx, "type", brief.handle),
             .kind = .type,
-            .label = row.def.name,
-            .count = try store.records.count_by_type(ctx.db, row.id),
-            .chosen = has(chosen, key),
+            .label = brief.name,
+            .count = try store.records.count_by_type(ctx.db, brief.id),
         });
     }
 
     // Its taxonomies on other plugins' types have no data of their own: the terms follow
-    // their taxonomy's tick box.
-    for (decoded.manifest.taxonomies) |def| {
-        const row = try store.taxonomies.get_by_handle(ctx.db, ctx.arena, def.handle) orelse
-            continue;
-
-        if (!std.mem.eql(u8, row.def.owner, name)) {
+    // their taxonomy's piece.
+    for (try store.taxonomies.list_briefs(ctx.db, ctx.arena)) |brief| {
+        if (!std.mem.eql(u8, brief.owner, name)) {
             continue;
         }
 
-        const key = try key_of(ctx, "taxonomy", def.handle);
-
         try append(ctx, &pieces, .{
-            .key = key,
+            .key = try key_of(ctx, "taxonomy", brief.handle),
             .kind = .taxonomy,
-            .label = row.def.name,
-            .count = try store.terms.count_by_type(ctx.db, row.id),
-            .chosen = has(chosen, key),
+            .label = brief.name,
+            .count = try store.terms.count_by_type(ctx.db, brief.id),
         });
     }
 
     for (try store.internal_records.collections_of(ctx.db, ctx.arena, name)) |collection| {
-        const key = try key_of(ctx, "internal", collection.kind);
-
         try append(ctx, &pieces, .{
-            .key = key,
+            .key = try key_of(ctx, "internal", collection.kind),
             .kind = .internal,
             .label = collection.kind,
             .count = @intCast(@min(collection.count, std.math.maxInt(u32))),
-            .chosen = has(chosen, key),
         });
     }
 
-    for (decoded.manifest.custom_fields) |def| {
-        const found = try store.field_groups.get(ctx.db, ctx.arena, .custom_fields, def.handle);
+    for (try store.field_groups.list(ctx.db, ctx.arena, .custom_fields)) |item| {
+        const group = group_of(ctx, item.definition) orelse continue;
 
-        if (found == null) {
+        if (!std.mem.eql(u8, group.owner, name)) {
             continue;
         }
 
-        const key = try key_of(ctx, "fields", def.handle);
-
         try append(ctx, &pieces, .{
-            .key = key,
+            .key = try key_of(ctx, "fields", item.owner),
             .kind = .fields,
-            .label = if (def.name.len > 0) def.name else def.handle,
+            .label = if (group.name.len > 0) group.name else item.owner,
             .count = 0,
-            .chosen = has(chosen, key),
         });
     }
 
-    for (decoded.manifest.roles) |declared| {
-        const row = try store.roles.get(ctx.db, ctx.arena, declared.name) orelse continue;
-
+    for (try store.roles.list(ctx.db, ctx.arena)) |row| {
         if (!std.mem.eql(u8, row.owner, name)) {
             continue;
         }
 
-        const key = try key_of(ctx, "role", declared.name);
-
         try append(ctx, &pieces, .{
-            .key = key,
+            .key = try key_of(ctx, "role", row.name),
             .kind = .role,
             .label = row.label,
             .count = try store.user_roles.holders(ctx.db, row.name),
-            .chosen = has(chosen, key),
         });
+    }
+
+    for (try in_trash(ctx, name)) |entry| {
+        try append(ctx, &pieces, try trashed_piece(ctx, entry));
     }
 
     return pieces.items;
 }
 
-/// Keeps the keys asked for, each one of the plugin's pieces; refused otherwise.
-pub fn choose(ctx: *Ctx, decoded: state.Decoded, keys: []const []const u8) Error!void {
-    std.debug.assert(decoded.manifest.name.len > 0);
+/// The plugin's pieces in the trash, each its own entry.
+fn in_trash(ctx: *Ctx, name: []const u8) Error![]const store.trash.Entry {
+    std.debug.assert(name.len > 0);
+
+    return store.trash.under(ctx.db, ctx.arena, trash_kind, name, pieces_max);
+}
+
+/// A piece as its trash entry names it: the key after the plugin's, the entry's words.
+fn trashed_piece(ctx: *Ctx, entry: store.trash.Entry) Error!Piece {
+    std.debug.assert(entry.key.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const slash = std.mem.indexOfScalar(u8, entry.key, '/') orelse return error.Invalid;
+    const key = entry.key[slash + 1 ..];
+    const colon = std.mem.indexOfScalar(u8, key, ':') orelse return error.Invalid;
+    const kind = std.meta.stringToEnum(Kind, key[0..colon]) orelse return error.Invalid;
+
+    const suffix = std.fmt.allocPrint(ctx.arena, ", from {s}", .{entry.key[0..slash]}) catch
+        return error.OutOfMemory;
+    const label = if (std.mem.endsWith(u8, entry.label, suffix))
+        entry.label[0 .. entry.label.len - suffix.len]
+    else
+        entry.label;
+
+    return .{
+        .key = key,
+        .kind = kind,
+        .label = label,
+        .count = 0,
+        .trash = entry.id,
+    };
+}
+
+/// Uninstalling: each piece named in `trash` goes to the trash as an entry of its own; the
+/// rest stay. Erasing is `erase`'s, after the plugin is gone.
+pub fn put_in_trash(ctx: *Ctx, plugin: []const u8, keys: []const []const u8) Error!void {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(ctx.db.transaction_depth >= 1);
 
     if (keys.len > pieces_max) {
         return error.Invalid;
     }
 
-    const pieces = try pieces_of(ctx, decoded);
+    const pieces = try pieces_of(ctx, plugin);
 
     for (keys) |key| {
-        if (find(pieces, key) == null) {
-            return error.Invalid;
+        const piece = find(pieces, key) orelse return error.Invalid;
+
+        if (piece.trash.len > 0) {
+            continue;
         }
+
+        const one = [_]Piece{piece};
+        const label = std.fmt.allocPrint(ctx.arena, "{s}, from {s}", .{
+            try summary_of(ctx, &one),
+            plugin,
+        }) catch return error.OutOfMemory;
+
+        _ = try trash.keep(ctx, .{
+            .kind = trash_kind,
+            .key = std.fmt.allocPrint(ctx.arena, "{s}/{s}", .{ plugin, piece.key }) catch
+                return error.OutOfMemory,
+            .label = label,
+            .roots = try roots_of(ctx, plugin, &one),
+        });
+        _ = try drop(ctx, plugin, &one);
     }
-
-    const text = std.json.Stringify.valueAlloc(ctx.arena, keys, .{}) catch return error.OutOfMemory;
-
-    try store.sandboxed_plugins.set_removal(ctx.db, decoded.manifest.name, text);
 }
 
-/// The chosen pieces, as they are now.
-pub fn going(ctx: *Ctx, decoded: state.Decoded) Error![]const Piece {
-    std.debug.assert(decoded.manifest.name.len > 0);
+/// Brings the pieces named back from the trash. A content type or taxonomy the plugin made
+/// again since, still empty, gives way to the one coming back.
+pub fn restore(ctx: *Ctx, plugin: []const u8, keys: []const []const u8) Error!void {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(ctx.db.transaction_depth >= 1);
 
-    const pieces = try pieces_of(ctx, decoded);
-    var chosen: std.ArrayList(Piece) = .empty;
+    if (keys.len == 0 or keys.len > pieces_max) {
+        return error.Invalid;
+    }
+
+    const pieces = try pieces_of(ctx, plugin);
+
+    for (keys) |key| {
+        const piece = find_trashed(pieces, key) orelse return error.Invalid;
+
+        try make_room(ctx, plugin, piece);
+        _ = try registry.SDK.dispatch(ctx, trash.Restore, .{
+            .id = piece.trash,
+        });
+    }
+}
+
+/// An empty type or taxonomy of the plugin's under the handle a trashed piece brings back.
+fn make_room(ctx: *Ctx, plugin: []const u8, piece: Piece) Error!void {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(piece.trash.len > 0);
+
+    const handle = handle_of(piece.key);
+
+    switch (piece.kind) {
+        .type => {
+            const row = try store.content_types.get_by_handle(ctx.db, ctx.arena, handle) orelse
+                return;
+            const empty = try store.records.count_by_type(ctx.db, row.id) == 0;
+
+            if (empty and std.mem.eql(u8, row.def.owner, plugin)) {
+                try definition.drop_kept(ctx, row.id);
+            }
+        },
+        .taxonomy => {
+            const row = try store.taxonomies.get_by_handle(ctx.db, ctx.arena, handle) orelse
+                return;
+            const empty = try store.terms.count_by_type(ctx.db, row.id) == 0;
+
+            if (empty and std.mem.eql(u8, row.def.owner, plugin)) {
+                try taxonomy_definition.drop_kept(ctx, row.id);
+            }
+        },
+        .internal, .fields, .role => {},
+    }
+}
+
+fn find_trashed(pieces: []const Piece, key: []const u8) ?Piece {
+    std.debug.assert(pieces.len <= pieces_max);
 
     for (pieces) |piece| {
-        if (piece.chosen) {
-            chosen.append(ctx.arena, piece) catch return error.OutOfMemory;
+        if (piece.trash.len > 0 and std.mem.eql(u8, piece.key, key)) {
+            return piece;
         }
     }
 
-    return chosen.items;
+    return null;
 }
 
-/// What a copy of the pieces holds, for the plugin's trash entry.
-pub fn roots_of(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const Root {
+/// Erases the pieces named for good: one kept is deleted with no copy, one in the trash has
+/// its entry removed. Answers what went, in words, for the log.
+pub fn erase(ctx: *Ctx, plugin: []const u8, keys: []const []const u8) Error![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(ctx.db.transaction_depth >= 1);
+
+    if (keys.len == 0 or keys.len > pieces_max) {
+        return error.Invalid;
+    }
+
+    const pieces = try pieces_of(ctx, plugin);
+    var going: std.ArrayList(Piece) = .empty;
+
+    for (keys) |key| {
+        const piece = find(pieces, key) orelse return error.Invalid;
+
+        going.append(ctx.arena, piece) catch return error.OutOfMemory;
+    }
+
+    for (going.items) |piece| {
+        if (piece.trash.len > 0) {
+            _ = try trash.drop(ctx, piece.trash);
+        } else {
+            const one = [_]Piece{piece};
+
+            _ = try drop(ctx, plugin, &one);
+        }
+    }
+
+    return summary_of(ctx, going.items);
+}
+
+/// The names of plugins that are not installed and still have data: kept where it is, or
+/// in the trash.
+pub fn left_behind(ctx: *Ctx, installed: []const []const u8) Error![]const []const u8 {
+    std.debug.assert(installed.len <= 1024);
+
+    var names: std.ArrayList([]const u8) = .empty;
+
+    for (try store.content_types.list_briefs(ctx.db, ctx.arena)) |brief| {
+        try add_name(ctx, &names, installed, brief.owner);
+    }
+
+    for (try store.taxonomies.list_briefs(ctx.db, ctx.arena)) |brief| {
+        try add_name(ctx, &names, installed, brief.owner);
+    }
+
+    for (try store.internal_records.plugins(ctx.db, ctx.arena)) |plugin| {
+        try add_name(ctx, &names, installed, plugin);
+    }
+
+    for (try store.field_groups.list(ctx.db, ctx.arena, .custom_fields)) |item| {
+        const group = group_of(ctx, item.definition) orelse continue;
+
+        try add_name(ctx, &names, installed, group.owner);
+    }
+
+    for (try store.roles.list(ctx.db, ctx.arena)) |row| {
+        try add_name(ctx, &names, installed, row.owner);
+    }
+
+    const keys = try store.trash.keys_of(ctx.db, ctx.arena, trash_kind, store.trash.entries_max);
+
+    for (keys) |key| {
+        const slash = std.mem.indexOfScalar(u8, key, '/') orelse continue;
+
+        try add_name(ctx, &names, installed, key[0..slash]);
+    }
+
+    std.mem.sort([]const u8, names.items, {}, less);
+
+    return names.items;
+}
+
+fn less(_: void, left: []const u8, right: []const u8) bool {
+    return std.mem.order(u8, left, right) == .lt;
+}
+
+/// A plugin's name once, unless it is installed, core's (`core`, `publr`) or the site's.
+fn add_name(
+    ctx: *Ctx,
+    names: *std.ArrayList([]const u8),
+    installed: []const []const u8,
+    owner: []const u8,
+) Error!void {
+    std.debug.assert(names.items.len <= pieces_max);
+
+    const core = std.mem.eql(u8, owner, "core") or std.mem.eql(u8, owner, "publr");
+
+    if (owner.len == 0 or core or has(installed, owner)) {
+        return;
+    }
+
+    if (has(names.items, owner) or names.items.len == pieces_max) {
+        return;
+    }
+
+    names.append(ctx.arena, owner) catch return error.OutOfMemory;
+}
+
+/// What a copy of the pieces holds, for a trash entry.
+fn roots_of(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const Root {
     std.debug.assert(plugin.len > 0);
     std.debug.assert(pieces.len <= pieces_max);
 
@@ -197,7 +382,12 @@ pub fn roots_of(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]co
                 roots.appendSlice(ctx.arena, kept) catch return error.OutOfMemory;
             },
             .internal => {
-                const ids = try internal_ids(ctx, plugin, handle);
+                const ids = try store.internal_records.ids_of_collection(
+                    ctx.db,
+                    ctx.arena,
+                    plugin,
+                    handle,
+                );
 
                 const of_collection: Root = .{
                     .table = "internal_records",
@@ -221,9 +411,8 @@ pub fn roots_of(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]co
     return roots.items;
 }
 
-/// Deletes the pieces, their copy kept in the plugin's trash entry already. Answers the
-/// handles of the content types it deleted.
-pub fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const []const u8 {
+/// Deletes the pieces where they are. Answers the handles of the content types it deleted.
+fn drop(ctx: *Ctx, plugin: []const u8, pieces: []const Piece) Error![]const []const u8 {
     std.debug.assert(plugin.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
 
@@ -280,27 +469,32 @@ pub fn summary_of(ctx: *Ctx, pieces: []const Piece) Error![]const u8 {
     for (pieces, 0..) |piece, index| {
         const separator: []const u8 = if (index > 0) ", " else "";
 
+        const one = piece.count == 1;
         const written = switch (piece.kind) {
-            .type => text.print(ctx.arena, "{s}{s} ({d} records)", .{
+            .type => text.print(ctx.arena, "{s}{s} ({d} {s})", .{
                 separator,
                 piece.label,
                 piece.count,
+                if (one) "record" else "records",
             }),
-            .taxonomy => text.print(ctx.arena, "{s}{s} ({d} terms)", .{
+            .taxonomy => text.print(ctx.arena, "{s}{s} ({d} {s})", .{
                 separator,
                 piece.label,
                 piece.count,
+                if (one) "term" else "terms",
             }),
-            .internal => text.print(ctx.arena, "{s}{s} ({d} internal records)", .{
+            .internal => text.print(ctx.arena, "{s}{s} ({d} internal {s})", .{
                 separator,
                 piece.label,
                 piece.count,
+                if (one) "record" else "records",
             }),
             .fields => text.print(ctx.arena, "{s}{s} (field group)", .{ separator, piece.label }),
-            .role => text.print(ctx.arena, "{s}{s} (role, {d} holders)", .{
+            .role => text.print(ctx.arena, "{s}{s} (role, {d} {s})", .{
                 separator,
                 piece.label,
                 piece.count,
+                if (one) "holder" else "holders",
             }),
         };
 
@@ -310,19 +504,18 @@ pub fn summary_of(ctx: *Ctx, pieces: []const Piece) Error![]const u8 {
     return text.items;
 }
 
-fn internal_ids(ctx: *Ctx, plugin: []const u8, kind: []const u8) Error![]const u8 {
-    std.debug.assert(plugin.len > 0);
-    std.debug.assert(kind.len > 0);
+/// A custom field group's owner and name, read from its stored definition.
+const Group = struct {
+    owner: []const u8 = "",
+    name: []const u8 = "",
+};
 
-    return store.internal_records.ids_of_collection(ctx.db, ctx.arena, plugin, kind);
-}
+fn group_of(ctx: *Ctx, text: []const u8) ?Group {
+    std.debug.assert(text.len > 0);
 
-fn chosen_of(ctx: *Ctx, plugin: []const u8) Error![]const []const u8 {
-    std.debug.assert(plugin.len > 0);
-
-    const text = try store.sandboxed_plugins.removal_of(ctx.db, ctx.arena, plugin);
-
-    return std.json.parseFromSliceLeaky([]const []const u8, ctx.arena, text, .{}) catch &.{};
+    return std.json.parseFromSliceLeaky(Group, ctx.arena, text, .{
+        .ignore_unknown_fields = true,
+    }) catch null;
 }
 
 fn append(ctx: *Ctx, pieces: *std.ArrayList(Piece), piece: Piece) Error!void {

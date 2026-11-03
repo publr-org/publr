@@ -6,6 +6,8 @@ const field = @import("../../model/field.zig");
 const types = @import("../../operations/content_type.zig");
 const custom_fields = @import("../../operations/custom_fields.zig");
 const taxonomies = @import("../../operations/taxonomy.zig");
+const site_dimensions = @import("../../operations/dimensions.zig");
+const model_dimension = @import("../../model/dimension.zig");
 
 pub const Def = content_type.Def;
 
@@ -13,6 +15,9 @@ pub const Def = content_type.Def;
 pub const Declared = struct {
     owner: []const u8,
     def: Def,
+    /// The dimensions of a plugin being installed, not yet the site's: its own fields may
+    /// use their field options.
+    dimensions: []const model_dimension.Declared = &.{},
 };
 
 pub fn apply(ctx: *sdk.Ctx, comptime defs: []const Declared) sdk.Error!void {
@@ -48,7 +53,9 @@ pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
     const fields = try ctx.arena.alloc(field.Def, declared.def.fields.len);
 
-    for (declared.def.fields, fields) |declared_field, *out| {
+    const applied = try wrapped_applied(ctx, declared.def.fields, declared.dimensions);
+
+    for (applied, fields) |declared_field, *out| {
         out.* = declared_field;
         out.locked = true;
     }
@@ -101,7 +108,9 @@ pub fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
         declared.def.fields.len + extras.len,
     );
 
-    for (declared.def.fields, 0..) |declared_field, index| {
+    const applied = try wrapped_applied(ctx, declared.def.fields, declared.dimensions);
+
+    for (applied, 0..) |declared_field, index| {
         fields[index] = declared_field;
         fields[index].locked = true;
     }
@@ -158,7 +167,9 @@ pub fn apply_taxonomy(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     const extras: []const field.Def = if (existing) |row| unlocked_of(row.def) else &.{};
     const fields = try ctx.arena.alloc(field.Def, declared.def.fields.len + extras.len);
 
-    for (declared.def.fields, 0..) |declared_field, index| {
+    const applied = try wrapped_applied(ctx, declared.def.fields, declared.dimensions);
+
+    for (applied, 0..) |declared_field, index| {
         fields[index] = declared_field;
         fields[index].locked = true;
     }
@@ -188,6 +199,89 @@ pub fn apply_taxonomy(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     _ = try registry.SDK.dispatch(ctx, taxonomies.Create, .{
         .definition = wanted,
     });
+}
+
+/// `fields` with what each says through a dimension's field option (`.translatable =
+/// .required`) made into how it holds that dimension's values, by the dimensions the site
+/// has and those of the plugin `installing` them, at every level. An option no dimension
+/// offers does nothing; a value the option does not take refuses.
+pub fn wrapped_applied(
+    ctx: *sdk.Ctx,
+    fields: []const field.Def,
+    installing: []const model_dimension.Declared,
+) sdk.Error![]const field.Def {
+    std.debug.assert(fields.len <= field.fields_max);
+    std.debug.assert(installing.len <= model_dimension.dimensions_max);
+
+    const site = site_dimensions.all(ctx);
+    const out = try ctx.arena.dupe(field.Def, fields);
+
+    for (out) |*def| {
+        def.fields = try wrapped_applied(ctx, def.fields, installing);
+
+        for (def.wrapped) |wrapped| {
+            const dimension = offering(site, wrapped.option) orelse
+                offering(installing, wrapped.option) orelse continue;
+            const holds = model_dimension.holds_named(dimension.field, wrapped.value) orelse {
+                return ctx.fail(.{
+                    .name = "Invalid",
+                    .status = 422,
+                    .message = try std.fmt.allocPrint(
+                        ctx.arena,
+                        "field `{s}`: `.{s}` takes no `{s}`",
+                        .{ def.name, wrapped.option, wrapped.value },
+                    ),
+                });
+            };
+
+            if (holds == .one or model_dimension.varies_by(def.dimensions, dimension.name)) {
+                continue;
+            }
+
+            def.dimensions = try with(ctx.arena, def.dimensions, dimension.name);
+
+            switch (holds) {
+                .required => {
+                    def.required_in = try with(ctx.arena, def.required_in, dimension.name);
+                },
+                .empty => def.empty_in = try with(ctx.arena, def.empty_in, dimension.name),
+                .one, .fallback => {},
+            }
+        }
+    }
+
+    return out;
+}
+
+/// The site's dimension whose field option is named `option`.
+fn offering(
+    site: []const model_dimension.Declared,
+    option: []const u8,
+) ?model_dimension.Declared {
+    std.debug.assert(option.len > 0);
+
+    for (site) |dimension| {
+        if (std.mem.eql(u8, dimension.field.name, option)) {
+            return dimension;
+        }
+    }
+
+    return null;
+}
+
+fn with(
+    arena: std.mem.Allocator,
+    names: []const []const u8,
+    name: []const u8,
+) sdk.Error![]const []const u8 {
+    std.debug.assert(name.len > 0);
+
+    const out = try arena.alloc([]const u8, names.len + 1);
+
+    @memcpy(out[0..names.len], names);
+    out[names.len] = name;
+
+    return out;
 }
 
 /// The fields of a stored type that were added by hand (not locked).

@@ -10,6 +10,7 @@ const plugin_operations = @import("../../operations/plugin.zig");
 const settings_nav = @import("settings_nav.zig");
 const rows = @import("plugins/rows.zig");
 const secret_operations = @import("../../operations/secret.zig");
+const trash_operations = @import("../../operations/trash.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -40,8 +41,10 @@ pub fn register(router: anytype) void {
     router.post(back ++ "/:name/cancel-update", &cancel_update);
     router.post(back ++ "/:name/rollback", &rollback);
     router.post(back ++ "/:name/grants", &switch_grants);
-    router.post(back ++ "/:name/remove", &remove);
-    router.post(back ++ "/:name/removal", &removal);
+    router.post(back ++ "/:name/remove", &uninstall);
+    router.post(back ++ "/:name/restore-data", &restore_data);
+    router.post(back ++ "/:name/purge", &purge);
+    router.post(back ++ "/:name/reinstall", &reinstall);
 }
 
 pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -98,6 +101,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .tab = "installed",
         .built_in = &.{},
         .off = &.{},
+        .uninstalled = if (offset == 0) try uninstalled_of(&session) else &.{},
         .plugins = shown.items,
         .range = pages.range,
         .previous_href = pages.previous_href,
@@ -146,6 +150,7 @@ pub fn built_in(request: *Request, response: *Response, ctx: *Context) Error!voi
         .tab = "built_in",
         .built_in = &shown,
         .off = off_items,
+        .uninstalled = &.{},
         .plugins = &.{},
         .range = "",
         .previous_href = "",
@@ -276,6 +281,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .rollback_action = try std.fmt.allocPrint(arena, "{s}/rollback", .{base}),
         .grants_action = try std.fmt.allocPrint(arena, "{s}/grants", .{base}),
         .remove_action = try std.fmt.allocPrint(arena, "{s}/remove", .{base}),
+        .restore_action = try std.fmt.allocPrint(arena, "{s}/restore-data", .{base}),
         .requests = try rows.requests(
             views.Plugin.RequestsItem,
             &session,
@@ -284,11 +290,9 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             if (compiled_in) .read_only else .switches,
         ),
         .missing = try rows.missing(&session, detail.secrets),
-        .removal_action = if (compiled_in) "" else try std.fmt.allocPrint(arena, "{s}/removal", .{
-            base,
-        }),
         .pieces = pieces.items,
-        .removes = try removes_of(&session, pieces.items),
+        .kept = try kept_of(&session, pieces.items),
+        .trashed = try trashed_of(&session, pieces.items),
         .log_href = try std.fmt.allocPrint(arena, "{s}/log", .{base}),
         .webhooks_href = if (webhooks_tab.has_webhooks(&session, detail.name))
             try std.fmt.allocPrint(arena, "{s}/webhooks", .{base})
@@ -346,105 +350,286 @@ fn pieces_of(session: *Session, name: []const u8) Error![]PieceRow {
     const read = registry.SDK.dispatch(&session.ctx, plugin_operations.Data, .{
         .name = name,
     }) catch return &.{};
-    const pieces = try session.arena.alloc(PieceRow, read.pieces.len);
 
-    for (read.pieces, pieces) |piece, *row| {
-        const detail = switch (piece.kind) {
-            .type => try session.translated_count(
-                "Content type, {count} record",
-                "Content type, {count} records",
-                piece.count,
-            ),
-            .taxonomy => try session.translated_count(
-                "Taxonomy, {count} term",
-                "Taxonomy, {count} terms",
-                piece.count,
-            ),
-            .internal => try session.translated_count(
-                "Internal records, {count}",
-                "Internal records, {count}",
-                piece.count,
-            ),
-            .fields => try session.translated(
-                "Custom field group: the fields, not what records hold in them",
-                .{},
-            ),
-            .role => try session.translated_count(
-                "Role, held by {count} account",
-                "Role, held by {count} accounts",
-                piece.count,
-            ),
-        };
+    return rows_of(PieceRow, session, read.pieces);
+}
+
+/// Each piece as the admin lists it: what it is and how much it holds, or that it is in the
+/// trash.
+fn rows_of(
+    comptime Row: type,
+    session: *Session,
+    pieces: []const plugin_operations.Piece,
+) Error![]Row {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(pieces.len <= 1024);
+
+    const rows_made = try session.arena.alloc(Row, pieces.len);
+
+    for (pieces, rows_made) |piece, *row| {
+        const detail = try detail_of(session, piece);
 
         row.* = .{
             .key = piece.key,
             .label = piece.label,
             .detail = detail,
-            .chosen = piece.chosen,
+            .trash = piece.trash,
         };
     }
 
-    return pieces;
+    return rows_made;
 }
 
-fn removes_of(session: *const Session, pieces: []const PieceRow) Error![]const u8 {
-    std.debug.assert(pieces.len <= 1024);
+/// The pieces where they are, for uninstalling to decide.
+fn kept_of(session: *Session, pieces: []const PieceRow) Error![]views.Plugin.KeptItem {
+    std.debug.assert(session.signed_in());
 
-    const arena = session.arena;
-
-    var going: std.ArrayList(u8) = .empty;
+    var kept: std.ArrayList(views.Plugin.KeptItem) = .empty;
 
     for (pieces) |piece| {
-        if (!piece.chosen) {
+        if (piece.trash.len > 0) {
             continue;
         }
 
-        const separator: []const u8 = if (going.items.len > 0) ", " else "";
-
-        try going.print(arena, "{s}{s}", .{ separator, piece.label });
+        try kept.append(session.arena, .{
+            .key = piece.key,
+            .label = piece.label,
+            .detail = piece.detail,
+        });
     }
 
-    const stops = try session.translated("Its operations and hooks stop.", .{});
-
-    if (going.items.len == 0) {
-        const stays = try session.translated(
-            "It goes to the trash, restorable; all its data stays.",
-            .{},
-        );
-
-        return std.fmt.allocPrint(arena, "{s} {s}", .{ stops, stays });
-    }
-
-    const goes = try session.translated(
-        "It goes to the trash with {pieces}, restorable together; the rest of its data stays.",
-        .{
-            .values = &.{.{
-                .name = "pieces",
-                .value = going.items,
-            }},
-        },
-    );
-
-    return std.fmt.allocPrint(arena, "{s} {s}", .{ stops, goes });
+    return kept.items;
 }
 
-/// What goes with the plugin when it is removed.
-pub fn removal(request: *Request, response: *Response, ctx: *Context) Error!void {
+/// The pieces in the trash, offered back: each by its key, in its words.
+fn trashed_of(session: *Session, pieces: []const PieceRow) Error![]views.Plugin.TrashedItem {
+    std.debug.assert(session.signed_in());
+
+    var trashed: std.ArrayList(views.Plugin.TrashedItem) = .empty;
+
+    for (pieces) |piece| {
+        if (piece.trash.len == 0) {
+            continue;
+        }
+
+        try trashed.append(session.arena, .{
+            .code = piece.key,
+            .text = piece.label,
+        });
+    }
+
+    return trashed.items;
+}
+
+/// What a piece is and how much it holds, or that it waits in the trash.
+fn detail_of(session: *Session, piece: plugin_operations.Piece) Error![]const u8 {
+    std.debug.assert(piece.key.len > 0);
+
+    if (piece.trash.len > 0) {
+        return session.translated("In the trash", .{});
+    }
+
+    return switch (piece.kind) {
+        .type => try session.translated_count(
+            "Content type, {count} record",
+            "Content type, {count} records",
+            piece.count,
+        ),
+        .taxonomy => try session.translated_count(
+            "Taxonomy, {count} term",
+            "Taxonomy, {count} terms",
+            piece.count,
+        ),
+        .internal => try session.translated_count(
+            "Internal records, {count}",
+            "Internal records, {count}",
+            piece.count,
+        ),
+        .fields => try session.translated(
+            "Custom field group: the fields, not what records hold in them",
+            .{},
+        ),
+        .role => try session.translated_count(
+            "Role, held by {count} account",
+            "Role, held by {count} accounts",
+            piece.count,
+        ),
+    };
+}
+
+/// The uninstalled plugins whose data is still here, for the list's last section.
+fn uninstalled_of(session: *Session) Error![]views.Plugins.UninstalledItem {
+    std.debug.assert(session.signed_in());
+
+    const read = registry.SDK.dispatch(&session.ctx, plugin_operations.LeftBehind, .{}) catch
+        return &.{};
+    const items = try session.arena.alloc(views.Plugins.UninstalledItem, read.plugins.len);
+
+    for (read.plugins, items) |left, *item| {
+        const base = try std.fmt.allocPrint(session.arena, "{s}/{s}", .{ back, left.name });
+
+        item.* = .{
+            .name = left.name,
+            .pieces = try rows_of(views.Plugins.PiecesItem, session, left.pieces),
+            .purge_action = try std.fmt.allocPrint(session.arena, "{s}/purge", .{base}),
+            .reinstall_action = if (left.trash.len > 0)
+                try std.fmt.allocPrint(session.arena, "{s}/reinstall", .{base})
+            else
+                "",
+            .trash = left.trash,
+        };
+    }
+
+    return items;
+}
+
+/// Erasing asks for the plugin's name typed: a different one stops everything, in words.
+fn confirmed(session: *Session, form: anytype, name: []const u8, base: []const u8) Error!bool {
+    std.debug.assert(name.len > 0);
+
+    if (std.mem.eql(u8, std.mem.trim(u8, form.text("confirm") orelse "", " "), name)) {
+        return true;
+    }
+
+    try admin.message(
+        session,
+        try session.translated("Nothing was erased", .{}),
+        try session.translated(
+            "Erasing for good asks for the plugin's name, typed as it is: {name}.",
+            .{
+                .values = &.{.{
+                    .name = "name",
+                    .value = name,
+                }},
+            },
+        ),
+        &.{},
+        base,
+        .{},
+    );
+
+    return false;
+}
+
+/// `POST /:name/remove`: uninstall, each piece of its data kept, moved to the trash or
+/// erased for good, as the form's `fate:<key>` says (kept unless it says otherwise).
+pub fn uninstall(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .post);
     std.debug.assert(ctx.user_data != null);
 
     var post = try admin.accept(request, response, ctx, back) orelse return;
     const session = &post.session;
     const name = try admin.param(session, "name", back) orelse return;
-    const chosen = try @import("type_fields/settings.zig").values_of(
+    const base = try std.fmt.allocPrint(session.arena, "{s}/{s}", .{ back, name });
+    const read = registry.SDK.dispatch(&session.ctx, plugin_operations.Data, .{
+        .name = name,
+    }) catch |err| return admin.fail(session, err, base);
+    var to_trash: std.ArrayList([]const u8) = .empty;
+    var to_erase: std.ArrayList([]const u8) = .empty;
+
+    for (read.pieces) |piece| {
+        if (piece.trash.len > 0) {
+            continue;
+        }
+
+        const field = try std.fmt.allocPrint(session.arena, "fate:{s}", .{piece.key});
+        const fate = std.meta.stringToEnum(
+            plugin_operations.Fate,
+            post.form.text(field) orelse "keep",
+        ) orelse .keep;
+
+        switch (fate) {
+            .keep => {},
+            .trash => try to_trash.append(session.arena, piece.key),
+            .erase => try to_erase.append(session.arena, piece.key),
+        }
+    }
+
+    if (to_erase.items.len > 0 and !try confirmed(session, &post.form, name, base)) {
+        return;
+    }
+
+    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.Remove, .{
+        .name = name,
+        .trash = to_trash.items,
+    }) catch |err| return admin.fail(session, err, base);
+
+    // Uninstalled first: a refused uninstall never erases anything.
+    if (to_erase.items.len > 0) {
+        _ = registry.SDK.dispatch(&session.ctx, plugin_operations.EraseData, .{
+            .name = name,
+            .pieces = to_erase.items,
+        }) catch |err| return admin.fail(session, err, back);
+    }
+
+    try session.response.redirect(.see_other, back);
+}
+
+/// `POST /:name/purge`: the ticked pieces of an uninstalled plugin's data, erased for good.
+pub fn purge(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    var post = try admin.accept(request, response, ctx, back) orelse return;
+    const session = &post.session;
+    const name = try admin.param(session, "name", back) orelse return;
+    const pieces = try @import("type_fields/settings.zig").values_of(
         session.arena,
         &post.form,
-        "remove",
+        "piece",
     );
 
-    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.ChooseRemoval, .{
+    if (pieces.len == 0) {
+        return session.response.redirect(.see_other, back);
+    }
+
+    if (!try confirmed(session, &post.form, name, back)) {
+        return;
+    }
+
+    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.EraseData, .{
         .name = name,
-        .remove = chosen,
+        .pieces = pieces,
+    }) catch |err| return admin.fail(session, err, back);
+
+    try session.response.redirect(.see_other, back);
+}
+
+/// `POST /:name/restore-data`: pieces of the plugin's data back from the trash.
+pub fn restore_data(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    var post = try admin.accept(request, response, ctx, back) orelse return;
+    const session = &post.session;
+    const name = try admin.param(session, "name", back) orelse return;
+    const pieces = try @import("type_fields/settings.zig").values_of(
+        session.arena,
+        &post.form,
+        "piece",
+    );
+
+    _ = registry.SDK.dispatch(&session.ctx, plugin_operations.RestoreData, .{
+        .name = name,
+        .pieces = pieces,
+    }) catch |err| return admin.fail(session, err, back);
+
+    try redirect_to(session, name);
+}
+
+/// `POST /:name/reinstall`: an uninstalled plugin back from the trash, as it was; its data
+/// in the trash is then offered back on its page.
+pub fn reinstall(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    var post = try admin.accept(request, response, ctx, back) orelse return;
+    const session = &post.session;
+    const name = try admin.param(session, "name", back) orelse return;
+    const id = post.form.text("trash") orelse "";
+
+    _ = registry.SDK.dispatch(&session.ctx, trash_operations.Restore, .{
+        .id = id,
     }) catch |err| return admin.fail(session, err, back);
 
     try redirect_to(session, name);
@@ -694,7 +879,7 @@ fn Change(comptime Operation: type) type {
 
             const to_list = std.mem.eql(u8, post.form.text("next") orelse "", "list");
 
-            if (to_list or Operation == plugin_operations.Remove) {
+            if (to_list) {
                 return session.response.redirect(.see_other, back);
             }
 
@@ -725,7 +910,6 @@ fn disable(request: *Request, response: *Response, ctx: *Context) Error!void {
 const update = Change(plugin_operations.Update).handle;
 const cancel_update = Change(plugin_operations.CancelUpdate).handle;
 const rollback = Change(plugin_operations.Rollback).handle;
-const remove = Change(plugin_operations.Remove).handle;
 
 /// The plugin called `name`, or null after the page that says why.
 fn get(session: *Session, name: []const u8) Error!?plugin_operations.Detail {

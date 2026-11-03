@@ -91,6 +91,13 @@ fn plain(ctx: *Ctx, operation: []const u8, fields: std.json.ObjectMap) Error!Des
         };
     }
 
+    if (eql(operation, "plugin.erase_data")) {
+        return .{
+            .label = try say(ctx, "Data of plugin {s}", .{text_of(fields, "name")}),
+            .detail = "erased for good, never in the trash",
+        };
+    }
+
     if (eql(operation, "snapshot.prune")) {
         const keep = if (fields.get("keep")) |count| count.integer else 0;
 

@@ -242,6 +242,32 @@ pub fn collections_of(
     return rows.items;
 }
 
+/// The plugins holding internal records, by name, at most `collections_max` of them.
+pub fn plugins(connection: *db.Db, arena: std.mem.Allocator) Error![]const []const u8 {
+    std.debug.assert(collections_max > 0);
+
+    var select = try connection.prepare(
+        "SELECT DISTINCT plugin FROM internal_records ORDER BY plugin LIMIT ?1",
+    );
+    defer select.finalize();
+
+    try select.bind_int(1, collections_max);
+
+    const Plugin = struct {
+        plugin: []const u8,
+    };
+    var names: std.ArrayList([]const u8) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(names.items.len < collections_max);
+        const row = try select.read(Plugin, arena);
+
+        names.append(arena, row.plugin) catch return error.OutOfMemory;
+    }
+
+    return names.items;
+}
+
 /// The scope's records made before `before_ms`: what is kept only a while.
 pub fn delete_before(connection: *db.Db, scope: Scope, before_ms: i64) Error!void {
     assert_scope(scope);

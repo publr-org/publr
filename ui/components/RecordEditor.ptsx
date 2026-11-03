@@ -30,6 +30,18 @@ import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
 import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
 import { DropdownMenuSubTrigger } from "@publr/ui/DropdownMenuSubTrigger.ptsx";
 import { DropdownMenuTrigger } from "@publr/ui/DropdownMenuTrigger.ptsx";
+import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { Drawer } from "@publr/ui/Drawer.ptsx";
+import { DrawerContent } from "@publr/ui/DrawerContent.ptsx";
+import { DrawerHeader } from "@publr/ui/DrawerHeader.ptsx";
+import { DrawerTitle } from "@publr/ui/DrawerTitle.ptsx";
+import { DrawerTrigger } from "@publr/ui/DrawerTrigger.ptsx";
 import { tell_problems } from "./PluginEditor.ptsx";
 import { tell_fields } from "./PluginPanel.ptsx";
 
@@ -59,6 +71,8 @@ export type RecordAction = {
 };
 
 export const state = Publr.reactive({
+  /** The combination of dimensions the comparison shows, by its label. */
+  compare_label: "",
   /** "Destroy for good" was chosen: the confirm under the actions waits for a second word. */
   destroy_armed: false,
   /** The record's type handle: what an opened item's fields are looked up in. */
@@ -108,7 +122,7 @@ export const state = Publr.reactive({
    * first with an empty code. */
   dimensions: [] as Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>,
   /** The markers plugins put beside fields' labels, for the values as they stand. */
-  markers: [] as Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>,
+  markers: [] as Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string; href: string }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
   /** The help plugins give top-level fields for the values as they stand, by name; a field
@@ -298,6 +312,16 @@ const chosenOfAddress = () => {
 const labelIn = (dimension: { name: string; values: Array<{ code: string; label: string }> }, chosen: string) => {
   const code = pairsOf(chosen).find((pair) => pair[0] === dimension.name)?.[1] ?? "";
   return dimension.values.find((value) => value.code === code)?.label ?? dimension.values[0]?.label ?? "";
+};
+
+/** The comparison shows another combination of dimensions: its section, the rest hidden. */
+export const onCompareCombination = (event: MouseEvent) => {
+  const item = event.currentTarget as HTMLElement;
+  const key = item.dataset.combination ?? "";
+  state.compare_label = item.dataset.label ?? "";
+  document.querySelectorAll<HTMLElement>('[data-part="record-compare"] [data-combination]').forEach((section) => {
+    section.hidden = section.dataset.combination !== key;
+  });
 };
 
 /** Switching a dimension the varied fields show: the address keeps the combination, so a
@@ -591,10 +615,11 @@ const refreshMarkers = async () => {
   if (!form || disposed || state.type === "") return;
   const asked = ++markers_asked;
   try {
-    const response = await post(`${state.base_url}/markers`, body_of(form, { type: state.type }), "json");
+    const version = new URLSearchParams(window.location.search).get("version") ?? "";
+    const response = await post(`${state.base_url}/markers`, body_of(form, { type: state.type, id: state.id, version }), "json");
     if (!response.ok || response.redirected) return;
     const answer = await response.json() as {
-      markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>;
+      markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string; href: string }>;
       helps?: Array<{ field: string; help: string }>;
     };
     if (disposed || asked !== markers_asked) return;
@@ -825,13 +850,16 @@ export type RecordEditorProps = {
   aside?: JSX.Element;
   /** The dependency dialog for the aside, rendered by the adapter under `serve --dev`. */
   impact?: JSX.Element;
+  /** What of the record goes live (RecordLive), in its Publishing section. */
+  live?: JSX.Element;
+  has_live?: boolean;
   /** The site's dimensions with more than one value (a language, a variation), each with
    * its picker's word and its values, the main one first with an empty code: a picker each
    * for which values the varied fields show. None: no pickers. */
   dimensions?: Array<{ name: string; param: string; label: string; values: Array<{ code: string; label: string }> }>;
   /** The markers beside the fields' labels for the values drawn: the editor asks again as
    * they change, and a redraw keeps them in place. */
-  markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string }>;
+  markers?: Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string; href: string }>;
   /** The help plugins give fields for the values drawn, asked for again with the markers. */
   helps?: Array<{ field: string; help: string }>;
   /** One column: the record's editor in a visual record's Entry panel. */
@@ -849,11 +877,33 @@ export type RecordEditorProps = {
   request_decline_label?: string;
   /** Whether the person may schedule a transition (`record.transition_at`). */
   may_schedule?: boolean;
-  /** The scheduled transition, "Publish on 2026-11-05 09:00 UTC"; empty when none. */
-  scheduled_label?: string;
-  scheduled_transition?: string;
-  /** When it is scheduled, as a `datetime-local` input holds it, UTC. */
-  scheduled_at?: string;
+  /** The schedule as a timeline (ScheduleTimeline): what is live, each change under the
+   * one it builds on. */
+  schedule?: JSX.Element;
+  scheduled_count?: number;
+  /** What Schedule… offers here (the changes made, the status moves). */
+  schedule_options?: Array<{ value: string; label: string }>;
+  /** The record as it is, for the switcher; whether the switcher shows at all. */
+  live_href?: string;
+  versions_open?: boolean;
+  /** The scheduled entry shown (`?version=`), empty for the record as it is: its label,
+   * when, what it changes or why it failed, whether it is a transition (the form is then
+   * the record as it will be, read only), and when as a `datetime-local` input holds it. */
+  version_entry?: string;
+  version_label?: string;
+  version_when?: string;
+  version_note?: string;
+  version_failed?: boolean;
+  version_move?: boolean;
+  version_at?: string;
+  /** The scheduled change shown beside its base (RecordCompare), opened from the banner, and
+   * the combinations of dimensions it changes, one shown at a time (`Polski / B`). */
+  compare?: JSX.Element;
+  compare_combinations?: Array<{ key: string; label: string }>;
+  /** The one shown first, by its label. */
+  compare_label?: string;
+  /** The site's time zone, schedules are typed and shown in: `Europe/Warsaw`. */
+  time_zone?: string;
 };
 
 export function RecordEditor({
@@ -888,6 +938,8 @@ export function RecordEditor({
   focus = true,
   aside,
   impact,
+  live,
+  has_live = false,
   dimensions = [],
   markers = [],
   helps = [],
@@ -899,9 +951,22 @@ export function RecordEditor({
   request_may_approve = false,
   request_decline_label = "",
   may_schedule = false,
-  scheduled_label = "",
-  scheduled_transition = "",
-  scheduled_at = "",
+  schedule,
+  scheduled_count = 0,
+  schedule_options = [],
+  live_href = "",
+  versions_open = false,
+  version_entry = "",
+  version_label = "",
+  version_when = "",
+  version_note = "",
+  version_failed = false,
+  version_move = false,
+  version_at = "",
+  compare,
+  compare_combinations = [],
+  compare_label = "",
+  time_zone = "UTC",
 }: RecordEditorProps) {
   state.id = id;
   state.values_max = values_max;
@@ -924,6 +989,7 @@ export function RecordEditor({
   state.actions = actions;
   state.has_primary = actions.some((item) => item.primary);
   state.dimensions = dimensions;
+  state.compare_label = compare_label;
   state.markers = markers;
   state.helps = helps_by_field(helps);
   state.problems = problems_by_field(problems.map((problem) => ({ field: problem.code, message: problem.text })));
@@ -957,8 +1023,34 @@ export function RecordEditor({
               {state.changed && <Status tone="warning">{Publr.t("unpublished changes")}</Status>}
             </StatusStrip>
             <Button hierarchy="tertiary" size="sm" hidden={!state.save_error} onClick={retrySave}>{Publr.t("Retry save")}</Button>
+            {versions_open && (
+              <div class="ml-auto shrink-0" data-part="schedule">
+                <Drawer>
+                  <DrawerTrigger asChild>
+                    <Button type="button" hierarchy="secondary" size="sm">
+                      <Icon name="calendar-check" size="sm" />
+                      <span>{version_entry === "" ? Publr.t("Live") : version_when}</span>
+                      {scheduled_count > 0 && (
+                        <span class="text-muted-foreground">{Publr.t("· {count} scheduled", { count: scheduled_count })}</span>
+                      )}
+                    </Button>
+                  </DrawerTrigger>
+                  <DrawerContent label={Publr.t("Schedule")} classes="sm:max-w-md">
+                    <DrawerHeader>
+                      <DrawerTitle>{Publr.t("Schedule")}</DrawerTitle>
+                    </DrawerHeader>
+                    <div class="flex flex-col gap-6 px-5 pt-5 pb-6" data-part="schedule-tree">
+                      {schedule}
+                      <Text as="p" variant="body-sm" tone="muted">
+                        {Publr.t("To schedule a change, edit what is live or a scheduled change, then choose Schedule… in the action menu. A field changed again goes on top of the change that has it.")}
+                      </Text>
+                    </div>
+                  </DrawerContent>
+                </Drawer>
+              </div>
+            )}
             {dimensions.length > 0 && (
-              <div class="ml-auto shrink-0" data-part="dimension-picker">
+              <div class={versions_open ? "shrink-0" : "ml-auto shrink-0"} data-part="dimension-picker">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button type="button" hierarchy="secondary" size="sm">
@@ -984,32 +1076,95 @@ export function RecordEditor({
           </div>
         }
         notice={
-          request_by !== "" || scheduled_label !== "" ? (
+          request_by !== "" || version_entry !== "" ? (
             <div class="flex flex-col gap-3">
-            {scheduled_label !== "" && (
-              <div class="flex flex-col gap-3" data-part="scheduled">
-                <Callout tone="info" title={scheduled_label}>
-                  {Publr.t("Made then as the person who scheduled it, with the rights they hold then.")}
-                </Callout>
-                {may_schedule && (
-                  <div class="flex flex-wrap items-end gap-2">
-                    <form method="post" action={action_route} class="flex flex-wrap items-end gap-2">
-                      <input type="hidden" name="csrf" value={csrf} />
-                      <input type="hidden" name="expected_version" value={state.version} />
-                      <input type="hidden" name="do" value="schedule" />
-                      <input type="hidden" name="transition" value={scheduled_transition} />
-                      <Input name="at" type="datetime-local" size="sm" value={scheduled_at} label={Publr.t("When, UTC")} classes="w-56" />
-                      <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Change")}</Button>
-                    </form>
-                    <form method="post" action={action_route}>
-                      <input type="hidden" name="csrf" value={csrf} />
-                      <input type="hidden" name="expected_version" value={state.version} />
-                      <input type="hidden" name="do" value="unschedule" />
-                      <input type="hidden" name="transition" value={scheduled_transition} />
-                      <Button type="submit" size="sm" hierarchy="tertiary">{Publr.t("Cancel")}</Button>
-                    </form>
+            {version_entry !== "" && (
+              <div class="flex flex-col gap-3" data-part="version">
+                <Callout
+                  tone={version_failed ? "error" : "info"}
+                  title={Publr.t("{what} · {when}", { what: version_label, when: version_when })}
+                >
+                  <div class="flex flex-col items-start gap-3">
+                    <Text as="p" variant="body-sm">
+                      {version_failed
+                        ? Publr.t("Failed: {why}", { why: version_note })
+                        : version_move
+                          ? Publr.t("The record as it will be just before. It runs then as the person who scheduled it.")
+                          : Publr.t("The record as it will read then. Edits here wait on top of this change: schedule them (Schedule… in the action menu) or save them into it. Live stays as it is.")}
+                    </Text>
+                    <div class="flex flex-wrap items-center gap-2">
+                      {!version_failed && (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button type="button" size="sm" hierarchy="secondary">{Publr.t("Change time")}</Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogTitle>{Publr.t("Change time")}</DialogTitle>
+                            <form method="post" action={action_route} class="mt-5 flex flex-col gap-4">
+                              <input type="hidden" name="csrf" value={csrf} />
+                              <input type="hidden" name="expected_version" value={state.version} />
+                              <input type="hidden" name="do" value="move" />
+                              <Field>
+                                <FieldLabel htmlFor="version-move">{Publr.t("When ({zone})", { zone: time_zone })}</FieldLabel>
+                                <Input id="version-move" name="at" type="datetime-local" value={version_at} required />
+                              </Field>
+                              <div class="flex justify-end gap-2">
+                                <DialogClose asChild>
+                                  <Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button>
+                                </DialogClose>
+                                <Button type="submit">{Publr.t("Save")}</Button>
+                              </div>
+                            </form>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                      {compare && (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button type="button" size="sm" hierarchy="secondary">{Publr.t("Compare with base")}</Button>
+                          </DialogTrigger>
+                          <DialogContent size="full">
+                            <div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+                              <div class="flex flex-col gap-1">
+                                <DialogTitle>{Publr.t("Compare with base")}</DialogTitle>
+                                <DialogDescription>
+                                  {Publr.t("{what} · {when}, beside what it builds on.", { what: version_label, when: version_when })}
+                                </DialogDescription>
+                              </div>
+                              <div class="flex shrink-0 items-center gap-2">
+                                {compare_combinations.length > 1 && (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button type="button" hierarchy="secondary">
+                                        <span>{state.compare_label}</span>
+                                        <Icon name="chevron-down" size="sm" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="right" classes="min-w-48">
+                                      {compare_combinations.map((combination) => (
+                                        <DropdownMenuItem data-combination={combination.key} data-label={combination.label} onClick={onCompareCombination}>
+                                          {combination.label}
+                                        </DropdownMenuItem>
+                                      ))}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                )}
+                                {compare_combinations.length === 1 && (
+                                  <Text as="span" variant="body-sm" tone="muted">{compare_label}</Text>
+                                )}
+                                <DialogClose asChild>
+                                  <Button type="button" hierarchy="secondary">{Publr.t("Close")}</Button>
+                                </DialogClose>
+                              </div>
+                            </div>
+                            <div class="min-h-0 flex-1 overflow-y-auto">{compare}</div>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                      <Button href={live_href} size="sm" hierarchy="tertiary">{Publr.t("Back to live")}</Button>
+                    </div>
                   </div>
-                )}
+                </Callout>
               </div>
             )}
             {request_by !== "" && (
@@ -1059,8 +1214,14 @@ export function RecordEditor({
             preview_href={preview_href}
             aside={aside}
             impact={impact}
+            live={live}
+            has_live={has_live}
             stacked={stacked}
-            may_schedule={may_schedule && scheduled_label === ""}
+            may_schedule={may_schedule}
+            schedule_options={schedule_options}
+            schedule_base={version_entry}
+
+            time_zone={time_zone}
           />
         }
       >
@@ -1073,7 +1234,7 @@ export function RecordEditor({
           data-part="record-form"
           data-type={type}
           ref={form_ref}
-          inert={state.submitting}
+          inert={state.submitting || version_move}
         >
           <input type="hidden" name="csrf" value={csrf} />
           {is_new && <input type="hidden" name="type" value={type} />}

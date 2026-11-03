@@ -1,0 +1,54 @@
+import { Publr } from "publr-jsx";
+import { StatusButton } from "@publr/ui/StatusButton.ptsx";
+import { CompareField } from "../CompareField.ptsx";
+import { CompareSides } from "../CompareSides.ptsx";
+import type { CompareValue } from "../CompareValues.ptsx";
+
+export type RecordCompareProps = {
+  /** What the change builds on: `Live`, or the change below it by its time. */
+  base_label: string;
+  /** The base is what is live (a solid stripe), not another scheduled change. */
+  base_live: boolean;
+  /** This change, by its time. */
+  change_label: string;
+  /** One per combination of dimensions the change changes (`language=pl,variation=b`, empty
+   * for the main values), the first shown: each field in the form's order as a visitor
+   * reads it there, as the base has it and as the change makes it, what changed marked. */
+  sections: Array<{
+    combination: string;
+    rows: Array<{
+      label: string;
+      before: Array<CompareValue>;
+      after: Array<CompareValue>;
+      after_changes: Array<{ text: string; mark: string }>;
+      changed: boolean;
+    }>;
+  }>;
+};
+
+/** A scheduled change beside what it builds on, as merging shows two versions: each column
+ * headed by its version, each field's value on both sides edge to edge, what the change
+ * changed marked, the fields it leaves quieter. */
+export function RecordCompare({ base_label, base_live, change_label, sections }: RecordCompareProps) {
+  return (
+    <div class="flex flex-col" data-part="record-compare">
+      <CompareSides
+        left={<StatusButton tone={base_live ? "success" : "info"} live={base_live} icon_name={base_live ? "rocket" : "calendar-check"}>{base_label}</StatusButton>}
+        right={<StatusButton tone="info" icon_name="calendar-check">{change_label}</StatusButton>}
+      />
+      {sections.map((section, index) => (
+        <div class="flex flex-col divide-y divide-border" data-combination={section.combination} hidden={index > 0}>
+          {section.rows.map((row) => (
+            <CompareField
+              label={row.label}
+              left={row.before}
+              right={row.after}
+              right_changes={row.after_changes}
+              dim={!row.changed}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}

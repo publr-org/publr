@@ -1,0 +1,43 @@
+import { Publr } from "publr-jsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Timeline } from "@publr/ui/Timeline.ptsx";
+import { TimelineContent } from "@publr/ui/TimelineContent.ptsx";
+import { TimelineHeader } from "@publr/ui/TimelineHeader.ptsx";
+import { TimelineItem } from "@publr/ui/TimelineItem.ptsx";
+
+export type ScheduleTimelineProps = {
+  /** What is live, and whether the editor shows it. */
+  live_href: string;
+  live_current: boolean;
+  /** The changes scheduled on what is live (ScheduleItem), each with what builds on it. */
+  children?: JSX.Element;
+};
+
+/** A record's schedule as a timeline: what is live, then each scheduled change under the one
+ * it builds on. */
+export function ScheduleTimeline({ live_href, live_current, children }: ScheduleTimelineProps) {
+  return (
+    <Timeline>
+      <TimelineItem>
+        <span class="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full bg-success text-white">
+          <Icon name="check" size="sm" />
+        </span>
+        <TimelineContent>
+          <TimelineHeader>
+            <span class="flex min-w-0 flex-1 items-center gap-2">
+              <Link href={live_href} tone="default" variant="body-md" classes={live_current ? "font-semibold" : ""}>
+                {Publr.t("Live")}
+              </Link>
+              {live_current && <Status tone="neutral">{Publr.t("Open")}</Status>}
+            </span>
+          </TimelineHeader>
+          <Text as="p" variant="body-sm" tone="muted">{Publr.t("What visitors see now")}</Text>
+          {children && <Timeline classes="mt-5">{children}</Timeline>}
+        </TimelineContent>
+      </TimelineItem>
+    </Timeline>
+  );
+}

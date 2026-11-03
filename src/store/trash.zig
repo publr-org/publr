@@ -192,6 +192,96 @@ pub fn expired(
     return rows.items;
 }
 
+/// The entries of `kind` whose key starts `<prefix>/`, oldest first, at most `limit`: a
+/// plugin's data in the trash, each piece its own entry keyed `<plugin>/<piece>`.
+pub fn under(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    kind: []const u8,
+    prefix: []const u8,
+    limit: u32,
+) db.Error![]Entry {
+    std.debug.assert(kind.len > 0);
+    std.debug.assert(prefix.len > 0);
+    std.debug.assert(limit > 0 and limit <= entries_max);
+
+    var select = try connection.prepare(select_entry ++
+        " WHERE kind = ?1 AND substr(key, 1, length(?2) + 1) = ?2 || '/' " ++
+        "ORDER BY removed_at LIMIT ?3");
+    defer select.finalize();
+
+    try select.bind_text(1, kind);
+    try select.bind_text(2, prefix);
+    try select.bind_int(3, limit);
+
+    var rows: std.ArrayList(Entry) = .empty;
+
+    while (try select.step()) {
+        rows.append(arena, try select.read(Entry, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
+/// The newest entry of `kind` keyed `key`, by its id.
+pub fn id_of(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    kind: []const u8,
+    key: []const u8,
+) db.Error!?[]const u8 {
+    std.debug.assert(kind.len > 0);
+    std.debug.assert(key.len > 0);
+
+    var select = try connection.prepare(
+        "SELECT id FROM trash WHERE kind = ?1 AND key = ?2 ORDER BY removed_at DESC LIMIT 1",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, kind);
+    try select.bind_text(2, key);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    const Id = struct {
+        id: []const u8,
+    };
+
+    return (try select.read(Id, arena)).id;
+}
+
+/// The keys of every entry of `kind`, at most `limit`.
+pub fn keys_of(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    kind: []const u8,
+    limit: u32,
+) db.Error![]const []const u8 {
+    std.debug.assert(kind.len > 0);
+    std.debug.assert(limit > 0 and limit <= entries_max);
+
+    var select = try connection.prepare("SELECT key FROM trash WHERE kind = ?1 LIMIT ?2");
+    defer select.finalize();
+
+    try select.bind_text(1, kind);
+    try select.bind_int(2, limit);
+
+    const Key = struct {
+        key: []const u8,
+    };
+    var keys: std.ArrayList([]const u8) = .empty;
+
+    while (try select.step()) {
+        const row = try select.read(Key, arena);
+
+        keys.append(arena, row.key) catch return error.OutOfMemory;
+    }
+
+    return keys.items;
+}
+
 /// The keys of the files an entry set aside, one per line.
 pub fn files_of(connection: *db.Db, arena: std.mem.Allocator, id: []const u8) db.Error![]const u8 {
     std.debug.assert(id.len > 0);

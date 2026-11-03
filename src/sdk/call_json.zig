@@ -262,6 +262,13 @@ fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Erro
         return any_for(SDK, ctx, id);
     }
 
+    // An internal collection (`internal:test`): the plugin's own.
+    const prefix = @import("../operations/record/typed.zig").internal_prefix;
+
+    if (std.mem.startsWith(u8, handle, prefix)) {
+        return internal_for(SDK, ctx, handle[prefix.len..], id);
+    }
+
     const asked = std.json.Stringify.valueAlloc(ctx.arena, .{
         .id = id.string,
     }, .{}) catch {
@@ -282,6 +289,38 @@ fn record_for(comptime SDK: type, ctx: *Ctx, handle: []const u8, id: Value) Erro
         return error.NotFound;
     }
 
+    const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
+        return error.Invalid;
+    };
+    var pair: std.json.ObjectMap = .empty;
+
+    pair.put(ctx.arena, "id", id) catch return error.OutOfMemory;
+    pair.put(ctx.arena, "value", document) catch return error.OutOfMemory;
+
+    return .{
+        .object = pair,
+    };
+}
+
+/// `{ id, value }` for an id of the running plugin's internal collection `kind`, as
+/// `internal.get` answers it; not found when it is none of that collection's.
+fn internal_for(comptime SDK: type, ctx: *Ctx, kind: []const u8, id: Value) Error!Value {
+    std.debug.assert(kind.len > 0);
+    std.debug.assert(id == .string);
+
+    const asked = std.json.Stringify.valueAlloc(ctx.arena, .{
+        .kind = kind,
+        .id = id.string,
+    }, .{}) catch {
+        return error.OutOfMemory;
+    };
+    const answer = try call(SDK, ctx, "internal.get", asked);
+    const Got = struct {
+        document: []const u8,
+    };
+    const got = std.json.parseFromSliceLeaky(Got, ctx.arena, answer, .{
+        .ignore_unknown_fields = true,
+    }) catch return error.Invalid;
     const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
         return error.Invalid;
     };

@@ -1,0 +1,56 @@
+import { Publr } from "publr-jsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+import { Timeline } from "@publr/ui/Timeline.ptsx";
+import { TimelineContent } from "@publr/ui/TimelineContent.ptsx";
+import { TimelineHeader } from "@publr/ui/TimelineHeader.ptsx";
+import { TimelineItem } from "@publr/ui/TimelineItem.ptsx";
+import { TimelineTime } from "@publr/ui/TimelineTime.ptsx";
+
+export type ScheduleItemProps = {
+  href: string;
+  /** When, on the site's clock: `2026-11-06 18:00`. */
+  when: string;
+  /** What it does: `Scheduled change`, `Unpublish`. */
+  label: string;
+  /** The fields it sets, named: `Title, Summary (pl)`; empty for a status change. */
+  changed: string;
+  /** The one the editor shows. */
+  current: boolean;
+  failed: boolean;
+  problem: string;
+  /** The changes that build on it (ScheduleItem), nested under it. */
+  stacked?: JSX.Element;
+};
+
+/** One scheduled change on a ScheduleTimeline: when, what, the fields it changes, and what
+ * builds on it nested below; opened to see and compare it in the editor. */
+export function ScheduleItem({ href, when, label, changed, current, failed, problem, stacked }: ScheduleItemProps) {
+  return (
+    <TimelineItem>
+      <span class={["relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border", failed ? "border-destructive bg-background text-destructive" : current ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground"]}>
+        <Icon name="calendar-check" size="sm" />
+      </span>
+      <TimelineContent>
+        <TimelineHeader>
+          <span class="flex min-w-0 flex-1 items-center gap-2">
+            <Link href={href} tone="default" variant="body-md" classes={["tabular-nums", current ? "font-semibold" : ""]}>
+              {when}
+            </Link>
+            {current && <Status tone="neutral">{Publr.t("Open")}</Status>}
+          </span>
+          <TimelineTime>{label}</TimelineTime>
+        </TimelineHeader>
+        {changed !== "" && (
+          <Text as="p" variant="body-sm" tone="muted" classes="mt-0.5">{changed}</Text>
+        )}
+        {failed && (
+          <Text as="p" variant="body-sm" classes="mt-1 text-destructive">{Publr.t("Failed: {why}", { why: problem })}</Text>
+        )}
+        {stacked && <Timeline classes="mt-5">{stacked}</Timeline>}
+      </TimelineContent>
+    </TimelineItem>
+  );
+}

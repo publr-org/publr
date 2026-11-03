@@ -18,6 +18,8 @@ pub const record = publr.record.define(SampleNote, .{
             .validation = .{
                 .required = true,
             },
+            // The sampler's own dimension's field option: a note of its own in print.
+            .printed = .own,
         },
     },
     .menu = .{

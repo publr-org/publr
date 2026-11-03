@@ -120,6 +120,10 @@ pub const files = [_]File{
         .text = @embedFile("../dimensions/editions.zig"),
     },
     .{
+        .path = "dimensions/edition_api.zig",
+        .text = @embedFile("../dimensions/edition_api.zig"),
+    },
+    .{
         .path = "webhooks/ping.zig",
         .text = @embedFile("../webhooks/ping.zig"),
     },

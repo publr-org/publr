@@ -783,6 +783,134 @@ test "installing twice conflicts; removing unloads and keeps records" {
     try std.testing.expectEqual(@as(usize, 1), kept.records.len);
 }
 
+test "uninstalling decides each piece of data; what is left is listed, restored or erased" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    _ = try scenario.install();
+    _ = try scenario.call(admin, "greeter.greet", "{\"note\":\"kept\"}");
+
+    const records = @import("../../operations/record.zig");
+    const trash = @import("../../operations/trash.zig");
+    const piece = "type:greeter.salutation";
+    var system = scenario.ctx(.system);
+    const before = try registry.SDK.dispatch(&system, plugin_operations.Data, .{
+        .name = "greeter",
+    });
+
+    try std.testing.expectEqualStrings(piece, before.pieces[0].key);
+    try std.testing.expectEqualStrings("", before.pieces[0].trash);
+
+    // Erasing waits until the plugin is uninstalled.
+    system = scenario.ctx(.system);
+    try std.testing.expectError(error.Failed, registry.SDK.dispatch(
+        &system,
+        plugin_operations.EraseData,
+        .{
+            .name = "greeter",
+            .pieces = &.{piece},
+        },
+    ));
+
+    system = scenario.ctx(.system);
+    _ = try registry.SDK.dispatch(&system, plugin_operations.Remove, .{
+        .name = "greeter",
+        .trash = &.{piece},
+    });
+
+    // The piece waits in the trash as an entry of its own, listed under the plugin's name.
+    system = scenario.ctx(.system);
+    const left = try registry.SDK.dispatch(&system, plugin_operations.LeftBehind, .{});
+
+    try std.testing.expectEqual(@as(usize, 1), left.plugins.len);
+    try std.testing.expectEqualStrings("greeter", left.plugins[0].name);
+    try std.testing.expect(left.plugins[0].trash.len > 0);
+    try std.testing.expectEqualStrings(piece, left.plugins[0].pieces[0].key);
+
+    var entry_buffer: [64]u8 = undefined;
+    const entry = entry_buffer[0..left.plugins[0].pieces[0].trash.len];
+
+    @memcpy(entry, left.plugins[0].pieces[0].trash);
+
+    try std.testing.expect(entry.len > 0);
+    try std.testing.expect(!std.mem.eql(u8, entry, left.plugins[0].trash));
+    try std.testing.expectError(error.NotFound, registry.SDK.dispatch(&system, records.List, .{
+        .type = "greeter.salutation",
+    }));
+
+    // Restored on its own, the plugin still uninstalled: kept where it was.
+    system = scenario.ctx(.system);
+    _ = try registry.SDK.dispatch(&system, trash.Restore, .{
+        .id = entry,
+    });
+
+    system = scenario.ctx(.system);
+    const back = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "greeter.salutation",
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), back.records.len);
+
+    // Purged: erased for good, and nothing is left to list.
+    system = scenario.ctx(.system);
+    const erased = try registry.SDK.dispatch(&system, plugin_operations.EraseData, .{
+        .name = "greeter",
+        .pieces = &.{piece},
+    });
+
+    try std.testing.expect(std.mem.startsWith(u8, erased.erased, "Salutation"));
+
+    system = scenario.ctx(.system);
+    const after = try registry.SDK.dispatch(&system, plugin_operations.LeftBehind, .{});
+
+    try std.testing.expectEqual(@as(usize, 0), after.plugins.len);
+}
+
+test "installed anew, a plugin's data in the trash comes back over the empty type it made" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    _ = try scenario.install();
+    _ = try scenario.call(admin, "greeter.greet", "{\"note\":\"from before\"}");
+
+    const records = @import("../../operations/record.zig");
+    const piece = "type:greeter.salutation";
+    var system = scenario.ctx(.system);
+
+    _ = try registry.SDK.dispatch(&system, plugin_operations.Remove, .{
+        .name = "greeter",
+        .trash = &.{piece},
+    });
+
+    // Installed again from its file, not from the trash: its type is made anew, empty.
+    _ = try scenario.install();
+
+    system = scenario.ctx(.system);
+    const fresh = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "greeter.salutation",
+    });
+
+    try std.testing.expectEqual(@as(usize, 0), fresh.records.len);
+
+    system = scenario.ctx(.system);
+    const restored = try registry.SDK.dispatch(&system, plugin_operations.RestoreData, .{
+        .name = "greeter",
+        .pieces = &.{piece},
+    });
+
+    try std.testing.expectEqualStrings("", restored.pieces[0].trash);
+
+    system = scenario.ctx(.system);
+    const back = try registry.SDK.dispatch(&system, records.List, .{
+        .type = "greeter.salutation",
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), back.records.len);
+    try std.testing.expectEqualStrings("from before", back.records[0].title);
+}
+
 test "an update waits until applied; the version it replaced is kept to roll back to" {
     var scenario: Scenario = undefined;
     try scenario.init();

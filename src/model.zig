@@ -18,6 +18,7 @@ pub const document = @import("model/document.zig");
 pub const dimension = @import("model/dimension.zig");
 pub const i18n = @import("model/i18n.zig");
 pub const diff = @import("model/diff.zig");
+pub const change_set = @import("model/change_set.zig");
 pub const content_type = @import("model/content_type.zig");
 pub const editor = @import("model/editor.zig");
 pub const taxonomy = @import("model/taxonomy.zig");

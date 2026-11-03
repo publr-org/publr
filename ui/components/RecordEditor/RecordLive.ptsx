@@ -1,0 +1,186 @@
+import { Publr } from "publr-jsx";
+import { onPreview } from "../RecordEditor.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Checkbox } from "@publr/ui/Checkbox.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type RecordLiveProps = {
+  /** Where the ticks post (the record's action route, `do=live`): each ticked combination
+   * as `live`, each offered as `offered`. */
+  action: string;
+  csrf: string;
+  expected_version: string;
+  /** `grid` for two dimensions, `line` for one, `held` (only the ones held back) for more. */
+  shape: string;
+  /** The ones held back, each by its values' names: `English / B`. */
+  held: Array<{ label: string }>;
+  /** Over the grid's columns, a second dimension's values; none draws a list. */
+  columns: Array<{ label: string }>;
+  /** Each row: a value of the first dimension (or a whole combination), and a cell per
+   * column: ticked unless held back, changed when that waits to be published, the preview of
+   * its page when it goes live. The main values always go live: theirs is fixed. */
+  rows: Array<{
+    label: string;
+    cells: Array<{
+      combination: string;
+      label: string;
+      checked: boolean;
+      main: boolean;
+      changed: boolean;
+      preview: string;
+    }>;
+  }>;
+  /** Only so many combinations are offered; the rest go live. */
+  cut: boolean;
+};
+
+/** What of the record goes live, in its Publishing section: a map of the combinations of
+ * the dimensions its fields vary by (a language, a variation), each live one opening its
+ * preview, and the ticks themselves in a dialog. */
+export function RecordLive({
+  action,
+  csrf,
+  expected_version,
+  shape,
+  held,
+  columns,
+  rows,
+  cut,
+}: RecordLiveProps) {
+  return (
+    <div class="contents" data-part="record-live">
+      <Dialog classes="flex w-full flex-col gap-2">
+        <div class="flex items-center justify-between gap-2">
+          <Text as="span" variant="body-sm" tone="muted">{Publr.t("Live in")}</Text>
+          <DialogTrigger asChild>
+            <Button type="button" size="xs" hierarchy="tertiary">{Publr.t("Edit")}</Button>
+          </DialogTrigger>
+        </div>
+        {shape === "grid" && (
+          <table class="w-full border-collapse text-left">
+            <tbody>
+              {rows.map((row) => (
+                <tr>
+                  <th class="py-1 pr-3 font-normal">
+                    <Text as="span" variant="body-sm">{row.label}</Text>
+                  </th>
+                  {row.cells.map((cell, index) => (
+                    <td class="py-1 pr-3">
+                      {cell.preview !== "" ? (
+                        <a href={cell.preview} onClick={onPreview} target="_blank" title={Publr.t("Preview {label}", { label: cell.label })}
+                          class="inline-flex items-center gap-1.5 text-sm text-ink no-underline hover:underline">
+                          <span class={["size-2 shrink-0 rounded-full", cell.checked ? (cell.changed ? "bg-warning" : "bg-success") : (cell.changed ? "border border-warning" : "border border-muted-foreground")]}></span>
+                          {columns[index].label}
+                        </a>
+                      ) : (
+                        <span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground line-through" title={Publr.t("Not live: {label}", { label: cell.label })}>
+                          <span class={["size-2 shrink-0 rounded-full", cell.checked ? (cell.changed ? "bg-warning" : "bg-success") : (cell.changed ? "border border-warning" : "border border-muted-foreground")]}></span>
+                          {columns[index].label}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {shape === "line" && (
+          <ul class="flex flex-wrap gap-x-3 gap-y-1">
+            {rows.map((row) => (
+              <li>
+                {row.cells[0].preview !== "" ? (
+                  <a href={row.cells[0].preview} onClick={onPreview} target="_blank" title={Publr.t("Preview {label}", { label: row.label })}
+                    class="inline-flex items-center gap-1.5 text-sm text-ink no-underline hover:underline">
+                    <span class={["size-2 shrink-0 rounded-full", row.cells[0].checked ? (row.cells[0].changed ? "bg-warning" : "bg-success") : (row.cells[0].changed ? "border border-warning" : "border border-muted-foreground")]}></span>
+                    {row.label}
+                  </a>
+                ) : (
+                  <span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground line-through">
+                    <span class={["size-2 shrink-0 rounded-full", row.cells[0].checked ? (row.cells[0].changed ? "bg-warning" : "bg-success") : (row.cells[0].changed ? "border border-warning" : "border border-muted-foreground")]}></span>
+                    {row.label}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {shape === "held" && (
+          <div class="flex flex-col gap-1">
+            {held.map((one) => (
+              <Text as="span" variant="body-sm" tone="muted" classes="line-through">{one.label}</Text>
+            ))}
+            <Text as="span" variant="body-sm">
+              {held.length === 0 ? Publr.t("Everywhere") : Publr.t("Everything else")}
+            </Text>
+          </div>
+        )}
+        <DialogContent>
+          <DialogTitle>{Publr.t("What goes live")}</DialogTitle>
+          <DialogDescription>
+            {Publr.t("Unticked ones are not published for this entry, and their required fields are not checked.")}
+          </DialogDescription>
+          <form method="post" action={action} class="mt-5 flex flex-col gap-5">
+            <input type="hidden" name="csrf" value={csrf} />
+            <input type="hidden" name="do" value="live" />
+            <input type="hidden" name="expected_version" value={expected_version} />
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-left">
+                {columns.length > 0 && (
+                  <thead>
+                    <tr>
+                      <th></th>
+                      {columns.map((column) => (
+                        <th class="px-3 pb-2 text-center">
+                          <Text as="span" variant="body-sm" tone="muted">{column.label}</Text>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                )}
+                <tbody>
+                  {rows.map((row) => (
+                    <tr class="border-t border-line">
+                      <th class="py-2 pr-4 font-normal">
+                        <Text as="span" variant="body-md">{row.label}</Text>
+                      </th>
+                      {row.cells.map((cell) => (
+                        <td class="px-3 py-2 text-center">
+                          {!cell.main && <input type="hidden" name="offered" value={cell.combination} />}
+                          <Checkbox
+                            name="live"
+                            value={cell.combination}
+                            checked={cell.checked}
+                            disabled={cell.main}
+                            label={cell.label}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {cut && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Only the first combinations are listed; the rest go live.")}
+              </Text>
+            )}
+            <div class="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button>
+              </DialogClose>
+              <Button type="submit">{Publr.t("Save")}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

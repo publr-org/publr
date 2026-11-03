@@ -1114,30 +1114,34 @@ in, install the skill), even at an address that looks like this machine.
 
 A plugin may declare **dimensions** a field's value varies by (`.dimensions`, each made
 with `publr.dimension.define`), compiled in or installed: its `name` (`language`), its key
-in an address's query (`param`, `lang`; its name by default), the
-words of the switch every field then has (`label`, `help`), the editor's picker
-(`picker`), its `priority` (higher keeps its value longer when a read falls back across
+in an address's query (`param`, `lang`; its name by default), its wrapper (`api`: a field
+option other plugins' fields name, `.translatable = .required`, with the words and maybe a
+view of its own for the setting every field then has, and a read option, `.language =
+"pl"`, the editor picker's word), its `priority` (higher keeps its value longer when a read falls back across
 dimensions), whether its values have pages of their own (`addresses`, at most one
-dimension on a site), the words of the type setting for records with no value in it
-(`untranslated`), and a read of its own answering `values`, each
+dimension on a site), and a read of its own answering `values`, each
 `{ code, label, address, main }` in order, the main one first. Several plugins may declare
-one each, up to 64 on a site, and they combine (one value names at most four). The core draws the switches, stores and
+one each, up to 64 on a site, and they combine (one value names at most four). The core draws the settings, stores and
 reads the values (see [Content](content.md#languages-and-other-dimensions)), offers a
 picker per dimension in its editors, takes each as a flag of its own (`--language pl`) and
 serves an addressed dimension's pages under its addresses. The languages plugin declares
 `language`; an A/B test plugin may declare `variation` and choose it per visitor with a
 request hook (`publr.hook.request`, `request.choose("variation", "b")`).
 
-### Its data, when it is removed
+### Its data, when it is uninstalled
 
-Removing a plugin moves it to the trash; its data stays, unless an administrator chose
-otherwise on its page (Settings › Plugins › the plugin › Its data, or
-`plugin choose_removal`). The page lists what the database holds for it: the content
-types it owns with their records, its internal record collections, its custom field
-groups, the roles it declared (a role that is some account's only role cannot go). The
-grants it added to other roles always go. Ticked pieces go into the plugin's own trash entry and come back with it; nothing
-is ticked until someone ticks it, so disabling, removing and adding a plugin back never
-lose data by themselves.
+Uninstalling a plugin moves it to the trash and lists what the database holds for it:
+the content types it owns with their records, its taxonomies, its internal record
+collections, its custom field groups, the roles it declared (a role that is some
+account's only role cannot go). Each piece is kept where it is (the default), moved to
+the trash as an entry of its own, or erased for good, which asks for the plugin's name
+typed (Settings › Plugins › the plugin › Uninstall, or `plugin remove --trash <keys>`
+then `plugin erase_data`). The grants it added to other roles always go.
+
+What is kept or in the trash stays listed under Settings › Plugins › Uninstalled, data
+kept (`plugin left_behind`): each piece can be erased later, and installing the plugin
+again offers its pieces in the trash back on its page. An agent's erase waits on its
+person's removal list.
 
 Core knows all of an installed plugin's data, so a plugin runs nothing of its own on the
 way out.

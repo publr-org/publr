@@ -29,6 +29,7 @@ pub const set_status = Store.set_status;
 pub const trashed_from = Store.trashed_from;
 pub const ask = Store.ask;
 pub const clear_request = Store.clear_request;
+pub const hold_back = Store.hold_back;
 pub const delete = Store.delete;
 pub const rename = Store.rename;
 pub const count_by_type = Store.count_by_type;

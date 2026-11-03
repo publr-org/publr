@@ -122,9 +122,10 @@ pub const instructions =
     \\can undo it. When asked to remove something, do not ask first: remove it
     \\(`record delete`, `term delete`, `content_type delete --force true`, `taxonomy delete
     \\--force true`, `custom_fields delete`, `plugin remove`, `media delete`, `apps remove`,
-    \\`user delete`, `secret remove`). A plugin's content types go only with the plugin.
+    \\`user delete`, `secret remove`). Uninstalling a plugin keeps its data unless you name
+    \\pieces for the trash (`plugin remove --trash`).
     \\Only what is final waits for your person: removing for good (`record purge`, `term
-    \\purge`, `trash remove`, `trash empty`, `snapshot prune`) goes on
+    \\purge`, `trash remove`, `trash empty`, `snapshot prune`, `plugin erase_data`) goes on
     \\a removal list and your turn pauses until they have done it; you are then told what
     \\they removed. End with a short answer: what you did, and what waits for them (drafts
     \\to publish, permissions to approve).

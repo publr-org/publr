@@ -66,8 +66,9 @@ pub fn tick(project: *const Project, gpa: std.mem.Allocator, clock: *Clock, now_
     }
 }
 
-/// The transitions people scheduled that are due, each made as its person, with the rights
-/// they hold now; one refused is logged as their call is and not tried again.
+/// What people scheduled that is due, each made as its person, with the rights they hold
+/// now: a transition, or a live record's changes published (`record.publish` with them). One
+/// refused stays, failed, with why, and is not tried again.
 fn transitions(project: *const Project, gpa: std.mem.Allocator, now_ms: i64) void {
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(now_ms >= 0);
@@ -76,9 +77,9 @@ fn transitions(project: *const Project, gpa: std.mem.Allocator, now_ms: i64) voi
     defer arena_state.deinit();
 
     const arena = arena_state.allocator();
-    const scheduled = store.scheduled_transitions;
+    const scheduled = store.scheduled_changes;
     const due = scheduled.due(project.connection, arena, now_ms, scheduled.take_max) catch |err| {
-        std.log.warn("scheduled transitions: not read: {t}", .{err});
+        std.log.warn("scheduled changes: not read: {t}", .{err});
         return;
     };
 
@@ -92,18 +93,70 @@ fn transitions(project: *const Project, gpa: std.mem.Allocator, now_ms: i64) voi
             },
         } else .anonymous;
         var ctx = identity.context(project, arena, caller);
+        const name = one.transition;
+        const id = one.record_id;
 
-        _ = registry.SDK.dispatch(&ctx, record.Transition, .{
+        if (make_scheduled(&ctx, one)) |_| {
+            scheduled.made(project.connection, one.id) catch |err| {
+                std.log.warn("scheduled {s} of {s} kept: {t}", .{ name, id, err });
+            };
+            // Made: what builds on it builds on what is live now.
+            scheduled.rebase(project.connection, id, one.id, null) catch |err| {
+                std.log.warn("scheduled on {s} of {s} kept: {t}", .{ name, id, err });
+            };
+        } else |err| {
+            const problem = problem_of(arena, &ctx, err);
+
+            std.log.warn("scheduled {s} of {s}: {s}", .{ name, id, problem });
+            scheduled.failed(project.connection, one.id, problem) catch |kept| {
+                std.log.warn("scheduled {s} of {s} kept: {t}", .{ name, id, kept });
+            };
+        }
+    }
+}
+
+/// One entry made: its changes published, or its transition.
+fn make_scheduled(ctx: *sdk.Ctx, one: store.scheduled_changes.Entry) anyerror!void {
+    std.debug.assert(one.record_id.len > 0);
+    std.debug.assert(one.id > 0);
+
+    if (one.changes.len == 0 and one.held_back == null) {
+        _ = try registry.SDK.dispatch(ctx, record.Transition, .{
             .id = one.record_id,
             .transition = one.transition,
-        }) catch |err| {
-            std.log.warn("scheduled {s} of {s}: {t}", .{ one.transition, one.record_id, err });
-        };
+        });
 
-        scheduled.made(project.connection, one) catch |err| {
-            std.log.warn("scheduled {s} of {s} kept: {t}", .{ one.transition, one.record_id, err });
+        return;
+    }
+
+    _ = try registry.SDK.dispatch(ctx, record.Publish, .{
+        .id = one.record_id,
+        .changes = if (one.changes.len > 0) one.changes else null,
+        .held_back = one.held_back,
+    });
+}
+
+/// Why a scheduled entry was refused, for people: each problem the refusal named
+/// (`title@language=pl: Required in Polski`), else the error.
+fn problem_of(arena: std.mem.Allocator, ctx: *const sdk.Ctx, err: anyerror) []const u8 {
+    std.debug.assert(@errorName(err).len > 0);
+    std.debug.assert(ctx.problems.len <= 64 << 10);
+
+    if (ctx.problems.len == 0) {
+        return @errorName(err);
+    }
+
+    var out: std.Io.Writer.Allocating = .init(arena);
+
+    for (ctx.problems, 0..) |problem, index| {
+        const lead = if (index == 0) "" else "; ";
+
+        out.writer.print("{s}{s}: {s}", .{ lead, problem.field, problem.message }) catch {
+            return @errorName(err);
         };
     }
+
+    return out.written();
 }
 
 fn repeat(project: *const Project, gpa: std.mem.Allocator) void {
@@ -123,7 +176,7 @@ fn repeat(project: *const Project, gpa: std.mem.Allocator) void {
     };
 }
 
-test "a scheduled transition is shown on the record, then made as its person once due" {
+test "scheduled moves and changes are shown on the record, then made as their person once due" {
     const admin = @import("../adapters/admin.zig");
     const fixture = @import("../operations/record/fixture.zig");
     var harness: sdk.testing.Harness = undefined;
@@ -174,8 +227,8 @@ test "a scheduled transition is shown on the record, then made as its person onc
         .purpose = .edit,
     });
 
-    try std.testing.expectEqualStrings("publish", shown.scheduled.?.transition);
-    try std.testing.expectEqual(at, shown.scheduled.?.at);
+    try std.testing.expectEqualStrings("publish", shown.scheduled[0].transition);
+    try std.testing.expectEqual(at, shown.scheduled[0].at);
 
     // Nobody else's rights are kept for later: only a person schedules.
     try std.testing.expectError(error.Denied, registry.SDK.dispatch(&system, record.TransitionAt, .{
@@ -197,5 +250,111 @@ test "a scheduled transition is shown on the record, then made as its person onc
     });
 
     try std.testing.expectEqualStrings("published", made.record.status);
-    try std.testing.expectEqual(null, made.scheduled);
+    try std.testing.expectEqual(0, made.scheduled.len);
+
+    // Live, its changes scheduled: the title kept in the entry, the pending copy cleared.
+    _ = try registry.SDK.dispatch(&person, record.Save, .{
+        .id = created.id,
+        .document = "{\"title\":\"Deal\",\"body\":\"x\"}",
+    });
+
+    const later = at + 60_000;
+    const deal = try registry.SDK.dispatch(&person, record.TransitionAt, .{
+        .id = created.id,
+        .transition = "publish",
+        .at = later,
+    });
+    const parked = try registry.SDK.dispatch(&person, record.Get, .{
+        .id = created.id,
+        .purpose = .edit,
+    });
+
+    try std.testing.expect(deal.entry > 0);
+    try std.testing.expect(!parked.record.changed);
+    try std.testing.expectEqualStrings("title", parked.scheduled[0].changes[0]);
+
+    // Meanwhile the body is fixed and published: the deal leaves it.
+    _ = try registry.SDK.dispatch(&person, record.Save, .{
+        .id = created.id,
+        .document = "{\"title\":\"Later\",\"body\":\"fixed\"}",
+    });
+    _ = try registry.SDK.dispatch(&person, record.Publish, .{
+        .id = created.id,
+    });
+
+    transitions(&flow.inner.project, std.testing.allocator, later);
+
+    const after = try registry.SDK.dispatch(&person, record.Get, .{
+        .id = created.id,
+    });
+
+    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"title\":\"Deal\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"body\":\"fixed\"") != null);
+
+    // Stacked: A sets the title on what is live; B, on top of A, puts it back. Another
+    // title on what is live clashes with A. B published now takes A with it.
+    _ = try registry.SDK.dispatch(&person, record.Save, .{
+        .id = created.id,
+        .document = "{\"title\":\"Deal 2\",\"body\":\"fixed\"}",
+    });
+
+    const first = try registry.SDK.dispatch(&person, record.TransitionAt, .{
+        .id = created.id,
+        .transition = "publish",
+        .at = later + 60_000,
+    });
+
+    _ = try registry.SDK.dispatch(&person, record.SaveVersion, .{
+        .id = created.id,
+        .version = first.entry,
+        .document = "{\"title\":\"Back\",\"body\":\"fixed\"}",
+    });
+
+    const second = try registry.SDK.dispatch(&person, record.TransitionAt, .{
+        .id = created.id,
+        .transition = "publish",
+        .at = later + 120_000,
+        .base = first.entry,
+    });
+    const as_first = try registry.SDK.dispatch(&person, record.Get, .{
+        .id = created.id,
+        .purpose = .edit,
+        .version = first.entry,
+    });
+    const as_second = try registry.SDK.dispatch(&person, record.Get, .{
+        .id = created.id,
+        .purpose = .edit,
+        .version = second.entry,
+    });
+
+    try std.testing.expect(std.mem.indexOf(u8, as_first.document, "Deal 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, as_second.document, "\"title\":\"Back\"") != null);
+
+    _ = try registry.SDK.dispatch(&person, record.Save, .{
+        .id = created.id,
+        .document = "{\"title\":\"Clash\",\"body\":\"fixed\"}",
+    });
+    const clashing = registry.SDK.dispatch(&person, record.TransitionAt, .{
+        .id = created.id,
+        .transition = "publish",
+        .at = later + 90_000,
+    });
+
+    try std.testing.expectError(error.Invalid, clashing);
+    _ = try registry.SDK.dispatch(&person, record.DiscardChanges, .{
+        .id = created.id,
+    });
+
+    _ = try registry.SDK.dispatch(&person, record.PublishVersion, .{
+        .id = created.id,
+        .version = second.entry,
+    });
+
+    const squashed = try registry.SDK.dispatch(&person, record.Get, .{
+        .id = created.id,
+        .purpose = .edit,
+    });
+
+    try std.testing.expect(std.mem.indexOf(u8, squashed.document, "\"title\":\"Back\"") != null);
+    try std.testing.expectEqual(0, squashed.scheduled.len);
 }

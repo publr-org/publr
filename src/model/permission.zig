@@ -133,6 +133,7 @@ pub const own_records = [_][]const u8{
     "record.reach",
     "record.transition_many",
     "record.decline_request",
+    "record.hold_back",
 };
 
 const read_flags = [_]Flag{ .drafts, .private, .internal };
@@ -175,13 +176,25 @@ pub const core = [_]Permission{
             "record.discard_changes",
             "record.transition",
             "record.transition_at",
+            "record.unschedule",
+            "record.run_scheduled",
+            "record.reschedule",
+            "record.save_version",
+            "record.save_into_scheduled",
+            "record.publish_version",
             "record.decline_request",
             "snapshot.take",
             "snapshot.restore",
             "record.publish",
             "record.transition_many",
+            "record.hold_back",
         },
-        .publishing = &.{ "record.publish", "record.transition_many" },
+        .publishing = &.{
+            "record.publish",
+            "record.transition_many",
+            "record.run_scheduled",
+            "record.publish_version",
+        },
     },
     .{
         .key = "records.destroy",

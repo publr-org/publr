@@ -45,18 +45,6 @@ export type TypePlacementProps = {
   is_public: boolean;
   /** The site's roles: a Private type keeps to the ticked ones. */
   roles?: Array<{ value: string; label: string; checked: boolean }>;
-  /** The site has more than one language: what a record not translated into one does
-   * there, in the words of the plugin that adds languages. */
-  untranslated_label?: string;
-  keep_label?: string;
-  keep_help?: string;
-  omit_label?: string;
-  omit_help?: string;
-  falls_back?: boolean;
-  /** Each dimension that offers requiring its values, in its own words (`Required in every
-   * language`): `required`, `optional`, or empty for as the site's settings say. Posted as
-   * `dimension_required.<name>`; checked when a record is published, never on a draft. */
-  requiring?: Array<{ name: string; label: string; required: string }>;
 };
 
 /** Where a type lives, which other apps reach it, and who may read it. Posted as `app`
@@ -74,13 +62,6 @@ export function TypePlacement({
   show_access,
   is_public,
   roles = [],
-  untranslated_label = "",
-  keep_label = "",
-  keep_help = "",
-  omit_label = "",
-  omit_help = "",
-  falls_back = true,
-  requiring = [],
 }: TypePlacementProps) {
   state.share_listed = !share_all;
   state.private = !is_public;
@@ -192,40 +173,6 @@ export function TypePlacement({
           )}
         </fieldset>
       )}
-      {untranslated_label !== "" && (
-        <fieldset class="m-0 min-w-0 border-0 p-0" data-part="type-untranslated">
-          <legend class="mb-2 p-0">
-            <Text as="span" variant="body-sm">{untranslated_label}</Text>
-          </legend>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <ChoiceCard
-              name="untranslated"
-              value="keep"
-              checked={falls_back}
-              title={keep_label}
-              description={keep_help}
-            />
-            <ChoiceCard
-              name="untranslated"
-              value="omit"
-              checked={!falls_back}
-              title={omit_label}
-              description={omit_help}
-            />
-          </div>
-        </fieldset>
-      )}
-      {requiring.map((dimension) => (
-        <Field key={dimension.name}>
-          <FieldLabel htmlFor={"dimension_required." + dimension.name}>{dimension.label}</FieldLabel>
-          <NativeSelect id={"dimension_required." + dimension.name} name={"dimension_required." + dimension.name}>
-            <option value="" selected={dimension.required === ""}>{Publr.t("As the site's settings say")}</option>
-            <option value="required" selected={dimension.required === "required"}>{Publr.t("Required")}</option>
-            <option value="optional" selected={dimension.required === "optional"}>{Publr.t("Not required")}</option>
-          </NativeSelect>
-          <FieldDescription>{Publr.t("For every field that varies by it; a field may say otherwise. Checked when a record is published; drafts always save.")}</FieldDescription>
-        </Field>
-      ))}
     </div>
   );
 }

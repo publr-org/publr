@@ -62,6 +62,7 @@ pub fn tab(request: *admin.Request, response: *Response, ctx: *admin.Context) ad
     };
     const asked = admin.query_param(&session, "path");
     const kept = if (asked) |at| if (plain_path(at)) at else null else null;
+    // A path may carry a query (`?variation=b&…`): its `&` written into the attribute as such.
     const path = kept orelse try own_path(&session, id) orelse {
         return response.text(.not_found, try session.translated("No page shows this record.", .{}));
     };
@@ -78,7 +79,15 @@ pub fn tab(request: *admin.Request, response: *Response, ctx: *admin.Context) ad
             "iframe{{display:block;border:0;width:100%;height:100%}}</style></head><body>" ++
             "<iframe name=\"publr-preview\" title=\"Preview\" sandbox=\"{s}\" " ++
             "data-page=\"{s}{s}{s}{s}{s}\"></iframe><script>{s}</script></body></html>",
-        .{ shell.sandbox, project.admin_path(), prefix, pass, site_segment, path, holder },
+        .{
+            shell.sandbox,
+            project.admin_path(),
+            prefix,
+            pass,
+            site_segment,
+            try std.mem.replaceOwned(u8, session.arena, path, "&", "&amp;"),
+            holder,
+        },
     ) catch return error.OutOfMemory;
 
     try response.set_header("Cache-Control", "no-store");
@@ -86,8 +95,8 @@ pub fn tab(request: *admin.Request, response: *Response, ctx: *admin.Context) ad
     return response.set_body(.ok, "text/html; charset=utf-8", out.written());
 }
 
-/// A page address the tab may put back in its frame: a path, without anything that would break
-/// out of the attribute it is written into.
+/// A page address the tab may put back in its frame: a path (with its query), without anything
+/// that would break out of the attribute it is written into; `&` is escaped there.
 fn plain_path(path: []const u8) bool {
     std.debug.assert(path.len <= 64 << 10);
     std.debug.assert(prefix.len > 0);
@@ -96,7 +105,7 @@ fn plain_path(path: []const u8) bool {
         return false;
     }
 
-    return std.mem.indexOfAny(u8, path, "\"'<>& \t\r\n\\") == null;
+    return std.mem.indexOfAny(u8, path, "\"'<> \t\r\n\\") == null;
 }
 
 /// The record's own page inside the project: a saved one's by its edit copy, a new one's by

@@ -335,6 +335,7 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
         try plugin_types.apply_taxonomy(ctx, .{
             .owner = manifest.name,
             .def = def,
+            .dimensions = manifest.dimensions,
         });
     }
 
@@ -342,6 +343,7 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
         try plugin_types.apply_one(ctx, .{
             .owner = manifest.name,
             .def = def,
+            .dimensions = manifest.dimensions,
         });
     }
 
@@ -349,6 +351,7 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
         try plugin_types.apply_group(ctx, .{
             .owner = manifest.name,
             .def = def,
+            .dimensions = manifest.dimensions,
         });
     }
 

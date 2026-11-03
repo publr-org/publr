@@ -17,7 +17,8 @@ export type CompareFieldProps = {
   dim?: boolean;
 };
 
-/** One field in two versions, side by side: each version's value, what it changed marked. */
+/** One field in two versions, side by side: each version's value, what it changed marked. Each
+ * side's head is one line of the same height, so the two values always sit level. */
 export function CompareField({
   label,
   left,
@@ -31,18 +32,22 @@ export function CompareField({
   return (
     <div class={["grid grid-cols-2", dim ? "opacity-60" : ""]} data-quiet="true" data-conflict="false" data-part="compare-field">
       <div class="flex flex-col gap-2 px-5 py-5">
-        <div class="flex items-start gap-2">
+        <div class="flex h-5 min-w-0 items-center gap-2">
           <Text as="span" variant="body-xs" tone="muted" classes="shrink-0">{label}</Text>
           {left_note !== "" && <Text as="span" variant="body-xs" tone="success" classes="shrink-0">{left_note}</Text>}
-          {left_changes.length > 0 && <DiffText segments={left_changes} classes="ml-auto" />}
+          {left_changes.length > 0 && (
+            <DiffText segments={left_changes} classes="ml-auto min-w-0 truncate whitespace-nowrap text-xs leading-5" />
+          )}
         </div>
         <CompareValues values={left} />
       </div>
       <div class="flex flex-col gap-2 border-l border-border px-5 py-5">
-        <div class="flex items-start gap-2">
+        <div class="flex h-5 min-w-0 items-center gap-2">
           <Text as="span" variant="body-xs" tone="muted" classes="shrink-0">{label}</Text>
           {right_note !== "" && <Text as="span" variant="body-xs" tone="success" classes="shrink-0">{right_note}</Text>}
-          {right_changes.length > 0 && <DiffText segments={right_changes} classes="ml-auto" />}
+          {right_changes.length > 0 && (
+            <DiffText segments={right_changes} classes="ml-auto min-w-0 truncate whitespace-nowrap text-xs leading-5" />
+          )}
         </div>
         <CompareValues values={right} />
       </div>

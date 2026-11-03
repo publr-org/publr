@@ -41,12 +41,19 @@ pub const record = struct {
 };
 /// `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single, .internal, .fields })`,
 /// and what `.register_taxonomies` takes: `.{ .taxonomy, .to }`.
-/// `publr.dimension.define(.{ .name, .label, .help, .list, .priority, .addresses, ... })`,
-/// listed in `.dimensions`; `publr.dimension.Value` is one value its list answers.
+/// `publr.dimension.define(.{ .name, .api, .list, .priority, .addresses, ... })`, listed in
+/// `.dimensions`; its `.api` the owner's wrapper, a `field_option` and a `read_option`;
+/// `publr.dimension.Value` is one value its list answers; a family's list answers `Member`s,
+/// its `.shown` `Shown`s.
 pub const dimension = struct {
     pub const define = @import("sdk/plugin/dimensions.zig").define;
+    pub const field_option = @import("sdk/plugin/dimensions.zig").field_option;
+    pub const read_option = @import("sdk/plugin/dimensions.zig").read_option;
+    pub const Holds = @import("sdk/plugin/dimensions.zig").Holds;
     pub const Dimension = @import("sdk/plugin/dimensions.zig").Dimension;
     pub const Value = @import("sdk/plugin/dimensions.zig").Value;
+    pub const Member = @import("sdk/plugin/dimensions.zig").Member;
+    pub const Shown = @import("sdk/plugin/dimensions.zig").Shown;
 };
 
 /// `publr.hook.request(run)` in `.hooks`: a page request before it is drawn.
@@ -93,6 +100,9 @@ pub const FieldHelp = @import("sdk/plugin/modify_define.zig").FieldHelp;
 /// markers beside its label so far; add yours to `markers`.
 pub const FieldMarkers = struct {
     field: []const u8,
+    /// The record's type, and its id once saved (empty before).
+    type: []const u8 = "",
+    id: []const u8 = "",
     /// The dimensions the field varies by (`language`, a test's).
     varies_by: []const []const u8 = &.{},
     /// Each value it must hold before its record goes live: `language` at `pl`.
@@ -116,6 +126,9 @@ pub const Marker = struct {
     /// `show` (the default) or `hide` while the field is shown at this very code: a marker
     /// for going elsewhere is not needed where you are.
     current: []const u8 = "show",
+    /// A page of the admin it opens instead (`/admin/plugin/ab_test/attach?…`): an action
+    /// on the field. Empty: none.
+    href: []const u8 = "",
 };
 /// What a plugin calls when the data its modifier of a name answers from changed:
 /// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages

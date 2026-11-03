@@ -65,7 +65,9 @@ pub const Create = struct {
         \\`required`, `unique`, `min`, `max`, `min_len`, `max_len`, `hint`, ...), `options`
         \\(how it is edited: `choices`, `source`, `to`, `taxonomy`, `rows`, ...),
         \\`dimensions` (the site's dimensions it holds a value per combination of:
-        \\`["language"]`, `["language","variation"]`) and `fields` for group/repeater.
+        \\`["language"]`, `["language","variation"]`; each also in `required_in` must be
+        \\filled in every value going live, each in `empty_in` shows nothing when empty,
+        \\the rest show the main value) and `fields` for group/repeater.
         \\Use `content_type validate` to see problems.
     ;
     pub const kind: sdk.operation.Kind = .write;

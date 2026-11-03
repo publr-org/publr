@@ -309,7 +309,7 @@ fn hooks_of(comptime Plugin: type) []const Hook {
             const stage: Hook.Stage = switch (entry.stage) {
                 .operation, .job => continue,
                 .rule_values, .rule_matches => continue,
-                .kind_validate, .kind_text, .kind_editor => continue,
+                .kind_validate, .kind_text, .kind_editor, .dimension_options => continue,
                 .before => .before,
                 .after => .after,
                 .event => .event,

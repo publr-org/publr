@@ -634,7 +634,38 @@ pub fn Exports(comptime Plugin: type) type {
                 .kind_validate => run_kind_validate(item.declaration, input, result, arena),
                 .kind_text => run_kind_text(item.declaration, input, result, arena),
                 .kind_editor => run_kind_editor(item.declaration, input, result, arena),
+                .dimension_options => run_dimension_options(
+                    item.declaration,
+                    input,
+                    result,
+                    arena,
+                ),
             };
+        }
+
+        /// A dimension's `.options` view drawn whole for the field panel's frame, under the
+        /// `base` asked; the value the field holds comes with the caller's view.
+        fn run_dimension_options(
+            comptime Declaration: type,
+            input: []const u8,
+            result: *wire.Result,
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const field = Declaration.dimension.api.field;
+
+            if (comptime !field.drawn) {
+                return error.NotFound;
+            }
+
+            const Shape = wire.Envelope(@import("field_kind_define.zig").Drawn, struct {});
+            const envelope = json.parse(Shape, arena, input, parse_options) catch {
+                return error.Invalid;
+            };
+            var ctx = context(arena, envelope);
+            const views = @import("views.zig");
+            const html = try views.render(&ctx, envelope.in.base, field.view, .{});
+
+            try reply(html, result);
         }
 
         /// A field kind's `.editor` view drawn whole for its frame, under the `base` asked;

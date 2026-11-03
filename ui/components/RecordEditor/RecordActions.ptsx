@@ -6,6 +6,12 @@ import { EditorAsideSection } from "../EditorAsideSection.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Icon } from "@publr/ui/Icon.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
 import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
 import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
@@ -14,6 +20,8 @@ import { DropdownMenuSeparator } from "@publr/ui/DropdownMenuSeparator.ptsx";
 import { SplitButton } from "@publr/ui/SplitButton.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 
 export type RecordActionsProps = {
@@ -35,6 +43,16 @@ export type RecordActionsProps = {
   stacked?: boolean;
   /** Offer Schedule: a transition made later (`record.transition_at`). */
   may_schedule?: boolean;
+
+  /** The site's time zone, schedules are typed and shown in: `Europe/Warsaw`. */
+  time_zone?: string;
+  /** What Schedule… offers (the changes made, the status moves), and the scheduled change
+   * it builds on (empty: what is live). */
+  schedule_options?: Array<{ value: string; label: string }>;
+  schedule_base?: string;
+  /** What of the record goes live (RecordLive), at the top of its Publishing section. */
+  live?: JSX.Element;
+  has_live?: boolean;
 };
 
 export function RecordActions({
@@ -50,11 +68,18 @@ export function RecordActions({
   impact,
   stacked = false,
   may_schedule = false,
+  time_zone = "UTC",
+  schedule_options = [],
+  schedule_base = "",
+  live,
+  has_live = false,
 }: RecordActionsProps) {
+  const schedules = may_schedule && schedule_options.length > 0;
   return (
     <EditorAside in_drawer={in_drawer} stacked={stacked}>
       {!is_new && (
         <EditorAsideSection>
+          <Dialog classes="flex w-full flex-col gap-3">
           <DropdownMenu>
             {!state.has_primary && (
               <DropdownMenuTrigger asChild>
@@ -104,6 +129,11 @@ export function RecordActions({
                     </form>
                   ),
               )}
+              {schedules && (
+                <DialogTrigger asChild>
+                  <DropdownMenuItem>{Publr.t("Schedule…")}</DropdownMenuItem>
+                </DialogTrigger>
+              )}
               {state.has_destructive && <DropdownMenuSeparator />}
               {state.actions.map(
                 (item) =>
@@ -140,36 +170,44 @@ export function RecordActions({
               </div>
             </Callout>
           )}
-          {may_schedule && state.actions.some((item) => (item.name === "transition" || item.value === "publish") && !item.destructive) && (
-            <details data-part="schedule">
-              <summary class="cursor-pointer text-sm">{Publr.t("Schedule…")}</summary>
-              <form method="post" action={action_route} class="mt-3 flex flex-col gap-2">
-                <input type="hidden" name="csrf" value={csrf} />
-                <input type="hidden" name="expected_version" value={state.version} />
-                <input type="hidden" name="do" value="schedule" />
-                <NativeSelect name="transition" size="sm" label={Publr.t("Transition")}>
-                  {state.actions.map(
-                    (item) =>
-                      (item.name === "transition" || item.value === "publish") &&
-                      item.primary && <option value={item.value}>{item.label}</option>,
-                  )}
-                  {state.actions.map(
-                    (item) =>
-                      (item.name === "transition" || item.value === "publish") &&
-                      !item.primary &&
-                      !item.destructive && <option value={item.value}>{item.label}</option>,
-                  )}
-                </NativeSelect>
-                <Input name="at" type="datetime-local" size="sm" label={Publr.t("When, UTC")} />
-                <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Schedule")}</Button>
-              </form>
-            </details>
+          {schedules && (
+            <DialogContent>
+              <DialogTitle>{Publr.t("Schedule")}</DialogTitle>
+              <DialogDescription>
+                {Publr.t("Made then as you, with the rights you hold then. Publish changes takes the record's unpublished changes; only the fields they change go live then.")}
+              </DialogDescription>
+              {schedules && (
+                <form method="post" action={action_route} class="mt-5 flex flex-col gap-4">
+                  <input type="hidden" name="csrf" value={csrf} />
+                  <input type="hidden" name="expected_version" value={state.version} />
+                  <input type="hidden" name="do" value="schedule" />
+                  <input type="hidden" name="base" value={schedule_base} />
+                  <Field>
+                    <FieldLabel htmlFor="schedule-transition">{Publr.t("Action")}</FieldLabel>
+                    <NativeSelect id="schedule-transition" name="transition" label={Publr.t("Action")}>
+                      {schedule_options.map((option) => <option value={option.value}>{option.label}</option>)}
+                    </NativeSelect>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="schedule-at">{Publr.t("When ({zone})", { zone: time_zone })}</FieldLabel>
+                    <Input id="schedule-at" name="at" type="datetime-local" />
+                  </Field>
+                  <div class="flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button type="button" hierarchy="secondary">{Publr.t("Close")}</Button>
+                    </DialogClose>
+                    <Button type="submit">{Publr.t("Schedule")}</Button>
+                  </div>
+                </form>
+              )}
+            </DialogContent>
           )}
-          {state.parks && (
-            <Text as="p" variant="body-xs" tone="muted">
-              {Publr.t("Edits are saved as pending changes; the live version stays until you publish.")}
-            </Text>
-          )}
+          </Dialog>
+        </EditorAsideSection>
+      )}
+      {!is_new && (has_live || versions_href !== "" || preview_href !== "") && (
+        <EditorAsideSection title={Publr.t("Publishing")}>
+          {live}
           {(versions_href !== "" || preview_href !== "") && (
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
               {preview_href !== "" && (
@@ -185,6 +223,7 @@ export function RecordActions({
                   {Publr.t("Versions")}
                 </Link>
               )}
+
             </div>
           )}
         </EditorAsideSection>

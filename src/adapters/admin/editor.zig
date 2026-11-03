@@ -42,8 +42,10 @@ pub const Loaded = struct {
     row: Record,
     slot: []const u8,
     document: []const u8,
-    /// The transition scheduled for it (`record.transition_at`).
-    scheduled: ?Scheduled = null,
+    /// What is scheduled for it (`record.transition_at`), soonest first.
+    scheduled: []const Scheduled = &.{},
+    /// The scheduled version shown (`?version=`): its entry; 0 for the record as it is.
+    version: i64 = 0,
 };
 
 pub const Scheduled = @import("../../operations/document/crud.zig").Scheduled;
@@ -87,6 +89,14 @@ pub const Domain = struct {
         shape: Shape,
         document: ?Value,
     ) Error!?admin.render.Node,
+    /// What of a saved document goes live, in the Publishing section: a record's map of its
+    /// dimensions; null for a domain with none.
+    live: ?fn (
+        session: *Session,
+        def: Def,
+        row: Record,
+        document: ?Value,
+    ) Error!?admin.render.Node = null,
     /// The record's revisions page, when the domain keeps one.
     versions: bool,
 };
@@ -239,7 +249,10 @@ pub fn Editor(comptime domain: Domain) type {
                 return;
             }
 
-            const defs = try varied(session, shape.def.fields, .{});
+            const defs = try varied(session, shape.def.fields, .{
+                .type = shape.def.handle,
+                .id = id,
+            });
             const document = fields.decode.document_of(
                 session.arena,
                 admin.kinds_of(session),
@@ -252,6 +265,20 @@ pub fn Editor(comptime domain: Domain) type {
             const expected = expected_version_of(form) orelse {
                 return admin.fail(session, error.Invalid, location);
             };
+            const version = shape.loaded.?.version;
+
+            if (comptime @hasDecl(operations, "SaveVersion")) {
+                if (version > 0) {
+                    _ = registry.SDK.dispatch(&session.ctx, operations.SaveVersion, .{
+                        .id = id,
+                        .version = version,
+                        .document = document,
+                    }) catch |err| return refused(session, shape, form, err, document);
+
+                    return saved(session, id);
+                }
+            }
+
             var in: operations.Save.In = .{
                 .id = id,
                 .document = document,
@@ -299,22 +326,22 @@ pub fn Editor(comptime domain: Domain) type {
                         .id = id,
                     }) catch |err| return admin.fail(session, err, location);
                 }
-            } else if (std.mem.eql(u8, verb, "schedule") or std.mem.eql(u8, verb, "unschedule")) {
-                if (comptime !@hasDecl(operations, "TransitionAt")) {
+            } else if (std.mem.eql(u8, verb, "schedule")) {
+                return schedule(session, form, id, location);
+            } else if (on_scheduled(verb)) {
+                if (comptime !@hasDecl(operations, "PublishVersion")) {
                     return admin.fail(session, error.Invalid, location);
                 } else {
-                    const at = if (std.mem.eql(u8, verb, "schedule"))
-                        model_time.parse_datetime_local(form.text("at") orelse "") orelse {
-                            return admin.fail(session, error.Invalid, location);
-                        }
-                    else
-                        null;
-
-                    _ = registry.SDK.dispatch(&session.ctx, operations.TransitionAt, .{
+                    return scheduled_action(session, form, id, verb);
+                }
+            } else if (std.mem.eql(u8, verb, "live")) {
+                if (comptime !@hasDecl(operations, "HoldBack")) {
+                    return admin.fail(session, error.Invalid, location);
+                } else {
+                    _ = registry.SDK.dispatch(&session.ctx, operations.HoldBack, .{
                         .id = id,
-                        .transition = form.text("transition") orelse "",
-                        .at = at,
-                    }) catch |err| return admin.fail(session, err, location);
+                        .combinations = try held_back_of(session.arena, form),
+                    }) catch |err| return move_refused(session, id, err, location);
                 }
             } else if (std.mem.eql(u8, verb, "discard")) {
                 _ = registry.SDK.dispatch(&session.ctx, operations.DiscardChanges, .{
@@ -345,6 +372,202 @@ pub fn Editor(comptime domain: Domain) type {
             }
 
             try response.redirect(.see_other, location);
+        }
+
+        /// The combinations offered (`offered`) but not ticked (`live`): what the record
+        /// holds back.
+        fn held_back_of(
+            arena: std.mem.Allocator,
+            form: *const admin.Form,
+        ) Error![]const []const u8 {
+            std.debug.assert(form.len <= admin.form_pairs_max);
+
+            var held: std.ArrayList([]const u8) = .empty;
+
+            for (form.pairs[0..form.len]) |offered| {
+                if (!std.mem.eql(u8, offered.name, "offered")) {
+                    continue;
+                }
+
+                const ticked = for (form.pairs[0..form.len]) |live| {
+                    const is_live = std.mem.eql(u8, live.name, "live");
+
+                    if (is_live and std.mem.eql(u8, live.value, offered.value)) {
+                        break true;
+                    }
+                } else false;
+
+                if (!ticked) {
+                    held.append(arena, offered.value) catch return error.OutOfMemory;
+                }
+            }
+
+            return held.items;
+        }
+
+        /// Schedules the form's `transition` at its `at`, typed on the site's clock; a version
+        /// scheduled opens, to edit as the record will read then.
+        fn schedule(
+            session: *Session,
+            form: *const Form,
+            id: []const u8,
+            location: []const u8,
+        ) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(location.len > 0);
+
+            if (comptime !@hasDecl(operations, "TransitionAt")) {
+                return admin.fail(session, error.Invalid, location);
+            } else {
+                const local = model_time.parse_datetime_local(form.text("at") orelse "") orelse {
+                    return admin.fail(session, error.Invalid, location);
+                };
+                const transition = form.text("transition") orelse "";
+                const base = std.fmt.parseInt(i64, form.text("base") orelse "", 10) catch 0;
+                const made = registry.SDK.dispatch(&session.ctx, operations.TransitionAt, .{
+                    .id = id,
+                    .transition = transition,
+                    .at = zone.utc_of((try site_zone(session)).rule, local),
+                    .base = base,
+                }) catch |err| return move_refused(session, id, err, location);
+                const opens = std.mem.eql(u8, transition, "publish") and made.entry > 0;
+                const next = if (opens) try page_of(session, id, made.entry) else location;
+
+                if (wants_fragment(session)) {
+                    if (opens) {
+                        return answer_gone(session, next);
+                    }
+
+                    return answer_loaded(session, id);
+                }
+
+                return session.response.redirect(.see_other, next);
+            }
+        }
+
+        /// What the scheduled entry shown, or the one the form names, does now: `publish_version`
+        /// (it, and every one before, live now), `run` (the next one, now), `move` (to `at`),
+        /// `unschedule`. Done with it, the editor shows the record as it is.
+        fn scheduled_action(
+            session: *Session,
+            form: *const Form,
+            id: []const u8,
+            verb: []const u8,
+        ) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(verb.len > 0);
+
+            const named = std.fmt.parseInt(i64, form.text("entry") orelse "", 10) catch 0;
+            const entry = if (named > 0) named else version_of(session);
+            const shown = try page_of(session, id, version_of(session));
+            const live_page = try page_of(session, id, 0);
+            const SDK = registry.SDK;
+            var stays = false;
+
+            if (std.mem.eql(u8, verb, "publish_version")) {
+                _ = SDK.dispatch(&session.ctx, operations.PublishVersion, .{
+                    .id = id,
+                    .version = entry,
+                }) catch |err| return move_refused(session, id, err, shown);
+            } else if (std.mem.eql(u8, verb, "save_into")) {
+                _ = SDK.dispatch(&session.ctx, operations.SaveIntoScheduled, .{
+                    .id = id,
+                    .version = entry,
+                }) catch |err| return move_refused(session, id, err, shown);
+                stays = true;
+            } else if (std.mem.eql(u8, verb, "discard_draft")) {
+                const draft = try draft_id(session, id, entry) orelse {
+                    return admin.fail(session, error.NotFound, shown);
+                };
+
+                _ = SDK.dispatch(&session.ctx, operations.Unschedule, .{
+                    .id = id,
+                    .entry = draft,
+                }) catch |err| return admin.fail(session, err, shown);
+                stays = true;
+            } else if (std.mem.eql(u8, verb, "run")) {
+                _ = SDK.dispatch(&session.ctx, operations.RunScheduled, .{
+                    .id = id,
+                    .entry = entry,
+                }) catch |err| return move_refused(session, id, err, shown);
+            } else if (std.mem.eql(u8, verb, "move")) {
+                const local = model_time.parse_datetime_local(form.text("at") orelse "") orelse {
+                    return admin.fail(session, error.Invalid, shown);
+                };
+
+                _ = SDK.dispatch(&session.ctx, operations.Reschedule, .{
+                    .id = id,
+                    .entry = entry,
+                    .at = zone.utc_of((try site_zone(session)).rule, local),
+                }) catch |err| return admin.fail(session, err, shown);
+                stays = true;
+            } else {
+                _ = SDK.dispatch(&session.ctx, operations.Unschedule, .{
+                    .id = id,
+                    .entry = entry,
+                }) catch |err| return admin.fail(session, err, shown);
+            }
+
+            const location = if (stays) shown else live_page;
+
+            if (wants_fragment(session)) {
+                return answer_gone(session, location);
+            }
+
+            return session.response.redirect(.see_other, location);
+        }
+
+        /// The draft kept on top of scheduled change `version`; null when none is.
+        fn draft_id(session: *Session, id: []const u8, version: i64) Error!?i64 {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(version > 0);
+
+            const got = registry.SDK.dispatch(&session.ctx, operations.Get, .{
+                .id = id,
+                .purpose = .edit,
+            }) catch return null;
+
+            for (got.scheduled) |one| {
+                if (std.mem.eql(u8, one.state, "draft") and one.base == version) {
+                    return one.entry;
+                }
+            }
+
+            return null;
+        }
+
+        /// Whether `verb` acts on a scheduled entry.
+        fn on_scheduled(verb: []const u8) bool {
+            std.debug.assert(verb.len <= 64);
+
+            const verbs = [_][]const u8{
+                "publish_version",
+                "run",
+                "move",
+                "unschedule",
+                "save_into",
+                "discard_draft",
+            };
+
+            for (verbs) |known| {
+                if (std.mem.eql(u8, verb, known)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// The editor's page of `id`, showing its scheduled version `version` (0: as it is).
+        fn page_of(session: *Session, id: []const u8, version: i64) Error![]const u8 {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(version >= 0);
+
+            if (version == 0) {
+                return print(session.arena, "{s}/{s}", .{ back, id });
+            }
+
+            return print(session.arena, "{s}/{s}?version={d}", .{ back, id, version });
         }
 
         /// A publish or transition refused: the editor again with each problem under its
@@ -483,10 +706,17 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(id.len > 0);
             std.debug.assert(session.signed_in());
 
-            const full = registry.SDK.dispatch(&session.ctx, operations.Get, .{
+            const version = version_of(session);
+            var in: operations.Get.In = .{
                 .id = id,
                 .purpose = .edit,
-            }) catch |err| {
+            };
+
+            if (@hasField(operations.Get.In, "version")) {
+                in.version = version;
+            }
+
+            const full = registry.SDK.dispatch(&session.ctx, operations.Get, in) catch |err| {
                 try admin.fail(session, err, back);
 
                 return null;
@@ -503,7 +733,8 @@ pub fn Editor(comptime domain: Domain) type {
                     .scheduled = if (@hasField(@TypeOf(full), "scheduled"))
                         full.scheduled
                     else
-                        null,
+                        &.{},
+                    .version = version,
                 },
             };
         }
@@ -566,7 +797,19 @@ pub fn Editor(comptime domain: Domain) type {
 
             const flow = shape.def.flow;
             const status = flow.find(row.status);
-            const actions = try actions_of(session, flow, row, may_of(session, row));
+            const loaded = shape.loaded.?;
+            // In a scheduled version, its own actions: Publish now, Remove version.
+            const draft = loaded.version > 0 and draft_on(loaded.scheduled, loaded.version);
+            const actions = if (loaded.version > 0) blk: {
+                const listed = try without_drafts(session.arena, loaded.scheduled);
+                const items = try scheduled_of(session, shape.def, row, listed);
+
+                break :blk try version_actions(
+                    session,
+                    shown_of(listed, items, loaded.version),
+                    draft,
+                );
+            } else try actions_of(session, flow, row, may_of(session, row));
 
             session.response.json(.ok, .{
                 .saved = true,
@@ -575,7 +818,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .title = row.title,
                 .status = row.status,
                 .status_label = try status_label_of(session, status, row.status),
-                .changed = row.changed,
+                .changed = if (loaded.version > 0) draft else row.changed,
                 .parks = row.changed or flow.is_live(row.status),
                 .actions = actions,
                 .has_destructive = has_destructive(actions),
@@ -591,7 +834,7 @@ pub fn Editor(comptime domain: Domain) type {
             const document = parse(session.arena, shape.loaded.?.document) orelse {
                 return admin.fail(session, error.Invalid, back);
             };
-            const location = try print(session.arena, "{s}/{s}", .{ back, id });
+            const location = try page_of(session, id, shape.loaded.?.version);
 
             session.response.set_header("Publr-Location", location) catch return error.OutOfMemory;
 
@@ -615,7 +858,10 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(form.len <= admin.form_pairs_max);
 
             const verb = form.text("reshape") orelse return false;
-            const defs = try varied(session, shape.def.fields, .{});
+            const defs = try varied(session, shape.def.fields, .{
+                .type = shape.def.handle,
+                .id = if (shape.loaded) |full| full.row.id else "",
+            });
             const posted = fields.decode.value_of(
                 session.arena,
                 admin.kinds_of(session),
@@ -969,14 +1215,20 @@ pub fn Editor(comptime domain: Domain) type {
                 const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
                     .type = handle,
                     .document = document,
+                    .id = form.text("id") orelse "",
                 }) catch |err| return admin.fail(session, err, back);
                 const helped = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
                     .type = handle,
                     .document = document,
                 }) catch |err| return admin.fail(session, err, back);
 
+                const version = std.fmt.parseInt(i64, form.text("version") orelse "", 10) catch 0;
+                const id = form.text("id") orelse "";
+                const changed = try changed_of_form(session, def, id, version, document);
+                const all = try std.mem.concat(session.arena, Marker, &.{ found.markers, changed });
+
                 return session.response.json(.ok, .{
-                    .markers = found.markers,
+                    .markers = all,
                     .helps = helped.helps,
                 }) catch error.OutOfMemory;
             }
@@ -989,6 +1241,7 @@ pub fn Editor(comptime domain: Domain) type {
             session: *Session,
             handle: []const u8,
             document: ?Value,
+            id: []const u8,
         ) Error![]const views.RecordEditor.MarkersItem {
             std.debug.assert(handle.len > 0);
             std.debug.assert(session.signed_in());
@@ -1003,6 +1256,7 @@ pub fn Editor(comptime domain: Domain) type {
                 const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
                     .type = handle,
                     .document = text,
+                    .id = id,
                 }) catch return &.{};
                 const items = try session.arena.alloc(
                     views.RecordEditor.MarkersItem,
@@ -1018,6 +1272,7 @@ pub fn Editor(comptime domain: Domain) type {
                         .dimension = marker.dimension,
                         .code = marker.code,
                         .current = marker.current,
+                        .href = marker.href,
                     };
                 }
 
@@ -1136,10 +1391,12 @@ pub fn Editor(comptime domain: Domain) type {
             const def = shape.def;
             var fold: fields.Fold = .{};
             const context = try context_of(session, shape, document, &fold);
+            const id = if (shape.loaded) |full| full.row.id else "";
             const form_defs = try varied(session, def.fields, .{
                 .document = document,
+                .type = def.handle,
+                .id = id,
             });
-            const id = if (shape.loaded) |full| full.row.id else "";
             const rows = try with_panels(session, def.handle, id, document, try fields.rows_of(
                 context,
                 form_defs,
@@ -1172,12 +1429,32 @@ pub fn Editor(comptime domain: Domain) type {
 
             if (shape.loaded) |full| {
                 const row = full.row;
+                const live = if (domain.live) |of|
+                    if (shape.preview) null else try of(session, def, row, document)
+                else
+                    null;
                 const parks = row.changed or def.flow.is_live(row.status);
                 const status = def.flow.find(row.status);
                 const may = may_of(session, row);
-                const actions = try actions_of(session, def.flow, row, may);
+                const version = full.version;
+                const listed = try without_drafts(arena, full.scheduled);
+                const scheduled = try scheduled_of(session, def, row, listed);
+                const shown = shown_of(listed, scheduled, version);
+                const draft = version > 0 and draft_on(full.scheduled, version);
+                const compared: Compared = if (shown != null and shown.?.kept.version)
+                    try compare_of(session, def, row, version)
+                else
+                    .{};
+                const live_actions = try actions_of(session, def.flow, row, may);
+                const actions = if (version > 0)
+                    try version_actions(session, shown, draft)
+                else
+                    live_actions;
                 const requested = try requested_of(session, def.flow, row, may);
-                const scheduled = try scheduled_of(session, def.flow, row, full.scheduled);
+                const suffix = if (version > 0)
+                    try print(arena, "?version={d}", .{version})
+                else
+                    "";
                 const versions_href = if (domain.versions)
                     try print(arena, "{s}/{s}/revisions", .{ back, row.id })
                 else
@@ -1194,13 +1471,17 @@ pub fn Editor(comptime domain: Domain) type {
                     .group_position = @tagName(def.group.presentation.position),
                     .csrf = session.csrf_token(),
                     .id = row.id,
-                    .record_url = try print(arena, "{s}/{s}", .{ back, row.id }),
-                    .save_url = try print(arena, "{s}/{s}/save", .{ back, row.id }),
+                    .record_url = try print(arena, "{s}/{s}{s}", .{ back, row.id, suffix }),
+                    .save_url = try print(arena, "{s}/{s}/save{s}", .{ back, row.id, suffix }),
                     .create_url = create_url,
                     .base_url = back,
                     .is_new = false,
                     .in_drawer = drawer,
-                    .action_route = try print(arena, "{s}/{s}/action", .{ back, row.id }),
+                    .action_route = try print(arena, "{s}/{s}/action{s}", .{
+                        back,
+                        row.id,
+                        suffix,
+                    }),
                     .type = row.type,
                     .type_name = if (def.kind == .settings) def.description else def.name,
                     .type_href = try type_href_of(session, def, taxonomy),
@@ -1213,7 +1494,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .expected_version = try print(arena, "{d}", .{row.version}),
                     .status = row.status,
                     .status_label = try status_label_of(session, status, row.status),
-                    .changed = row.changed,
+                    .changed = if (version > 0) draft else row.changed,
                     .versions_href = versions_href,
                     .preview_href = preview_href,
                     .problems = problems,
@@ -1221,15 +1502,30 @@ pub fn Editor(comptime domain: Domain) type {
                     .actions = actions,
                     .has_destructive = has_destructive(actions),
                     .fields = field_rows,
+                    .compare = compared.node,
+                    .compare_combinations = compared.combinations,
+                    .compare_label = if (compared.combinations.len > 0)
+                        compared.combinations[0].label
+                    else
+                        "",
                     .parks = parks,
                     .preview = shape.preview,
                     .stacked = !drawer and
                         model.editor.field_of(def.editor, def.editor_config, def.fields) != null,
                     .focus = def.kind != .settings,
                     .aside = aside,
+                    .live = if (version > 0) null else live,
+                    .has_live = version == 0 and live != null,
                     .impact = null,
                     .dimensions = try pickers_of(session),
-                    .markers = try markers_drawn(session, def.handle, document),
+                    .markers = try with_changed(
+                        session,
+                        try markers_drawn(session, def.handle, document, row.id),
+                        def,
+                        row,
+                        version,
+                        document,
+                    ),
                     .helps = try helps_drawn(session, def.handle, document),
                     .request_by = requested.by,
                     .request_label = requested.label,
@@ -1240,9 +1536,31 @@ pub fn Editor(comptime domain: Domain) type {
                         registry.SDK.may(&session.ctx, operations.TransitionAt)
                     else
                         false,
-                    .scheduled_label = scheduled.label,
-                    .scheduled_transition = scheduled.transition,
-                    .scheduled_at = scheduled.at,
+                    .schedule = try schedule_of(session, def, row, scheduled, listed, version),
+                    .scheduled_count = @floatFromInt(scheduled.len),
+                    .live_href = try print(arena, "{s}/{s}", .{ back, row.id }),
+                    .versions_open = def.flow.is_live(row.status) or scheduled.len > 0,
+                    .schedule_options = try schedule_options(
+                        session,
+                        live_actions,
+                        version,
+                        draft,
+                        if (shown) |one| one.kept.version else false,
+                    ),
+                    .version_entry = if (version > 0) try print(arena, "{d}", .{version}) else "",
+                    .version_label = if (shown) |one| one.item.label else "",
+                    .version_when = if (shown) |one| one.item.when else "",
+                    .version_note = if (shown) |one|
+                        if (one.item.failed) one.item.problem else one.item.changes
+                    else
+                        "",
+                    .version_failed = if (shown) |one| one.item.failed else false,
+                    .version_move = if (shown) |one| !one.kept.version else false,
+                    .version_at = if (shown) |one|
+                        try std.mem.replaceOwned(u8, arena, one.item.when, " ", "T")
+                    else
+                        "",
+                    .time_zone = (try site_zone(session)).name,
                 });
             }
 
@@ -1482,48 +1800,788 @@ pub const Requested = struct {
     decline_label: []const u8 = "",
 };
 
-const Schedule = struct {
-    /// "Publish on 2026-11-05 09:00 UTC"; empty when none is scheduled.
-    label: []const u8 = "",
-    transition: []const u8 = "",
-    /// When, as a `datetime-local` input holds it, UTC.
-    at: []const u8 = "",
+/// A scheduled entry as the editor says it.
+const ScheduledItem = struct {
+    entry: []const u8,
+    /// When, on the site's clock: `2026-11-07 18:00`.
+    when: []const u8,
+    label: []const u8,
+    /// The fields a version changes: `Title, Summary (pl)`.
+    changes: []const u8,
+    failed: bool,
+    problem: []const u8,
+    /// The first waiting one: the only one run now.
+    next: bool,
 };
 
-/// The transition scheduled for the record, as its banner says it.
+/// The scheduled version (`?version=`) asked for, 0 for the record as it is.
+fn version_of(session: *Session) i64 {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(back_any.len > 0);
+
+    const asked = admin.query_param(session, "version") orelse return 0;
+
+    return @max(0, std.fmt.parseInt(i64, asked, 10) catch 0);
+}
+
+const back_any = "/admin";
+
+/// The entry shown, read and as the timeline says it; null for the record as it is.
+const ShownEntry = struct {
+    kept: Scheduled,
+    item: ScheduledItem,
+};
+
+fn shown_of(kept: []const Scheduled, items: []const ScheduledItem, version: i64) ?ShownEntry {
+    std.debug.assert(kept.len == items.len);
+    std.debug.assert(version >= 0);
+
+    for (kept, items) |one, item| {
+        if (one.entry == version) {
+            return .{
+                .kept = one,
+                .item = item,
+            };
+        }
+    }
+
+    return null;
+}
+
+/// The action button over a scheduled change: with edits made on top of it, they go into
+/// it (or are dropped, or scheduled on top from the menu); it goes live now with what it
+/// builds on; a status change runs now when it is next. Any goes.
+fn version_actions(session: *Session, shown: ?ShownEntry, draft: bool) Error![]const Action {
+    std.debug.assert(session.signed_in());
+
+    const arena = session.arena;
+    const one = shown orelse return &.{};
+    var actions: std.ArrayList(Action) = .empty;
+    const tr = session;
+
+    if (one.kept.version and !one.item.failed) {
+        if (draft) {
+            const into = try tr.translated("Save into this one", .{});
+
+            try add_action(arena, &actions, "do", "save_into", into, false);
+        }
+
+        const now = try tr.translated("Publish now", .{});
+
+        try add_action(arena, &actions, "do", "publish_version", now, false);
+
+        if (draft) {
+            const discard = try tr.translated("Discard changes", .{});
+
+            try add_action(arena, &actions, "do", "discard_draft", discard, false);
+        }
+    } else if (one.item.next) {
+        try add_action(arena, &actions, "do", "run", try tr.translated("Run now", .{}), false);
+    }
+
+    if (actions.items.len > 0) {
+        actions.items[0].primary = true;
+    }
+
+    try add_action(arena, &actions, "do", "unschedule", try tr.translated("Remove", .{}), true);
+
+    return actions.items;
+}
+
+const ScheduleOption = views.RecordEditor.Schedule_optionsItem;
+
+/// What Schedule… offers: on what is live, its unpublished changes and its status moves; on
+/// a scheduled change, the edits made on top of it and the status moves after it.
+fn schedule_options(
+    session: *Session,
+    live: []const Action,
+    version: i64,
+    draft: bool,
+    change: bool,
+) Error![]const ScheduleOption {
+    std.debug.assert(version >= 0);
+    std.debug.assert(session.signed_in());
+
+    const arena = session.arena;
+    var out: std.ArrayList(ScheduleOption) = .empty;
+
+    if (version > 0 and draft) {
+        try out.append(arena, .{
+            .value = "publish",
+            .label = try session.translated("The changes made here", .{}),
+        });
+    }
+
+    if (version > 0 and !change) {
+        return out.items;
+    }
+
+    for (live) |item| {
+        const publishes = std.mem.eql(u8, item.value, "publish");
+        const moves = std.mem.eql(u8, item.name, "transition") or publishes;
+
+        if (!moves or item.destructive or (version > 0 and publishes)) {
+            continue;
+        }
+
+        try out.append(arena, .{
+            .value = item.value,
+            .label = item.label,
+        });
+    }
+
+    return out.items;
+}
+
+/// Whether edits are kept on top of scheduled change `version`, waiting.
+fn draft_on(kept: []const Scheduled, version: i64) bool {
+    std.debug.assert(kept.len <= 1024);
+    std.debug.assert(version >= 0);
+
+    for (kept) |one| {
+        if (std.mem.eql(u8, one.state, "draft") and one.base == version) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// What is scheduled, drafts left out.
+fn without_drafts(arena: std.mem.Allocator, kept: []const Scheduled) Error![]const Scheduled {
+    std.debug.assert(kept.len <= 1024);
+
+    var out: std.ArrayList(Scheduled) = .empty;
+
+    for (kept) |one| {
+        if (!std.mem.eql(u8, one.state, "draft")) {
+            try out.append(arena, one);
+        }
+    }
+
+    return out.items;
+}
+
+const Marker = @import("../../operations/record/markers.zig").Marker;
+
+/// The fields a scheduled change makes differ from its base, as `document` (the form as it
+/// stands, saved or not) has them: each top-level field once.
+fn changed_names(
+    session: *Session,
+    def: Def,
+    row: Record,
+    version: i64,
+    document: Value,
+) Error![]const []const u8 {
+    std.debug.assert(version > 0);
+    std.debug.assert(row.id.len > 0);
+
+    const arena = session.arena;
+    const ctx = &session.ctx;
+    const found = versions_module.find(ctx, row.id, version) catch return &.{};
+    const at = found orelse return &.{};
+    const base = at.entries[at.index].base_id;
+    const before = versions_module.projected(ctx, row, def, at.entries, base) catch return &.{};
+
+    if (document != .object) {
+        return &.{};
+    }
+
+    const changes = model.change_set.between(arena, before.document, document) catch {
+        return error.OutOfMemory;
+    };
+    var names: std.ArrayList([]const u8) = .empty;
+
+    for (changes.keys()) |key| {
+        const name = model.dimension.split(key).name;
+        const seen = for (names.items) |known| {
+            if (std.mem.eql(u8, known, name)) {
+                break true;
+            }
+        } else false;
+
+        if (!seen) {
+            try names.append(arena, name);
+        }
+    }
+
+    return names.items;
+}
+
+/// A `Changed` marker beside each field a scheduled change changes, after `drawn`.
+fn with_changed(
+    session: *Session,
+    drawn: []const views.RecordEditor.MarkersItem,
+    def: Def,
+    row: Record,
+    version: i64,
+    document: ?Value,
+) Error![]const views.RecordEditor.MarkersItem {
+    std.debug.assert(row.id.len > 0);
+    std.debug.assert(version >= 0);
+
+    const shown = document orelse return drawn;
+
+    if (version == 0) {
+        return drawn;
+    }
+
+    const arena = session.arena;
+    const names = try changed_names(session, def, row, version, shown);
+    var out: std.ArrayList(views.RecordEditor.MarkersItem) = .empty;
+
+    try out.appendSlice(arena, drawn);
+
+    for (names) |name| {
+        try out.append(arena, .{
+            .field = name,
+            .label = try session.translated("Changed", .{}),
+            .group = "",
+            .tone = "neutral",
+            .dimension = "",
+            .code = "",
+            .current = "show",
+            .href = "",
+        });
+    }
+
+    return out.items;
+}
+
+/// The same for the editor asking again with the form as it stands (`document`, JSON).
+fn changed_of_form(
+    session: *Session,
+    def: Def,
+    id: []const u8,
+    version: i64,
+    document: []const u8,
+) Error![]const Marker {
+    std.debug.assert(id.len <= 128);
+    std.debug.assert(version >= 0);
+
+    if (version == 0 or id.len == 0) {
+        return &.{};
+    }
+
+    const arena = session.arena;
+    const row = store.records.get(session.ctx.db, arena, id) catch null;
+    const found = row orelse return &.{};
+    const parsed = @import("../../lib/json.zig").parse(Value, arena, document, .{
+        .allocate = .alloc_always,
+    }) catch return &.{};
+    const names = try changed_names(session, def, found, version, parsed);
+    const out = try arena.alloc(Marker, names.len);
+
+    for (names, out) |name, *marker| {
+        marker.* = .{
+            .field = name,
+            .label = try session.translated("Changed", .{}),
+            .tone = "neutral",
+        };
+    }
+
+    return out;
+}
+
+const compare = @import("compare.zig");
+
+/// A scheduled change beside its base, one combination of its dimensions at a time (each it
+/// changes; the first shown): each field as a visitor reads it there, as the base has it and
+/// as the change makes it, what changed marked, the rest quieter.
+const Compared = struct {
+    node: ?admin.render.Node = null,
+    combinations: []const views.RecordEditor.Compare_combinationsItem = &.{},
+};
+
+fn compare_of(session: *Session, def: Def, row: Record, version: i64) Error!Compared {
+    std.debug.assert(version > 0);
+    std.debug.assert(row.id.len > 0);
+
+    const arena = session.arena;
+    const ctx = &session.ctx;
+    const found = (versions_module.find(ctx, row.id, version) catch null) orelse return .{};
+    const entry = found.entries[found.index];
+    const before = versions_module.projected(ctx, row, def, found.entries, entry.base_id) catch {
+        return error.OutOfMemory;
+    };
+    const after = versions_module.shown(ctx, row, def, found.entries, version) catch {
+        return error.OutOfMemory;
+    };
+    const changes = model.change_set.between(arena, before.document, after.document) catch {
+        return error.OutOfMemory;
+    };
+    const dims = try varied_of(session, def);
+    var sections: std.ArrayList(CompareSection) = .empty;
+    var combinations: std.ArrayList(views.RecordEditor.Compare_combinationsItem) = .empty;
+
+    for (try combinations_of(arena, changes)) |combination| {
+        const pairs = try pairs_of(arena, dims, combination);
+        const label = try combination_label(arena, dims, pairs);
+
+        try sections.append(arena, .{
+            .combination = combination,
+            .rows = try rows_in(session, def, before.document, after.document, pairs),
+        });
+        try combinations.append(arena, .{
+            .key = combination,
+            .label = label,
+        });
+    }
+
+    const rule = (try site_zone(session)).rule;
+    const local = entry.due_at + zone.offset_ms(rule, entry.due_at);
+    const when = model_time.datetime_local_text(arena, local) catch "";
+
+    return .{
+        .node = try admin.render.view(arena, views.RecordCompare, .{
+            .base_label = try base_label_of(session, found.entries, entry),
+            .base_live = entry.base_id == null,
+            .change_label = try std.mem.replaceOwned(u8, arena, when, "T", " "),
+            .sections = sections.items,
+        }),
+        .combinations = combinations.items,
+    };
+}
+
+const CompareSection = views.RecordCompare.SectionsItem;
+const CompareRow = @typeInfo(@FieldType(CompareSection, "rows")).pointer.child;
+
+/// What the change builds on, as its column says it: `Live`, or that change's time.
+fn base_label_of(
+    session: *Session,
+    entries: []const store.scheduled_changes.Entry,
+    entry: store.scheduled_changes.Entry,
+) Error![]const u8 {
+    std.debug.assert(entry.id > 0);
+    std.debug.assert(session.signed_in());
+
+    const base = entry.base_id orelse return session.translated("Live", .{});
+    const at = for (entries) |one| {
+        if (one.id == base) {
+            break one;
+        }
+    } else null;
+    const on = at orelse return session.translated("Live", .{});
+    const rule = (try site_zone(session)).rule;
+    const local = on.due_at + zone.offset_ms(rule, on.due_at);
+    const text = model_time.datetime_local_text(session.arena, local) catch "";
+
+    return std.mem.replaceOwned(u8, session.arena, text, "T", " ");
+}
+
+/// Each combination the changed keys name, once, the main values first.
+fn combinations_of(arena: std.mem.Allocator, changes: std.json.ObjectMap) Error![]const []const u8 {
+    std.debug.assert(changes.count() <= 64 << 10);
+
+    var out: std.ArrayList([]const u8) = .empty;
+
+    for (changes.keys()) |key| {
+        const combination = model.dimension.split(key).combination;
+        const seen = for (out.items) |known| {
+            if (std.mem.eql(u8, known, combination)) {
+                break true;
+            }
+        } else false;
+
+        if (seen) {
+            continue;
+        }
+
+        if (combination.len == 0) {
+            try out.insert(arena, 0, combination);
+        } else {
+            try out.append(arena, combination);
+        }
+    }
+
+    return out.items;
+}
+
+/// A dimension the type's fields vary by, with its values, the main one first.
+const VariedDimension = struct {
+    name: []const u8,
+    values: []const site_dimensions.Value,
+};
+
+fn varied_of(session: *Session, def: Def) Error![]const VariedDimension {
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+    std.debug.assert(session.signed_in());
+
+    var out: std.ArrayList(VariedDimension) = .empty;
+
+    for (site_dimensions.all(&session.ctx)) |dimension| {
+        const varies = for (def.fields) |field| {
+            if (model.dimension.varies_by(field.dimensions, dimension.name)) {
+                break true;
+            }
+        } else false;
+
+        if (!varies) {
+            continue;
+        }
+
+        const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
+
+        if (values.len > 1) {
+            try out.append(session.arena, .{
+                .name = dimension.name,
+                .values = values,
+            });
+        }
+    }
+
+    return out.items;
+}
+
+/// Every dims dimension at its code in `combination`, its main value where it names none.
+fn pairs_of(
+    arena: std.mem.Allocator,
+    dims: []const VariedDimension,
+    combination: []const u8,
+) Error![]const model.dimension.Pair {
+    std.debug.assert(dims.len <= model.dimension.dimensions_max);
+    std.debug.assert(combination.len <= 1024);
+
+    const parsed = model.dimension.parse(combination);
+    const pairs = try arena.alloc(model.dimension.Pair, dims.len);
+
+    for (dims, pairs) |dimension, *pair| {
+        pair.* = .{
+            .dimension = dimension.name,
+            .code = if (parsed) |read| read.code_of(dimension.name) else "",
+        };
+    }
+
+    return pairs;
+}
+
+/// A combination by its values' names: `Polski / B`, the main ones by theirs.
+fn combination_label(
+    arena: std.mem.Allocator,
+    dims: []const VariedDimension,
+    pairs: []const model.dimension.Pair,
+) Error![]const u8 {
+    std.debug.assert(dims.len == pairs.len);
+
+    var labels: std.ArrayList([]const u8) = .empty;
+
+    for (dims, pairs) |dimension, pair| {
+        const value = for (dimension.values) |one| {
+            const main = pair.code.len == 0 and one.main;
+
+            if (main or std.mem.eql(u8, one.code, pair.code)) {
+                break one;
+            }
+        } else dimension.values[0];
+
+        try labels.append(arena, value.label);
+    }
+
+    return std.mem.join(arena, " / ", labels.items);
+}
+
+/// Each field in the form's order as a visitor reads it in `pairs`, before and after.
+fn rows_in(
+    session: *Session,
+    def: Def,
+    before: Value,
+    after: Value,
+    pairs: []const model.dimension.Pair,
+) Error![]const CompareRow {
+    std.debug.assert(before == .object and after == .object);
+    std.debug.assert(pairs.len <= model.dimension.dimensions_max);
+
+    const arena = session.arena;
+    const resolve = model.dimension.resolve.resolve;
+    const read_before = try resolve(arena, def.fields, before, pairs);
+    const read_after = try resolve(arena, def.fields, after, pairs);
+    const known = admin.kinds_of(session);
+    var rows: std.ArrayList(CompareRow) = .empty;
+
+    for (def.fields) |field| {
+        if (model.field.is_layout(field.kind)) {
+            continue;
+        }
+
+        const left = try compared_value(arena, read_before.object.get(field.name));
+        const right = try compared_value(arena, read_after.object.get(field.name));
+
+        try rows.append(arena, .{
+            .label = try session.declared(field.label),
+            .before = try compare.into(
+                @typeInfo(@FieldType(CompareRow, "before")).pointer.child,
+                arena,
+                try compare.shown(arena, known, left),
+            ),
+            .after = try compare.into(
+                @typeInfo(@FieldType(CompareRow, "after")).pointer.child,
+                arena,
+                try compare.shown(arena, known, right),
+            ),
+            .after_changes = try compare.segments_into(
+                @typeInfo(@FieldType(CompareRow, "after_changes")).pointer.child,
+                arena,
+                try compare.changes(arena, "text", left, right),
+            ),
+            .changed = !compare.same(left, right),
+        });
+    }
+
+    return rows.items;
+}
+
+/// A value as the comparison takes it: its JSON and its text; none for nothing.
+fn compared_value(arena: std.mem.Allocator, value: ?Value) Error![]const compare.Value {
+    const found = value orelse return &.{};
+
+    std.debug.assert(found != .number_string);
+
+    if (found == .null) {
+        return &.{};
+    }
+
+    const json = std.json.Stringify.valueAlloc(arena, found, .{}) catch return error.OutOfMemory;
+    const text = if (found == .string) found.string else json;
+    const one = try arena.alloc(compare.Value, 1);
+
+    one[0] = .{
+        .json = json,
+        .text = text,
+    };
+
+    return one;
+}
+
+const versions_module = @import("../../operations/record/versions.zig");
+
+/// What a schedule is drawn from: the record, its changes as read and as said, the one shown.
+const Tree = struct {
+    session: *Session,
+    def: Def,
+    row: Record,
+    entries: []const store.scheduled_changes.Entry,
+    items: []const ScheduledItem,
+    kept: []const Scheduled,
+    current: i64,
+};
+
+/// The schedule as a timeline: what is live, then each change under the one it builds on,
+/// soonest first among those on one base, each field from what it reads before to what it
+/// sets.
+fn schedule_of(
+    session: *Session,
+    def: Def,
+    row: Record,
+    items: []const ScheduledItem,
+    kept: []const Scheduled,
+    current: i64,
+) Error!admin.render.Node {
+    std.debug.assert(items.len == kept.len);
+    std.debug.assert(row.id.len > 0);
+
+    const arena = session.arena;
+    const entries = store.scheduled_changes.of_record(session.ctx.db, arena, row.id) catch &.{};
+    const tree: Tree = .{
+        .session = session,
+        .def = def,
+        .row = row,
+        .entries = entries,
+        .items = items,
+        .kept = kept,
+        .current = current,
+    };
+
+    return admin.render.view(arena, views.ScheduleTimeline, .{
+        .live_href = try print(arena, "/admin/content/{s}", .{row.id}),
+        .live_current = current == 0,
+        .children = try branch_of(tree, null, 0),
+    });
+}
+
+/// The changes on `base` (null: what is live), each with what builds on it; null for none.
+fn branch_of(tree: Tree, base: ?i64, depth: u32) Error!?admin.render.Node {
+    std.debug.assert(depth <= tree.kept.len);
+    std.debug.assert(tree.items.len == tree.kept.len);
+
+    const arena = tree.session.arena;
+    var nodes: std.ArrayList(admin.render.Node) = .empty;
+
+    for (tree.kept, tree.items) |one, item| {
+        const on: ?i64 = if (one.base > 0) one.base else null;
+
+        if (!std.meta.eql(on, base)) {
+            continue;
+        }
+
+        const href = try print(arena, "/admin/content/{s}?version={d}", .{
+            tree.row.id,
+            one.entry,
+        });
+        const stacked = if (depth < tree.kept.len)
+            try branch_of(tree, one.entry, depth + 1)
+        else
+            null;
+
+        try nodes.append(arena, try admin.render.view(arena, views.ScheduleItem, .{
+            .href = href,
+            .when = item.when,
+            .label = item.label,
+            .changed = item.changes,
+            .current = one.entry == tree.current,
+            .failed = item.failed,
+            .problem = item.problem,
+            .stacked = stacked,
+        }));
+    }
+
+    if (nodes.items.len == 0) {
+        return null;
+    }
+
+    return try admin.render.all(arena, nodes.items);
+}
+
+/// A key's field by its label, its combination's codes after it: `Title (pl, b)`.
+fn key_label(session: *Session, def: Def, key: []const u8) Error![]const u8 {
+    std.debug.assert(key.len > 0);
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    const split = model.dimension.split(key);
+    const label = for (def.fields) |field| {
+        if (std.mem.eql(u8, field.name, split.name)) {
+            break try session.declared(field.label);
+        }
+    } else split.name;
+    const codes = try codes_of(session.arena, split.combination);
+
+    if (codes.len == 0) {
+        return label;
+    }
+
+    return print(session.arena, "{s} ({s})", .{ label, codes });
+}
+
+/// What is scheduled for the record, soonest first, as its timeline says it: when, on the
+/// site's clock; what (a transition, or `Publish changes` with the fields it publishes); and
+/// why one failed.
 fn scheduled_of(
     session: *Session,
-    flow: model.flow.Flow,
+    def: Def,
     row: Record,
-    scheduled: ?Scheduled,
-) Error!Schedule {
+    scheduled: []const Scheduled,
+) Error![]const ScheduledItem {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(session.signed_in());
 
-    const kept = scheduled orelse return .{};
-    const label = if (flow.named(kept.transition, row.status)) |target|
-        try session.declared(target.label)
-    else
-        kept.transition;
-    const when = model_time.datetime_text(session.arena, kept.at) catch "";
+    const arena = session.arena;
+    const site = try site_zone(session);
+    const items = try arena.alloc(ScheduledItem, scheduled.len);
+
+    for (scheduled, items) |kept, *item| {
+        const local = kept.at + zone.offset_ms(site.rule, kept.at);
+        const shown = model_time.datetime_local_text(arena, local) catch "";
+        const label = if (kept.version)
+            try session.translated("Scheduled change", .{})
+        else if (def.flow.named(kept.transition, row.status)) |target|
+            try session.declared(target.label)
+        else
+            kept.transition;
+
+        item.* = .{
+            .entry = try print(arena, "{d}", .{kept.entry}),
+            .when = std.mem.replaceOwned(u8, arena, shown, "T", " ") catch {
+                return error.OutOfMemory;
+            },
+            .label = label,
+            .changes = try changed_fields(session, def, kept),
+            .failed = std.mem.eql(u8, kept.state, "failed"),
+            .problem = kept.problem,
+            .next = false,
+        };
+    }
+
+    for (items) |*item| {
+        if (!item.failed) {
+            item.next = true;
+            break;
+        }
+    }
+
+    return items;
+}
+
+/// The fields a scheduled publish changes, by their labels (`Title (pl)`), and what goes
+/// live when that changes: `Title, Summary (pl), Goes live`.
+fn changed_fields(session: *Session, def: Def, kept: Scheduled) Error![]const u8 {
+    std.debug.assert(kept.changes.len <= 64 << 10);
+    std.debug.assert(session.signed_in());
+
+    const arena = session.arena;
+    var names: std.ArrayList([]const u8) = .empty;
+
+    for (kept.changes) |key| {
+        const split = model.dimension.split(key);
+        const field = for (def.fields) |candidate| {
+            if (std.mem.eql(u8, candidate.name, split.name)) {
+                break candidate;
+            }
+        } else null;
+        const label = if (field) |found| try session.declared(found.label) else split.name;
+        const codes = try codes_of(arena, split.combination);
+        const named = if (codes.len == 0)
+            label
+        else
+            try print(arena, "{s} ({s})", .{ label, codes });
+
+        try names.append(arena, named);
+    }
+
+    if (kept.held_back != null) {
+        try names.append(arena, try session.translated("Goes live", .{}));
+    }
+
+    return std.mem.join(arena, ", ", names.items);
+}
+
+/// A combination's codes only: `language=pl,variation=b` as `pl, b`.
+fn codes_of(arena: std.mem.Allocator, combination: []const u8) Error![]const u8 {
+    std.debug.assert(combination.len <= 1024);
+
+    var codes: std.ArrayList([]const u8) = .empty;
+    var pairs = std.mem.splitScalar(u8, combination, ',');
+
+    while (pairs.next()) |pair| {
+        const at = std.mem.indexOfScalar(u8, pair, '=') orelse continue;
+
+        try codes.append(arena, pair[at + 1 ..]);
+    }
+
+    return std.mem.join(arena, ", ", codes.items);
+}
+
+/// The site's time zone, its name and rule: what schedules are typed and shown in.
+pub fn site_zone(session: *Session) Error!SiteZone {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(jobs.zone_key.len > 0);
+
+    // Unread, the site's clock is UTC, as it is with none chosen.
+    const kept = store.settings.get(session.ctx.db, session.arena, jobs.zone_key) catch null;
+    const name = kept orelse "UTC";
 
     return .{
-        .label = try session.translated("{transition} on {when} UTC", .{
-            .values = &.{
-                .{
-                    .name = "transition",
-                    .value = label,
-                },
-                .{
-                    .name = "when",
-                    .value = when,
-                },
-            },
-        }),
-        .transition = kept.transition,
-        .at = model_time.datetime_local_text(session.arena, kept.at) catch "",
+        .name = name,
+        .rule = zone.rule_of(name) orelse "UTC0",
     };
 }
+
+pub const SiteZone = struct {
+    name: []const u8,
+    rule: []const u8,
+};
+
+const zone = @import("../../lib/zone.zig");
+const jobs = @import("../../sdk/jobs.zig");
+const store = @import("../../store.zig");
 
 /// The bar over a document someone asked a transition for: who, what, and what the person
 /// looking may do about it.
@@ -2305,6 +3363,10 @@ pub fn user_options(
 pub const VariedOptions = struct {
     /// The record being edited: each combination's placeholder is its fallback.
     document: ?Value = null,
+    /// Its type and id: a family's member (an A/B test) shows only on the fields its owner
+    /// says, none on a record not made yet.
+    type: []const u8 = "",
+    id: []const u8 = "",
 };
 
 pub fn varied(
@@ -2315,7 +3377,7 @@ pub fn varied(
     std.debug.assert(session.signed_in());
     std.debug.assert(defs.len <= model.field.fields_max);
 
-    const site = try site_dimensions_of(session);
+    const site = try site_dimensions_of(session, options.type, options.id);
 
     return fields.dimensions.expanded(session.arena, defs, site, options.document);
 }
@@ -2337,12 +3399,18 @@ pub fn other_codes(session: *Session) Error![]const []const u8 {
 
 /// The site's dimensions with their codes other than the main one, highest priority first:
 /// what the form makes each varied field's combinations of.
-fn site_dimensions_of(session: *Session) Error![]const fields.dimensions.SiteDimension {
+fn site_dimensions_of(
+    session: *Session,
+    type_name: []const u8,
+    id: []const u8,
+) Error![]const fields.dimensions.SiteDimension {
     std.debug.assert(session.signed_in());
 
     var out: std.ArrayList(fields.dimensions.SiteDimension) = .empty;
+    const on_record = try site_dimensions.of_record(&session.ctx, type_name, id);
 
-    for (site_dimensions.all(&session.ctx)) |dimension| {
+    for (on_record) |on| {
+        const dimension = on.setting;
         const values = site_dimensions.values_of(&session.ctx, dimension) catch continue;
         var codes: std.ArrayList([]const u8) = .empty;
 
@@ -2356,6 +3424,7 @@ fn site_dimensions_of(session: *Session) Error![]const fields.dimensions.SiteDim
             try out.append(session.arena, .{
                 .name = dimension.name,
                 .codes = codes.items,
+                .only = on.fields,
             });
         }
     }
@@ -2363,8 +3432,8 @@ fn site_dimensions_of(session: *Session) Error![]const fields.dimensions.SiteDim
     return out.items;
 }
 
-/// The editor's pickers: each dimension with more than one value, in its picker's word (its
-/// label when it names none), its values the main one first under an empty code.
+/// The editor's pickers: each dimension with more than one value, in its read option's word
+/// (its field option's when it has none), its values the main one first under an empty code.
 fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem {
     std.debug.assert(session.signed_in());
 
@@ -2388,7 +3457,10 @@ fn pickers_of(session: *Session) Error![]const views.RecordEditor.DimensionsItem
             };
         }
 
-        const word = if (dimension.picker.len > 0) dimension.picker else dimension.label;
+        const word = if (dimension.read.label.len > 0)
+            dimension.read.label
+        else
+            dimension.field.label;
 
         try out.append(session.arena, .{
             .name = dimension.name,

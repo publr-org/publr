@@ -8,6 +8,7 @@
 const std = @import("std");
 
 pub const resolve = @import("dimension/resolve.zig");
+pub const live = @import("dimension/live.zig");
 
 pub const code_len_max: u32 = 16;
 pub const name_len_max: u32 = 32;
@@ -19,42 +20,147 @@ pub const key_pairs_max: u32 = 4;
 /// The codes one dimension falls back through: the code, each shorter prefix, its main.
 pub const order_max: u32 = 5;
 pub const separator: u8 = '@';
+/// Between a family's name and one of its dimensions': `variation-hero`, an A/B test's.
+pub const member_separator: u8 = '-';
 /// A field that varies by every dimension the site has, whichever they are.
 pub const every = "*";
-const combination_len_max: u32 = key_pairs_max * (name_len_max + code_len_max + 2);
-
-/// The type setting for records with no value in a combination: shown in the main values
-/// (`keep`), or left out of it (`omit`). Unnamed: the setting is not offered.
-pub const Untranslated = struct {
-    label: []const u8 = "",
-    keep: []const u8 = "",
-    keep_help: []const u8 = "",
-    omit: []const u8 = "",
-    omit_help: []const u8 = "",
-};
+pub const combination_len_max: u32 = key_pairs_max * (name_len_max + code_len_max + 2);
 
 /// A dimension as data: what an installed plugin's manifest says of the one it declares, its
-/// list an operation by full name (`languages.list`).
+/// list an operation by full name (`languages.list`), its wrapper as the owner words it.
 pub const Declared = struct {
     name: []const u8,
     /// Its key in an address's query (`lang`); empty: its name.
     param: []const u8 = "",
-    label: []const u8,
-    help: []const u8,
-    picker: []const u8 = "",
     list: []const u8,
     /// Higher keeps its value longer when a combination falls back.
     priority: i32 = 0,
     /// Its values have pages of their own, under their addresses.
     addresses: bool = false,
-    untranslated: Untranslated = .{},
-    /// Every value must be filled before a record goes live, unless a value, the type or
-    /// the field says otherwise.
-    required: bool = false,
-    /// The type and field setting that makes its values required: `Required in every
-    /// language`. Empty: requiring is not offered.
-    required_label: []const u8 = "",
+    /// The plugin declaring it, set where the site gathers them.
+    plugin: []const u8 = "",
+    /// How a field says it holds values per this dimension (`.translatable = .required`).
+    field: FieldOption,
+    /// What a read names it by (`.language = "pl"`); empty: by its name.
+    read: ReadOption = .{},
+    /// A family: one dimension per thing its owner lists (`variation-hero`, each A/B test its
+    /// own), its list answering `dimensions`, each with its values. A field holding the
+    /// family holds each of them.
+    each: bool = false,
+    /// The owner's read telling, for one record, which of its fields each of the family's
+    /// dimensions shows on (`shown`); empty: every field holding it, on every record.
+    shown: []const u8 = "",
+    /// How a field that says nothing of it holds it; a field saying otherwise is kept in its
+    /// `not_in` (`one`) or `dimensions`.
+    default: Holds = .one,
 };
+
+/// The owner's field option: its name, words, and each value it takes with its `Holds`.
+pub const FieldOption = struct {
+    /// `translatable`.
+    name: []const u8,
+    /// The setting on the field panel: `Translate`.
+    label: []const u8,
+    /// What the setting means, under it.
+    help: []const u8 = "",
+    /// Each value in the order the owner declares it, no two holding the same way.
+    choices: []const Choice,
+    /// The owner draws the setting itself (`.options`); else the core lists the choices.
+    drawn: bool = false,
+};
+
+pub const Choice = struct {
+    /// `optional_with_fallback`.
+    value: []const u8,
+    holds: Holds,
+    /// The owner's words for it: a first line, then what it means.
+    title: []const u8,
+    description: []const u8 = "",
+};
+
+/// The owner's read option: its name and the editor picker's word.
+pub const ReadOption = struct {
+    /// `language`; empty: the dimension's name.
+    name: []const u8 = "",
+    /// The editor's picker: `Content language`; empty: the field option's label.
+    label: []const u8 = "",
+};
+
+pub const choices_max: u32 = 16;
+
+/// The choice of `option` holding values `holds`, if it has one.
+pub fn choice_holding(option: FieldOption, holds: Holds) ?Choice {
+    std.debug.assert(option.choices.len <= choices_max);
+
+    for (option.choices) |choice| {
+        if (choice.holds == holds) {
+            return choice;
+        }
+    }
+
+    return null;
+}
+
+/// How the choice of `option` named `value` holds values, if it has one so named.
+pub fn holds_named(option: FieldOption, value: []const u8) ?Holds {
+    std.debug.assert(option.choices.len <= choices_max);
+
+    for (option.choices) |choice| {
+        if (std.mem.eql(u8, choice.value, value)) {
+            return choice.holds;
+        }
+    }
+
+    return null;
+}
+
+/// How a field holds values per a dimension: one for all (not varying by it), each going
+/// live filled (`required`), an empty one showing nothing (`empty`) or the main value
+/// (`fallback`).
+pub const Holds = enum { one, required, empty, fallback };
+
+/// How `def` holds values per `name`, from its `dimensions`, `required_in` and `empty_in`;
+/// a family's dimension (`variation-hero`) as it holds the family.
+pub fn holds_of(def: anytype, name: []const u8) Holds {
+    std.debug.assert(name.len > 0);
+
+    const family = family_of(name);
+
+    if (!varies_by(def.dimensions, name)) {
+        return .one;
+    }
+
+    if (lists(def.required_in, name) or lists(def.required_in, family)) {
+        return .required;
+    }
+
+    const empty = lists(def.empty_in, name) or lists(def.empty_in, family);
+
+    return if (empty) .empty else .fallback;
+}
+
+/// The family `name` is one of (`variation` for `variation-hero`); `name` itself for a
+/// dimension of its own.
+pub fn family_of(name: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+
+    const at = std.mem.indexOfScalar(u8, name, member_separator) orelse return name;
+
+    return name[0..at];
+}
+
+/// `family-member` from both names, or null when it is no valid dimension name.
+pub fn member_name(
+    arena: std.mem.Allocator,
+    family: []const u8,
+    member: []const u8,
+) error{OutOfMemory}!?[]const u8 {
+    std.debug.assert(family.len > 0);
+
+    const name = try std.fmt.allocPrint(arena, "{s}{c}{s}", .{ family, member_separator, member });
+
+    return if (valid_dimension(name)) name else null;
+}
 
 /// Each a dimension's name, at most as many as a site has.
 pub fn valid_names(names: []const []const u8) bool {
@@ -162,6 +268,20 @@ pub fn valid_name(name: []const u8) bool {
     return true;
 }
 
+/// A dimension's name as values are kept under it: a name, or a family's dimension
+/// (`variation-hero`), its family's name and its own joined by a dash.
+pub fn valid_dimension(name: []const u8) bool {
+    if (name.len == 0 or name.len > name_len_max) {
+        return false;
+    }
+
+    std.debug.assert(name.len <= name_len_max);
+
+    const at = std.mem.indexOfScalar(u8, name, member_separator) orelse return valid_name(name);
+
+    return valid_name(name[0..at]) and valid_name(name[at + 1 ..]);
+}
+
 pub const Key = struct {
     name: []const u8,
     /// `language=pl,variation=b`; empty for the main value.
@@ -202,7 +322,7 @@ pub fn parse(text: []const u8) ?Combination {
             .code = part[equals + 1 ..],
         };
 
-        if (combination.len == key_pairs_max or !valid_name(pair.dimension)) {
+        if (combination.len == key_pairs_max or !valid_dimension(pair.dimension)) {
             return null;
         }
 
@@ -240,12 +360,19 @@ pub fn fits(dimensions: []const []const u8, text: []const u8) bool {
     return true;
 }
 
-/// Whether a field varying by `dimensions` varies by `dimension`.
+/// Whether a field varying by `dimensions` varies by `dimension`: listed, its family listed
+/// (`variation` for `variation-hero`), or every one.
 pub fn varies_by(dimensions: []const []const u8, dimension: []const u8) bool {
     std.debug.assert(dimension.len > 0);
 
+    const family = family_of(dimension);
+
     for (dimensions) |name| {
         if (std.mem.eql(u8, name, every) or std.mem.eql(u8, name, dimension)) {
+            return true;
+        }
+
+        if (std.mem.eql(u8, name, family)) {
             return true;
         }
     }
@@ -456,6 +583,11 @@ test "combinations: written sorted, main values left out, read back strictly" {
     try std.testing.expect(fits(&.{every}, "language=pl"));
     try std.testing.expect(!fits(&.{"language"}, "language=pl,variation=b"));
     try std.testing.expect(!fits(&.{}, "language=pl"));
+    try std.testing.expect(fits(&.{"variation"}, "variation-hero=b"));
+    try std.testing.expect(!fits(&.{"variation"}, "variant-hero=b"));
+    try std.testing.expect(parse("variation-hero-x=b") == null);
+    try std.testing.expectEqualStrings("variation", family_of("variation-hero"));
+    try std.testing.expectEqualStrings("language", family_of("language"));
 }
 
 test "places: a path under an address and back" {
@@ -486,4 +618,5 @@ test "order: the code, its shorter prefixes, the main value" {
 
 test {
     _ = resolve;
+    _ = live;
 }
