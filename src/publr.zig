@@ -213,6 +213,9 @@ pub const views = @import("sdk/plugin/views.zig");
 pub const contract = struct {
     pub const define = @import("sdk/contract.zig").define;
 };
+/// Published interfaces: another plugin's contracts and dimension wrappers as data, what
+/// `@import("<plugin>")` gives a plugin naming it in `depends_on` or `compatible_with`.
+pub const published = @import("sdk/published.zig");
 /// The enabled providers of a contract, in the administrator's order:
 /// `publr.providers(ctx, Contract, .{ .can = &.{.refund} })`.
 pub const providers = @import("sdk/contract.zig").providers;

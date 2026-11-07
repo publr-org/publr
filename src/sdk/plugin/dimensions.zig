@@ -152,38 +152,6 @@ pub const Native = struct {
     api: type,
 };
 
-/// What each of a compiled-in type's fields says through a compiled-in dimension's field
-/// option is a value the option takes: checked by the compiler, as the published interface
-/// will check it for every plugin.
-pub fn check_wrapped(
-    comptime natives: []const Native,
-    comptime handle: []const u8,
-    comptime fields: []const field_model.Def,
-) void {
-    comptime {
-        for (fields) |field| {
-            check_wrapped(natives, handle, field.fields);
-
-            for (field.wrapped) |wrapped| {
-                for (natives) |native| {
-                    const option = native.setting.field;
-
-                    if (!std.mem.eql(u8, option.name, wrapped.option)) {
-                        continue;
-                    }
-
-                    if (model_dimension.holds_named(option, wrapped.value) == null) {
-                        @compileError(handle ++ ": field `" ++ field.name ++ "`: `." ++
-                            wrapped.option ++ "` takes no `." ++ wrapped.value ++ "` (" ++
-                            native.setting.plugin ++ "'s " ++ @typeName(native.api.field.Value) ++
-                            ")");
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// One value of a dimension as the core shows and serves it.
 pub const Value = struct {
     /// `pl`, `en-gb`: the code its values are stored under. The main value is stored under

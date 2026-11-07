@@ -117,6 +117,9 @@ pub const Manifest = struct {
     compatible_with: []const []const u8 = &.{},
     /// The providers it registers into contracts.
     providers: []const @import("provider.zig").Registered = &.{},
+    /// The contracts it owns (`.contracts`), each part's shapes as data: what a provider of
+    /// one builds against and is checked against, its published interface with `dimensions`.
+    contracts: []const @import("published.zig").Contract = &.{},
     pages: []const Page = &.{},
     menu: []const MenuEntry = &.{},
     icons: []const PluginIcon = &.{},
@@ -188,7 +191,8 @@ pub const RemoteUse = plugin_contracts.Used;
 /// An event the plugin declares, as other plugins are checked against it.
 pub const Event = plugin_contracts.ProvidedEvent;
 
-/// The plugin as a user of others' operations.
+/// The plugin as a user of others: their operations, records and events, the contracts it
+/// provides and the dimension options its fields name.
 pub fn contract_user(manifest: *const Manifest) plugin_contracts.User {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(manifest.remotes.len <= plugin_contracts.findings_max);
@@ -198,6 +202,12 @@ pub fn contract_user(manifest: *const Manifest) plugin_contracts.User {
         .depends_on = manifest.depends_on,
         .compatible_with = manifest.compatible_with,
         .remotes = manifest.remotes,
+        .registrations = manifest.providers,
+        .operations = manifest.operations,
+        .content_types = manifest.content_types,
+        .taxonomies = manifest.taxonomies,
+        .custom_fields = manifest.custom_fields,
+        .dimensions = manifest.dimensions,
     };
 }
 
@@ -252,6 +262,8 @@ pub fn contract_provider(
         .operations = operations,
         .records = records,
         .events = manifest.events,
+        .contracts = manifest.contracts,
+        .dimensions = manifest.dimensions,
     };
 }
 

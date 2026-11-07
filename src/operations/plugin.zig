@@ -41,6 +41,7 @@ pub const Request = state.Request;
 pub const Summary = views.Summary;
 pub const Detail = views.Detail;
 pub const contracts = @import("plugin/contracts.zig");
+pub const Interfaces = @import("plugin/published.zig").Interfaces;
 pub const Added = lifecycle.Added;
 
 const detail_of = views.detail_of;
@@ -653,9 +654,9 @@ pub const Remove = struct {
 };
 
 pub const operations = [_]type{
-    List,         Get,          Upload, Add,  Enable,   Disable, Update, Rollback,
-    CancelUpdate, GrantRequest, Revoke, Deny, SetGrant, Remove,  Data,   EraseData,
-    LeftBehind,   RestoreData,
+    List,         Get,          Upload,     Add,  Enable,   Disable, Update, Rollback,
+    CancelUpdate, GrantRequest, Revoke,     Deny, SetGrant, Remove,  Data,   EraseData,
+    LeftBehind,   RestoreData,  Interfaces,
 } ++ sources.operations ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
     @import("plugin/log.zig").operations;
 

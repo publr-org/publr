@@ -91,6 +91,7 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
     });
 
     var modules: [plugins_max]*std.Build.Module = undefined;
+    var docs_modules: [plugins_max]*std.Build.Module = undefined;
 
     for (names, 0..) |name, index| {
         const plugin = builder.createModule(.{
@@ -105,10 +106,64 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
 
         plugins.addImport(builder.fmt("docs:{s}", .{name}), docs);
         modules[index] = plugin;
+        docs_modules[index] = docs;
     }
 
     add_interfaces(builder, library, dir, names, modules[0..names.len]);
+    add_published(builder, library, listing, .{
+        .names = names,
+        .modules = modules[0..names.len],
+        .docs = docs_modules[0..names.len],
+    });
     library.addImport("native_plugins", plugins);
+}
+
+/// Each compiled-in plugin's published interface, imported under its name by every other
+/// compiled-in plugin (`@import("payments")`): made from its declarations, it carries data
+/// only (its contracts, its dimensions' wrappers), the same module `plugin build` writes for
+/// an installed one. A plugin using it must name the owner in `depends_on` or
+/// `compatible_with`; the SDK checks that.
+const Compiled = struct {
+    names: []const []const u8,
+    modules: []const *std.Build.Module,
+    docs: []const *std.Build.Module,
+};
+
+fn add_published(
+    builder: *std.Build,
+    library: *std.Build.Module,
+    listing: *std.Build.Step.WriteFile,
+    compiled: Compiled,
+) void {
+    std.debug.assert(compiled.names.len == compiled.modules.len);
+    std.debug.assert(compiled.names.len == compiled.docs.len);
+
+    for (compiled.names, compiled.modules, compiled.docs) |name, owner, owner_docs| {
+        const source = builder.fmt(
+            \\//! {s}'s published interface, made from its declarations.
+            \\const publr = @import("publr");
+            \\const Owner = publr.plugin.Bind(@import("owner"), @import("owner_docs"));
+            \\
+            \\pub const interface: publr.published.Interface = publr.published.of(Owner);
+            \\pub const contracts = publr.published.contracts(interface){{}};
+            \\
+        , .{name});
+        const published = builder.createModule(.{
+            .root_source_file = listing.add(builder.fmt("published/{s}.zig", .{name}), source),
+            .target = library.resolved_target,
+            .optimize = library.optimize,
+        });
+
+        published.addImport("publr", library);
+        published.addImport("owner", owner);
+        published.addImport("owner_docs", owner_docs);
+
+        for (compiled.names, compiled.modules) |other, module| {
+            if (!std.mem.eql(u8, other, name)) {
+                module.addImport(name, published);
+            }
+        }
+    }
 }
 
 /// Each compiled-in plugin's `components/*.publr`, the templates an app imports as

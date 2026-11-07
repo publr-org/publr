@@ -358,6 +358,85 @@ pub fn apply_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!
     try sdk.stored_roles.declare(ctx, manifest.name, manifest.roles);
 }
 
+/// The types of the enabled installed plugins whose fields name an option of `owner`'s
+/// dimensions, applied again with them: an owner installed after a plugin naming its
+/// option reaches that plugin's fields.
+pub fn reapply_naming(ctx: *Ctx, owner: *const sandboxed_plugin.Manifest) Error!void {
+    std.debug.assert(owner.name.len > 0);
+    std.debug.assert(owner.dimensions.len <= 64);
+
+    if (owner.dimensions.len == 0) {
+        return;
+    }
+
+    for (try store.sandboxed_plugins.list(ctx.db, ctx.arena)) |row| {
+        if (!row.enabled or std.mem.eql(u8, row.name, owner.name)) {
+            continue;
+        }
+
+        const manifest = try state.parse_manifest(ctx.arena, row.manifest);
+
+        if (!names_option(&manifest, owner.dimensions)) {
+            continue;
+        }
+
+        var with_owner = manifest;
+
+        with_owner.dimensions = try std.mem.concat(ctx.arena, model.dimension.Declared, &.{
+            manifest.dimensions,
+            owner.dimensions,
+        });
+        try apply_types(ctx, &with_owner);
+    }
+}
+
+fn names_option(
+    manifest: *const sandboxed_plugin.Manifest,
+    dimensions: []const model.dimension.Declared,
+) bool {
+    std.debug.assert(manifest.name.len > 0);
+    std.debug.assert(dimensions.len <= 64);
+
+    const types_named = [_][]const model.content_type.Def{
+        manifest.content_types,
+        manifest.taxonomies,
+        manifest.custom_fields,
+    };
+
+    for (types_named) |defs| {
+        for (defs) |def| {
+            if (fields_name(def.fields, dimensions)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+fn fields_name(
+    fields: []const model.field.Def,
+    dimensions: []const model.dimension.Declared,
+) bool {
+    std.debug.assert(dimensions.len <= 64);
+
+    for (fields) |field| {
+        if (fields_name(field.fields, dimensions)) {
+            return true;
+        }
+
+        for (field.wrapped) |wrapped| {
+            for (dimensions) |dimension| {
+                if (std.mem.eql(u8, dimension.field.name, wrapped.option)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 /// What adding a module did: a plugin new to the list, or a newer version of one there.
 pub const Added = struct {
     name: []const u8,
@@ -444,6 +523,7 @@ pub fn enable(ctx: *Ctx, name: []const u8, chosen: []const grants.Choice) Error!
 
     try contracts.check_user(ctx, &decoded.manifest, try contracts.providers(ctx, .{}));
     try apply_types(ctx, &decoded.manifest);
+    try reapply_naming(ctx, &decoded.manifest);
 
     const asked = try requests(ctx, &decoded.manifest);
 

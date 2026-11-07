@@ -23,7 +23,15 @@ pub const Request = struct {
     dir: []const u8,
     /// Only build, into this file: nothing is installed.
     out: ?[]const u8 = null,
+    /// Built plugins (`.wasm`) whose published interfaces it builds against, over what the
+    /// site has: an owner not installed yet, or a build with no site.
+    with: []const []const u8 = &.{},
 };
+
+const published = @import("../sdk/published.zig");
+const published_dir = @import("plugin_build/published.zig");
+const examples = @import("plugin_build/examples.zig");
+const store = @import("../store.zig");
 
 pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const u8) !u8 {
     std.debug.assert(db_path.len > 0);
@@ -39,7 +47,13 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .{ data_dir, request.name },
     );
 
-    if (!try built_module(init, request, built)) {
+    // Built only, it builds against this binary's built-in plugins; installed here, against
+    // every plugin the site has.
+    const site: Site = if (request.out != null) .{
+        .interfaces = @import("registry.zig").published_interfaces,
+    } else try site_of(init, db_path);
+
+    if (!try built_module(init, request, built, site)) {
         return 1;
     }
 
@@ -50,9 +64,99 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     return install(init, db_path, request.name, built);
 }
 
+/// What a build has of the site it builds for: each plugin's published interface, and the
+/// modules of the plugins it has installed, for its examples.
+pub const Site = struct {
+    interfaces: []const published.Interface,
+    modules: []const examples.Module = &.{},
+};
+
+/// The local site: its plugins' interfaces as it answers `plugin interfaces`, and its
+/// enabled installed plugins' modules, in `plugins/` beside its database.
+fn site_of(init: std.process.Init, db_path: [:0]const u8) !Site {
+    std.debug.assert(db_path.len > 0);
+
+    var commands: operator.Commands = .{
+        .init = init,
+        .db_path = db_path,
+    };
+    defer commands.deinit();
+
+    const Asker = struct {
+        commands: *operator.Commands,
+
+        pub fn ask(asker: @This(), words: []const []const u8, out: *std.Io.Writer) !u8 {
+            var as_admin: [8][]const u8 = undefined;
+
+            std.debug.assert(words.len < as_admin.len);
+
+            as_admin[0] = "--as-admin";
+            @memcpy(as_admin[1 .. words.len + 1], words);
+
+            return asker.commands.run(as_admin[0 .. words.len + 1], out);
+        }
+    };
+
+    const arena = init.arena.allocator();
+    const interfaces = try published_dir.asked(arena, Asker{
+        .commands = &commands,
+    });
+    const rows = try store.sandboxed_plugins.list(&commands.local.?.connection, arena);
+    const dir = std.fs.path.dirname(db_path) orelse ".";
+    var modules: std.ArrayList(examples.Module) = .empty;
+
+    for (rows) |row| {
+        if (row.enabled) {
+            const file = try std.fmt.allocPrint(arena, "{s}.wasm", .{row.hash});
+
+            try modules.append(arena, .{
+                .name = row.name,
+                .path = try std.fs.path.join(arena, &.{ dir, "plugins", file }),
+            });
+        }
+    }
+
+    return .{
+        .interfaces = interfaces,
+        .modules = modules.items,
+    };
+}
+
+/// The built plugins a build has: each `--with` package, then the site's.
+fn modules_of(
+    init: std.process.Init,
+    with: []const []const u8,
+    site: Site,
+) ![]const examples.Module {
+    const arena = init.arena.allocator();
+    var modules: std.ArrayList(examples.Module) = .empty;
+
+    std.debug.assert(with.len < 1 << 10);
+
+    for (with) |path| {
+        const manifest = try published_dir.manifest_of(init, path);
+
+        try modules.append(arena, .{
+            .name = manifest.name,
+            .path = path,
+        });
+    }
+
+    try modules.appendSlice(arena, site.modules);
+
+    return modules.items;
+}
+
 /// The plugin built into `built`, checked, its examples run; false, having said why, when
-/// it does not build. A build to be installed also gets its types beside its views.
-pub fn built_module(init: std.process.Init, request: Request, built: []const u8) !bool {
+/// it does not build. It builds against the published interfaces of the plugins `site`
+/// has, and those of `request.with` over them; its examples run beside the modules of both.
+/// A build to be installed also gets its types beside its views.
+pub fn built_module(
+    init: std.process.Init,
+    request: Request,
+    built: []const u8,
+    site: Site,
+) !bool {
     std.debug.assert(request.name.len > 0);
     std.debug.assert(built.len > 0);
 
@@ -89,10 +193,23 @@ pub fn built_module(init: std.process.Init, request: Request, built: []const u8)
         return false;
     };
 
+    const interfaces = published_dir.with_packages(init, site.interfaces, request.with) catch {
+        return false;
+    };
+
+    if (published_dir.missing(files, request.name, interfaces)) |name| {
+        report.err("publr plugin build: {s} imports {s}, which this site doesn't have: " ++
+            "install {s} first, or pass --with <{s}.wasm>", .{ request.name, name, name, name });
+        return false;
+    }
+
+    const modules = try published_dir.write(init, built, request.name, interfaces);
+
     if (try compile(init, tools, request, .{
         .out = built,
         .docs = docs_path,
         .views = views,
+        .published = modules,
     }) != 0) {
         return false;
     }
@@ -108,7 +225,9 @@ pub fn built_module(init: std.process.Init, request: Request, built: []const u8)
     }
 
     // Every `Example:` runs against an empty site with the plugin before it reaches this one.
-    if (!try @import("plugin_build/examples.zig").run(init, built, manifest)) {
+    const beside = try modules_of(init, request.with, site);
+
+    if (!try examples.run(init, built, manifest, beside)) {
         return false;
     }
 
@@ -120,13 +239,15 @@ pub fn built_module(init: std.process.Init, request: Request, built: []const u8)
 }
 
 /// `--name <name>`, `--dir <folder>` (default `plugins/<name>`), whose `main.zig`
-/// is the plugin, and `--out <file>` to only build it.
+/// is the plugin, `--out <file>` to only build it, and `--with <file.wasm>`, again for each,
+/// a built plugin to build against.
 pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
     std.debug.assert(args.len < 1 << 16);
 
     var name: ?[]const u8 = null;
     var dir: ?[]const u8 = null;
     var out: ?[]const u8 = null;
+    var with: std.ArrayList([]const u8) = .empty;
     var index: u32 = 0;
 
     while (index + 1 < args.len) : (index += 2) {
@@ -136,6 +257,8 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
             dir = args[index + 1];
         } else if (std.mem.eql(u8, args[index], "--out")) {
             out = args[index + 1];
+        } else if (std.mem.eql(u8, args[index], "--with")) {
+            with.append(arena, args[index + 1]) catch return null;
         } else {
             return null;
         }
@@ -155,6 +278,7 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
         .name = name.?,
         .dir = folder,
         .out = out,
+        .with = with.items,
     };
 }
 
@@ -166,6 +290,8 @@ const Paths = struct {
     docs: []const u8,
     /// The plugin's lowered views (`views.zig`), when it has any.
     views: ?[]const u8 = null,
+    /// The other plugins' published interfaces, a module each, and their listing.
+    published: published_dir.Modules,
 };
 
 fn compile(
@@ -223,6 +349,7 @@ fn compile_argv(
     try argv.appendSlice(arena, &.{ tools.compiler, "build-exe", "--stack", "262144" });
     try argv.appendSlice(arena, &target);
     try argv.appendSlice(arena, &.{ "--dep", "publr", "--dep", "plugin", "--dep", "plugin_docs" });
+    try argv.appendSlice(arena, &.{ "--dep", "plugin_published" });
     try argv.append(arena, try std.fmt.allocPrint(arena, "-Mroot={s}/guest.zig", .{tools.sdk}));
     try argv.appendSlice(arena, &target);
 
@@ -255,11 +382,16 @@ fn compile_argv(
         try argv.append(arena, module);
     }
 
+    try published_modules(arena, &argv, &target, paths.published);
     try argv.appendSlice(arena, &target);
     try argv.appendSlice(arena, &.{ "--dep", "publr" });
 
     if (has_interface) {
         try argv.appendSlice(arena, &.{ "--dep", request.name });
+    }
+
+    for (paths.published.names) |name| {
+        try argv.appendSlice(arena, &.{ "--dep", name });
     }
 
     try argv.append(arena, try std.fmt.allocPrint(arena, "-Mplugin={s}/main.zig", .{request.dir}));
@@ -287,6 +419,39 @@ fn compile_argv(
     try argv.append(arena, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{out_path}));
 
     return argv.items;
+}
+
+/// Each other plugin's published interface as a module under its name, and their listing
+/// (`plugin_published`) the root checks the plugin's dimension options against.
+fn published_modules(
+    arena: std.mem.Allocator,
+    argv: *std.ArrayList([]const u8),
+    target: []const []const u8,
+    modules: published_dir.Modules,
+) !void {
+    std.debug.assert(target.len > 0);
+    std.debug.assert(modules.dir.len > 0);
+
+    for (modules.names) |name| {
+        try argv.appendSlice(arena, target);
+        try argv.appendSlice(arena, &.{ "--dep", "publr" });
+        try argv.append(arena, try std.fmt.allocPrint(arena, "-M{s}={s}/{s}.zig", .{
+            name,
+            modules.dir,
+            name,
+        }));
+    }
+
+    try argv.appendSlice(arena, target);
+    try argv.appendSlice(arena, &.{ "--dep", "publr" });
+
+    for (modules.names) |name| {
+        try argv.appendSlice(arena, &.{ "--dep", name });
+    }
+
+    const listing = try std.fmt.allocPrint(arena, "-Mplugin_published={s}/all.zig", .{modules.dir});
+
+    try argv.append(arena, listing);
 }
 
 /// A plugin's views as modules: its own (`plugin_views`), the real props of what the host

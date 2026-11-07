@@ -16,12 +16,13 @@ pub const name_len_max: u32 = 64;
 
 /// Whether a contract's providers bring a UI of their own, drawn in a slot the owner leaves
 /// for the chosen provider.
-pub const Component = enum { none, optional, required };
+pub const Component = published_model.Component;
 
 pub const Part = registered_model.Part;
 pub const Registered = registered_model.Registered;
 
 const registered_model = @import("../model/provider.zig");
+const published_model = @import("../model/published.zig");
 
 /// `publr.contract.define(.{ .name = "messaging", .operations = .{ .send = Send },
 /// .optional = .{ .receipt = Receipt }, .component = .optional })`.
@@ -48,13 +49,13 @@ pub fn define(comptime options: anytype) type {
         }
 
         const optional = if (@hasField(Options, "optional")) options.optional else .{};
-        const parts = std.meta.fieldNames(@TypeOf(options.operations));
+        const required_parts = std.meta.fieldNames(@TypeOf(options.operations));
 
-        if (parts.len == 0) {
+        if (required_parts.len == 0) {
             @compileError("contract " ++ name ++ ": `.operations` names at least one part");
         }
 
-        for (parts ++ std.meta.fieldNames(@TypeOf(optional))) |part| {
+        for (required_parts ++ std.meta.fieldNames(@TypeOf(optional))) |part| {
             const Shape = part_type(options.operations, optional, part).?;
 
             if (!@hasDecl(Shape, "In") or !@hasDecl(Shape, "Out")) {
@@ -66,12 +67,16 @@ pub fn define(comptime options: anytype) type {
         return struct {
             pub const publr_contract_definition = true;
             pub const contract_name = name;
+            /// Defined here, in Zig: its owner calls it with these types.
+            pub const owner: []const u8 = "";
             pub const operations = options.operations;
             pub const optional_parts = optional;
             pub const component: Component = if (@hasField(Options, "component"))
                 options.component
             else
                 .none;
+            /// Each part with its shapes as data, as a published interface carries them.
+            pub const parts = parts_of(options.operations, optional);
 
             /// The part's `In` and `Out`, required or optional.
             pub fn Shape(comptime part: []const u8) type {
@@ -83,6 +88,136 @@ pub fn define(comptime options: anytype) type {
                 return @hasField(@TypeOf(operations), part);
             }
         };
+    }
+}
+
+fn parts_of(comptime operations: anytype, comptime optional: anytype) []const PublishedPart {
+    comptime {
+        var list: []const PublishedPart = &.{};
+
+        for (std.meta.fieldNames(@TypeOf(operations))) |part| {
+            list = list ++ &[_]PublishedPart{part_of(@field(operations, part), part, true)};
+        }
+
+        for (std.meta.fieldNames(@TypeOf(optional))) |part| {
+            list = list ++ &[_]PublishedPart{part_of(@field(optional, part), part, false)};
+        }
+
+        if (list.len > published_model.parts_max) {
+            @compileError("a contract has at most 16 parts");
+        }
+
+        const done = list;
+
+        return done;
+    }
+}
+
+fn part_of(comptime Shape: type, comptime name: []const u8, comptime required: bool) PublishedPart {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        return .{
+            .name = name,
+            .required = required,
+            .input = shapes.describe(Shape.In),
+            .output = shapes.describe(Shape.Out),
+        };
+    }
+}
+
+pub const PublishedPart = published_model.Part;
+
+/// Another plugin's contract as its published interface describes it: `payments.method`,
+/// owned by `payments`. Only provided, never called (its owner calls it): a provider's
+/// operations are checked against its parts' shapes as they are checked against a defined
+/// contract's types.
+pub fn published(comptime owner_name: []const u8, comptime data: published_model.Contract) type {
+    comptime {
+        std.debug.assert(owner_name.len > 0);
+        std.debug.assert(data.name.len > 0);
+
+        return struct {
+            pub const publr_contract_definition = true;
+            pub const contract_name = data.name;
+            pub const owner = owner_name;
+            pub const component: Component = data.component;
+            pub const parts = data.parts;
+
+            pub fn Shape(comptime part: []const u8) type {
+                @compileError("contract " ++ data.name ++ " is " ++ owner_name ++ "'s: its " ++
+                    "providers answer `" ++ part ++ "`; only " ++ owner_name ++ " calls it");
+            }
+
+            pub fn required(comptime part: []const u8) bool {
+                const found = comptime published_part(parts, part) orelse
+                    @compileError("contract " ++ data.name ++ " has no part `" ++ part ++ "`");
+
+                return found.required;
+            }
+        };
+    }
+}
+
+fn published_part(comptime parts: []const PublishedPart, comptime name: []const u8) ?PublishedPart {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        for (parts) |part| {
+            if (std.mem.eql(u8, part.name, name)) {
+                return part;
+            }
+        }
+
+        return null;
+    }
+}
+
+/// The contracts a plugin owns (`.contracts`), as its published interface carries them:
+/// each defined with `publr.contract.define`, named under the plugin (`payments.method`).
+pub fn owned_of(comptime Plugin: type) []const published_model.Contract {
+    comptime {
+        const plugin = Plugin.manifest.name;
+        var list: []const published_model.Contract = &.{};
+
+        std.debug.assert(plugin.len > 0);
+
+        if (!@hasField(@TypeOf(Plugin.options), "contracts")) {
+            return list;
+        }
+
+        for (Plugin.options.contracts) |Contract| {
+            if (!is_contract(Contract) or Contract.owner.len > 0) {
+                @compileError("plugin " ++ plugin ++ ": `.contracts` lists its own " ++
+                    "`publr.contract.define`s");
+            }
+
+            if (!published_model.owned_by(Contract.contract_name, plugin)) {
+                @compileError("plugin " ++ plugin ++ ": contract `" ++ Contract.contract_name ++
+                    "` is named under the plugin: `" ++ plugin ++ ".<name>`");
+            }
+
+            for (list) |before| {
+                if (std.mem.eql(u8, before.name, Contract.contract_name)) {
+                    @compileError("plugin " ++ plugin ++ ": `.contracts` lists " ++
+                        Contract.contract_name ++ " twice");
+                }
+            }
+
+            list = list ++ &[_]published_model.Contract{.{
+                .name = Contract.contract_name,
+                .parts = Contract.parts,
+                .component = Contract.component,
+            }};
+        }
+
+        if (list.len > published_model.contracts_max) {
+            @compileError("plugin " ++ plugin ++ ": `.contracts` lists at most 16");
+        }
+
+        const done = list;
+
+        return done;
     }
 }
 
@@ -165,16 +300,23 @@ fn checked(comptime Plugin: type, comptime given: anytype) Registered {
             @compileError(label ++ ": `.name` is [a-z][a-z0-9_]*, at most 32 characters");
         }
 
-        for (std.meta.fieldNames(@TypeOf(Contract.operations))) |part| {
-            if (!@hasField(@TypeOf(given.operations), part)) {
-                @compileError(label ++ ": the part `" ++ part ++ "` is required");
+        const foreign = Contract.owner.len > 0 and !std.mem.eql(u8, Contract.owner, plugin);
+
+        if (foreign and !listed_dependency(Plugin, Contract.owner)) {
+            @compileError(label ++ ": " ++ Contract.owner ++ " owns the contract; name it in " ++
+                "`depends_on` or `compatible_with`");
+        }
+
+        for (Contract.parts) |part| {
+            if (part.required and !@hasField(@TypeOf(given.operations), part.name)) {
+                @compileError(label ++ ": the part `" ++ part.name ++ "` is required");
             }
         }
 
         var parts: []const Part = &.{};
 
         for (std.meta.fieldNames(@TypeOf(given.operations))) |part| {
-            const Shape = part_type(Contract.operations, Contract.optional_parts, part) orelse
+            const Shape = published_part(Contract.parts, part) orelse
                 @compileError(label ++ ": the contract has no part `" ++ part ++ "`");
             const Operation = own_operation(Plugin, @field(given.operations, part)) orelse
                 @compileError(label ++ ": `" ++ part ++ "` is one of the plugin's own " ++
@@ -223,14 +365,26 @@ fn own_operation(comptime Plugin: type, comptime Given: type) ?type {
     }
 }
 
+/// Whether the plugin names `owner` in `depends_on` or `compatible_with`.
+fn listed_dependency(comptime Plugin: type, comptime owner: []const u8) bool {
+    comptime {
+        const depends_on = @import("plugin/depends_on.zig");
+
+        std.debug.assert(owner.len > 0);
+
+        return depends_on.names(plugin_define.get(Plugin, "depends_on"), owner) or
+            depends_on.names(plugin_define.get(Plugin, "compatible_with"), owner);
+    }
+}
+
 /// The provider accepts everything the contract sends and gives everything it reads.
-fn fits(comptime label: []const u8, comptime Shape: type, comptime Operation: type) void {
+fn fits(comptime label: []const u8, comptime part: PublishedPart, comptime Operation: type) void {
     comptime {
         @setEvalBranchQuota(200_000);
 
-        const sent = shapes.describe(Shape.In);
+        const sent = part.input;
         const accepted = shapes.describe(Operation.In);
-        const read = shapes.describe(Shape.Out);
+        const read = part.output;
         const given = shapes.describe(Operation.Out);
 
         if (shapes.check_input(sent, accepted)) |problem| {
@@ -306,7 +460,11 @@ pub fn listed(ctx: *sdk.Ctx, contract: []const u8) sdk.Error![]const Listed {
     if (ctx.sandboxed_plugins) |sandboxed| {
         for (sandboxed.manifests()) |manifest| {
             for (manifest.providers) |provider| {
-                if (std.mem.eql(u8, provider.contract, contract)) {
+                // A provider of another plugin's contract that does not fit it as it is now
+                // (or whose owner is not there) is off until it does.
+                const off = sandboxed.remote_off(manifest.name, provider.contract);
+
+                if (!off and std.mem.eql(u8, provider.contract, contract)) {
                     var owned = provider;
 
                     owned.plugin = manifest.name;

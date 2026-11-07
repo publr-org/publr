@@ -911,8 +911,16 @@ pub fn Merged(comptime plugins: anytype) type {
             }
         }
 
-        for (content_types ++ taxonomies ++ custom_fields) |declared| {
-            dimensions.check_wrapped(dimension_list, declared.def.handle, declared.def.fields);
+        var present: []const @import("published.zig").Interface = &.{};
+
+        for (plugins) |Plugin| {
+            present = present ++ &[_]@import("published.zig").Interface{
+                @import("published.zig").of(Plugin),
+            };
+        }
+
+        for (plugins) |Plugin| {
+            @import("published.zig").check(Plugin, present);
         }
 
         return struct {

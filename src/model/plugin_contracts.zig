@@ -6,6 +6,12 @@ const std = @import("std");
 const contract = @import("contract.zig");
 const depends_on = @import("version_range.zig");
 const kinds = @import("kinds.zig");
+const published = @import("published.zig");
+const dimension = @import("dimension.zig");
+const field_model = @import("field.zig");
+const content_type = @import("content_type.zig");
+const Registered = @import("provider.zig").Registered;
+const Operation = @import("sandboxed_plugin.zig").Operation;
 
 pub const findings_max: u32 = 64;
 /// How many fields a remote record lists.
@@ -45,10 +51,15 @@ pub const Provider = struct {
     operations: []const Provided,
     records: []const ProvidedRecord = &.{},
     events: []const ProvidedEvent = &.{},
+    /// Its published interface: the contracts it owns, its dimensions with their options.
+    contracts: []const published.Contract = &.{},
+    dimensions: []const dimension.Declared = &.{},
 };
 
-/// What a remote is: `publr.remote.operation`, `publr.remote.record`, `publr.remote.event`.
-pub const Remote = enum { operation, record, event };
+/// What a remote is: `publr.remote.operation`, `publr.remote.record`, `publr.remote.event`;
+/// or what a plugin builds against another's published interface: a contract it provides,
+/// a dimension option its fields name.
+pub const Remote = enum { operation, record, event, contract, option };
 
 /// The kinds of field a remote record's Zig type can read: text reads any text kind and a
 /// reference's id, an `X.Ref` a reference, a list of text several values.
@@ -88,9 +99,31 @@ pub const User = struct {
     depends_on: []const []const u8,
     compatible_with: []const []const u8,
     remotes: []const Used,
+    /// The providers it registers, each part one of its `operations`.
+    registrations: []const Registered = &.{},
+    operations: []const Operation = &.{},
+    /// Its types, whose fields may name another plugin's dimension options.
+    content_types: []const content_type.Def = &.{},
+    taxonomies: []const content_type.Def = &.{},
+    custom_fields: []const content_type.Def = &.{},
+    /// Its own dimensions, whose options its fields may name.
+    dimensions: []const dimension.Declared = &.{},
 };
 
-pub const Why = enum { absent, out_of_range, missing, no_field, field_kind, misfit };
+/// Why it does not fit; for a contract, `no_part` when the owner has no part the provider
+/// answers, `part_needed` when the provider lacks one the owner requires; for an option,
+/// `no_value` when the owner's option takes no value the field names.
+pub const Why = enum {
+    absent,
+    out_of_range,
+    missing,
+    no_field,
+    field_kind,
+    misfit,
+    no_part,
+    part_needed,
+    no_value,
+};
 
 /// A remote that does not fit: which, its plugin as it is (`version` empty when absent),
 /// whether the user needs it, and why. A misfit says where (`problem`, in `nodes`); a
@@ -108,6 +141,8 @@ pub const Finding = struct {
     holds: Holds = .any,
     problem: ?contract.Problem = null,
     nodes: []const contract.Node = &.{},
+    /// A contract's part, or the value an option's field names.
+    part: []const u8 = "",
 };
 
 /// The user's remotes that do not fit the providers, into `out`; how many. A plugin that is
@@ -129,7 +164,268 @@ pub fn check(user: User, providers: []const Provider, out: []Finding) u32 {
         }
     }
 
+    for (user.registrations) |registered| {
+        if (count == out.len) {
+            break;
+        }
+
+        if (provided_finding(user, registered, providers)) |found| {
+            out[count] = found;
+            count += 1;
+        }
+    }
+
+    const types = [_][]const content_type.Def{
+        user.content_types,
+        user.taxonomies,
+        user.custom_fields,
+    };
+
+    for (types) |defs| {
+        for (defs) |def| {
+            count += options_findings(user, def.fields, providers, out[count..]);
+        }
+    }
+
     return count;
+}
+
+/// The plugin `name` sits under that the user names, with the range it gives and whether
+/// it needs it; null when it names none (a contract of core's, or its own).
+const Named = struct {
+    plugin: []const u8,
+    range: []const u8,
+    required: bool,
+};
+
+fn owner_named(user: User, name: []const u8) ?Named {
+    std.debug.assert(name.len > 0);
+
+    for ([_][]const []const u8{ user.depends_on, user.compatible_with }, 0..) |list, index| {
+        for (list) |text| {
+            if (text.len == 0) {
+                continue;
+            }
+
+            const wanted = depends_on.parse(text);
+
+            if (published.owned_by(name, wanted.name)) {
+                return .{
+                    .plugin = wanted.name,
+                    .range = wanted.range,
+                    .required = index == 0,
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+/// A provider the user registers into another plugin's contract, against that contract as
+/// its owner publishes it now: there, in range, every part it requires given, every part
+/// given one it has, each taking what the owner sends and answering what it reads.
+fn provided_finding(user: User, registered: Registered, providers: []const Provider) ?Finding {
+    std.debug.assert(registered.contract.len > 0);
+    std.debug.assert(user.plugin.len > 0);
+
+    const named = owner_named(user, registered.contract) orelse return null;
+    var base: Finding = .{
+        .name = registered.contract,
+        .kind = .contract,
+        .plugin = named.plugin,
+        .range = named.range,
+        .required = named.required,
+        .why = .absent,
+    };
+    const owner = find(providers, named.plugin) orelse return base;
+
+    base.version = owner.version;
+
+    if (!depends_on.satisfies(owner.version, named.range)) {
+        base.why = .out_of_range;
+        return base;
+    }
+
+    base.why = .missing;
+
+    const owned = owned_contract(owner, registered.contract) orelse return base;
+
+    for (owned.parts) |part| {
+        if (part.required and registered.operation_of(part.name) == null) {
+            base.why = .part_needed;
+            base.part = part.name;
+            return base;
+        }
+    }
+
+    for (registered.parts) |given| {
+        base.part = given.part;
+
+        const part = owned.part(given.part) orelse {
+            base.why = .no_part;
+            return base;
+        };
+        const operation = for (user.operations) |each| {
+            if (std.mem.eql(u8, each.name, given.operation)) {
+                break each;
+            }
+        } else continue;
+
+        base.why = .misfit;
+
+        if (contract.check_input(part.input, operation.input)) |problem| {
+            base.problem = problem;
+            base.nodes = if (problem.on_user_side) part.input else operation.input;
+            return base;
+        }
+
+        if (contract.check_output(part.output, operation.output)) |problem| {
+            base.problem = problem;
+            base.nodes = if (problem.on_user_side) part.output else operation.output;
+            return base;
+        }
+    }
+
+    return null;
+}
+
+fn owned_contract(owner: Provider, name: []const u8) ?published.Contract {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(owner.contracts.len <= published.contracts_max);
+
+    for (owner.contracts) |each| {
+        if (std.mem.eql(u8, each.name, name)) {
+            return each;
+        }
+    }
+
+    return null;
+}
+
+/// Each dimension option the fields name, against the plugin offering it among those the
+/// user names: a value it does not take, or, when every one it names is there, an option
+/// none offers. Into `out`; how many.
+fn options_findings(
+    user: User,
+    fields: []const field_model.Def,
+    providers: []const Provider,
+    out: []Finding,
+) u32 {
+    std.debug.assert(user.plugin.len > 0);
+    std.debug.assert(fields.len <= field_model.fields_max);
+
+    var count: u32 = 0;
+
+    for (fields) |field| {
+        if (count == out.len) {
+            break;
+        }
+
+        count += options_findings(user, field.fields, providers, out[count..]);
+
+        for (field.wrapped) |wrapped| {
+            if (count == out.len) {
+                break;
+            }
+
+            if (option_finding(user, field.name, wrapped, providers)) |found| {
+                out[count] = found;
+                count += 1;
+            }
+        }
+    }
+
+    return count;
+}
+
+fn option_finding(
+    user: User,
+    field: []const u8,
+    wrapped: field_model.Wrapped,
+    providers: []const Provider,
+) ?Finding {
+    std.debug.assert(wrapped.option.len > 0);
+    std.debug.assert(field.len > 0);
+
+    var first: ?Named = null;
+    var complete = true;
+
+    for ([_][]const []const u8{ user.depends_on, user.compatible_with }, 0..) |list, index| {
+        for (list) |text| {
+            if (text.len == 0) {
+                continue;
+            }
+
+            const wanted = depends_on.parse(text);
+            const named: Named = .{
+                .plugin = wanted.name,
+                .range = wanted.range,
+                .required = index == 0,
+            };
+            const owner = find(providers, wanted.name) orelse {
+                complete = false;
+                continue;
+            };
+
+            first = first orelse named;
+
+            for (owner.dimensions) |declared| {
+                if (!std.mem.eql(u8, declared.field.name, wrapped.option)) {
+                    continue;
+                }
+
+                if (dimension.holds_named(declared.field, wrapped.value) != null) {
+                    return null;
+                }
+
+                return .{
+                    .name = wrapped.option,
+                    .kind = .option,
+                    .plugin = named.plugin,
+                    .version = owner.version,
+                    .range = named.range,
+                    .required = named.required,
+                    .why = .no_value,
+                    .field = field,
+                    .part = wrapped.value,
+                };
+            }
+        }
+    }
+
+    // Its own option, or one a plugin not there may offer.
+    const named = first orelse return null;
+
+    if (!complete or own_option(user, wrapped.option)) {
+        return null;
+    }
+
+    const owner = find(providers, named.plugin) orelse return null;
+
+    return .{
+        .name = wrapped.option,
+        .kind = .option,
+        .plugin = named.plugin,
+        .version = owner.version,
+        .range = named.range,
+        .required = named.required,
+        .why = .missing,
+        .field = field,
+    };
+}
+
+fn own_option(user: User, option: []const u8) bool {
+    std.debug.assert(option.len > 0);
+    std.debug.assert(user.dimensions.len <= dimension.dimensions_max);
+
+    for (user.dimensions) |declared| {
+        if (std.mem.eql(u8, declared.field.name, option)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Whether the user's remote `name` is on: it fits, or it is no remote of the user's
@@ -190,6 +486,8 @@ fn finding_of(user: User, used: Used, providers: []const Provider) ?Finding {
         .operation => operation_finding(base, used, provider),
         .record => record_finding(base, used, provider),
         .event => event_finding(base, used, provider),
+        // Never a remote's: what a plugin provides or names is checked on its own.
+        .contract, .option => null,
     };
 }
 
@@ -422,11 +720,14 @@ pub fn describe(finding: Finding, buffer: []u8) []const u8 {
     const version = finding.version;
     const where = if (path.len > 0) path else "its shape";
     const failed = finding.problem;
+    const part_said: []const u8 = if (finding.part.len > 0) ", part " else "";
     const reason = if (failed) |found| contract.reason_text(found.reason) else "differs";
     const what = switch (finding.kind) {
         .operation => "operation",
         .record => "record type",
         .event => "event",
+        .contract => "contract",
+        .option => "dimension option",
     };
     const text = switch (finding.why) {
         .absent => std.fmt.bufPrint(buffer, "{s} isn't installed or enabled", .{plugin}),
@@ -455,12 +756,33 @@ pub fn describe(finding: Finding, buffer: []u8) []const u8 {
             finding.field_kind,
             holds_text(finding.holds),
         }),
-        .misfit => std.fmt.bufPrint(buffer, "{s} {s}: {s} {s} {s}", .{
+        .misfit => std.fmt.bufPrint(buffer, "{s} {s}: {s}{s}{s} {s} {s}", .{
             plugin,
             version,
             finding.name,
+            part_said,
+            finding.part,
             where,
             reason,
+        }),
+        .no_part => std.fmt.bufPrint(buffer, "{s} {s}: {s} has no part {s}", .{
+            plugin,
+            version,
+            finding.name,
+            finding.part,
+        }),
+        .part_needed => std.fmt.bufPrint(buffer, "{s} {s}: {s} needs the part {s}", .{
+            plugin,
+            version,
+            finding.name,
+            finding.part,
+        }),
+        .no_value => std.fmt.bufPrint(buffer, "{s} {s}: .{s} takes no {s} (field {s})", .{
+            plugin,
+            version,
+            finding.name,
+            finding.part,
+            finding.field,
         }),
     };
 
@@ -733,4 +1055,91 @@ test "contracts: an internal record's fields are checked by kind like a content 
     var fitting: User = user;
     fitting.remotes = &.{reads_text};
     try std.testing.expectEqual(@as(u32, 0), check(fitting, &.{inventory}, &out));
+}
+
+test "contracts: a field's dimension option against the plugin offering it" {
+    const option: dimension.FieldOption = .{
+        .name = "translatable",
+        .label = "Translate",
+        .choices = &.{
+            .{
+                .value = "none",
+                .holds = .one,
+                .title = "No translations",
+            },
+            .{
+                .value = "required",
+                .holds = .required,
+                .title = "Required",
+            },
+        },
+    };
+    const languages: Provider = .{
+        .plugin = "languages",
+        .version = "0.3.0",
+        .operations = &.{},
+        .dimensions = &.{.{
+            .name = "language",
+            .list = "languages.list",
+            .field = option,
+        }},
+    };
+    const naming = struct {
+        fn user(comptime value: []const u8, comptime depends: []const []const u8) User {
+            return .{
+                .plugin = "blog",
+                .depends_on = depends,
+                .compatible_with = &.{},
+                .remotes = &.{},
+                .content_types = &.{.{
+                    .name = "Post",
+                    .handle = "blog.post",
+                    .fields = &.{.{
+                        .name = "title",
+                        .label = "Title",
+                        .kind = "text",
+                        .wrapped = &.{.{
+                            .option = "translatable",
+                            .value = value,
+                        }},
+                    }},
+                }},
+            };
+        }
+    };
+    var found: [4]Finding = undefined;
+    const needs = [_][]const u8{"languages"};
+    const fitting = naming.user("required", &needs);
+
+    try std.testing.expectEqual(@as(u32, 0), check(fitting, &.{languages}, &found));
+
+    // A value the option does not take.
+    const misnamed = naming.user("optional", &needs);
+
+    try std.testing.expectEqual(@as(u32, 1), check(misnamed, &.{languages}, &found));
+    try std.testing.expectEqual(Why.no_value, found[0].why);
+    try std.testing.expect(found[0].required);
+
+    var buffer: [256]u8 = undefined;
+
+    try std.testing.expectEqualStrings(
+        "languages 0.3.0: .translatable takes no optional (field title)",
+        describe(found[0], &buffer),
+    );
+
+    // Every plugin it names is there, and none offers it.
+    const bare: Provider = .{
+        .plugin = "languages",
+        .version = "0.4.0",
+        .operations = &.{},
+    };
+
+    try std.testing.expectEqual(@as(u32, 1), check(fitting, &.{bare}, &found));
+    try std.testing.expectEqualStrings(
+        "languages 0.4.0 has no dimension option translatable",
+        describe(found[0], &buffer),
+    );
+
+    // A plugin it names is not there to say: nothing to find.
+    try std.testing.expectEqual(@as(u32, 0), check(fitting, &.{}, &found));
 }

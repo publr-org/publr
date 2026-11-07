@@ -39,7 +39,28 @@ pub fn run(
 
     const built = try std.fmt.allocPrint(arena, "{s}/{s}.wasm", .{ builds_dir, request.name });
 
-    if (!try plugin_build.built_module(init, request, built)) {
+    const Asker = struct {
+        init: std.process.Init,
+        address: []const u8,
+        production: bool,
+
+        pub fn ask(asker: @This(), words: []const []const u8, into: *std.Io.Writer) !u8 {
+            return forwarding.forward(asker.init, asker.address, words, asker.production, into);
+        }
+    };
+    // Built against the plugins of the site it goes to.
+    const there = try @import("published.zig").asked(arena, Asker{
+        .init = init,
+        .address = address,
+        .production = production,
+    });
+
+    // Its modules stay there: examples needing one of them are left to that site.
+    const has: plugin_build.Site = .{
+        .interfaces = there,
+    };
+
+    if (!try plugin_build.built_module(init, request, built, has)) {
         return 1;
     }
 

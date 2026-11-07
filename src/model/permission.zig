@@ -110,7 +110,7 @@ pub const always = [_][]const u8{
     "internal.create",      "internal.get",              "internal.save",
     "internal.find_one",    "internal.find",             "internal.delete",
     "mod.changed",          "mod.apply",                 "ai.progress",
-    "custom_fields.values", "custom_fields.save_values",
+    "custom_fields.values", "custom_fields.save_values", "provider.list",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
