@@ -160,7 +160,8 @@ fn throw_out(ctx: *Ctx, keys: []const u8) void {
 }
 
 /// An entry gone for good: its row and the files it set aside.
-fn drop(ctx: *Ctx, id: []const u8) Error!bool {
+/// One entry gone for good: its copy, and the files it set aside.
+pub fn drop(ctx: *Ctx, id: []const u8) Error!bool {
     std.debug.assert(id.len > 0);
 
     const scratch = try ctx.scratch();
@@ -352,8 +353,9 @@ pub const List = struct {
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
-        .entries = &.{},
+        .entries = &.{example_shown},
         .keep_days = keep_days_default,
+        .total = 1,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .conversation = "Only what this conversation's agent removed",

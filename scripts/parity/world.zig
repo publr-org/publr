@@ -43,7 +43,7 @@ const tags_definition =
 /// who can sign in; an invited account holding the documented token; the `post` and `page`
 /// types; the issuer `sign_on` trusts; a live record that anyone may read and that has a
 /// revision behind it, a second live record with edits parked in `pending`, and a draft
-/// still waiting to be published.
+/// still waiting to be published, and a live record with a change scheduled on it.
 pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.db.transaction_depth == 0);
@@ -112,6 +112,10 @@ pub fn upload_plugins(io: std.Io, dir: []const u8) !void {
             .name = "world-farewell.wasm",
             .bytes = @embedFile("sandboxed_plugin_farewell"),
         },
+        .{
+            .name = "world-shelf.wasm",
+            .bytes = @embedFile("sandboxed_plugin_shelf"),
+        },
     };
 
     for (files) |file| {
@@ -128,7 +132,8 @@ pub fn upload_plugins(io: std.Io, dir: []const u8) !void {
 }
 
 /// `greeter` enabled, updated to 0.2.0 and rolled back, with 0.2.0 offered again; `farewell`
-/// added and disabled. Adding from a path is the local operator's.
+/// added and disabled; `shelf` uninstalled with one item, its item type in the trash, for
+/// `plugin erase_data` and `restore_data`. Adding from a path is the local operator's.
 fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
     std.debug.assert(ctx.caller == .user);
     std.debug.assert(ctx.sandboxed_plugins != null);
@@ -148,7 +153,21 @@ fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
     _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
         .file = try path_in(ctx, dir, "world-farewell.wasm"),
     });
+    _ = try SDK.dispatch(ctx, plugin_operations.Add, .{
+        .file = try path_in(ctx, dir, "world-shelf.wasm"),
+    });
     ctx.caller = admin;
+    _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{
+        .names = &.{"shelf"},
+    });
+    _ = try SDK.dispatch(ctx, records.Create, .{
+        .type = "shelf.item",
+        .document = "{\"title\":\"Mug\"}",
+    });
+    _ = try SDK.dispatch(ctx, plugin_operations.Remove, .{
+        .name = "shelf",
+        .trash = &.{"type:shelf.item"},
+    });
     _ = try SDK.dispatch(ctx, plugin_operations.Enable, .{
         .names = &.{"greeter"},
     });
@@ -519,6 +538,30 @@ fn fill_records(ctx: *Ctx) Error!void {
     // A contributor's publish waiting on the draft, for `record decline_request`.
     try store.records.ask(ctx.db, records.example_draft_id, "publish", null);
 
+    // Live with edits, their publish scheduled (entry 1) and a draft kept on that change: for
+    // `record unschedule`, `run_scheduled`, `reschedule`, `save_version`,
+    // `save_into_scheduled` and `publish_version`.
+    try record_with_id(ctx, records.example_scheduled_id);
+    _ = try SDK.dispatch(ctx, records.Publish, .{
+        .id = records.example_scheduled_id,
+    });
+    _ = try SDK.dispatch(ctx, records.Save, .{
+        .id = records.example_scheduled_id,
+        .document = edited_document,
+    });
+
+    const scheduled = try SDK.dispatch(ctx, records.TransitionAt, .{
+        .id = records.example_scheduled_id,
+        .transition = "publish",
+        .at = scheduled_at,
+    });
+
+    _ = try SDK.dispatch(ctx, records.SaveVersion, .{
+        .id = records.example_scheduled_id,
+        .version = scheduled.entry,
+        .document = scheduled_draft,
+    });
+
     const referring = try SDK.dispatch(ctx, records.Create, .{
         .type = "post",
         .document = referring_document,
@@ -528,6 +571,11 @@ fn fill_records(ctx: *Ctx) Error!void {
         .id = referring.id,
     });
 }
+
+/// When the scheduled record's change goes live: far enough ahead that the queue never runs it.
+const scheduled_at: i64 = 4_102_444_800_000;
+/// The draft kept on that change.
+const scheduled_draft = "{\"title\":\"Hello, later\",\"body\":\"<p>Edited again.</p>\"}";
 
 /// Create a post and give it the id the examples name, so `--id a1b2...` resolves.
 fn record_with_id(ctx: *Ctx, id: []const u8) Error!void {

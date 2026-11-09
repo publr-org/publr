@@ -139,7 +139,9 @@ CREATE TABLE IF NOT EXISTS records (
     app        TEXT,
     trashed_from TEXT NOT NULL DEFAULT '',
     requested  TEXT NOT NULL DEFAULT '',
-    requested_by TEXT
+    requested_by TEXT,
+    held_back  TEXT NOT NULL DEFAULT '',
+    pending_held_back TEXT
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS records_list ON records(type_id, status, updated_at);
@@ -201,7 +203,9 @@ CREATE TABLE IF NOT EXISTS terms (
     app        TEXT,
     trashed_from TEXT NOT NULL DEFAULT '',
     requested  TEXT NOT NULL DEFAULT '',
-    requested_by TEXT
+    requested_by TEXT,
+    held_back  TEXT NOT NULL DEFAULT '',
+    pending_held_back TEXT
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS terms_list ON terms(type_id, status, updated_at);
@@ -514,8 +518,7 @@ CREATE TABLE IF NOT EXISTS sandboxed_plugins (
     previous_hash     TEXT,
     previous_manifest TEXT,
     installed_at      INTEGER NOT NULL,
-    updated_at        INTEGER NOT NULL,
-    remove_data       TEXT NOT NULL DEFAULT '[]'
+    updated_at        INTEGER NOT NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS activity (
@@ -606,16 +609,27 @@ CREATE TABLE IF NOT EXISTS job_due (
     PRIMARY KEY (plugin, name, record)
 ) STRICT;
 
--- A status transition a person scheduled for a record (`publish` on 5 Nov at 9:00): one per
--- record, made by the worker once `due_at` comes, as `scheduled_by` with their rights then.
-CREATE TABLE IF NOT EXISTS scheduled_transitions (
-    record_id    TEXT PRIMARY KEY,
+-- What people scheduled for a record: any number, each a transition (`publish` on 5 Nov at
+-- 9:00) or, for a live record, its changes published: the fields it changed (`changes`, a JSON
+-- object) and what it holds back then, each on a base (`base_id`: another one it builds on,
+-- null for what is live). Made by the worker once `due_at` comes, as `scheduled_by` with their
+-- rights then; one refused stays `failed`, with why. A `draft` is edits made on top of one
+-- (its `base_id`), not scheduled yet.
+CREATE TABLE IF NOT EXISTS scheduled_changes (
+    id           INTEGER PRIMARY KEY,
+    record_id    TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
     transition   TEXT NOT NULL,
+    changes      TEXT NOT NULL DEFAULT '',
+    held_back    TEXT,
+    base_id      INTEGER,
     due_at       INTEGER NOT NULL,
     scheduled_by TEXT NOT NULL,
-    scheduled_at INTEGER NOT NULL
+    scheduled_at INTEGER NOT NULL,
+    state        TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'failed', 'draft')),
+    problem      TEXT NOT NULL DEFAULT ''
 ) STRICT;
-CREATE INDEX IF NOT EXISTS scheduled_transitions_due ON scheduled_transitions (due_at);
+CREATE INDEX IF NOT EXISTS scheduled_changes_due ON scheduled_changes (state, due_at);
+CREATE INDEX IF NOT EXISTS scheduled_changes_record ON scheduled_changes (record_id, due_at);
 
 -- What other servers sent to plugins' webhooks (`/_webhooks/<plugin>.<name>`): each delivery,
 -- whether its signature held, its body, and how its queued run ended. A verified delivery's

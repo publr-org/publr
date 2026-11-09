@@ -126,7 +126,7 @@ fn invoke_shaped(
     std.debug.assert(input.len > 0);
     std.debug.assert(entry < loaded.manifest.operations.len + loaded.manifest.hooks.len +
         loaded.manifest.jobs.len + loaded.manifest.location_rules.len * 2 +
-        loaded.manifest.field_kinds.len * 3);
+        loaded.manifest.field_kinds.len * 3 + loaded.manifest.dimensions.len);
 
     const envelope = try envelope_of(ctx, input, shape);
     const saved = ctx.caller;

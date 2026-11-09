@@ -192,3 +192,59 @@ test "remotes: absent is unavailable, fitting works, an update switches off what
         blocked.blocked[0],
     );
 }
+
+test "published interfaces: a provider of another plugin's contract, checked as its owner updates" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    // parcel_post was built against parcels' published interface, without its code.
+    _ = try put(&scenario, "parcels.wasm", @embedFile("sandboxed_plugin_parcels"));
+    try enable(&scenario, "parcels");
+    _ = try put(&scenario, "parcel-post.wasm", @embedFile("sandboxed_plugin_parcel_post"));
+    try enable(&scenario, "parcel_post");
+
+    const carriers = "parcels.carriers";
+
+    const listed = try scenario.call(admin, carriers, "{}");
+
+    try std.testing.expect(std.mem.indexOf(u8, listed, "parcel_post") != null);
+    try std.testing.expectEqual(@as(usize, 0), (try detail(&scenario, "parcel_post")).blocked.len);
+
+    // parcels 0.2.0 requires a part parcel_post does not answer: the update is stopped.
+    _ = try put(&scenario, "parcels-next.wasm", @embedFile("sandboxed_plugin_parcels_next"));
+
+    const reviewed = (try detail(&scenario, "parcels")).update.?;
+
+    try std.testing.expectEqual(@as(usize, 1), reviewed.stops.len);
+    try std.testing.expectEqualStrings(
+        "parcel_post: parcels 0.2.0: parcels.carrier needs the part label",
+        reviewed.stops[0],
+    );
+
+    var updating = scenario.ctx(.system);
+    const stopped = registry.SDK.dispatch(&updating, plugin_operations.Update, .{
+        .name = "parcels",
+    });
+
+    try std.testing.expectError(error.Failed, stopped);
+
+    // Without the provider, parcels updates; the provider can't be enabled again, and says why.
+    var stopping = scenario.ctx(.system);
+    _ = try registry.SDK.dispatch(&stopping, plugin_operations.Disable, .{
+        .names = &.{"parcel_post"},
+    });
+    updating = scenario.ctx(.system);
+    _ = try registry.SDK.dispatch(&updating, plugin_operations.Update, .{
+        .name = "parcels",
+    });
+
+    const none = try scenario.call(admin, carriers, "{}");
+
+    try std.testing.expect(std.mem.indexOf(u8, none, "parcel_post") == null);
+    try std.testing.expectError(error.Failed, enable(&scenario, "parcel_post"));
+    try std.testing.expectEqualStrings(
+        "parcels 0.2.0: parcels.carrier needs the part label",
+        (try detail(&scenario, "parcel_post")).blocked[0],
+    );
+}

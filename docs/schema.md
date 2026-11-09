@@ -473,7 +473,7 @@ back and drops the entry.
 | Column | Type | Meaning |
 |---|---|---|
 | `id` | text | Its id |
-| `kind` | text | `content_type`, `taxonomy`, `field_group`, `plugin`, `media`, `user`, `secret` or `app_file` |
+| `kind` | text | `content_type`, `taxonomy`, `field_group`, `plugin`, `plugin_data` (one piece of an uninstalled plugin's data, keyed `<plugin>/<piece>`), `media`, `user`, `secret` or `app_file` |
 | `key` | text | What it was: the definition's id, the group's handle, the plugin's name |
 | `label` | text | In words ("Content type Recipe, and its 12 records") |
 | `removed_by` | text | The person who removed it, or whose agent did; empty for the operator |
@@ -645,7 +645,6 @@ project reads this table again. See [Plugins](plugins.md#installed-plugins-dlp).
 | `next_version`, `next_hash`, `next_manifest` | text, nullable | A newer module uploaded for it, waiting to be applied |
 | `previous_version`, `previous_hash`, `previous_manifest` | text, nullable | The version the last update replaced |
 | `installed_at`, `updated_at` | integer | Timestamps |
-| `remove_data` | text | What of the plugin's data goes into the trash with it when it is removed: keys of its pieces (`type:<handle>`, `internal:<collection>`, `fields:<group>`), as a JSON array; `[]`, keeping everything, until an administrator chooses |
 
 ## `content_types`
 
@@ -987,13 +986,18 @@ record: the job's `plugin` and `name`, the `record`, and the field's `moment` th
 the record queues the job again only when the field holds another moment, so each value runs
 once per job; an edit moving it takes back the waiting run of the old one. Gone with the record.
 
-## `scheduled_transitions`
+## `scheduled_changes`
 
-A transition someone scheduled for a record (`record.transition_at`): `record_id` (one per
-record), the transition's name (`transition`), when (`due_at`), who scheduled it
-(`scheduled_by`, an account id) and when they did (`scheduled_at`). The server's worker makes
-the transition once `due_at` has come, as that person with their rights then, and removes the
-row. Indexed on `due_at`.
+What someone scheduled for a record (`record.transition_at`), any number per record, each its
+own row (`id`): the record (`record_id`, gone with it), the transition's name (`transition`),
+and for a live record's changes published, the fields they change (`changes`, a JSON object
+of each key and its value, null for one emptied; empty for a plain transition) and what the
+record holds back once they are (`held_back`, null when that does not change); when
+(`due_at`), who scheduled it (`scheduled_by`, an account id) and when they did
+(`scheduled_at`). The server's worker makes it once `due_at` has come, as that person with
+their rights then: the transition, or `record.publish` with the changes, laid over what is
+live then. Made, the row goes; refused, it stays with `state` `failed` and why (`problem`),
+never tried again. Indexed by state and due time, and by record and due time.
 
 ## `webhook_deliveries`
 

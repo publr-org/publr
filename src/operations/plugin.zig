@@ -41,6 +41,7 @@ pub const Request = state.Request;
 pub const Summary = views.Summary;
 pub const Detail = views.Detail;
 pub const contracts = @import("plugin/contracts.zig");
+pub const Interfaces = @import("plugin/published.zig").Interfaces;
 pub const Added = lifecycle.Added;
 
 const detail_of = views.detail_of;
@@ -588,23 +589,24 @@ pub const SetGrant = struct {
 
 pub const Remove = struct {
     pub const name = "plugin.remove";
-    pub const description = "Remove a plugin: off the list, into the trash";
+    pub const description = "Uninstall a plugin: off the list, into the trash";
     pub const details =
         \\Its operations and hooks stop at once; it waits in the trash with its grants and
-        \\versions, and `trash restore` brings it back as it was. Its data stays, except the
-        \\pieces chosen with `plugin choose_removal`: those go into the same trash entry.
-        \\Refused, like `plugin disable`, while an enabled plugin depends on it.
+        \\versions, and `trash restore` brings it back as it was. Its data stays where it is,
+        \\except the pieces named in `trash` (keys from `plugin data`): each goes into the
+        \\trash as an entry of its own, restorable on its own. Erasing data for good is
+        \\`plugin erase_data`, once the plugin is uninstalled. Refused, like `plugin
+        \\disable`, while an enabled plugin depends on it.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         name: []const u8,
+        trash: []const []const u8 = &.{},
     };
     pub const Out = struct {
         removed: []const u8,
         /// Its trash entry: `trash restore --id` brings it back.
         trash: []const u8 = "",
-        /// The content types chosen to go with it, by handle.
-        types_removed: []const []const u8 = &.{},
     };
     pub const example: In = .{
         .name = "greeter",
@@ -615,6 +617,7 @@ pub const Remove = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The plugin's name",
+        .trash = "The keys of the pieces of its data that go to the trash; the rest stay",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -622,60 +625,43 @@ pub const Remove = struct {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
         try dependents.refuse_left_behind(ctx, &.{in.name}, "remove");
+        _ = try state.load(ctx, in.name);
+        try data.put_in_trash(ctx, in.name, in.trash);
 
-        const decoded = try state.load(ctx, in.name);
-        const going = try data.going(ctx, decoded);
         const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{in.name}) catch {
             return error.OutOfMemory;
         };
-        var roots: std.ArrayList(store.trash_copy.Root) = .empty;
-
-        const own: store.trash_copy.Root = .{
+        const own = [_]store.trash_copy.Root{.{
             .table = "sandboxed_plugins",
             .column = "name",
             .keys = key,
-        };
-
-        roots.append(ctx.arena, own) catch return error.OutOfMemory;
-        roots.appendSlice(ctx.arena, try data.roots_of(ctx, in.name, going)) catch
-            return error.OutOfMemory;
-
-        const label = if (going.len == 0)
-            std.fmt.allocPrint(ctx.arena, "Plugin {s}", .{in.name})
-        else
-            std.fmt.allocPrint(ctx.arena, "Plugin {s}, with {s}", .{
-                in.name,
-                try data.summary_of(ctx, going),
-            });
+        }};
         const trash_id = try trash.keep(ctx, .{
             .kind = "plugin",
             .key = in.name,
-            .label = label catch return error.OutOfMemory,
-            .roots = roots.items,
+            .label = std.fmt.allocPrint(ctx.arena, "Plugin {s}", .{in.name}) catch
+                return error.OutOfMemory,
+            .roots = &own,
         });
-
-        const types_removed: []const []const u8 = if (going.len > 0)
-            try data.drop(ctx, in.name, going)
-        else
-            &.{};
 
         try lifecycle.remove(ctx, in.name);
 
         return .{
             .removed = in.name,
             .trash = trash_id,
-            .types_removed = types_removed,
         };
     }
 };
 
 pub const operations = [_]type{
-    List,         Get,          Upload, Add,  Enable,   Disable, Update, Rollback,
-    CancelUpdate, GrantRequest, Revoke, Deny, SetGrant, Remove,  Data,   ChooseRemoval,
+    List,         Get,          Upload,     Add,  Enable,   Disable, Update, Rollback,
+    CancelUpdate, GrantRequest, Revoke,     Deny, SetGrant, Remove,  Data,   EraseData,
+    LeftBehind,   RestoreData,  Interfaces,
 } ++ sources.operations ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
     @import("plugin/log.zig").operations;
 
 pub const Piece = data.Piece;
+pub const Fate = data.Fate;
 
 const example_pieces = [_]Piece{
     .{
@@ -683,26 +669,26 @@ const example_pieces = [_]Piece{
         .kind = .type,
         .label = "Course",
         .count = 12,
-        .chosen = true,
     },
     .{
         .key = "internal:enrolments",
         .kind = .internal,
         .label = "enrolments",
         .count = 340,
-        .chosen = false,
+        .trash = "0190a1b2c3d40001a1b2c3d4",
     },
 };
 
 pub const Data = struct {
     pub const name = "plugin.data";
-    pub const description = "What data a plugin manages, and which of it goes when it is removed";
+    pub const description = "What data a plugin has: kept where it is, or in the trash";
     pub const details =
-        \\Read from the database: the content types it owns (with their records), the
-        \\collections of internal records it keeps, the custom field groups it declared. Each
-        \\a piece with a key; `chosen` ones go into the trash with the plugin when it is
-        \\removed (`plugin choose_removal`), the rest stay. None is chosen until an
-        \\administrator chooses.
+        \\Read from the database by owner, so an uninstalled plugin's data is listed too: the
+        \\content types it owns (with their records), its taxonomies, the collections of
+        \\internal records it keeps, its custom field groups and roles. Each a piece with a
+        \\key; a piece in the trash names its entry (`trash`), which `trash restore` brings
+        \\back. Uninstalling decides each piece (`plugin remove --trash`); `plugin
+        \\erase_data` erases pieces for good.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -723,53 +709,178 @@ pub const Data = struct {
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
-        std.debug.assert(in.name.len <= 64 << 10);
 
-        const decoded = try native.load(ctx, in.name);
+        if (in.name.len == 0 or in.name.len > 64) {
+            return error.Invalid;
+        }
 
         return .{
-            .pieces = try data.pieces_of(ctx, decoded),
+            .pieces = try data.pieces_of(ctx, in.name),
         };
     }
 };
 
-pub const ChooseRemoval = struct {
-    pub const name = "plugin.choose_removal";
-    pub const description = "Choose which of a plugin's data goes with it when it is removed";
+const still_installed: sdk.operation.Failure = .{
+    .name = "Installed",
+    .status = 409,
+    .message = "The plugin is still installed: uninstall it first, then erase its data",
+};
+
+pub const EraseData = struct {
+    pub const name = "plugin.erase_data";
+    pub const description = "Erase an uninstalled plugin's data for good";
     pub const details =
-        \\`remove` holds the keys of the pieces `plugin data` lists that go into the trash
-        \\with the plugin; an empty list keeps everything, which is how every plugin starts.
-        \\Disabling never touches data, and neither does removing what is not chosen.
+        \\Each piece named (keys from `plugin data`) is erased: one kept where it is is
+        \\deleted with no copy, one in the trash has its entry removed. It cannot be undone.
+        \\Only for a plugin that is not installed; a device (an agent) lists it for its
+        \\person instead. The activity log keeps who erased which pieces, never the data.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const destroys = true;
     pub const In = struct {
         name: []const u8,
-        remove: []const []const u8 = &.{},
+        pieces: []const []const u8,
     };
     pub const Out = struct {
-        pieces: []const Piece,
+        /// What went, in words: "Course (12 records), enrolments (340 internal records)".
+        erased: []const u8,
     };
     pub const example: In = .{
-        .name = "greeter",
+        .name = "shelf",
+        .pieces = &.{"type:shelf.item"},
     };
     pub const example_out: Out = .{
-        .pieces = &example_pieces,
+        .erased = "Item (1 record)",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The plugin's name",
-        .remove = "The keys of the pieces to remove with it",
+        .pieces = "The keys of the pieces to erase",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const decoded = try state.load(ctx, in.name);
+        if (in.name.len == 0 or in.name.len > 64) {
+            return error.Invalid;
+        }
 
-        try data.choose(ctx, decoded, in.remove);
+        const installed = try store.sandboxed_plugins.get(ctx.db, ctx.arena, in.name) != null;
+        const built_in = try native.find(ctx, in.name) != null;
+
+        if (installed or built_in) {
+            return ctx.fail(still_installed);
+        }
 
         return .{
-            .pieces = try data.pieces_of(ctx, decoded),
+            .erased = try data.erase(ctx, in.name, in.pieces),
+        };
+    }
+};
+
+pub const RestoreData = struct {
+    pub const name = "plugin.restore_data";
+    pub const description = "Bring pieces of a plugin's data back from the trash";
+    pub const details =
+        \\Each piece named (keys from `plugin data`, in the trash) comes back as it was. A
+        \\content type or taxonomy the plugin made again since it was installed anew gives way
+        \\when it is still empty; one holding anything stays, and that piece is refused.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        name: []const u8,
+        pieces: []const []const u8,
+    };
+    pub const Out = struct {
+        pieces: []const Piece,
+    };
+    pub const example: In = .{
+        .name = "shelf",
+        .pieces = &.{"type:shelf.item"},
+    };
+    pub const example_out: Out = .{
+        .pieces = &example_pieces,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .name = "The plugin's name",
+        .pieces = "The keys of the pieces to bring back",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        if (in.name.len == 0 or in.name.len > 64) {
+            return error.Invalid;
+        }
+
+        try data.restore(ctx, in.name, in.pieces);
+
+        return .{
+            .pieces = try data.pieces_of(ctx, in.name),
+        };
+    }
+};
+
+/// One uninstalled plugin and what it left.
+pub const Left = struct {
+    name: []const u8,
+    pieces: []const Piece,
+    /// The plugin's own trash entry while it is there: `trash restore` reinstalls it.
+    trash: []const u8 = "",
+};
+
+const example_left = [_]Left{.{
+    .name = "greeter",
+    .pieces = &example_pieces,
+}};
+
+pub const LeftBehind = struct {
+    pub const name = "plugin.left_behind";
+    pub const description = "Uninstalled plugins whose data is still here";
+    pub const details =
+        \\Each plugin that is not installed but whose data stays, kept where it is or in the
+        \\trash, with its pieces as `plugin data` lists them, and its own trash entry while
+        \\it is there. `plugin erase_data` purges pieces; `trash restore` brings them back.
+    ;
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {};
+    pub const Out = struct {
+        plugins: []const Left,
+    };
+    pub const example: In = .{};
+    pub const example_out: Out = .{
+        .plugins = &example_left,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{};
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        _ = in;
+
+        var installed: std.ArrayList([]const u8) = .empty;
+
+        for (try store.sandboxed_plugins.list(ctx.db, ctx.arena)) |row| {
+            installed.append(ctx.arena, row.name) catch return error.OutOfMemory;
+        }
+
+        inline for (registry.native_plugins.all) |Plugin| {
+            installed.append(ctx.arena, Plugin.manifest.name) catch return error.OutOfMemory;
+        }
+
+        const names = try data.left_behind(ctx, installed.items);
+        const left = ctx.arena.alloc(Left, names.len) catch return error.OutOfMemory;
+
+        for (names, left) |plugin, *item| {
+            item.* = .{
+                .name = plugin,
+                .pieces = try data.pieces_of(ctx, plugin),
+                .trash = try store.trash.id_of(ctx.db, ctx.arena, "plugin", plugin) orelse "",
+            };
+        }
+
+        return .{
+            .plugins = left,
         };
     }
 };

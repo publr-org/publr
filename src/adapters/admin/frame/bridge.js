@@ -53,7 +53,9 @@
       const id = next++;
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject });
-        send({ kind: "call", id, operation: String(operation), input: input ?? {} });
+        // As JSON, which is what an operation takes: a view's reactive state cannot cross
+        // to the admin as it is.
+        send({ kind: "call", id, operation: String(operation), input: JSON.parse(JSON.stringify(input ?? {})) });
       });
     },
     navigate(to) { send({ kind: "navigate", to: String(to) }); },

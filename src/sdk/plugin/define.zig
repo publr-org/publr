@@ -121,6 +121,7 @@ const options_known = [_][]const u8{
     "register_location_rules", "register_providers",
     "register_columns",        "dimensions",
     "taxonomies",              "register_taxonomies",
+    "contracts",
 };
 
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.

@@ -87,7 +87,8 @@ pub const Ranking = struct {
 
 /// The value `object` holds for `def` that a read in `ranking` shows: the best fitting key's,
 /// else the main value; `skip` names a key passed over (a combination's own, for the value it
-/// falls back to). Null when the field holds nothing that fits.
+/// falls back to). Null when the field holds nothing that fits. A dimension the field holds
+/// `.empty` and the read asks at a code never falls back past that code: a key must name it.
 pub fn best(
     def: *const Def,
     object: std.json.ObjectMap,
@@ -100,7 +101,17 @@ pub fn best(
     var chosen: ?Value = null;
     var chosen_score: [dimensions_max]u32 = undefined;
     var score: [dimensions_max]u32 = undefined;
+    var strict: [dimensions_max]bool = undefined;
+    var any_strict = false;
     var entries = object.iterator();
+
+    for (0..ranking.len) |index| {
+        const name = ranking.dimensions[index];
+
+        strict[index] = dimension.lists(def.empty_in, name) or
+            dimension.lists(def.empty_in, dimension.family_of(name));
+        any_strict = any_strict or strict[index];
+    }
 
     while (entries.next()) |entry| {
         const key = dimension.split(entry.key_ptr.*);
@@ -117,6 +128,10 @@ pub fn best(
             continue;
         }
 
+        if (any_strict and leaves_strict(ranking, &strict, &score)) {
+            continue;
+        }
+
         if (chosen == null or less(score[0..ranking.len], chosen_score[0..ranking.len])) {
             chosen = value;
             chosen_score = score;
@@ -127,9 +142,30 @@ pub fn best(
         return found;
     }
 
+    if (any_strict) {
+        return null;
+    }
+
     const main = object.get(def.name) orelse return null;
 
     return if (main == .null or std.mem.eql(u8, def.name, skip)) null else main;
+}
+
+/// Whether a key scored `score` leaves a strict dimension at its main value.
+fn leaves_strict(
+    ranking: *const Ranking,
+    strict: *const [dimensions_max]bool,
+    score: *const [dimensions_max]u32,
+) bool {
+    std.debug.assert(ranking.len <= dimensions_max);
+
+    for (0..ranking.len) |index| {
+        if (strict[index] and score[index] == ranking.lengths[index]) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn less(left: []const u32, right: []const u32) bool {
@@ -409,6 +445,50 @@ test "best: only the keys a field holds, the highest priority dimension most spe
     try std.testing.expectEqualStrings("Main", best(&def, object, &crowded, "").?.string);
     // A key naming a dimension the read leaves at its main value does not fit.
     try std.testing.expect(best(&def, object, &.of(&.{}), "title") == null);
+}
+
+test "best: a dimension held `.empty` never falls back past the code asked" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const def: Def = .{
+        .name = "body",
+        .label = "Body",
+        .kind = "text",
+        .dimensions = &.{ "language", "variation" },
+        .empty_in = &.{"language"},
+    };
+    const text =
+        \\{"body":"Main","body@language=en":"En","body@variation=b":"B"}
+    ;
+    const document = try std.json.parseFromSliceLeaky(Value, arena, text, .{});
+    const object = document.object;
+    const british: Ranking = .of(&.{.{
+        .dimension = "language",
+        .code = "en-gb",
+    }});
+    const polish_b: Ranking = .of(&.{
+        .{
+            .dimension = "language",
+            .code = "pl",
+        },
+        .{
+            .dimension = "variation",
+            .code = "b",
+        },
+    });
+    const main_b: Ranking = .of(&.{.{
+        .dimension = "variation",
+        .code = "b",
+    }});
+
+    // A shorter prefix of the code is still that language.
+    try std.testing.expectEqualStrings("En", best(&def, object, &british, "").?.string);
+    // No Polish value: nothing, not the variation's nor the main one.
+    try std.testing.expect(best(&def, object, &polish_b, "") == null);
+    // The variation still falls back as it holds it.
+    try std.testing.expectEqualStrings("B", best(&def, object, &main_b, "").?.string);
 }
 
 test "resolve: each field in the combination, else its fallback, nested ones too" {

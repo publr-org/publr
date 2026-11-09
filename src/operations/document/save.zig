@@ -75,7 +75,8 @@ pub fn Of(comptime Domain: type) type {
 
             // An edit taken back leaves nothing to publish: the pending copy that now reads
             // as the live one goes, and the record is not changed any more.
-            const unchanged = park and live and try same_as_live(ctx, row.id);
+            const parked_held_back = row.pending_held_back != null;
+            const unchanged = park and live and !parked_held_back and try same_as_live(ctx, row.id);
             const kept = park and !unchanged;
 
             if (unchanged) {
@@ -101,7 +102,7 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// Whether the pending copy holds exactly what the live one does, field by field.
-        fn same_as_live(ctx: *Ctx, id: []const u8) Error!bool {
+        pub fn same_as_live(ctx: *Ctx, id: []const u8) Error!bool {
             std.debug.assert(id.len > 0);
 
             const live = try values.read(ctx.db, ctx.arena, id, values.live);

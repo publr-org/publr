@@ -47,6 +47,12 @@ pub const Record = struct {
     requested: []const u8 = "",
     /// Who asked for it.
     requested_by: ?[]const u8 = null,
+    /// The combinations of its dimensions it keeps from going live, `;` between them
+    /// (`model/dimension/live.zig`); empty when every one goes live.
+    held_back: []const u8 = "",
+    /// What it holds back once its pending changes are published; null when that is
+    /// `held_back`.
+    pending_held_back: ?[]const u8 = null,
 };
 
 /// Only the documents whose ids a JSON array lists.
@@ -195,7 +201,7 @@ pub fn List(comptime tables: tables_module.Tables) type {
         /// its definition `t` and its live title `title` and slug `slug` values.
         const record_columns = "r.id, r.type_id, t.handle, r.status, r.changed, r.version, " ++
             "title.value, slug.value, r.created_by, r.updated_by, r.created_at, r.updated_at, " ++
-            "r.app, r.requested, r.requested_by";
+            "r.app, r.requested, r.requested_by, r.held_back, r.pending_held_back";
         fn joins(comptime slot: []const u8) []const u8 {
             comptime std.debug.assert(slot.len > 0);
 

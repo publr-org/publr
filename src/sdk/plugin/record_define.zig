@@ -242,7 +242,12 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
             pub const Status = record_flow.Held(record_flow.List(options));
             /// One record as read: `{ id, version, status, changed, value }`.
             pub const Held = if (internal) Kept.Item else Content(Document, Status);
-            pub const Ref = record_typed.Ref(Document, stored);
+            /// An operation input naming one; an internal collection's names it
+            /// `internal:<collection>`, read from the plugin's own.
+            pub const Ref = record_typed.Ref(
+                Document,
+                if (internal) record_typed.internal_prefix ++ stored else stored,
+            );
             /// Every transition on records of the type, as one hook point.
             pub const any_transition = record_flow.AnyTransition(options.name);
             /// Each transition's own hook point: `Posts.transitions.publish`.
@@ -250,8 +255,11 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
             /// The record, its pending changes included; not found when it is another type's
             /// or in the trash, unless `.{ .trashed = true }`. Internal records have no trash.
-            pub fn get(any_ctx: anytype, id: []const u8, get_options: GetOptions) sdk.Error!Held {
+            /// A dimension's read option reads each field in it (`.{ .language = "pl" }`).
+            pub fn get(any_ctx: anytype, id: []const u8, get_options: anytype) sdk.Error!Held {
                 if (comptime internal) {
+                    comptime check_internal_get(options.name, @TypeOf(get_options));
+
                     std.debug.assert(id.len > 0);
 
                     return Kept.get(queue.base_of(any_ctx), id);
@@ -374,7 +382,8 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
 
             /// `transition` at a moment, made then as the person behind the call, with the
             /// rights they hold then: `Posts.record.transition_at(ctx, post, .publish, at)`.
-            /// One per record; a new one replaces it. Refused without a person behind it.
+            /// Each its own entry, beside any scheduled before. Refused without a person
+            /// behind it.
             pub fn transition_at(
                 any_ctx: anytype,
                 held: Held,
@@ -428,7 +437,14 @@ pub fn Store(
         /// The record, content with its pending changes; not found when it is another
         /// type's.
         pub fn get(ctx: *PluginCtx, id: []const u8) sdk.Error!Item {
+            return get_in(ctx, id, &.{});
+        }
+
+        /// The record as `get` reads it, content in the combination `pairs` names, each by a
+        /// dimension's name or its read option's.
+        pub fn get_in(ctx: *PluginCtx, id: []const u8, pairs: []const Pair) sdk.Error!Item {
             std.debug.assert(id.len > 0);
+            std.debug.assert(!internal or pairs.len == 0);
 
             if (comptime internal) {
                 const got = try ctx.call(internal_operations.Get, .{
@@ -445,6 +461,9 @@ pub fn Store(
                 const got = try ctx.call(record_operations.Get, .{
                     .id = id,
                     .purpose = .edit,
+                    .dimensions = .{
+                        .pairs = pairs,
+                    },
                 });
 
                 if (!std.mem.eql(u8, got.record.type, name)) {
@@ -649,17 +668,52 @@ pub fn get_typed(
     comptime Typed: type,
     any_ctx: anytype,
     id: []const u8,
-    get_options: GetOptions,
+    get_options: anytype,
 ) sdk.Error!Typed.Item {
+    const Options = @TypeOf(get_options);
+    var pairs: [read_options_max]Pair = undefined;
+    var count: u32 = 0;
+    var trashed = false;
+
     std.debug.assert(id.len > 0);
+    comptime std.debug.assert(std.meta.fields(Options).len <= read_options_max + 1);
 
-    const found = try Typed.get(queue.base_of(any_ctx), id);
+    // `.trashed`, and each other a dimension's read option with the code to read in.
+    inline for (comptime std.meta.fieldNames(Options)) |option| {
+        if (comptime std.mem.eql(u8, option, "trashed")) {
+            trashed = @field(get_options, option);
+        } else {
+            pairs[count] = .{
+                .dimension = option,
+                .code = @field(get_options, option),
+            };
+            count += 1;
+        }
+    }
 
-    if (std.mem.eql(u8, found.status, "trashed") and !get_options.trashed) {
+    const found = try Typed.get_in(queue.base_of(any_ctx), id, pairs[0..count]);
+
+    if (std.mem.eql(u8, found.status, "trashed") and !trashed) {
         return error.NotFound;
     }
 
     return found;
+}
+
+/// The read options one `get` names at most: a value names at most four dimensions.
+pub const read_options_max: u32 = model_dimension.key_pairs_max;
+
+const Pair = model_dimension.Pair;
+const model_dimension = @import("../../model/dimension.zig");
+
+/// An internal record is bookkeeping, one value per field: `get` takes nothing after the id.
+fn check_internal_get(comptime record: []const u8, comptime Options: type) void {
+    comptime {
+        if (std.meta.fields(Options).len > 0) {
+            @compileError("record " ++ record ++ ": an internal record's `get` takes `.{}`; " ++
+                "it has no trash, and no values per dimension");
+        }
+    }
 }
 
 /// Moves the record `id` by the transition named `name`. `.pending` when the caller may
@@ -712,12 +766,6 @@ fn same(ctx: anytype, left: anytype, right: anytype) sdk.Error!bool {
 
     return std.mem.eql(u8, left_text, right_text);
 }
-
-/// What `get` takes after the id: `.{}`, or `.{ .trashed = true }` to read a record in the
-/// trash too.
-pub const GetOptions = struct {
-    trashed: bool = false,
-};
 
 /// What a transition answers: made, or waiting for a person.
 pub const Transitioned = enum { done, pending };
@@ -1042,16 +1090,31 @@ fn apply(
     comptime {
         std.debug.assert(record_name.len > 0);
 
-        for (std.meta.fieldNames(@TypeOf(given))) |name| {
-            if (!@hasField(FieldOption, name)) {
+        const Given = @TypeOf(given);
+
+        // Any other name given a value of an enum is a dimension's field option, offered by
+        // the plugin owning the dimension (`.translatable = .required`).
+        for (std.meta.fieldNames(Given)) |name| {
+            if (@hasField(FieldOption, name)) {
+                continue;
+            }
+
+            if (@typeInfo(@TypeOf(@field(given, name))) != .enum_literal) {
                 @compileError("record " ++ record_name ++ ": field `" ++ def.name ++
                     "` has no option `" ++ name ++ "`");
             }
+
+            def.wrapped = def.wrapped ++ &[_]field_model.Wrapped{.{
+                .option = name,
+                .value = @tagName(@field(given, name)),
+            }};
         }
 
-        const Given = @TypeOf(given);
-
         for (std.meta.fieldNames(Given)) |name| {
+            if (!@hasField(FieldOption, name)) {
+                continue;
+            }
+
             // A repeater's `fields` are its rows' overrides, taken where the rows are made.
             const grouped = std.mem.eql(u8, name, "options") or
                 std.mem.eql(u8, name, "validation") or std.mem.eql(u8, name, "fields");
@@ -1345,6 +1408,34 @@ test "a list of structs is a repeater, its rows' fields declared alike; text def
     try std.testing.expectEqualStrings("Product", lines.fields[0].label);
     try std.testing.expectEqualStrings("integer", lines.fields[1].kind);
     try std.testing.expect(!lines.fields[1].validation.required);
+}
+
+test "a field says how it holds a dimension's values through its owner's field option" {
+    const Product = struct {
+        name: []const u8,
+        sku: []const u8,
+    };
+    const Docs = plugin_define.Words(.{
+        .{ @typeName(Product), "Product" },
+        .{ @typeName(Product) ++ ".name", "Name" },
+        .{ @typeName(Product) ++ ".sku", "SKU" },
+    });
+    const Products = define(Product, .{
+        .name = "shop.product",
+        .fields = .{
+            .name = .{
+                .translatable = .required,
+                .searchable = true,
+            },
+        },
+    });
+    const def = comptime content_type_of(Products, Docs);
+
+    try std.testing.expectEqual(1, def.fields[0].wrapped.len);
+    try std.testing.expectEqualStrings("translatable", def.fields[0].wrapped[0].option);
+    try std.testing.expectEqualStrings("required", def.fields[0].wrapped[0].value);
+    try std.testing.expect(def.fields[0].searchable);
+    try std.testing.expectEqual(0, def.fields[1].wrapped.len);
 }
 
 test "a struct field is a group; yes/no, number and choice defaults reach the form" {

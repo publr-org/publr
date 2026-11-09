@@ -349,11 +349,12 @@ pub const remote = struct {
                 }
 
                 /// The record, its pending changes included; not found in the trash unless
-                /// `.{ .trashed = true }`.
+                /// `.{ .trashed = true }`; in a combination by dimensions' read options
+                /// (`.{ .language = "pl" }`).
                 pub fn get(
                     any_ctx: anytype,
                     id: []const u8,
-                    options: record_define.GetOptions,
+                    options: anytype,
                 ) sdk.Error!Held {
                     return record_define.get_typed(Typed, any_ctx, id, options);
                 }

@@ -230,7 +230,7 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
         \\{"sandboxed_plugins":[{"name":"shelf","version":"0.1.0","hash":"ab","manifest":"{}",
         \\ "enabled":0,"granted":"[]","denied":"[]","grants":"{}","next_version":null,
         \\ "next_hash":null,"next_manifest":null,"previous_version":null,"previous_hash":null,
-        \\ "previous_manifest":null,"installed_at":1,"updated_at":2,"remove_data":"[]"}]}
+        \\ "previous_manifest":null,"installed_at":1,"updated_at":2}]}
     ;
 
     const before_internal = try index_revision(&admin);

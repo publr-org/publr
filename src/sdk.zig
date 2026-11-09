@@ -1196,7 +1196,7 @@ pub fn SDK(comptime registry: Registry) type {
                 if (comptime is_reference(Field)) {
                     const id = @field(input, field.name).id;
 
-                    @field(input, field.name).value = try load_reference(ctx, Field, id);
+                    @field(input, field.name).value = try load_reference(ctx, Operation, Field, id);
                 } else if (comptime is_reference_list(Field)) {
                     const Item = std.meta.Elem(Field);
                     const list = @field(input, field.name);
@@ -1204,7 +1204,7 @@ pub fn SDK(comptime registry: Registry) type {
 
                     for (list, loaded) |item, *target| {
                         target.* = item;
-                        target.value = try load_reference(ctx, Item, item.id);
+                        target.value = try load_reference(ctx, Operation, Item, item.id);
                     }
 
                     @field(input, field.name) = loaded;
@@ -1214,6 +1214,7 @@ pub fn SDK(comptime registry: Registry) type {
 
         fn load_reference(
             ctx: *Ctx,
+            comptime Operation: type,
             comptime Reference: type,
             id: []const u8,
         ) Error!Reference.Document {
@@ -1222,6 +1223,29 @@ pub fn SDK(comptime registry: Registry) type {
 
             if (id.len == 0 or id.len > 128) {
                 return error.Invalid;
+            }
+
+            // An internal collection (`internal:test`): the operation's plugin's own.
+            const prefix = @import("operations/record/typed.zig").internal_prefix;
+
+            if (comptime std.mem.startsWith(u8, Reference.handle, prefix)) {
+                const InternalGet = comptime find_name(registry, "internal.get") orelse
+                    @compileError("an operation taking an internal reference needs internal.get");
+                const plugin = comptime Operation.name[0 .. std.mem.indexOfScalar(
+                    u8,
+                    Operation.name,
+                    '.',
+                ) orelse 0];
+                const got = try dispatch(ctx, InternalGet, .{
+                    .kind = Reference.handle[prefix.len..],
+                    .id = id,
+                    .plugin = plugin,
+                });
+
+                return json_module.parse(Reference.Document, ctx.arena, got.document, .{
+                    .ignore_unknown_fields = true,
+                    .allocate = .alloc_always,
+                }) catch error.Invalid;
             }
 
             const got = try dispatch(ctx, Get, .{

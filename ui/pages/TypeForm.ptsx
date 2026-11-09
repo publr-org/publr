@@ -74,14 +74,6 @@ export type TypeFormProps = {
   share_all: boolean;
   shares: Array<{ value: string; label: string; checked: boolean }>;
   roles: Array<{ value: string; label: string; checked: boolean }>;
-  untranslated_label?: string;
-  keep_label?: string;
-  keep_help?: string;
-  omit_label?: string;
-  omit_help?: string;
-  falls_back?: boolean;
-  /** Each dimension that offers requiring its values: see TypePlacement. */
-  requiring?: Array<{ name: string; label: string; required: string }>;
   /** The name for more than one, and the name declined in the admin's other languages. */
   plural_name?: string;
   noun_languages?: Array<{
@@ -146,13 +138,6 @@ export function TypeForm({
   roles,
   plural_name = "",
   noun_languages = [],
-  untranslated_label = "",
-  keep_label = "",
-  keep_help = "",
-  omit_label = "",
-  omit_help = "",
-  falls_back = true,
-  requiring = [],
   visual,
   rich_fields,
   delete_action,
@@ -242,13 +227,6 @@ export function TypeForm({
             roles={roles}
             show_access={!is_component}
             is_public={is_public}
-            untranslated_label={is_record ? untranslated_label : ""}
-            keep_label={keep_label}
-            keep_help={keep_help}
-            omit_label={omit_label}
-            omit_help={omit_help}
-            falls_back={falls_back}
-            requiring={requiring}
           />
           {!is_taxonomy && is_record && (
             <TypeEditor visual={visual} is_new={is_new} rich_fields={rich_fields} />

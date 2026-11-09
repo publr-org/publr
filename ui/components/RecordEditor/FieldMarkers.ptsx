@@ -7,7 +7,7 @@ export type FieldMarkersProps = {
   name: string;
 };
 
-type Marker = { field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string };
+type Marker = { field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string; href: string };
 
 /** The markers of one field, by dimension: each dimension's together, its group label
  * first, the one the form shows selected; a marker that hides while current left out. */
@@ -30,13 +30,18 @@ const groupsOf = (markers: Marker[], chosen: string, name: string) => {
 
 /** The markers plugins put beside a field's label, as the editor last asked for them: one
  * pill per dimension (`Variation | Control | Variation B`, `EN | PL`), following the values
- * as they change. A marker naming a dimension shows the field there when clicked. */
+ * as they change. A marker naming a dimension shows the field there when clicked; one with
+ * a link opens that page of the admin (`A/B test`). */
 export function FieldMarkers({ name }: FieldMarkersProps) {
   return (
     <span class="flex h-5 flex-wrap items-center gap-1.5 overflow-visible" data-part="field-markers">
       {groupsOf(editor.markers, editor.chosen, name).map((group) => (
         <BadgeGroup label={group.label}>
-          {group.markers.map((marker) => (
+          {group.markers.map((marker) => marker.href !== "" ? (
+            <a class="inline-flex h-full cursor-pointer" href={marker.href}>
+              <Badge shape="segment" selected={false} tone={marker.tone === "success" ? "success" : marker.tone === "danger" ? "danger" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>
+            </a>
+          ) : (
             <button type="button" class="inline-flex h-full cursor-pointer disabled:cursor-default" disabled={marker.dimension === ""}
               data-dimension={marker.dimension} data-code={marker.code} onClick={onDimension}>
               <Badge shape="segment" selected={marker.selected} tone={marker.tone === "success" ? "success" : marker.tone === "danger" ? "danger" : marker.tone === "neutral" ? "neutral" : "outline"}>{marker.label}</Badge>

@@ -119,17 +119,25 @@
       },
       {
         "name": ".dimensions",
-        "summary": "Dimensions a field may vary by, each made with publr.dimension.define: every field gets a switch per dimension, the editor a picker. The sampler's are editions, web and print; a site's languages and an A/B test's variations are others.",
+        "summary": "Dimensions a field may vary by, each made with publr.dimension.define and its wrapper in .api: a field option (publr.dimension.field_option, drawn on the field panel by its .options view or as cards) and a read option (publr.dimension.read_option, the editor's picker). The sampler's are editions, web and print, its setting a switch of its own; a site's languages and an A/B test's variations are others.",
         "code": [
           {
             "file": "dimensions/editions.zig",
             "decl": "dimension"
+          },
+          {
+            "file": "dimensions/edition_api.zig",
+            "decl": "field"
+          },
+          {
+            "file": "dimensions/edition_api.zig",
+            "decl": "read"
           }
         ],
         "see": [
           "Open Structure, then Sample notes, then a field."
         ],
-        "look_for": "Per edition in the field's settings, and an Edition picker in a sample note's editor."
+        "look_for": "Per edition in the field's settings as the sampler's own switch, and an Edition picker in a sample note's editor."
       }
     ],
     "tour": [

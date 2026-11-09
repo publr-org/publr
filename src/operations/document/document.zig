@@ -233,8 +233,14 @@ pub fn Of(comptime Domain: type) type {
 
         /// A value a field must hold in a dimension (`site_dimensions.required_of`) left empty
         /// is refused as the record goes live, each under its own key (`headline@language=pl`):
-        /// `Required in Polski`. Saving a draft never is.
-        pub fn refuse_missing_required(ctx: *Ctx, def: Def, document: Value) Error!void {
+        /// `Required in Polski`; never in a combination the record holds back (`held_back`).
+        /// Saving a draft never is.
+        pub fn refuse_missing_required(
+            ctx: *Ctx,
+            def: Def,
+            document: Value,
+            held_back: []const u8,
+        ) Error!void {
             std.debug.assert(document == .object);
             std.debug.assert(def.fields.len <= model.field.fields_max);
 
@@ -247,14 +253,16 @@ pub fn Of(comptime Domain: type) type {
                     continue;
                 }
 
-                for (try site_dimensions.required_of(ctx, def, field)) |required| {
+                for (try site_dimensions.required_of(ctx, field)) |required| {
                     const pair: model.dimension.Pair = .{
                         .dimension = required.dimension,
                         .code = required.code,
                     };
                     const key = try model.dimension.key_of(ctx.arena, field.name, &.{pair});
+                    const combination = model.dimension.split(key).combination;
+                    const kept = model.dimension.live.held(held_back, combination);
 
-                    if (filled(document.object.get(key))) {
+                    if (kept or filled(document.object.get(key))) {
                         continue;
                     }
 

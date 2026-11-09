@@ -1,0 +1,3 @@
+// The test plugins this one builds against, as `plugin build --with`: their published
+// interfaces stand in for a site that has them.
+.{"parcels"}

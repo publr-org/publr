@@ -7,6 +7,9 @@ const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 
 const Error = sdk.Error;
 
+/// What a reference to an internal record names its collection by: `internal:test`.
+pub const internal_prefix = "internal:";
+
 /// An operation input naming a record of content type `handle`: the caller sends its id,
 /// and core reads the record, with the caller's access, before the operation runs. Unknown,
 /// of another type, or not one the caller may see: the call is refused (`not found`). The

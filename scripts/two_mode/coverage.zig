@@ -317,6 +317,10 @@ const sandbox_only = [_]Part{
         .where = "checked when an installed plugin starts",
     },
     .{
+        .name = "contracts",
+        .where = "the contracts it owns as data, built against and checked at install and update",
+    },
+    .{
         .name = "limits",
         .where = "the sandbox's CPU, memory and call limits",
     },

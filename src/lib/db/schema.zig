@@ -52,7 +52,7 @@ pub const tables = [_][]const u8{
     "plugin_log",
     "job_queue",
     "job_due",
-    "scheduled_transitions",
+    "scheduled_changes",
     "webhook_deliveries",
 };
 
@@ -98,11 +98,6 @@ const added_columns = [_]Added{
         .definition = "TEXT NOT NULL DEFAULT ''",
     },
     .{
-        .table = "sandboxed_plugins",
-        .column = "remove_data",
-        .definition = "TEXT NOT NULL DEFAULT '[]'",
-    },
-    .{
         .table = "rail_pins",
         .column = "hidden",
         .definition = "INTEGER NOT NULL DEFAULT 0",
@@ -135,6 +130,26 @@ const added_columns = [_]Added{
     .{
         .table = "terms",
         .column = "requested_by",
+        .definition = "TEXT",
+    },
+    .{
+        .table = "records",
+        .column = "held_back",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "terms",
+        .column = "held_back",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "records",
+        .column = "pending_held_back",
+        .definition = "TEXT",
+    },
+    .{
+        .table = "terms",
+        .column = "pending_held_back",
         .definition = "TEXT",
     },
     .{

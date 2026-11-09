@@ -256,7 +256,7 @@ pub fn native_providers(
     // Unrolled: a few branches a plugin, and a few an operation.
     @setEvalBranchQuota(1000 + plugins.len * 64 + sdk.operations_max * 8);
 
-    inline for (plugins, list) |Plugin, *provider| {
+    inline for (plugins, list, 0..) |Plugin, *provider, at| {
         const operations = comptime operations: {
             const options = std.meta.fields(@TypeOf(Plugin.options)).len;
 
@@ -281,6 +281,8 @@ pub fn native_providers(
             .operations = provided,
             .records = comptime remote_contract.records_of(Plugin),
             .events = comptime remote_contract.events_of(Plugin),
+            .contracts = published_interfaces[at].contracts,
+            .dimensions = published_interfaces[at].dimensions,
         };
     }
 
@@ -530,6 +532,19 @@ pub const webhook_owners = native_plugins.merged_webhook_owners;
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
 /// The providers the native plugins register into contracts.
 pub const providers = native_plugins.merged_providers;
+/// Each compiled-in plugin's published interface: its contracts and dimensions, as data.
+pub const published_interfaces: []const @import("../sdk/published.zig").Interface = each: {
+    const published = @import("../sdk/published.zig");
+    var out: [bound_plugins.len]published.Interface = undefined;
+
+    for (bound_plugins, &out) |Plugin, *slot| {
+        slot.* = published.of(Plugin);
+    }
+
+    const done = out;
+
+    break :each &done;
+};
 pub const plugin_routes = native_plugins.merged_routes;
 pub const row_actions = native_plugins.merged_row_actions;
 pub const pages = native_plugins.merged_pages;

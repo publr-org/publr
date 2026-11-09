@@ -78,9 +78,21 @@ pub fn up(connection: *db.Db) db.Error!void {
         \\) STRICT
     );
 
+    try columns(connection);
+}
+
+/// Columns added to tables there already, and one gone.
+fn columns(connection: *db.Db) db.Error!void {
+    std.debug.assert(connection.transaction_depth >= 1);
+
     // A person's note that they hid a pin made for everyone.
     if (!try db.schema.has_column(connection, "rail_pins", "hidden")) {
         try connection.exec("ALTER TABLE rail_pins ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+    }
+
+    // Uninstalling decides each piece of a plugin's data then: nothing is chosen ahead.
+    if (try db.schema.has_column(connection, "sandboxed_plugins", "remove_data")) {
+        try connection.exec("ALTER TABLE sandboxed_plugins DROP COLUMN remove_data");
     }
 }
 

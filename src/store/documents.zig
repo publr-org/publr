@@ -140,6 +140,34 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return try select.read(Record, arena);
         }
 
+        /// Keeps `held_back` (`model/dimension/live.zig`) as what `id` keeps from going live:
+        /// at once (`.live`), or once its pending changes are published (`.pending`; null
+        /// drops what waited).
+        pub fn hold_back(
+            connection: *db.Db,
+            id: []const u8,
+            held_back: ?[]const u8,
+            comptime when: enum { live, pending },
+        ) Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(when == .pending or held_back != null);
+
+            var statement = try connection.prepare(switch (when) {
+                .live => "UPDATE " ++ table ++ " SET held_back = ?2, pending_held_back = NULL " ++
+                    "WHERE id = ?1",
+                .pending => "UPDATE " ++ table ++ " SET pending_held_back = ?2 WHERE id = ?1",
+            });
+            defer statement.finalize();
+
+            try statement.bind_text(1, id);
+            try statement.bind_optional_text(2, held_back);
+            try statement.exec();
+
+            if (connection.changes() != 1) {
+                return error.NotFound;
+            }
+        }
+
         /// Bump the version after a document write and record whether edits are parked.
         pub fn save(
             connection: *db.Db,

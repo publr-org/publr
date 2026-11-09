@@ -189,6 +189,18 @@ pub fn Of(comptime Domain: type) type {
 
             try resolve_aliases(ctx, &expanded.def.flow);
 
+            // What a dimension holds a field that says nothing of it by (an A/B test's family:
+            // on demand), laid over a content type's fields.
+            if (comptime std.mem.eql(u8, Domain.config.noun, "record")) {
+                if (!expanded.def.internal) {
+                    const site_dimensions = @import("../dimensions.zig");
+
+                    const fields = expanded.def.fields;
+
+                    expanded.def.fields = try site_dimensions.with_defaults(ctx, fields);
+                }
+            }
+
             return expanded;
         }
 

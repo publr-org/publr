@@ -38,7 +38,8 @@ pub fn Of(comptime Domain: type) type {
             return null;
         }
 
-        /// `pairs` checked against the site's dimensions and put in their priority order.
+        /// `pairs` checked against the site's dimensions, each named by its own name or its
+        /// read option's, and put in their priority order under their own names.
         fn ordered(ctx: *const Ctx, pairs: []const Pair) Error![]const Pair {
             std.debug.assert(pairs.len > 0);
 
@@ -47,19 +48,26 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const every = site_dimensions.all(ctx);
+            const named = ctx.arena.alloc(Pair, pairs.len) catch return error.OutOfMemory;
             var out: std.ArrayList(Pair) = .empty;
 
-            for (pairs) |pair| {
-                const known = site_dimensions.find(ctx, pair.dimension) != null;
-                const code_ok = pair.code.len == 0 or dimension.valid_code(pair.code);
+            for (pairs, named) |pair, *one| {
+                const known = site_dimensions.read_by(ctx, pair.dimension) orelse {
+                    return error.Invalid;
+                };
 
-                if (!known or !code_ok) {
+                if (pair.code.len > 0 and !dimension.valid_code(pair.code)) {
                     return error.Invalid;
                 }
+
+                one.* = .{
+                    .dimension = known.name,
+                    .code = pair.code,
+                };
             }
 
             for (every) |declared| {
-                for (pairs) |pair| {
+                for (named) |pair| {
                     if (std.mem.eql(u8, pair.dimension, declared.name)) {
                         out.append(ctx.arena, pair) catch return error.OutOfMemory;
                     }
@@ -108,7 +116,8 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
-        /// The listed documents read in `wanted`, each record's title and slug from its own.
+        /// The listed documents read in `wanted`, each record's title and slug from its own,
+        /// each in what its record puts live of it (`read_as`).
         pub fn resolve_listed(
             ctx: *Ctx,
             records: []Record,
@@ -120,6 +129,7 @@ pub fn Of(comptime Domain: type) type {
 
             var cached_type: []const u8 = "";
             var cached_def: model.content_type.Def = undefined;
+            var out: [dimension.dimensions_max]Pair = undefined;
 
             for (records, texts) |*record, *text| {
                 if (!std.mem.eql(u8, cached_type, record.type_id)) {
@@ -129,51 +139,34 @@ pub fn Of(comptime Domain: type) type {
                     cached_def = row.def;
                 }
 
-                text.* = try resolve_text(ctx, cached_def, text.*, wanted);
+                const read = read_as(ctx, record.*, wanted, &out) orelse wanted;
+
+                text.* = try resolve_text(ctx, cached_def, text.*, read);
                 try retitle(ctx, cached_def, record, text.*);
             }
         }
 
-        /// Whether a record shows in `wanted`: always where its type falls back to the main
-        /// values; else only when it holds a value in the addressed dimension's code (or its
-        /// shorter prefix). The other dimensions always fall back.
-        pub fn shown_in(
-            ctx: *Ctx,
-            def: model.content_type.Def,
-            text: []const u8,
+        /// The combination `record` is read in for `wanted`: what it puts live of it
+        /// (`model/dimension/live.zig`), in a preview what it will once published; null when
+        /// it holds itself back at `wanted`'s address.
+        pub fn read_as(
+            ctx: *const Ctx,
+            record: Record,
             wanted: []const Pair,
-        ) Error!bool {
-            std.debug.assert(text.len > 0);
+            out: *[dimension.dimensions_max]Pair,
+        ) ?[]const Pair {
             std.debug.assert(wanted.len <= dimension.dimensions_max);
+            std.debug.assert(record.held_back.len <= dimension.live.held_back_len_max);
 
-            const code = addressed_code(ctx, wanted);
+            const addressed = if (site_dimensions.setting(ctx)) |found| found.name else "";
 
-            if (def.fallback_to_main or code.len == 0) {
-                return true;
-            }
+            const parked = if (ctx.preview) record.pending_held_back else null;
 
-            const name = (site_dimensions.setting(ctx) orelse return true).name;
-            const parsed = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{}) catch {
-                return error.Invalid;
-            };
-            const held = try dimension.resolve.held_in(ctx.arena, def.fields, parsed);
-            var buffer: [dimension.order_max][]const u8 = undefined;
-
-            for (dimension.order(code, &buffer)) |looked| {
-                for (held) |pair| {
-                    const same = std.mem.eql(u8, pair.dimension, name) and
-                        std.mem.eql(u8, pair.code, looked);
-
-                    if (looked.len > 0 and same) {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
+            return dimension.live.read_as(parked orelse record.held_back, wanted, addressed, out);
         }
 
-        /// The listed records that show in `wanted`, and their documents, in order.
+        /// The listed records that show in `wanted`, and their documents, in order: on the
+        /// site, the ones not held back at its address.
         pub fn kept_in(
             ctx: *Ctx,
             records: []const Record,
@@ -185,8 +178,9 @@ pub fn Of(comptime Domain: type) type {
 
             var kept_records: std.ArrayList(Record) = .empty;
             var kept_texts: std.ArrayList([]const u8) = .empty;
-            // Only the site leaves untranslated records out: the admin lists every one.
+            // Only the site leaves held back records out: the admin lists every one.
             const for_site = ctx.delivery or ctx.preview;
+            var out: [dimension.dimensions_max]Pair = undefined;
 
             if (!for_site) {
                 return .{
@@ -196,9 +190,7 @@ pub fn Of(comptime Domain: type) type {
             }
 
             for (records, texts) |record, text| {
-                const row = try definitions.find(ctx, record.type_id) orelse continue;
-
-                if (try shown_in(ctx, row.def, text, wanted)) {
+                if (read_as(ctx, record, wanted, &out) != null) {
                     kept_records.append(ctx.arena, record) catch return error.OutOfMemory;
                     kept_texts.append(ctx.arena, text) catch return error.OutOfMemory;
                 }
@@ -215,7 +207,8 @@ pub fn Of(comptime Domain: type) type {
             texts: [][]const u8,
         };
 
-        /// One record's document read in `wanted`, its title and slug from it.
+        /// One record's document read in `wanted`, its title and slug from it; not found
+        /// where it holds itself back.
         pub fn resolve_one(
             ctx: *Ctx,
             record: *Record,
@@ -226,12 +219,10 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(wanted.len <= dimension.dimensions_max);
 
             const row = try definitions.find(ctx, record.type_id) orelse return error.NotFound;
+            var out: [dimension.dimensions_max]Pair = undefined;
+            const read = read_as(ctx, record.*, wanted, &out) orelse return error.NotFound;
 
-            if (!try shown_in(ctx, row.def, text.*, wanted)) {
-                return error.NotFound;
-            }
-
-            text.* = try resolve_text(ctx, row.def, text.*, wanted);
+            text.* = try resolve_text(ctx, row.def, text.*, read);
             try retitle(ctx, row.def, record, text.*);
         }
 

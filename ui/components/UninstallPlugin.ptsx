@@ -1,0 +1,131 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export const state = Publr.reactive({ erasing: false });
+
+/** Whether any piece is set to be erased: then the plugin's name must be typed. */
+const recount = (form: HTMLFormElement) => {
+  const chosen = Array.from(form.querySelectorAll<HTMLSelectElement>("select[name^='fate:']"));
+  state.erasing = chosen.some((select) => select.value === "erase");
+};
+
+export const onFate = (event: Event) => {
+  recount((event.currentTarget as HTMLSelectElement).form as HTMLFormElement);
+};
+
+/** "Set all": every piece to the button's choice. */
+export const setAll = (event: MouseEvent) => {
+  const button = event.currentTarget as HTMLButtonElement;
+  const form = button.form as HTMLFormElement;
+  form.querySelectorAll<HTMLSelectElement>("select[name^='fate:']").forEach((select) => {
+    select.value = button.value;
+  });
+  recount(form);
+};
+
+export type UninstallPluginProps = {
+  name: string;
+  /** Where the form posts. */
+  action: string;
+  /** Its data where it is; what is in the trash already stays there. */
+  pieces: Array<{ key: string; label: string; detail: string }>;
+};
+
+/** Uninstalling a plugin: each piece of its data kept (the default), moved to the trash or
+ * erased for good. Erasing anything asks for the plugin's name typed. */
+export function UninstallPlugin({ name, action, pieces }: UninstallPluginProps) {
+  return (
+    <div class="contents">
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" hierarchy="secondary" intent="destructive">
+          {Publr.t("Uninstall")}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogTitle>{Publr.t("Uninstall {name}", { name })}</DialogTitle>
+        <DialogDescription>
+          {Publr.t("Its operations and hooks stop. It goes to the trash, restorable.")}
+        </DialogDescription>
+        <form method="post" action={action} class="mt-5 flex flex-col gap-5">
+          <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+          {pieces.length > 0 && (
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <Text as="p" variant="body-md">{Publr.t("Its data")}</Text>
+                <div class="flex flex-wrap items-center gap-1">
+                  <Text as="span" variant="body-sm" tone="muted">{Publr.t("Set all:")}</Text>
+                  <Button type="button" size="sm" hierarchy="tertiary" value="keep" onClick={setAll}>
+                    {Publr.t("Keep")}
+                  </Button>
+                  <Button type="button" size="sm" hierarchy="tertiary" value="trash" onClick={setAll}>
+                    {Publr.t("Move to trash")}
+                  </Button>
+                  <Button type="button" size="sm" hierarchy="tertiary" value="erase" onClick={setAll}>
+                    {Publr.t("Erase for good")}
+                  </Button>
+                </div>
+              </div>
+              {pieces.map((piece) => (
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-piece={piece.key}>
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <Text as="p" variant="body-md">{piece.label}</Text>
+                    <Text as="p" variant="body-sm" tone="muted">{piece.detail}</Text>
+                  </div>
+                  <NativeSelect
+                    name={`fate:${piece.key}`}
+                    label={Publr.t("What happens to {label}", { label: piece.label })}
+                    size="sm"
+                    classes="sm:w-44 sm:shrink-0"
+                    onChange={onFate}
+                  >
+                    <option value="keep" selected>{Publr.t("Keep")}</option>
+                    <option value="trash">{Publr.t("Move to trash")}</option>
+                    <option value="erase">{Publr.t("Erase for good")}</option>
+                  </NativeSelect>
+                </div>
+              ))}
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Kept data stays where it is; data in the trash is restorable until the trash is emptied. Both stay listed under Uninstalled, where they can be erased later or come back when the plugin is installed again.")}
+              </Text>
+            </div>
+          )}
+          <div hidden={!state.erasing}>
+            <Field>
+              <FieldLabel htmlFor="uninstall-confirm">
+                {Publr.t("Type {name} to erase for good", { name })}
+              </FieldLabel>
+              <Input id="uninstall-confirm" name="confirm" autocomplete="off" />
+              <FieldDescription>
+                {Publr.t("What is set to Erase for good cannot be restored, and is not kept in the trash.")}
+              </FieldDescription>
+            </Field>
+          </div>
+          <div class="flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button type="button" hierarchy="secondary">
+                {Publr.t("Cancel")}
+              </Button>
+            </DialogClose>
+            <Button type="submit" intent="destructive">
+              {Publr.t("Uninstall")}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+    </div>
+  );
+}

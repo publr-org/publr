@@ -32,7 +32,8 @@ pub fn Of(comptime Domain: type) type {
 
         pub const requests = @import("requests.zig").Of(Domain);
 
-        /// Make the pending copy the live document (if there is one) and drop the mark.
+        /// Make the pending copy the live document (if there is one), and what it holds back
+        /// waiting with it what it holds back, and drop the mark.
         pub fn apply_pending(ctx: *Ctx, row: Record) Error!bool {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -58,6 +59,10 @@ pub fn Of(comptime Domain: type) type {
                 try values.clear(ctx.db, row.id, values.live);
             }
 
+            if (row.pending_held_back) |held_back| {
+                try documents.hold_back(ctx.db, row.id, held_back, .live);
+            }
+
             return true;
         }
 
@@ -72,7 +77,11 @@ pub fn Of(comptime Domain: type) type {
             const parsed = try document.document_of(ctx, row.id, slot, type_row.def);
             try document.refuse_incomplete(ctx, type_row.def, parsed);
             try document.refuse_unpublished_targets(ctx, type_row.def, parsed);
-            try document.refuse_missing_required(ctx, type_row.def, parsed);
+            const pending = std.mem.eql(u8, slot, values.pending);
+            const parked = if (pending) row.pending_held_back else null;
+            const held_back = parked orelse row.held_back;
+
+            try document.refuse_missing_required(ctx, type_row.def, parsed, held_back);
         }
 
         /// A slug or unique value in `slot` held live by another document is refused: a
@@ -657,6 +666,96 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
+        /// Publishes `changes` (`model/change_set.zig`) onto the live document, and holds
+        /// back `held_back` when given: only those go live, checked as a publish is, over what
+        /// is live now. Edits parked meanwhile stay parked, each key they left as it was live
+        /// taking the change too. A live document's only, by whoever may publish it.
+        pub fn publish_set(
+            ctx: *Ctx,
+            granted: *const Grant,
+            id: []const u8,
+            changes: std.json.ObjectMap,
+            held_back: ?[]const u8,
+        ) Error!Moved {
+            std.debug.assert(ctx.db.transaction_depth >= 1);
+
+            if (id.len > 128) {
+                return error.Invalid;
+            }
+
+            const row = try load(ctx, id, granted) orelse return error.NotFound;
+            const def = (try definitions.find(ctx, row.type_id) orelse return error.NotFound).def;
+
+            if (!def.flow.is_live(row.status)) {
+                return error.Invalid;
+            }
+
+            if (!requests.may_publish(ctx, row.type)) {
+                return error.Denied;
+            }
+
+            const change_set = model.change_set;
+            const live = try document.document_of(ctx, row.id, values.live, def);
+            const parked: ?std.json.Value = if (row.changed)
+                try document.document_of(ctx, row.id, values.pending, def)
+            else
+                null;
+            const next = change_set.applied(ctx.arena, live, changes) catch {
+                return error.OutOfMemory;
+            };
+            var staged = row;
+
+            staged.changed = true;
+            staged.pending_held_back = held_back;
+            try write_slot(ctx, row, def, values.pending, next);
+            try documents.hold_back(ctx.db, row.id, held_back, .pending);
+            try check_references(ctx, staged, values.pending);
+            _ = try apply_pending(ctx, staged);
+
+            const actor = ctx.author();
+            var version = try documents.save(ctx.db, row.id, actor, null, ctx.now_ms, false);
+
+            ctx.publishes = true;
+
+            if (parked) |edits| {
+                const kept = change_set.carried(ctx.arena, edits, live, changes) catch {
+                    return error.OutOfMemory;
+                };
+
+                try write_slot(ctx, row, def, values.pending, kept);
+                try documents.hold_back(ctx.db, row.id, row.pending_held_back, .pending);
+                version = try documents.save(ctx.db, row.id, actor, null, ctx.now_ms, true);
+            }
+
+            return .{
+                .status = row.status,
+                .changed = parked != null,
+                .version = version,
+            };
+        }
+
+        fn write_slot(
+            ctx: *Ctx,
+            row: Record,
+            def: model.content_type.Def,
+            slot: []const u8,
+            document_value: std.json.Value,
+        ) Error!void {
+            std.debug.assert(slot.len > 0);
+            std.debug.assert(document_value == .object);
+
+            try values.write(
+                registry.kinds(ctx),
+                ctx,
+                ctx.db,
+                row.id,
+                slot,
+                row.type_id,
+                def.fields,
+                document_value,
+            );
+        }
+
         pub fn discard(ctx: *Ctx, granted: *const Grant, id: []const u8, expected: ?i64) Error!i64 {
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
@@ -671,6 +770,7 @@ pub fn Of(comptime Domain: type) type {
             }
 
             try values.clear(ctx.db, row.id, values.pending);
+            try documents.hold_back(ctx.db, row.id, null, .pending);
             _ = try documents.clear_request(ctx.db, row.id);
 
             const actor = ctx.author();

@@ -121,6 +121,7 @@ fn take_over(
     if (old.row.enabled) {
         try @import("contracts.zig").check_update(ctx, &manifest);
         try lifecycle.apply_types(ctx, &manifest);
+        try lifecycle.reapply_naming(ctx, &manifest);
     }
 
     decoded.granted = try carried(ctx.arena, asked, old.granted, old.denied, approve_all);

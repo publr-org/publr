@@ -250,16 +250,91 @@ pub const Problem = crud_module.Problem;
 pub const Record = records.Record;
 pub const Transition = lifecycle.Transition;
 pub const TransitionAt = lifecycle.TransitionAt;
+pub const Unschedule = lifecycle.Unschedule;
+pub const RunScheduled = lifecycle.RunScheduled;
+pub const Reschedule = lifecycle.Reschedule;
+pub const SaveVersion = @import("record/versions.zig").SaveVersion;
+pub const PublishVersion = @import("record/versions.zig").PublishVersion;
+pub const SaveIntoScheduled = @import("record/versions.zig").SaveIntoScheduled;
+
+/// The record as its scheduled version `entry` reads, as JSON text.
+fn version_document(
+    ctx: *Ctx,
+    granted: *const Grant,
+    record: Record,
+    entry: i64,
+) Error![]const u8 {
+    std.debug.assert(record.id.len > 0);
+    std.debug.assert(entry > 0);
+
+    const versions = @import("record/versions.zig");
+    const row = try domain.access.load(ctx, record.id, granted) orelse return error.NotFound;
+    const def = (try domain.definition.find(ctx, row.type_id) orelse return error.NotFound).def;
+    const found = try versions.find(ctx, record.id, entry) orelse return error.NotFound;
+    const one = found.entries[found.index];
+    // A status change shows the record as it will be just before it.
+    const shown = if (versions.is_change(one))
+        try versions.shown(ctx, row, def, found.entries, entry)
+    else
+        try versions.projected(ctx, row, def, found.entries, one.base_id);
+
+    return std.json.Stringify.valueAlloc(ctx.arena, shown.document, .{}) catch {
+        return error.OutOfMemory;
+    };
+}
+
+/// What is scheduled for the record, soonest first: each entry, and the keys a scheduled
+/// publish changes.
+fn scheduled_of(ctx: *Ctx, id: []const u8) Error![]const crud_module.Scheduled {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const entries = try store.scheduled_changes.of_record(ctx.db, ctx.arena, id);
+    const out = try ctx.arena.alloc(crud_module.Scheduled, entries.len);
+
+    for (entries, out) |entry, *one| {
+        var keys: []const []const u8 = &.{};
+
+        if (entry.changes.len > 0) {
+            const json = @import("../lib/json.zig");
+            const parsed = json.parse(std.json.Value, ctx.arena, entry.changes, .{
+                .allocate = .alloc_always,
+            }) catch return error.Invalid;
+
+            if (parsed == .object) {
+                keys = parsed.object.keys();
+            }
+        }
+
+        one.* = .{
+            .entry = entry.id,
+            .version = entry.changes.len > 0,
+            .base = entry.base_id orelse 0,
+            .transition = entry.transition,
+            .at = entry.due_at,
+            .by = entry.scheduled_by,
+            .changes = keys,
+            .held_back = entry.held_back,
+            .state = entry.state,
+            .problem = entry.problem,
+        };
+    }
+
+    return out;
+}
 pub const Publish = lifecycle.Publish;
 pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
 pub const Purge = lifecycle.Purge;
 pub const TransitionMany = @import("record/many.zig").TransitionMany;
 pub const DeclineRequest = @import("record/requests.zig").DeclineRequest;
+pub const HoldBack = @import("record/hold_back.zig").HoldBack;
 
 pub const example_id = "a1b2c3d4e5f60718293a4b5c";
 pub const example_changed_id = "b2c3d4e5f60718293a4b5c6d";
 pub const example_draft_id = "c3d4e5f60718293a4b5c6d7e";
+/// A live record with a change scheduled on it (entry 1): what the scheduling examples name.
+pub const example_scheduled_id = "d4e5f60718293a4b5c6d7e8f";
 pub const example_document = "{\"title\":\"Hello, world\",\"body\":\"<p>First post.</p>\"}";
 const example_record: Record = .{
     .id = example_id,
@@ -344,6 +419,9 @@ pub const Get = struct {
         purpose: Purpose = .delivery,
         slot: ?[]const u8 = null,
         dimensions: sdk.Dimensions = .{},
+        /// A scheduled version to read the record as (an entry of `scheduled`): what is live
+        /// with every version up to it laid over. Signed-in callers only.
+        version: i64 = 0,
     };
     pub const Out = crud_module.Got;
     pub const example: In = .{
@@ -392,12 +470,11 @@ pub const Get = struct {
         } else {
             got.document = try virtual_edit.with_members(ctx, granted, got.record, got.document);
 
-            if (try store.scheduled_transitions.get(ctx.db, ctx.arena, got.record.id)) |kept| {
-                got.scheduled = .{
-                    .transition = kept.transition,
-                    .at = kept.due_at,
-                    .by = kept.scheduled_by,
-                };
+            got.scheduled = try scheduled_of(ctx, got.record.id);
+
+            if (in.version > 0) {
+                got.document = try version_document(ctx, granted, got.record, in.version);
+                got.slot = "version";
             }
         }
 
@@ -754,10 +831,11 @@ test {
 }
 
 pub const operations = [_]type{
-    Create,    Get,    Save,           Transition,     Publish,      List,
-    Referrers, Delete, DiscardChanges, Purge,          Validate,     Shown,
-    Query,     Reach,  TransitionMany, DeclineRequest, TransitionAt, Markers,
-    Helps,
+    Create,         Get,               Save,           Transition,     Publish,      List,
+    Referrers,      Delete,            DiscardChanges, Purge,          Validate,     Shown,
+    Query,          Reach,             TransitionMany, DeclineRequest, TransitionAt, Unschedule,
+    Markers,        Helps,             HoldBack,       RunScheduled,   Reschedule,   SaveVersion,
+    PublishVersion, SaveIntoScheduled,
 };
 
 const SDK = registry.SDK;

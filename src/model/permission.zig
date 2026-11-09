@@ -110,7 +110,7 @@ pub const always = [_][]const u8{
     "internal.create",      "internal.get",              "internal.save",
     "internal.find_one",    "internal.find",             "internal.delete",
     "mod.changed",          "mod.apply",                 "ai.progress",
-    "custom_fields.values", "custom_fields.save_values",
+    "custom_fields.values", "custom_fields.save_values", "provider.list",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
@@ -133,6 +133,7 @@ pub const own_records = [_][]const u8{
     "record.reach",
     "record.transition_many",
     "record.decline_request",
+    "record.hold_back",
 };
 
 const read_flags = [_]Flag{ .drafts, .private, .internal };
@@ -175,13 +176,25 @@ pub const core = [_]Permission{
             "record.discard_changes",
             "record.transition",
             "record.transition_at",
+            "record.unschedule",
+            "record.run_scheduled",
+            "record.reschedule",
+            "record.save_version",
+            "record.save_into_scheduled",
+            "record.publish_version",
             "record.decline_request",
             "snapshot.take",
             "snapshot.restore",
             "record.publish",
             "record.transition_many",
+            "record.hold_back",
         },
-        .publishing = &.{ "record.publish", "record.transition_many" },
+        .publishing = &.{
+            "record.publish",
+            "record.transition_many",
+            "record.run_scheduled",
+            "record.publish_version",
+        },
     },
     .{
         .key = "records.destroy",

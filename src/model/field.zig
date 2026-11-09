@@ -46,12 +46,20 @@ pub const Def = struct {
     /// Lists can order by it; null: as its kind does (numbers, money, dates, times).
     sortable: ?bool = null,
     /// The dimensions it holds a value per combination of, beside the main one
-    /// (`name@language=pl`, see `dimension.zig`); `"*"` for every one the site has.
+    /// (`name@language=pl`, see `dimension.zig`); `"*"` for every one the site has. How it
+    /// holds each (`dimension.Holds`): listed only here, an empty value shows the main one;
+    /// also in `required_in`, every value going live must be filled; also in `empty_in`, an
+    /// empty value shows nothing.
     dimensions: []const []const u8 = &.{},
-    /// The dimensions whose every value it must hold before its record goes live, whatever
-    /// the type or the dimension says; `optional_in` the ones it never must.
     required_in: []const []const u8 = &.{},
-    optional_in: []const []const u8 = &.{},
+    empty_in: []const []const u8 = &.{},
+    /// The dimensions it holds one value for though they would vary a field that says
+    /// nothing of them (`Declared.default`): an A/B test's family, said no to.
+    not_in: []const []const u8 = &.{},
+    /// What a plugin's code says through another plugin's field option (`.translatable =
+    /// .required`): made into `dimensions` above where the plugin's types are applied, by
+    /// whichever dimension the site has offers the option; nothing while none does.
+    wrapped: []const Wrapped = &.{},
     /// Declared in code by the type's owner: shown, never edited or removed by hand.
     locked: bool = false,
     many: bool = false,
@@ -64,6 +72,14 @@ pub const Def = struct {
     /// How the field is shown and edited.
     options: Options = .{},
     fields: []const Def = &.{},
+};
+
+/// One field option of a dimension's owner, as a plugin's field gives it.
+pub const Wrapped = struct {
+    /// `translatable`.
+    option: []const u8,
+    /// `required`: one of the values the option takes.
+    value: []const u8,
 };
 
 pub const Problem = struct {
@@ -548,8 +564,11 @@ fn validate_dimensions(def: Def, problems: *Problems) void {
         problems.add(def.name, "a layout field holds no values to vary");
     }
 
-    if (!dimension.valid_names(def.required_in) or !dimension.valid_names(def.optional_in)) {
-        problems.add(def.name, "a required dimension is named in lowercase letters, digits and _");
+    const named = dimension.valid_names(def.required_in) and
+        dimension.valid_names(def.empty_in) and dimension.valid_names(def.not_in);
+
+    if (!named) {
+        problems.add(def.name, "a dimension is named in lowercase letters, digits and _");
     }
 }
 

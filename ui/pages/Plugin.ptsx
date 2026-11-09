@@ -1,7 +1,7 @@
 import { PluginAbout } from "../components/PluginAbout.ptsx";
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
-import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { UninstallPlugin } from "../components/UninstallPlugin.ptsx";
 import { IndexSection } from "../components/IndexSection.ptsx";
 import { PluginRequests } from "../components/PluginRequests.ptsx";
 import { PluginData } from "../components/PluginData.ptsx";
@@ -34,7 +34,10 @@ export type PluginProps = {
   rollback_action: string;
   /** Where the requests' switches post. */
   grants_action: string;
+  /** Where uninstalling posts. */
   remove_action: string;
+  /** Where a piece of its data in the trash is brought back from. */
+  restore_action: string;
   requests: Array<{
     key: string;
     sentence: string;
@@ -50,11 +53,12 @@ export type PluginProps = {
     anywhere: boolean;
     secrets: Array<{ name: string; label: string; help: string; set: boolean; status: string }>;
   }>;
-  /** Where the choice of what goes with it posts; empty for a built-in plugin. */
-  removal_action: string;
-  pieces: Array<{ key: string; label: string; detail: string; chosen: boolean }>;
-  /** What removing it takes along, for the confirm. */
-  removes: string;
+  /** Its data, kept where it is or (`trash`) in the trash. */
+  pieces: Array<{ key: string; label: string; detail: string; trash: string }>;
+  /** Its data where it is: what uninstalling decides. */
+  kept: Array<{ key: string; label: string; detail: string }>;
+  /** Its data in the trash from an earlier uninstall, offered back. */
+  trashed: Array<{ code: string; text: string }>;
   /** Its Log tab: what its code logged. */
   log_href: string;
   /** Its Webhooks tab; empty when it declares none. */
@@ -89,10 +93,11 @@ export function Plugin({
   rollback_action,
   grants_action,
   remove_action,
+  restore_action,
   requests,
-  removal_action,
   pieces,
-  removes,
+  kept,
+  trashed,
   log_href,
   webhooks_href = "",
   missing,
@@ -108,12 +113,10 @@ export function Plugin({
       actions={
         !built_in && (
         <div class="contents">
-          <ConfirmAction
-            inline
-            label={Publr.t("Remove plugin")}
-            title={Publr.t("Remove {name}?", { name })}
-            description={removes}
+          <UninstallPlugin
+            name={name}
             action={remove_action}
+            pieces={kept}
           />
           {previous !== "" && (
             <form method="post" action={rollback_action}>
@@ -193,6 +196,20 @@ export function Plugin({
                 : Publr.t("Its requests that need them are refused until they are set. Paste them under its outside requests below.")}
             </Callout>
           )}
+          {trashed.length > 0 && (
+            <Callout title={Publr.t("Some of its data is in the trash")} items={trashed}>
+              <div class="flex flex-col items-start gap-3">
+                {Publr.t("Kept from when it was uninstalled. Bring it back, or leave it until the trash is emptied.")}
+                <form method="post" action={restore_action}>
+                  <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                  {trashed.map((piece) => (
+                    <input type="hidden" name="piece" value={piece.code} />
+                  ))}
+                  <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Restore all")}</Button>
+                </form>
+              </div>
+            </Callout>
+          )}
           {about && <PluginAbout name={name}>{about}</PluginAbout>}
         </>
       }
@@ -211,7 +228,7 @@ export function Plugin({
           )}
         </IndexSection>
       </form>
-      <PluginData action={removal_action} pieces={pieces} />
+      <PluginData restore_action={restore_action} pieces={pieces} />
     </IndexPage>
   );
 }

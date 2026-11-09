@@ -37,6 +37,7 @@ const Editor = editor.Editor(.{
     .definition_key = "type",
     .crumb = crumb_of,
     .aside = aside_of,
+    .live = @import("live.zig").node_of,
     .versions = true,
 });
 

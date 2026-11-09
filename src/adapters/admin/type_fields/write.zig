@@ -15,6 +15,7 @@ const options = @import("options.zig");
 const columns = @import("columns.zig");
 const levels = @import("levels.zig");
 const type_editor = @import("../type_editor.zig");
+const site_dimensions = @import("../../../operations/dimensions.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -53,11 +54,17 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
         return admin.fail(session, error.NotFound, hub);
     };
     const preview = columns.wants_preview(session);
-    const typed = try field_of(session.arena, field_pages.known_of(session), form, .{
-        .name = "",
-        .label = "",
-        .kind = kind.id,
-    });
+    const typed = try field_of(
+        session.arena,
+        field_pages.known_of(session),
+        site_dimensions.all(&session.ctx),
+        form,
+        .{
+            .name = "",
+            .label = "",
+            .kind = kind.id,
+        },
+    );
     const untitled = try session.translated("Untitled field", .{});
     const field = if (preview) columns.presentable(typed, untitled) else typed;
     const grown = try session.arena.alloc(FieldDef, siblings.len + 1);
@@ -101,7 +108,13 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     const place = try unlocked(session, got.definition, path, hub) orelse return;
     const changed = try session.arena.dupe(FieldDef, place.siblings);
     const preview = columns.wants_preview(session);
-    const typed = try field_of(session.arena, field_pages.known_of(session), form, place.field);
+    const typed = try field_of(
+        session.arena,
+        field_pages.known_of(session),
+        site_dimensions.all(&session.ctx),
+        form,
+        place.field,
+    );
     const untitled = try session.translated("Untitled field", .{});
     const field = if (preview) columns.presentable(typed, untitled) else typed;
 

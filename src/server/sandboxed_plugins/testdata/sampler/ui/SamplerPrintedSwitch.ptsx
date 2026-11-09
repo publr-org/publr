@@ -1,0 +1,24 @@
+import { Publr } from "publr-jsx";
+import type { EditorCtx } from "@publr/admin/Document.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SamplerPrintedSwitchProps = {
+  ctx: EditorCtx & { value: "same" | "own" | null };
+};
+
+/** One switch, on for a value of its own in print; each change goes to the field form. */
+export function SamplerPrintedSwitch({ ctx }: SamplerPrintedSwitchProps) {
+  const state = Publr.reactive({ own: ctx.value === "own" });
+  const toggled = () => {
+    state.own = !state.own;
+    ctx.change(state.own ? "own" : "same");
+  };
+
+  return (
+    <label class="flex items-center gap-3">
+      <Switch id="printed" checked={state.own} onChange={toggled} />
+      <Text as="span" variant="body-sm">{Publr.t("Its own value in print")}</Text>
+    </label>
+  );
+}

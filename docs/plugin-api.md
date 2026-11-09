@@ -470,24 +470,84 @@ no permission. Uninstalling offers them, with their terms, among its data.
 ### Dimensions
 
 A field may hold a value per combination of dimensions: a site's languages, an A/B test's
-variations. A plugin declares a dimension; the core draws a switch for it in every field's
-settings, a picker in the editor, stores each value beside the field
-(`title@language=pl,variation=b`) and reads it with fallback.
+variations. A plugin declares a dimension and, beside it, how others use it: a *wrapper*
+in its own words, a field option (`.translatable = .required`) and a read option
+(`.language = "pl"`). The core draws the field option on every field's panel, a picker in
+the editor, stores each value beside the field (`title@language=pl,variation=b`) and
+reads it with fallback.
 
-```zig
+```zig api.zig
+//! Content per variation of the site's A/B test: how other plugins' fields and reads say it.
+
+const publr = @import("publr");
+
+/// Whether the field holds a value for each variation of the A/B test.
+pub const Tested = enum {
+    /// Not tested
+    /// One value for every variation.
+    no,
+    /// Tested
+    /// A value for each variation; one left empty shows the control's.
+    yes,
+};
+
+fn holds(tested: Tested) publr.dimension.Holds {
+    return switch (tested) {
+        .no => .one,
+        .yes => .fallback,
+    };
+}
+
+/// Test variations
+pub const field = publr.dimension.field_option(.{
+    .name = "tested",
+    .takes = Tested,
+    .holds = holds,
+});
+
+/// Variation
+pub const read = publr.dimension.read_option(.{
+    .name = "variation",
+});
+```
+
+```zig main.zig
 /// Content per variation of the site's A/B test, chosen per visitor.
 const variation = publr.dimension.define(.{
     .name = "variation",
     .priority = 10,
-    .label = "Test variations",
-    .picker = "Variation",
-    .help = "A value for each variation of the A/B test; one left empty shows the control's.",
+    .api = @import("api.zig"),
     .list = Variations.List,
 });
 
 // in define:
 .dimensions = &.{variation},
 ```
+
+```zig another plugin
+// It lists "ab_test" in .depends_on or .compatible_with; it never imports it.
+.fields = .{ .headline = .{ .tested = .yes } },
+
+const product = try Products.record.get(ctx, id, .{ .variation = "b" });
+```
+
+- `.api` is the wrapper. Its words are its doc comments: the field option's `///` is the
+  setting's name on the field panel, its enum's `///` what the setting means, each value's
+  `///` a choice (a first line, then what it means), the read option's `///` the editor
+  picker's word. A missing one fails the build.
+- `field_option(.{ .name, .takes, .holds, .options })`: `.takes` an enum; `.holds` maps each
+  value to a `publr.dimension.Holds`, no two the same and one `.one`. `.options` is a view
+  that draws the setting itself in the plugin frame (`ctx.value` the value the field holds,
+  null for none; `ctx.change(value)` hands another to the form): the languages plugin's is
+  two rows, the second asked only for Optional. Without it the core draws a card per value.
+- `read_option(.{ .name })`: what a read names the dimension by, on the CLI (`--variation b`),
+  in JSON and in a record's `get`. The dimension's own name works too.
+- A field of a plugin's record says it with the option's name (`.tested = .yes`): made
+  into how the field holds the dimension's values when the plugin's types are applied, at
+  boot or install; with no plugin offering the option, it does nothing. A value the option
+  does not take fails the build when both plugins are compiled in, and refuses the install
+  otherwise. Until published interfaces, an installed plugin's misspelt option name is not
+  caught.
 
 - `.name` is what values are stored and asked for under: `--variation b`, `"variation": "b"`.
 - `.param` is its key in an address's query, where the editor keeps what it shows
@@ -498,15 +558,11 @@ const variation = publr.dimension.define(.{
   first. The languages plugin's `language` is 100.
 - `.addresses = true`: the values have pages of their own under their `address` (`/pl`).
   At most one on a site.
-- `.untranslated` names the type setting for records with no value in it.
-- `.required = true`: every value must be filled before a record goes live. A value says
-  otherwise with its own `required` (true or false), a type with `required_in` or
-  `optional_in`, a field the same way; the most specific one that says anything wins. The
-  main value is the field's own `required`. Checked when a record is published or moves to
-  a live status, each missing value refused under its key (`body@language=pl`,
-  `Required in Polski`); drafts always save.
-- `.required_label` names the type and field setting that requires the values (`Required
-  in every language`); without it, neither offers one.
+- Whether values are required is each field's, never the dimension's: a field holds a
+  dimension as one value for all, required in each value going live, or optional with an
+  empty value showing nothing or what it falls back to (`publr.dimension.Holds`). Checked
+  when a record is published or moves to a live status, each missing value refused under
+  its key (`body@language=pl`, `Required in Polski`); drafts always save.
 
 Up to 64 dimensions on a site, from different plugins, combine: a field varying by
 `language` and `variation` holds a value for each pair, one value naming at most four of

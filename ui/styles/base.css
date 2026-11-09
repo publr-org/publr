@@ -63,8 +63,8 @@ body {
 /* Parts of the field form that only make sense with another choice made on the same
    form: shown or hidden by the form's own state, so the page needs no script for it.
    `many` and `single` follow the Values cards, `unique` and `not-unique` the Unique
-   rule, `not-now` the "moment of creation" default. A part without a choice to follow
-   is rendered without the attribute. */
+   rule, `not-now` the "moment of creation" default. A part without a choice to follow is
+   rendered without the attribute. */
 [data-when="many"],
 [data-when="single"],
 [data-when="unique"],

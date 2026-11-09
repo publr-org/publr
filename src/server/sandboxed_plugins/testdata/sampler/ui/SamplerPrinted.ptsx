@@ -1,0 +1,17 @@
+import { Publr } from "publr-jsx";
+import type { EditorCtx } from "@publr/admin/Document.ptsx";
+import { PanelPage } from "@publr/admin/PanelPage.ptsx";
+import { SamplerPrintedSwitch } from "./SamplerPrintedSwitch.ptsx";
+
+export type SamplerPrintedProps = {
+  ctx: EditorCtx & { value: "same" | "own" | null };
+};
+
+/** A field's Per edition setting, drawn by the sampler in the plugin frame. */
+export function SamplerPrinted({ ctx }: SamplerPrintedProps) {
+  return (
+    <PanelPage title={Publr.t("Per edition")}>
+      <SamplerPrintedSwitch ctx={ctx} />
+    </PanelPage>
+  );
+}

@@ -17,6 +17,7 @@ pub const guest_root_source =
     \\
     \\comptime {
     \\    @import("publr").plugin.guest.export_all(Plugin);
+    \\    @import("publr").published.check(Plugin, &@import("plugin_published").all);
     \\}
     \\
 ;
@@ -86,12 +87,25 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
     const files = builder.allocator.alloc(std.Build.LazyPath, names.len) catch @panic("OOM");
     const cache = builder.pathFromRoot(".zig-cache/publr-toolchain");
 
-    for (names, 0..) |name, index| {
+    // Those building against others (`builds_with.zon`) after the rest, with each one's module.
+    for ([_]bool{ false, true }) |second| for (names, 0..) |name, index| {
         const source = builder.pathJoin(&.{ dir, name });
+        const with = builds_with(builder, source);
+
+        if ((with.len > 0) != second) {
+            continue;
+        }
+
         const run = builder.addRunArtifact(publr);
 
         run.addArgs(&.{ "plugin", "build", "--name", name, "--dir" });
         run.addDirectoryArg(builder.path(source));
+
+        for (with) |other| {
+            run.addArg("--with");
+            run.addFileArg(built_before(names, files[0..names.len], other, name));
+        }
+
         run.addArg("--out");
         files[index] = run.addOutputFileArg(builder.fmt("{s}.wasm", .{name}));
         run.setEnvironmentVariable("PUBLR_CACHE_DIR", cache);
@@ -103,12 +117,49 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
         for (embed.files_under(builder, source, ".zig")) |path| {
             run.addFileInput(builder.path(path));
         }
-    }
+    };
 
     return .{
         .names = names,
         .files = files,
     };
+}
+
+/// The plugins `<source>/builds_with.zon` names (`.{ "parcels" }`), whose published
+/// interfaces it builds against; none without one.
+fn builds_with(builder: *std.Build, source: []const u8) []const []const u8 {
+    std.debug.assert(source.len > 0);
+
+    const path = builder.pathJoin(&.{ source, "builds_with.zon" });
+    const io = builder.graph.io;
+    const limit: std.Io.Limit = .limited(1 << 12);
+    const handle = builder.build_root.handle;
+    const text = handle.readFileAllocOptions(io, path, builder.allocator, limit, .of(u8), 0) catch
+        return &.{};
+
+    const List = []const []const u8;
+
+    return std.zon.parse.fromSliceAlloc(List, builder.allocator, text, null, .{}) catch
+        diagnostic.fail("{s}: a list of plugin folders, `.{{ \"parcels\" }}`", .{path});
+}
+
+/// The module built from the folder `other`, which `name` builds against.
+fn built_before(
+    names: []const []const u8,
+    files: []const std.Build.LazyPath,
+    other: []const u8,
+    name: []const u8,
+) std.Build.LazyPath {
+    std.debug.assert(names.len == files.len);
+    std.debug.assert(name.len > 0);
+
+    for (names, files) |candidate, file| {
+        if (std.mem.eql(u8, candidate, other)) {
+            return file;
+        }
+    }
+
+    diagnostic.fail("{s}/builds_with.zon names {s}, which is not beside it", .{ name, other });
 }
 
 /// The SDK a plugin is built against, as `publr plugin build` finds it: `src/` (the Zig

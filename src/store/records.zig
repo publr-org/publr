@@ -31,6 +31,7 @@ pub const set_status = Store.set_status;
 pub const trashed_from = Store.trashed_from;
 pub const ask = Store.ask;
 pub const clear_request = Store.clear_request;
+pub const hold_back = Store.hold_back;
 pub const delete = Store.delete;
 pub const set_app = Store.set_app;
 pub const move_app = Store.move_app;

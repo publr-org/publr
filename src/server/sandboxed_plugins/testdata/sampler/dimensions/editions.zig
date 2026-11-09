@@ -48,8 +48,6 @@ pub const operation = publr.operation.define(In, Out, .{
 /// A field kept per edition: the setting on every field, and the admin's picker.
 pub const dimension = publr.dimension.define(.{
     .name = "edition",
-    .label = "Per edition",
-    .help = "Keep a different value of this field for the print edition.",
-    .picker = "Edition",
+    .api = @import("edition_api.zig"),
     .list = operation,
 });

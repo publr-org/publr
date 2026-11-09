@@ -210,8 +210,8 @@ const writes = [_]type{
     Field(plugins.Revoke, .plugin, .in, "name"),
     Field(plugins.Deny, .plugin, .in, "name"),
     Field(plugins.SetGrant, .plugin, .in, "name"),
-    Field(plugins.ChooseRemoval, .plugin, .in, "name"),
-    PluginRemove,
+    PluginData(plugins.Remove, "trash"),
+    PluginData(plugins.EraseData, "pieces"),
     Field(plugin_sources.Build, .plugin, .in, "name"),
     Field(views.Create, .view, .out, "id"),
     Field(views.Update, .view, .in, "id"),
@@ -288,27 +288,32 @@ const PluginUpload = struct {
     }
 };
 
-/// The plugin, and the content types chosen to go with it.
-const PluginRemove = struct {
-    pub const Operation = plugins.Remove;
-    pub const kinds: []const Kind = &.{ .plugin, .content_type };
+/// The plugin, and the content types among the pieces of its data it names: moved to the
+/// trash when it is uninstalled, or erased.
+fn PluginData(comptime Target: type, comptime field: []const u8) type {
+    return struct {
+        pub const Operation = Target;
+        pub const kinds: []const Kind = &.{ .plugin, .content_type };
 
-    pub fn units(
-        ctx: *Ctx,
-        in: *const Operation.In,
-        out: *const Operation.Out,
-        list: *Units,
-    ) Error!void {
-        std.debug.assert(in.name.len > 0);
-        std.debug.assert(list.items.len == 0);
+        pub fn units(
+            ctx: *Ctx,
+            in: *const Operation.In,
+            _: *const Operation.Out,
+            list: *Units,
+        ) Error!void {
+            std.debug.assert(in.name.len > 0);
+            std.debug.assert(list.items.len == 0);
 
-        for (out.types_removed) |handle| {
-            try add(ctx, list, .content_type, handle);
+            for (@field(in, field)) |key| {
+                if (std.mem.startsWith(u8, key, "type:")) {
+                    try add(ctx, list, .content_type, key["type:".len..]);
+                }
+            }
+
+            try add(ctx, list, .plugin, in.name);
         }
-
-        try add(ctx, list, .plugin, in.name);
-    }
-};
+    };
+}
 
 /// A type's default view, only when there was one to forget.
 const ViewReset = struct {

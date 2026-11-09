@@ -64,6 +64,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .events = @import("remote_contract.zig").events_of(Plugin),
             .compatible_with = plugin_define.get(Plugin, "compatible_with"),
             .providers = @import("../contract.zig").registered_of(Plugin),
+            .contracts = @import("../contract.zig").owned_of(Plugin),
             .pages = pages_of(Plugin),
             .menu = @import("menu_define.zig").entries_of(Plugin),
             .icons = @import("menu_define.zig").icons_of(Plugin),
@@ -309,7 +310,7 @@ fn hooks_of(comptime Plugin: type) []const Hook {
             const stage: Hook.Stage = switch (entry.stage) {
                 .operation, .job => continue,
                 .rule_values, .rule_matches => continue,
-                .kind_validate, .kind_text, .kind_editor => continue,
+                .kind_validate, .kind_text, .kind_editor, .dimension_options => continue,
                 .before => .before,
                 .after => .after,
                 .event => .event,

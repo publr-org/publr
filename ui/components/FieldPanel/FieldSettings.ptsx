@@ -1,5 +1,6 @@
 import { Publr } from "publr-jsx";
 import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
@@ -8,6 +9,7 @@ import { Input } from "@publr/ui/Input.ptsx";
 import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Textarea } from "@publr/ui/Textarea.ptsx";
+import { PluginEditor } from "../PluginEditor.ptsx";
 
 export type FieldSettingsProps = {
   can_title: boolean;
@@ -21,10 +23,17 @@ export type FieldSettingsProps = {
   /** Lists can order by fields of the kind; whether this one is offered. */
   can_sort: boolean;
   sortable: boolean;
-  /** A switch per dimension the field may vary by, in its own words; with `required_label`,
-   * whether each of its values must be filled before going live: `required`, `optional`,
-   * or empty for as the type says. */
-  dimensions?: Array<{ name: string; label: string; help: string; on: boolean; required_label: string; required: string }>;
+  /** How the field holds values per each dimension, in the owner's words (`Translate`):
+   * `value` the owner's choice the field holds; `src` the owner's own setting in the plugin
+   * frame, else a card per choice. */
+  dimensions?: Array<{
+    name: string;
+    label: string;
+    help: string;
+    value: string;
+    src: string;
+    choices: Array<{ value: string; title: string; description: string }>;
+  }>;
   has_target: boolean;
   targets: Array<{
     value: string;
@@ -83,27 +92,35 @@ export function FieldSettings({
           </div>
         )}
         {dimensions.map((dimension) => (
-          <div key={dimension.name}>
+          <fieldset key={dimension.name} class="m-0 min-w-0 border-0 p-0">
             <input type="hidden" name={"dimension_offered." + dimension.name} value="1" />
-            <CheckboxField
-              id={"dimension." + dimension.name}
-              name={"dimension." + dimension.name}
-              checked={dimension.on}
-              label={dimension.label}
-              description={dimension.help}
-            />
-            {dimension.required_label !== "" && (
-              <Field classes="mt-3 pl-7">
-                <FieldLabel htmlFor={"dimension_required." + dimension.name}>{dimension.required_label}</FieldLabel>
-                <NativeSelect id={"dimension_required." + dimension.name} name={"dimension_required." + dimension.name}>
-                  <option value="" selected={dimension.required === ""}>{Publr.t("As the type says")}</option>
-                  <option value="required" selected={dimension.required === "required"}>{Publr.t("Required")}</option>
-                  <option value="optional" selected={dimension.required === "optional"}>{Publr.t("Not required")}</option>
-                </NativeSelect>
-                <FieldDescription>{Publr.t("Checked when the record is published; drafts always save.")}</FieldDescription>
-              </Field>
+            <legend class="mb-2 flex flex-col gap-0.5 p-0">
+              <Text as="span" variant="body-sm" tone="default">{dimension.label}</Text>
+              {dimension.help && (
+                <Text as="span" variant="body-sm" tone="muted">{dimension.help}</Text>
+              )}
+            </legend>
+            {dimension.src ? (
+              <PluginEditor
+                name={"dimension." + dimension.name}
+                value={dimension.value ? JSON.stringify(dimension.value) : ""}
+                src={dimension.src}
+              />
+            ) : (
+              <div class={dimension.choices.length === 2 ? "grid gap-3 sm:grid-cols-2" : "grid gap-3 sm:grid-cols-3"}>
+                {dimension.choices.map((choice) => (
+                  <ChoiceCard
+                    key={choice.value}
+                    name={"dimension." + dimension.name}
+                    value={choice.value}
+                    checked={dimension.value === choice.value}
+                    title={choice.title}
+                    description={choice.description}
+                  />
+                ))}
+              </div>
             )}
-          </div>
+          </fieldset>
         ))}
         {can_search && (
           <CheckboxField

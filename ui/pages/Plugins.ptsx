@@ -2,6 +2,12 @@ import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
 import { Pager } from "../components/Pager.ptsx";
 import { UploadPlugin } from "../components/UploadPlugin.ptsx";
+import { ConfirmAction } from "../components/ConfirmAction.ptsx";
+import { IndexSection } from "../components/IndexSection.ptsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
 import { TabNav } from "@publr/ui/TabNav.ptsx";
 import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
@@ -43,6 +49,17 @@ export type PluginsProps = {
     update_href: string;
     disable_action: string;
   }>;
+  /** Uninstalled plugins whose data is still here, kept where it is or in the trash: each
+   * piece can be purged for good, and a plugin still in the trash reinstalled. */
+  uninstalled: Array<{
+    name: string;
+    pieces: Array<{ key: string; label: string; detail: string; trash: string }>;
+    purge_action: string;
+    /** Empty once the plugin itself has left the trash. */
+    reinstall_action: string;
+    /** The plugin's own trash entry. */
+    trash: string;
+  }>;
   /** "51–100 of 230" when there is more than one page; empty otherwise. */
   range: string;
   previous_href: string;
@@ -50,8 +67,9 @@ export type PluginsProps = {
 };
 
 /** Every plugin added, running or not: enable one to review what it asks for, update one
- * a newer module was uploaded for, stop one. Removing one is on its own page. */
-export function Plugins({ tab, built_in, off, plugins, range, previous_href, next_href }: PluginsProps) {
+ * a newer module was uploaded for, stop one. Uninstalling one is on its own page; what an
+ * uninstalled plugin left is listed last, to purge or bring back. */
+export function Plugins({ tab, built_in, off, plugins, uninstalled, range, previous_href, next_href }: PluginsProps) {
   return (
     <IndexPage
       title={Publr.t("Plugins")}
@@ -86,7 +104,7 @@ export function Plugins({ tab, built_in, off, plugins, range, previous_href, nex
             <EmptyDescription>{Publr.t("This binary was built without plugins.")}</EmptyDescription>
           </Empty>
         )) ||
-        (tab === "installed" && plugins.length === 0 && (
+        (tab === "installed" && plugins.length === 0 && uninstalled.length === 0 && (
           <Empty>
             <EmptyTitle>{Publr.t("No plugins yet")}</EmptyTitle>
             <EmptyDescription>{Publr.t("Upload a plugin's .wasm file to add it.")}</EmptyDescription>
@@ -129,7 +147,7 @@ export function Plugins({ tab, built_in, off, plugins, range, previous_href, nex
           </TableBody>
         </Table>
       )}
-      {tab === "installed" && (
+      {tab === "installed" && plugins.length > 0 && (
         <Table>
           <TableHeader>
             <TableRow>
@@ -195,6 +213,59 @@ export function Plugins({ tab, built_in, off, plugins, range, previous_href, nex
             ))}
           </TableBody>
         </Table>
+      )}
+      {tab === "installed" && uninstalled.length > 0 && (
+        <IndexSection padded title={Publr.t("Uninstalled, data kept")}>
+          <div class="flex flex-col gap-6">
+            {uninstalled.map((left) => (
+              <div class="flex flex-col gap-3" data-uninstalled={left.name}>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <Text as="p" variant="body-md">{left.name}</Text>
+                  <div class="flex flex-wrap items-center gap-2">
+                    {left.reinstall_action !== "" && (
+                      <form method="post" action={left.reinstall_action}>
+                        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                        <input type="hidden" name="trash" value={left.trash} />
+                        <Button type="submit" size="sm" hierarchy="secondary">{Publr.t("Reinstall")}</Button>
+                      </form>
+                    )}
+                    <ConfirmAction
+                      inline
+                      label={Publr.t("Purge")}
+                      title={Publr.t("Erase {name}'s data for good?", { name: left.name })}
+                      description={Publr.t("What you tick is erased, kept data and data in the trash alike. This cannot be undone.")}
+                      action={left.purge_action}
+                    >
+                      <div class="flex flex-col gap-3">
+                        {left.pieces.map((piece) => (
+                          <CheckboxField
+                            id={`purge-${left.name}-${piece.key}`}
+                            name="piece"
+                            value={piece.key}
+                            label={piece.label}
+                            description={piece.detail}
+                          />
+                        ))}
+                      </div>
+                      <Field>
+                        <FieldLabel htmlFor={`purge-${left.name}-confirm`}>
+                          {Publr.t("Type {name} to erase for good", { name: left.name })}
+                        </FieldLabel>
+                        <Input id={`purge-${left.name}-confirm`} name="confirm" autocomplete="off" />
+                      </Field>
+                    </ConfirmAction>
+                  </div>
+                </div>
+                {left.pieces.map((piece) => (
+                  <div class="flex flex-col gap-0.5" data-piece={piece.key}>
+                    <Text as="p" variant="body-sm">{piece.label}</Text>
+                    <Text as="p" variant="body-sm" tone="muted">{piece.detail}</Text>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </IndexSection>
       )}
     </IndexPage>
   );
