@@ -84,10 +84,13 @@ jobs:
           last="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           migration=src/lib/db/migrations/unreleased.zig
           unreleased=false; one_way=false; schema_changed=false
-          [ -f "$migration" ] && unreleased=true
-          if $unreleased && grep -q 'pub const one_way = true' "$migration"; then one_way=true; fi
-          if [ -n "$last" ] && ! git diff --quiet "$last" -- src/lib/db/schema.sql; then
-            schema_changed=true
+          # Migrations are required only once update testing has started (fixtures/upgrade/START).
+          if [ -f fixtures/upgrade/START ]; then
+            [ -f "$migration" ] && unreleased=true
+            if $unreleased && grep -q 'pub const one_way = true' "$migration"; then one_way=true; fi
+            if [ -n "$last" ] && ! git diff --quiet "$last" -- src/lib/db/schema.sql; then
+              schema_changed=true
+            fi
           fi
           if $schema_changed && ! $unreleased; then
             echo "::error::schema.sql changed since $last with no $migration; run zig build migration-draft"; exit 1
@@ -146,7 +149,7 @@ jobs:
             grep -q "version = \"$VERSION\"" "$file" || { echo "::error file=$file::no version line"; exit 1; }
           done
           migrations=src/lib/db/migrations
-          if [ -f "$migrations/unreleased.zig" ]; then
+          if [ -f fixtures/upgrade/START ] && [ -f "$migrations/unreleased.zig" ]; then
             mv "$migrations/unreleased.zig" "$migrations/$VERSION.zig"
             perl -pi -e 's/"unreleased"/"$ENV{VERSION}"/; s/migrations\/unreleased\.zig/migrations\/$ENV{VERSION}.zig/g' "$migrations.zig"
             grep -q "migrations/$VERSION.zig" "$migrations.zig" || { echo "::error::$migrations.zig does not list unreleased.zig"; exit 1; }
