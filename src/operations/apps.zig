@@ -267,14 +267,12 @@ pub const Write = struct {
     }
 };
 
-/// The files themselves are not in the transaction: a write a drafts device may not make is
+/// The files themselves are not in the transaction: a write a device may not make is
 /// refused before it touches them.
 fn refuse_drafts(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.publishes);
 
-    const scope = ctx.caller.scope() orelse return;
-
-    if (scope == .drafts) {
+    if (ctx.drafts_only()) {
         return ctx.fail(sdk.operation.drafts_only);
     }
 }
@@ -286,7 +284,7 @@ pub const Remove = struct {
     pub const name = "apps.remove";
     pub const description = "Delete one file of the project's apps into the trash";
     pub const details =
-        \\Administrators only, and not a device that may save drafts only. Not found when
+        \\Administrators only, and not a device that may not publish. Not found when
         \\there is no such file. `apps load` makes the change live.
     ;
     pub const kind: sdk.operation.Kind = .write;

@@ -591,7 +591,9 @@ Index: `devices_user_id (user_id, created_at)`.
 
 Devices waiting for a person to approve them (`device.start`), until they collect their
 token (`device.poll`) or ten minutes pass. The device holds the device code; only its hash
-is stored. The person types the user code.
+is stored. The person types the user code. An MCP client's request (`/oauth/authorize`)
+also keeps the client and its PKCE challenge; once approved, its key becomes the hash of
+the code the client is sent back with, traded only with the verifier (`/oauth/token`).
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -603,6 +605,10 @@ is stored. The person types the user code.
 | `user_id` | text, references `users`, null | Who approved or denied it |
 | `expires_at` | integer | When the request lapses, Unix milliseconds |
 | `created_at` | integer | When the device asked |
+| `client_id` | text | An MCP client's id (its name and return addresses), empty for a device's own request |
+| `redirect_uri` | text | Where the client is sent back, one it registered |
+| `code_challenge` | text | The client's PKCE challenge (S256) |
+| `client_state` | text | The client's `state`, sent back with the code |
 
 Index: `device_requests_expires_at (expires_at)`.
 

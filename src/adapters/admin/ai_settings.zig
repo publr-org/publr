@@ -271,7 +271,7 @@ fn test_provider(request: *Request, response: *Response, ctx: *Context) Error!vo
 }
 
 /// Where the Overview's forms come back to.
-const overview = "/admin?mode=keys";
+const overview = "/admin";
 
 /// Whether the form was sent from the Overview, which it goes back to.
 fn from_overview(form: *const admin.Form) bool {

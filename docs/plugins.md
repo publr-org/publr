@@ -1095,16 +1095,14 @@ profile, in a box named after the plugin. One plugin at a time; compiled in
 only, for now. A demo running in a browser tab, which no agent can sign in to, says how to
 build with an agent on the visitor's own machine.
 
-### An agent's work in a copy
+### Copies of a site
 
-A host that keeps copies of a site (Publr Cloud's branches) names the operation that starts
-an agent's work in one: `try host.work_start(StartWork)`. `publr work start` from a
-device runs it; its answer (`name`, `address`, `preview`, `merge`) tells the device's CLI
-where that folder's commands go from then on. A device's call says `--production` to mean
-the site itself, which a pre hook reads as `ctx.production`; a pre hook that refuses a
-device's write with the failure `WorkInABranch` makes the CLI start work and send the
-write there. With `work_start` declared, the Overview's agent steps say that changes go to
-a branch for the person to merge. One plugin at a time; compiled in only.
+A plugin that keeps copies of a site names the operation listing them:
+`try host.copies(List)`, answering `{ environments: [{ name, aliases, address, current }] }`.
+`--env <name>` finds a copy through it, and with it declared the approve page offers Write on
+production. A pre hook of the plugin says `ctx.on_copy = true` in a copy, where a `write`
+device may publish, and refuses a `write` device's writes on the site itself. One plugin at
+a time; compiled in only.
 
 A host's plugin also calls `host.hosted()`: the project's folder is then never
 the person's, so the Overview always gives the steps for a site elsewhere (get Publr, sign

@@ -43,7 +43,11 @@ fn run(init: std.process.Init) !u8 {
     var db_path: [:0]const u8 = db_path_default;
     var rest = args;
 
+    var env: ?[]const u8 = null;
+
     if (builtin.os.tag != .wasi) {
+        env = try remote_env(init, &rest);
+
         const command = try before_command(init, rest, db_path);
 
         rest = command.args;
@@ -57,23 +61,15 @@ fn run(init: std.process.Init) !u8 {
     }
 
     // Everything goes to the Publr named, its help and its plugins' commands too; signing in
-    // and out of it, and the folder's open work, are this machine's.
-    var production = taken(&rest, "--production");
-
+    // and out of it are this machine's.
     if (try site_of(init, &rest)) |address| {
-        production = taken(&rest, "--production") or production;
-
         if (rest.len > 0 and try builds_here(init, rest)) {
-            return try publr.plugin_build_remote.run(init, address, rest[2..], production, out);
+            return try publr.plugin_build_remote.run(init, address, rest[2..], env, out);
         }
 
         if (rest.len > 0 and !stays_here(rest)) {
-            return try publr.forwarding.forward(init, address, rest, production, out);
+            return try publr.forwarding.forward(init, address, rest, env, out);
         }
-    }
-
-    if (rest.len >= 1 and is_local_work(rest)) {
-        return try publr.work.run(init, out, rest);
     }
 
     if (try tool(init, out, db_path, rest)) |code| {
@@ -123,13 +119,13 @@ fn is_account(command: []const u8) bool {
 }
 
 /// What runs on this machine whichever site the command names: signing in and out, the
-/// folder's open work, the skill for its agent and the guide this binary carries.
+/// skill for its agent and the guide this binary carries.
 fn stays_here(args: []const []const u8) bool {
     std.debug.assert(args.len > 0);
 
     const guide = args.len == 1 and std.mem.eql(u8, args[0], "agents");
 
-    return is_account(args[0]) or is_local_work(args) or guide or
+    return is_account(args[0]) or guide or
         std.mem.eql(u8, args[0], "skill");
 }
 
@@ -156,40 +152,45 @@ fn builds_here(init: std.process.Init, args: []const []const u8) !bool {
     }
 }
 
-/// `publr work` and `work done`: the folder's, never sent; `work start` is the site's.
-fn is_local_work(args: []const []const u8) bool {
-    std.debug.assert(args.len > 0);
+/// A leading `--env <name>`, taken off the words, for a command going to a Publr elsewhere;
+/// on this computer it is left for the plugin that keeps the copies.
+fn remote_env(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
+    std.debug.assert(rest.len <= args_max);
 
-    const starts = args.len >= 2 and std.mem.eql(u8, args[1], "start");
+    const words = rest.*;
+    const at: u32 = if (words.len >= 2 and std.mem.eql(u8, words[0], "--site")) 2 else 0;
+    const named = words.len >= at + 2 and std.mem.eql(u8, words[at], "--env");
 
-    return std.mem.eql(u8, args[0], "work") and !starts;
-}
-
-/// Whether the words start with `flag`, taken off them when they do.
-fn taken(rest: *[]const []const u8, flag: []const u8) bool {
-    std.debug.assert(flag.len > 0);
-
-    if (rest.len == 0 or !std.mem.eql(u8, rest.*[0], flag)) {
-        return false;
+    if (!named) {
+        return null;
     }
 
-    rest.* = rest.*[1..];
+    const site_after = words.len >= 4 and std.mem.eql(u8, words[2], "--site");
+    const elsewhere = at == 2 or site_after or init.environ_map.get("PUBLR_SITE") != null or
+        try publr.credentials.folder_site(init) != null;
 
-    return true;
+    if (!elsewhere) {
+        return null;
+    }
+
+    const kept = try init.arena.allocator().alloc([]const u8, words.len - 2);
+
+    @memcpy(kept[0..at], words[0..at]);
+    @memcpy(kept[at..], words[at + 2 ..]);
+    rest.* = kept;
+
+    return words[at + 1];
 }
 
 /// The Publr elsewhere a command goes to: `--site <address>` (taken off the words), else
-/// `PUBLR_SITE`, else the site of the work open in this folder, else the one the folder
-/// builds (`.publr/site`); null to run it here.
+/// `PUBLR_SITE`, else the one the folder builds (`.publr/site`); null to run it here.
 fn site_of(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
     const named = rest.len >= 2 and std.mem.eql(u8, rest.*[0], "--site");
     const site = if (named)
         rest.*[1]
     else if (init.environ_map.get("PUBLR_SITE")) |variable|
         variable
-    else if (try publr.work.open(init, null)) |work|
-        work.site
-    else if (try publr.work.folder_site(init)) |folder|
+    else if (try publr.credentials.folder_site(init)) |folder|
         folder
     else
         return null;
@@ -283,7 +284,10 @@ fn is_init(args: []const []const u8) bool {
     var index: u32 = 0;
 
     while (index < args.len and std.mem.startsWith(u8, args[index], "--")) {
-        index += if (std.mem.eql(u8, args[index], "--as")) 2 else 1;
+        const valued = std.mem.eql(u8, args[index], "--as") or
+            std.mem.eql(u8, args[index], "--device");
+
+        index += if (valued) 2 else 1;
     }
 
     const command = args[@min(index, args.len)..];
@@ -404,6 +408,10 @@ fn tool(
 
         if (publr.cloud_deploy.handles(rest) and !has_flag(rest, "--help")) {
             return try publr.cloud_deploy.run(init, out, db_path, rest);
+        }
+
+        if (publr.clone.handles(rest) and !has_flag(rest, "--help")) {
+            return try publr.clone.run(init, out, rest);
         }
 
         if (publr.bundle.handles(rest) and !has_flag(rest, "--help")) {

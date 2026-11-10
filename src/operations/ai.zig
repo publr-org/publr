@@ -25,8 +25,8 @@ pub const namespace: sdk.operation.Namespace = .{
     .details =
     \\A person asks for something in plain words (`ai ask`); an agent then works on the
     \\project in a process of its own beside the server, as a device of that person with the
-    \\access they chose (`read`, `drafts` or `write`), running `publr` commands and reading
-    \\the agents guide, until the model is done. Each step lands as it happens
+    \\access they chose (`read`, `write`, `production` or `publish`), running `publr` commands
+    \\and reading the agents guide, until the model is done. Each step lands as it happens
     \\(`ai conversation`), and the device is revoked when the turn ends. Conversations are
     \\private: each belongs to the person who asked. The agent's own bookkeeping (`ai
     \\begin`, `ai step`, `ai finish`) is the local operator's alone.
@@ -95,7 +95,7 @@ pub const example_conversation: Conversation = .{
     .prompt = example_prompt,
     .provider = "scripted",
     .model = "",
-    .scope = "write",
+    .scope = "publish",
     .state = "running",
     .answer = "",
     .input_tokens = 0,
@@ -109,8 +109,8 @@ pub const Ask = struct {
     pub const description = "Ask a model to build something; an agent starts on it at once";
     pub const details =
         \\Starts a conversation and its turn: an agent works on the project beside the server,
-        \\as a device of the caller with `scope` (`write`, the default: what the caller may do;
-        \\`drafts`, writing but not publishing; or `read`),
+        \\as a device of the caller with `scope` (`publish`, the default: what the caller may do;
+        \\`production`, writing but not publishing; `write`, on copies only; or `read`),
         \\and the steps land in the conversation as they happen. Signed-in people only, on a
         \\server (`publr serve`) with a model provider connected. Answers at once, `running`.
     ;
@@ -119,7 +119,7 @@ pub const Ask = struct {
     pub const example_signed_in = true;
     pub const In = struct {
         prompt: []const u8,
-        scope: []const u8 = "write",
+        scope: []const u8 = "publish",
         pictures: []const []const u8 = &.{},
         page: []const u8 = "",
     };
@@ -130,8 +130,8 @@ pub const Ask = struct {
     pub const example_out: Out = example_conversation;
     pub const field_docs: sdk.operation.Docs(In) = .{
         .prompt = "What to build, in plain words; up to 16 KiB",
-        .scope = "What the agent may do: write (as you may), drafts (it writes, you " ++
-            "publish) or read",
+        .scope = "What the agent may do: publish (as you may), production (it writes, you " ++
+            "publish), write (on copies only) or read",
         .pictures = pictures_doc,
         .page = "The page it was asked on, which the words may mean by \"this\": an " ++
             "admin path (`/admin/content/post/<id>`) or a site's address; empty for none",

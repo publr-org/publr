@@ -25,6 +25,32 @@ const local_rows = [_][:0]const u8{
     "DELETE FROM deps_pending",
     "DELETE FROM deps_meta",
 };
+/// What a clone goes without, beyond what any bundle does: a clone is the site, not its people
+/// (`clone-and-push.md`). The logs refuse deletes, so their triggers go first; opening the
+/// clone makes them again. Every internal record goes: what holds people's data cannot be told
+/// from what does not.
+const clone_rows = [_][:0]const u8{
+    "DROP TRIGGER IF EXISTS activity_kept",
+    "DROP TRIGGER IF EXISTS activity_never_removed",
+    "DROP TRIGGER IF EXISTS errors_kept",
+    "DROP TRIGGER IF EXISTS errors_never_removed",
+    "DROP TRIGGER IF EXISTS plugin_log_kept",
+    "DROP TRIGGER IF EXISTS plugin_log_never_removed",
+    "DELETE FROM activity",
+    "DELETE FROM errors",
+    "DELETE FROM plugin_log",
+    "DELETE FROM secrets",
+    "DELETE FROM internal_records",
+};
+/// Folders and files under the data folder a clone leaves too.
+const clone_data_left_out = [_][]const u8{ "environments", "branches", "secret.key" };
+
+/// A bundle made to be worked on elsewhere. `keep_user`, when given, is the one account it
+/// keeps, an administrator there.
+pub const Clone = struct {
+    keep_user: ?[]const u8 = null,
+};
+
 const copy_buffer_bytes: u32 = 64 << 10;
 
 const Compressor = struct {
@@ -39,6 +65,27 @@ pub fn pack(
     out_path: []const u8,
     name: []const u8,
 ) !bundle.Packed {
+    return pack_with(site, arena, out_path, name, null);
+}
+
+/// As `pack`, without what stays behind on a clone.
+pub fn pack_clone(
+    site: backup.Site,
+    arena: std.mem.Allocator,
+    out_path: []const u8,
+    name: []const u8,
+    clone: Clone,
+) !bundle.Packed {
+    return pack_with(site, arena, out_path, name, clone);
+}
+
+fn pack_with(
+    site: backup.Site,
+    arena: std.mem.Allocator,
+    out_path: []const u8,
+    name: []const u8,
+    clone: ?Clone,
+) !bundle.Packed {
     std.debug.assert(out_path.len > 0);
     std.debug.assert(name.len > 0);
 
@@ -52,7 +99,7 @@ pub fn pack(
     };
 
     const manifest: bundle.Manifest = .{
-        .release = try take_snapshot(site, arena, snapshot),
+        .release = try take_snapshot(site, arena, snapshot, clone),
         .name = name,
         .made_at_ms = @import("../../sdk.zig").context.wall_clock_ms(io),
         .database = site.database,
@@ -73,6 +120,7 @@ pub fn pack(
     var archive: Archive = .{
         .site = site,
         .arena = arena,
+        .clone = clone != null,
         .tar = .{
             .underlying_writer = &compressor.compress.writer,
         },
@@ -101,9 +149,48 @@ fn remove_if_there(io: std.Io, path: []const u8) !void {
 
 const Tree = enum { data, project };
 
+fn clone_leaves(path: []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    for (clone_data_left_out) |item| {
+        if (same_path(path, item)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// A clone's snapshot without its people: only `keep_user`'s account, made an administrator.
+fn clear_for_clone(copy: *db.Db, clone: Clone) !void {
+    std.debug.assert(clone_rows.len > 0);
+
+    inline for (clone_rows) |statement| {
+        try copy.exec(statement);
+    }
+
+    const keep = clone.keep_user orelse return;
+    var others = try copy.prepare("DELETE FROM users WHERE id != ?1");
+    defer others.finalize();
+
+    try others.bind_text(1, keep);
+    try others.exec();
+
+    var admin = try copy.prepare(
+        "INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?1, ?2)",
+    );
+    defer admin.finalize();
+
+    try admin.bind_text(1, keep);
+    try admin.bind_text(2, @import("../../model/role.zig").admin);
+    try admin.exec();
+}
+
 const Archive = struct {
     site: backup.Site,
     arena: std.mem.Allocator,
+    /// Leaves what a clone leaves.
+    clone: bool = false,
     tar: std.tar.Writer,
     files: u32 = 0,
     bytes: u64 = 0,
@@ -158,7 +245,10 @@ const Archive = struct {
         defer walker.deinit();
 
         while (try walker.next(io)) |entry| {
-            if (left_out(archive.site, entry.path, entry.basename, tree)) {
+            const cloned_out = archive.clone and tree == .data and
+                clone_leaves(entry.path);
+
+            if (cloned_out or left_out(archive.site, entry.path, entry.basename, tree)) {
                 if (entry.kind == .directory) {
                     walker.leave(io);
                 }
@@ -242,7 +332,12 @@ pub fn left_out(site: backup.Site, path: []const u8, basename: []const u8, tree:
 /// The database copied to `path`, consistent while a server writes to the original
 /// (`VACUUM INTO`), with this machine's rows taken out and the pages that held them
 /// rewritten; the release that last opened it, empty for none.
-fn take_snapshot(site: backup.Site, arena: std.mem.Allocator, path: [:0]const u8) ![]const u8 {
+fn take_snapshot(
+    site: backup.Site,
+    arena: std.mem.Allocator,
+    path: [:0]const u8,
+    clone: ?Clone,
+) ![]const u8 {
     std.debug.assert(path.len > 0);
     std.debug.assert(local_rows.len > 0);
 
@@ -258,6 +353,10 @@ fn take_snapshot(site: backup.Site, arena: std.mem.Allocator, path: [:0]const u8
         if (try db.schema.has_table(&copy, comptime table_of(statement))) {
             try copy.exec(statement);
         }
+    }
+
+    if (clone) |wanted| {
+        try clear_for_clone(&copy, wanted);
     }
 
     try copy.exec("PRAGMA journal_mode = DELETE");

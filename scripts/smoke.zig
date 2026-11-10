@@ -503,6 +503,8 @@ fn expect_serve(
         return error.SmokeFailed;
     }
 
+    try expect_mcp(init, port);
+
     const login_body = "{\"email\":\"smoke@example.com\",\"password\":\"smoke test pass\"}";
     const login = try http_post(init, port, "/api/auth/sign-in", login_body);
 
@@ -796,6 +798,33 @@ test "the announced port is parsed from the serve banner" {
     try std.testing.expectError(error.NoPortAnnounced, parse_announced_port("nothing here"));
     const garbage = parse_announced_port("http://127.0.0.1:abc");
     try std.testing.expectError(error.InvalidCharacter, garbage);
+}
+
+/// A tool adding this Publr by its address finds how to sign in, and `/mcp` asks it to.
+fn expect_mcp(init: std.process.Init, port: u16) !void {
+    std.debug.assert(port > 0);
+
+    const discovery = try http_get(init, port, "/.well-known/oauth-authorization-server");
+
+    if (std.mem.indexOf(u8, discovery, "\"code_challenge_methods_supported\":[\"S256\"]") == null) {
+        std.debug.print("smoke: serve: unexpected OAuth metadata: {s}\n", .{discovery});
+        return error.SmokeFailed;
+    }
+
+    const ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+    const refused = try http_post(init, port, "/mcp", ping);
+
+    if (std.mem.indexOf(u8, refused, "WWW-Authenticate: Bearer resource_metadata=") == null) {
+        std.debug.print("smoke: serve: /mcp without a token: {s}\n", .{refused});
+        return error.SmokeFailed;
+    }
+
+    const clone = try http_post(init, port, "/api/sites/pack", "{}");
+
+    if (std.mem.indexOf(u8, clone, "administrator_required") == null) {
+        std.debug.print("smoke: serve: clone without an administrator: {s}\n", .{clone});
+        return error.SmokeFailed;
+    }
 }
 
 pub fn http_get(init: std.process.Init, port: u16, path: []const u8) ![]const u8 {

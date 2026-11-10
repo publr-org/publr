@@ -636,7 +636,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var app_picker_segment: []const type = &.{};
         var dimension_list: []const dimensions.Native = &.{};
         var request_hooks: []const @import("page_request.zig").Hook = &.{};
-        var work_start: ?[]const u8 = null;
+        var copies_list: ?[]const u8 = null;
         var hosted = false;
         var translations: []const OwnedTranslation = &.{};
         var operator_commands: []const route.DeclaredCommand = &.{};
@@ -786,13 +786,13 @@ pub fn Merged(comptime plugins: anytype) type {
                 hosted = hosted or plugin_define.get(Plugin, "hosted");
             }
 
-            if (plugin_define.has(Plugin, "work_start")) {
-                if (work_start != null) {
-                    @compileError("two plugins declare `work_start`; one at a time");
+            if (plugin_define.has(Plugin, "copies")) {
+                if (copies_list != null) {
+                    @compileError("two plugins declare `copies`; one at a time");
                 }
 
-                work_start = Plugin.manifest.name ++ "." ++
-                    plugin_define.get(Plugin, "work_start").verb;
+                copies_list = Plugin.manifest.name ++ "." ++
+                    plugin_define.get(Plugin, "copies").verb;
             }
 
             operator_commands = operator_commands ++ route.operator_commands_of(Plugin);
@@ -981,9 +981,9 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_dimensions = dimension_list;
             /// Every `publr.hook.request`, in plugin order.
             pub const merged_request_hooks = request_hooks;
-            /// The operation `publr work start` runs, where a hosting service's plugin
-            /// sends a device's work to a copy of the project (`pub const work_start`).
-            pub const merged_work_start = work_start;
+            /// The operation listing the site's copies, environments and branches, where a
+            /// plugin keeps them (`pub const copies`); `--env` names one of them.
+            pub const merged_copies_list = copies_list;
             /// A plugin says the project runs on a host (`pub const hosted = true`): its
             /// folder and binary are never on the machine of the person in its admin.
             pub const merged_hosted = hosted;

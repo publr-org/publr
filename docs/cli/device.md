@@ -8,7 +8,7 @@ device's side for you ([CLI: A Publr elsewhere](../cli.md#a-publr-elsewhere)). B
 ## `start`
 
 Anyone. A device asks to act for someone: `--name` is what they will see, `--scope` what
-it asks to do (`drafts` by default). Answers the device code (kept by the device, never
+it asks to do at most (`production` by default). Answers the device code (kept by the device, never
 shown), the user code and `approve_path`, the page on this site where the person approves
 it. The request lapses after ten minutes.
 
@@ -32,19 +32,29 @@ device is called.
 ## `offer`
 
 A signed-in person, never a device. A sign-in for one of their own computers, approved as
-it is made (`--scope`, `write` by default): answers a one-time code that `claim` takes
+it is made (`--scope`, `publish` by default): answers a one-time code that `claim` takes
 within ten minutes. The admin's Overview puts it in the command that sets up an agent's
 computer, `curl -fsSL <site>/api/agent/<code> | sh`, which installs the publr command,
 signs the computer in (`publr login <site> --claim <code>`) and installs the skill.
+
+## `authorize`, `exchange`
+
+Anyone; the OAuth addresses call them for an MCP client
+([Authentication: MCP clients](../auth.md#mcp-clients)). `authorize` keeps a client's
+request (`--client_id`, `--redirect_uri`, `--code_challenge`, `--state`, `--scope`) and
+answers the user code and its `approve_path`. `exchange` trades the code the client was
+sent back with, and its PKCE verifier, for the device's token, once.
 
 ## `request`, `approve`, `deny`
 
 A signed-in person, never a device. `request` shows what a waiting device asks for, by
 the user code; `approve` lets it act for the caller's account with `--scope` (no more than
-it asked); `deny` turns it away. The admin's approve page calls these.
+it asked); `deny` turns it away. The admin's approve page calls these. For an MCP client,
+`request` answers its return address, and `approve` and `deny` answer where to send the
+person: back to the client, with its code or saying it was refused.
 
 ```
-$ publr --as ada@example.com device approve --code WXYZ-BCDF --scope drafts
+$ publr --as ada@example.com device approve --code WXYZ-BCDF --scope production
 { "approved": true }
 ```
 

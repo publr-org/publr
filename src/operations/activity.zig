@@ -148,6 +148,131 @@ pub const List = struct {
 
 pub const operations = [_]type{List};
 
+/// Who made a change, as the Overview says it: the person reading, whoever runs the site
+/// from its own computer, or someone or something by name.
+pub const Who = enum { you, operator, named };
+
+pub const Change = struct {
+    at: i64,
+    who: Who,
+    /// Who it was, for `.named`.
+    name: []const u8 = "",
+    operation: []const u8,
+    transition: []const u8,
+    /// A record's title, a file's path, a type's or plugin's name; empty for a record gone.
+    subject: []const u8,
+    /// The record it was made to, when that still exists.
+    record: []const u8 = "",
+};
+
+/// How many entries are read for each change shown: repeats fold into one.
+const changes_read_factor: u32 = 8;
+
+/// The newest changes to the site among the `names` (a JSON array of operations), up to
+/// `limit`: the same change made again and again is one. For administrators, as `List` is.
+pub fn recent_changes(ctx: *Ctx, names: []const u8, limit: u32) Error![]const Change {
+    std.debug.assert(limit > 0 and limit <= store.activity.list_max / changes_read_factor);
+    std.debug.assert(names.len > 0);
+
+    const rows = try store.activity.changes(ctx.db, ctx.arena, names, limit * changes_read_factor);
+    var changes: std.ArrayList(Change) = .empty;
+    var previous: ?store.activity.Change = null;
+
+    for (rows) |row| {
+        if (changes.items.len == limit) {
+            break;
+        }
+
+        const again = if (previous) |last| same_change(last, row) else false;
+
+        previous = row;
+
+        if (!again) {
+            changes.append(ctx.arena, try change_of(ctx, row)) catch return error.OutOfMemory;
+        }
+    }
+
+    return changes.items;
+}
+
+fn same_change(left: store.activity.Change, right: store.activity.Change) bool {
+    return std.mem.eql(u8, left.actor, right.actor) and
+        std.mem.eql(u8, left.operation, right.operation) and
+        std.mem.eql(u8, left.unit, right.unit) and std.mem.eql(u8, left.path, right.path);
+}
+
+fn change_of(ctx: *Ctx, row: store.activity.Change) Error!Change {
+    std.debug.assert(row.operation.len > 0);
+    std.debug.assert(row.actor.len > 0);
+
+    var change: Change = .{
+        .at = row.at,
+        .who = .named,
+        .operation = row.operation,
+        .transition = row.transition,
+        .subject = if (row.path.len > 0) row.path else after_colon(row.unit),
+    };
+
+    const merged = std.mem.eql(u8, row.operation, "merge.accept");
+
+    if (std.mem.startsWith(u8, row.unit, "record:") and !merged) {
+        const found = store.records.get(ctx.db, ctx.arena, after_colon(row.unit)) catch {
+            return error.Failed;
+        };
+
+        change.subject = if (found) |record| record.title else "";
+        change.record = if (found) |record| record.id else "";
+    }
+
+    try fill_who(ctx, row.actor, &change);
+
+    return change;
+}
+
+/// `actor_of`'s word for who it was, as a name.
+fn fill_who(ctx: *Ctx, actor: []const u8, change: *Change) Error!void {
+    std.debug.assert(actor.len > 0);
+    std.debug.assert(change.who == .named);
+
+    if (std.mem.eql(u8, actor, "system")) {
+        change.who = .operator;
+
+        return;
+    }
+
+    if (std.mem.startsWith(u8, actor, "token:")) {
+        const found = store.devices.find(ctx.db, ctx.arena, after_colon(actor)) catch {
+            return error.Failed;
+        };
+
+        change.name = if (found) |device| device.name else actor;
+
+        return;
+    }
+
+    if (std.mem.indexOfScalar(u8, actor, ':') != null) {
+        change.name = after_colon(actor);
+
+        return;
+    }
+
+    if (std.mem.eql(u8, actor, ctx.caller.user_id() orelse "")) {
+        change.who = .you;
+
+        return;
+    }
+
+    const found = store.users.find_by_id(ctx.db, ctx.arena, actor) catch return error.Failed;
+
+    change.name = if (found) |account| account.user.display_name else actor;
+}
+
+fn after_colon(text: []const u8) []const u8 {
+    const colon = std.mem.indexOfScalar(u8, text, ':') orelse return text;
+
+    return text[colon + 1 ..];
+}
+
 fn write_activity(ctx: *Ctx, entry: *const Entry) Error!?sdk.trail.Logged {
     std.debug.assert(entry.operation.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);

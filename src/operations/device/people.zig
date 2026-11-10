@@ -7,12 +7,14 @@ const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const model = @import("../../model/device.zig");
 const role = @import("../../model/role.zig");
+const ai_model = @import("../../model/ai.zig");
+const oauth = @import("oauth.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const operations = [_]type{ Request, Approve, Deny, List, Revoke };
+pub const operations = [_]type{ Request, Approve, Deny, List, Update, Revoke };
 
 pub const example_code = "WXZB-CDFG";
 pub const example_device_id = "56a0794f6b1c67062563204a";
@@ -63,14 +65,16 @@ pub const Request = struct {
         name: []const u8,
         scope: []const u8,
         expires_at: i64,
+        returns_to: []const u8 = "",
     };
     pub const example: In = .{
         .code = example_code,
     };
     pub const example_out: Out = .{
         .name = "An agent on Ada's laptop",
-        .scope = "drafts",
+        .scope = "production",
         .expires_at = 1792232000000,
+        .returns_to = "",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .code = "The user code, `WXZB-CDFG`",
@@ -79,6 +83,8 @@ pub const Request = struct {
         .name = "What the device calls itself",
         .scope = "What it asks to do",
         .expires_at = "When the request lapses, Unix milliseconds",
+        .returns_to = "An MCP client's return address, where the person goes once they " ++
+            "decide; empty for a device's own request",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -90,6 +96,7 @@ pub const Request = struct {
             .name = request.name,
             .scope = request.scope,
             .expires_at = request.expires_at,
+            .returns_to = request.redirect_uri,
         };
     }
 };
@@ -111,20 +118,24 @@ pub const Approve = struct {
     };
     pub const Out = struct {
         approved: bool,
+        sent_back: []const u8 = "",
     };
     pub const example: In = .{
         .code = example_code,
-        .scope = "drafts",
+        .scope = "production",
     };
     pub const example_out: Out = .{
         .approved = true,
+        .sent_back = "",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .code = "The user code, `WXZB-CDFG`",
-        .scope = "`read`, `drafts` or `write`, no more than it asked",
+        .scope = "`read`, `write`, `production` or `publish`, no more than it asked",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .approved = "Always true",
+        .sent_back = "For an MCP client, where to send the person: its return address " ++
+            "with the code it trades for its token; empty for a device's own request",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -152,6 +163,7 @@ pub const Approve = struct {
 
         return .{
             .approved = true,
+            .sent_back = try oauth.sent_back(ctx, request, true),
         };
     }
 };
@@ -169,18 +181,22 @@ pub const Deny = struct {
     };
     pub const Out = struct {
         denied: bool,
+        sent_back: []const u8 = "",
     };
     pub const example: In = .{
         .code = example_code,
     };
     pub const example_out: Out = .{
         .denied = true,
+        .sent_back = "",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .code = "The user code, `WXZB-CDFG`",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .denied = "Always true",
+        .sent_back = "For an MCP client, its return address saying it was refused; empty " ++
+            "for a device's own request",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -201,6 +217,7 @@ pub const Deny = struct {
 
         return .{
             .denied = true,
+            .sent_back = try oauth.sent_back(ctx, request, false),
         };
     }
 };
@@ -243,7 +260,7 @@ pub const List = struct {
         .devices = &.{.{
             .id = example_device_id,
             .name = "An agent on Ada's laptop",
-            .scope = "drafts",
+            .scope = "production",
             .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
             .email = "ada@example.com",
             .created_at = 1792232000000,
@@ -362,3 +379,75 @@ pub const Revoke = struct {
         };
     }
 };
+
+pub const Update = struct {
+    /// Its example runs as a signed-in account (`--as`), though anyone may call it.
+    pub const example_signed_in = true;
+    pub const name = "device.update";
+    pub const description = "Change what a device may do";
+    pub const details =
+        \\A signed-in account changes its own devices, an administrator anyone's. A device
+        \\never changes itself. It counts from the device's next call.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const open = true;
+    pub const In = struct {
+        id: []const u8,
+        scope: []const u8,
+    };
+    pub const Out = struct {
+        scope: []const u8,
+    };
+    pub const example: In = .{
+        .id = example_device_id,
+        .scope = "write",
+    };
+    pub const example_out: Out = .{
+        .scope = "write",
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .id = "The device, as `device list` shows it",
+        .scope = "`read`, `write`, `production` or `publish`",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .scope = "What it may do from now on",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
+        const user_id = try person_of(ctx);
+
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        const given = model.Scope.parse(in.scope) orelse return error.Invalid;
+
+        if (in.id.len == 0 or in.id.len > store.devices.id_len) {
+            return error.NotFound;
+        }
+
+        const device = try store.devices.find(ctx.db, ctx.arena, in.id) orelse {
+            return error.NotFound;
+        };
+        const own = std.mem.eql(u8, device.user_id, user_id);
+
+        if (!own and !ctx.caller.holds(role.admin)) {
+            return error.NotFound;
+        }
+
+        if (!try store.devices.set_scope(ctx.db, device.id, @tagName(given))) {
+            return error.NotFound;
+        }
+
+        return .{
+            .scope = @tagName(given),
+        };
+    }
+};
+
+/// The tools connected to this site, on any account, the last used first: `limit` of them,
+/// never the device a conversation here lends itself for a turn. The Overview shows them to
+/// every account that reaches it.
+pub fn recently_used(ctx: *Ctx, limit: u32) Error![]const store.devices.Device {
+    std.debug.assert(limit > 0);
+
+    return store.devices.recently_used(ctx.db, ctx.arena, ai_model.device_name, limit);
+}

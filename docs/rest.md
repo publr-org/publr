@@ -122,8 +122,16 @@ A deprecated operation ([Updates](updates.md#changing-publr)) still answers, wit
 
 | Route | What |
 |---|---|
-| `POST /api/cli` | body `{ "args", "production" }`: a command sent by `publr --site <address>`, run here as the device whose token comes in `Authorization: Bearer`; answers `{ "code", "out", "err", "failure" }` (`failure` the name of the failure it ended with). `work start` runs the operation a host's plugin names (`work_start`), or answers code 1 where none does. `--as` is refused; without a device's token, `401` |
+| `POST /api/cli` | body `{ "args" }`: a command sent by `publr --site <address>`, run here as the device whose token comes in `Authorization: Bearer`; answers `{ "code", "out", "err", "failure" }` (`failure` the name of the failure it ended with). `--as` is refused; without a device's token, `401` |
+| `POST /api/sites/pack` | an administrator (signed in, or a device with their token): this site made into a bundle for a clone ([`publr clone`](cli.md#clone-and-push)); answers `{ "bytes", "publr", "name" }`. Without one, `401` |
+| `GET /api/sites/pack?offset=<n>` | the same person: one piece of it, up to 1 MiB; the last piece removes it |
 | `GET /api/agent/<code>` | the shell script the Overview's setup command pipes into `sh`: Publr's installer, then `publr login <site> --claim <code>` and `publr skill install`. Anyone may fetch it; the code (`device offer`) is the credential, once, for ten minutes. A code that is not one answers `404` with a script that says so |
+| `GET /.well-known/oauth-protected-resource` (also `…/mcp`) | where `/mcp`'s tokens come from: `{ "resource", "authorization_servers", "bearer_methods_supported" }`, at the admin's address |
+| `GET /.well-known/oauth-authorization-server` | the OAuth metadata: the code flow with PKCE (S256), public clients, open registration ([Authentication: MCP clients](auth.md#mcp-clients)) |
+| `POST /oauth/register` | body `{ "client_name", "redirect_uris" }`: a client registered (`201`, its `client_id`); a return address that is not `https://`, `http://` to this machine or a tool's own scheme is `400 invalid_redirect_uri` |
+| `GET /oauth/authorize` | `response_type=code`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method=S256`, `state`, `scope`: the request kept (`device authorize`), then `303` to the approve page; a client or return address that does not check out is `400`, never followed |
+| `POST /oauth/token` | form `grant_type=authorization_code`, `code`, `code_verifier`, `client_id`, `redirect_uri`: `{ "access_token", "token_type": "Bearer", "scope" }` once (`device exchange`); anything else `400 invalid_grant` |
+| `POST /mcp` | one JSON-RPC message from an MCP client (protocol `2025-06-18`, JSON answers): `initialize`, `ping`, `tools/list`, `tools/call` with `setup` (where the site's folder is, when it is on the caller's computer), `guide` and `run` (a command's words, run as `/api/cli` runs them). Without a device's token, `401` with `WWW-Authenticate` naming the metadata. `GET /mcp` is `405`: there are no streams |
 
 Any route takes a device's token in `Authorization: Bearer <token>` instead of the
 session cookie, and then needs no CSRF token. The token comes from signing in by link:

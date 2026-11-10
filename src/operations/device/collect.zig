@@ -29,7 +29,8 @@ fn request_of(ctx: *Ctx, device_code: []const u8) Error!?store.device_requests.R
     const found = try store.device_requests.find_by_code_hash(ctx.db, ctx.arena, hash);
     const request = found orelse return null;
 
-    if (request.expires_at <= ctx.now_ms) {
+    // An MCP client's request is collected only with its verifier (`device exchange`).
+    if (request.expires_at <= ctx.now_ms or request.client_id.len > 0) {
         return null;
     }
 
@@ -112,7 +113,7 @@ pub const Claim = struct {
     pub const example_out: Out = .{
         .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
         .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
-        .scope = "drafts",
+        .scope = "production",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .device_code = "What `device start` answered, or the code `device offer` answered",
@@ -182,7 +183,7 @@ pub const Redeem = struct {
     pub const example: In = .{
         .token = "eyJhdWQiOiJhMWIyYzNkNGU1ZjZhN2I4Ii4uLn0.c2lnbmF0dXJl...",
         .name = "A chat app",
-        .scope = "drafts",
+        .scope = "production",
     };
     pub const example_out: Out = .{
         .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
@@ -192,7 +193,7 @@ pub const Redeem = struct {
     pub const field_docs: sdk.operation.Docs(In) = .{
         .token = "The sign-on token the issuer signed",
         .name = "What the device is called, 1 to 80 characters",
-        .scope = "`read`, `drafts` or `write`",
+        .scope = "`read`, `write`, `production` or `publish`",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .token = "The device's token, `id.secret`; treat it like a password",

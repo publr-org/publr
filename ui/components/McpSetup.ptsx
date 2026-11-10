@@ -1,0 +1,138 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Card } from "@publr/ui/Card.ptsx";
+import { CardBody } from "@publr/ui/CardBody.ptsx";
+import { CodeBlock } from "@publr/ui/CodeBlock.ptsx";
+import { Command } from "@publr/ui/Command.ptsx";
+import { CopyButton } from "@publr/ui/CopyButton.ptsx";
+import { Step } from "@publr/ui/Step.ptsx";
+import { Steps } from "@publr/ui/Steps.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type McpSetupProps = {
+  /** The tool picked: `claude_code`, `codex`, `cursor`, `windsurf`, `claude_ai`, `chatgpt` or `other`. */
+  tool: string;
+  /** This site's MCP address, `<admin address>/mcp`. */
+  address: string;
+  /** Cursor's link that adds this server, its config carried in it. */
+  cursor_link: string;
+};
+
+/** Connecting the tool the person uses: add this site's MCP address in that tool's own way,
+ * approve it in the browser it opens, then ask there. */
+export function McpSetup({ tool, address, cursor_link }: McpSetupProps) {
+  const snippet = tool === "cursor"
+    ? "{ \"mcpServers\": { \"publr\": { \"url\": \"" + address + "\" } } }"
+    : tool === "windsurf"
+      ? "{ \"mcpServers\": { \"publr\": { \"serverUrl\": \"" + address + "\" } } }"
+      : address;
+  return (
+    <Card>
+      <CardBody>
+        <Steps>
+          <Step
+            number={1}
+            title={tool === "cursor"
+              ? Publr.t("Add Publr to Cursor")
+              : tool === "claude_code"
+                ? Publr.t("Add Publr to Claude Code")
+                : tool === "codex"
+                  ? Publr.t("Add Publr to Codex")
+                  : tool === "windsurf"
+                    ? Publr.t("Add Publr to Windsurf")
+                    : tool === "claude_ai"
+                      ? Publr.t("Add Publr to Claude.ai")
+                      : tool === "chatgpt"
+                        ? Publr.t("Add Publr to ChatGPT")
+                        : Publr.t("Add Publr to your tool as an MCP server")}
+          >
+            {tool === "cursor" && (
+              <div class="flex flex-col items-start gap-3">
+                <Button href={cursor_link} hierarchy="primary" size="md">
+                  {Publr.t("Add to Cursor")}
+                </Button>
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Or add it to ~/.cursor/mcp.json:")}
+                </Text>
+              </div>
+            )}
+            {tool === "claude_code" && (
+              <div class="flex flex-col gap-2">
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("In a terminal, in the folder you work in:")}
+                </Text>
+                <Command command={"claude mcp add --transport http publr " + address} />
+              </div>
+            )}
+            {tool === "codex" && (
+              <div class="flex flex-col gap-2">
+                <Command command={"codex mcp add publr --url " + address} />
+                <Command command="codex mcp login publr" />
+              </div>
+            )}
+            {tool === "windsurf" && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Add it to ~/.codeium/windsurf/mcp_config.json, then press Refresh in Cascade's MCP panel:")}
+              </Text>
+            )}
+            {tool === "claude_ai" && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("In Customize, Connectors, choose Add custom connector and paste this address:")}
+              </Text>
+            )}
+            {tool === "chatgpt" && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("In Settings, Connectors, turn on Developer mode under Advanced settings. Then choose Create, paste this address and pick OAuth:")}
+              </Text>
+            )}
+            {tool === "other" && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Its address, over HTTP:")}
+              </Text>
+            )}
+            {tool !== "claude_code" && tool !== "codex" && (
+              <div class="flex items-start gap-2">
+                <CodeBlock variant="command" classes="min-w-0 flex-1">{snippet}</CodeBlock>
+                <CopyButton text={snippet} hierarchy="tertiary" size="sm">
+                  {Publr.t("Copy")}
+                </CopyButton>
+              </div>
+            )}
+            {tool !== "claude_code" && (
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("It opens your browser on this site: approve it there, and choose what it may do.")}
+              </Text>
+            )}
+          </Step>
+          {tool === "claude_code" && (
+            <Step number={2} title={Publr.t("Sign in from Claude Code")}>
+              <Text as="p" variant="body-sm" tone="muted">
+                {Publr.t("Start Claude Code in that folder, type /mcp, choose publr, then Authenticate. Your browser opens on this site: approve it there, and choose what it may do.")}
+              </Text>
+            </Step>
+          )}
+          <Step
+            number={tool === "claude_code" ? 3 : 2}
+            title={tool === "claude_code"
+              ? Publr.t("Ask in Claude Code")
+              : tool === "codex"
+                ? Publr.t("Ask in Codex")
+                : tool === "cursor"
+                  ? Publr.t("Ask in Cursor's chat")
+                  : tool === "windsurf"
+                    ? Publr.t("Ask in Windsurf's Cascade")
+                    : tool === "claude_ai"
+                      ? Publr.t("Ask in Claude")
+                      : tool === "chatgpt"
+                        ? Publr.t("Ask in ChatGPT")
+                        : Publr.t("Ask in your tool")}
+          >
+            <Text as="p" variant="body-sm" tone="muted">
+              {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
+            </Text>
+          </Step>
+        </Steps>
+      </CardBody>
+    </Card>
+  );
+}

@@ -29,7 +29,7 @@ pub const Offer = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
-        scope: []const u8 = "write",
+        scope: []const u8 = "publish",
     };
     pub const Out = struct {
         code: []const u8,
@@ -41,7 +41,8 @@ pub const Offer = struct {
         .expires_at = 1792232000000,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
-        .scope = "What the computer may do: `read`, `drafts` or `write` (the default)",
+        .scope = "What the computer may do: `read`, `write`, `production` or `publish` " ++
+            "(the default)",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .code = "The one-time code, for `device claim`",

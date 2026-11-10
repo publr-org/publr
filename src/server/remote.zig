@@ -9,7 +9,6 @@ const identity_module = @import("../adapters/rest/identity.zig");
 const registry = @import("registry.zig");
 const sdk = @import("../sdk.zig");
 const credentials = @import("credentials.zig");
-const work = @import("work.zig");
 const Project = @import("project.zig").Project;
 
 pub const route = "/api/cli";
@@ -17,8 +16,6 @@ const body_bytes_max: u32 = 1 << 20;
 
 pub const Envelope = struct {
     args: []const []const u8,
-    /// The command said `--production` (`ctx.production`).
-    production: bool = false,
 };
 pub const Answer = struct {
     code: u8,
@@ -33,14 +30,6 @@ const Plain = struct {
     out: []const u8,
     err: []const u8,
 };
-/// A command without `production`, as every CLI sent before it had one.
-const Words = struct {
-    args: []const []const u8,
-};
-/// What a hosting service answers a device's write sent to the site itself without
-/// `--production`: the CLI starts work and sends it there instead.
-const work_failure = "WorkInABranch";
-
 /// `POST /api/cli`: a device's command, run as the device; answered with its exit code,
 /// output and errors. Anyone else is told to sign in.
 pub fn handle(
@@ -74,20 +63,45 @@ pub fn handle(
             .@"error" = "invalid_body",
         });
     };
-    const args = try work_command(ctx.arena, envelope.args) orelse {
-        return response.json(.ok, Answer{
-            .code = 1,
-            .out = "",
-            .err = "",
+
+    if (envelope.args.len == 0) {
+        return response.json(.bad_request, .{
+            .@"error" = "invalid_body",
         });
-    };
-    var out: std.Io.Writer.Allocating = .init(ctx.arena);
-    var err: std.Io.Writer.Allocating = .init(ctx.arena);
+    }
+
+    const answer = try run_in(project, ctx.arena, identity.caller, envelope.args);
+
+    // Named only when there is one: a CLI from before `failure` reads the plain answer.
+    if (answer.failure.len == 0) {
+        return response.json(.ok, Plain{
+            .code = answer.code,
+            .out = answer.out,
+            .err = answer.err,
+        });
+    }
+
+    try response.json(.ok, answer);
+}
+
+/// A command's words run here as `device`, through the same CLI as on this machine: its
+/// exit code, output and errors. What `/api/cli` and MCP's `run` answer.
+pub fn run_words(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    device: sdk.Caller,
+    args: []const []const u8,
+) error{OutOfMemory}!Answer {
+    std.debug.assert(device == .token);
+    std.debug.assert(args.len > 0);
+
+    var out: std.Io.Writer.Allocating = .init(arena);
+    var err: std.Io.Writer.Allocating = .init(arena);
     var failed: []const u8 = "";
     const code = cli.CLI(registry.SDK).run(
         project.connection,
         project.io,
-        ctx.arena,
+        arena,
         project.auth,
         args,
         &out.writer,
@@ -103,72 +117,127 @@ pub fn handle(
             .live = project.live,
             .updater = project.updater,
             .translations = if (project.languages) |languages| languages.view() else null,
-            .device = identity.caller,
-            .production = envelope.production,
+            .device = device,
             .failed = &failed,
         },
     ) catch |failure| blk: {
         err.writer.print("publr: {s}\n", .{@errorName(failure)}) catch {
-            return response.text(.internal_server_error, @errorName(failure));
+            return error.OutOfMemory;
         };
         break :blk 1;
     };
 
-    // Named only when there is one: a CLI from before `failure` reads the plain answer.
-    if (failed.len == 0) {
-        return response.json(.ok, Plain{
-            .code = code,
-            .out = out.written(),
-            .err = err.written(),
-        });
-    }
-
-    try response.json(.ok, Answer{
+    return .{
         .code = code,
         .out = out.written(),
         .err = err.written(),
         .failure = failed,
-    });
+    };
 }
 
-/// The words to run: `work start …` becomes the operation a hosting service's plugin names
-/// for it (`registry.work_start`); null when none does, which the device's CLI explains.
-fn work_command(
+/// A command's words as `run_words`, in the copy of this site they name first (`--env <name>`),
+/// if they do. That copy is another process with its own database: run through this binary,
+/// in this folder, as the device.
+pub fn run_in(
+    project: *const Project,
     arena: std.mem.Allocator,
+    device: sdk.Caller,
     args: []const []const u8,
-) error{OutOfMemory}!?[]const []const u8 {
-    std.debug.assert(args.len <= 1 << 16);
+) error{OutOfMemory}!Answer {
+    std.debug.assert(device == .token);
+    std.debug.assert(args.len > 0);
 
-    if (args.len == 0 or !starts_work(args)) {
-        return args;
+    if (args.len < 3 or !std.mem.eql(u8, args[0], "--env")) {
+        return run_words(project, arena, device, args);
     }
 
-    const operation = registry.work_start orelse return null;
-    const dot = std.mem.indexOfScalar(u8, operation, '.').?;
-    var words = try arena.alloc([]const u8, args.len);
+    const list = registry.copies_list orelse return refused("This site has no copies");
+    const dot = std.mem.indexOfScalar(u8, list, '.').?;
+    const words = [_][]const u8{ list[0..dot], list[dot + 1 ..] };
+    const listed = try run_words(project, arena, device, &words);
 
-    words[0] = operation[0..dot];
-    words[1] = operation[dot + 1 ..];
-    @memcpy(words[2..], args[2..]);
+    if (listed.code != 0) {
+        return listed;
+    }
 
-    return words;
+    const parsed = std.json.parseFromSliceLeaky(Copies, arena, listed.out, .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    }) catch return refused("The copies could not be read");
+    const copy = copy_named(parsed.environments, args[1]) orelse {
+        return refused("No environment, branch or alias of that name");
+    };
+
+    if (copy.current) {
+        return run_words(project, arena, device, args[2..]);
+    }
+
+    if (project.binary.len == 0 or project.db_path.len == 0) {
+        return refused("Copies cannot be reached from here");
+    }
+
+    return run_copy(project, arena, device.token.id, copy.name, args[2..]);
 }
 
-/// The command run by the Publr at `address` with the token this machine keeps for it: its
-/// exit code, its output written to `out` and its errors to stderr. It goes to the work
-/// open in this folder (`work.zig`), unless `production` says the site itself; a write a
-/// hosting service sends to work instead starts some and goes there.
+fn refused(text: []const u8) error{OutOfMemory}!Answer {
+    std.debug.assert(text.len > 0);
+
+    return .{
+        .code = 1,
+        .out = "",
+        .err = text,
+    };
+}
+
+const copy_output_bytes_max: u32 = 16 << 20;
+
+fn run_copy(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    device_id: []const u8,
+    copy: []const u8,
+    args: []const []const u8,
+) error{OutOfMemory}!Answer {
+    std.debug.assert(device_id.len > 0);
+    std.debug.assert(copy.len > 0);
+
+    const head = [_][]const u8{
+        project.binary, "--db",     project.db_path, "--env",
+        copy,           "--device", device_id,
+    };
+    const argv = try std.mem.concat(arena, []const u8, &.{ &head, args });
+    const ran = std.process.run(arena, project.io, .{
+        .argv = argv,
+        .cwd = .{
+            .path = project.folder,
+        },
+        .stdout_limit = .limited(copy_output_bytes_max),
+        .stderr_limit = .limited(copy_output_bytes_max),
+    }) catch return refused("The copy could not be reached");
+    const code: u8 = switch (ran.term) {
+        .exited => |exited| exited,
+        else => 1,
+    };
+
+    return .{
+        .code = code,
+        .out = ran.stdout,
+        .err = ran.stderr,
+    };
+}
+
+/// The command run by the Publr at `address` with the token this machine keeps for it, or by
+/// its copy `env`: its exit code, its output written to `out` and its errors to stderr.
 pub fn forward(
     init: std.process.Init,
     address: []const u8,
     args: []const []const u8,
-    production: bool,
+    env: ?[]const u8,
     out: *std.Io.Writer,
 ) !u8 {
     std.debug.assert(address.len > 0);
     std.debug.assert(args.len > 0);
 
-    const arena = init.arena.allocator();
     const site = try credentials.find(init, address) orelse {
         std.debug.print("publr: not signed in to {s}; run \"publr login {s}\"\n", .{
             address,
@@ -176,35 +245,11 @@ pub fn forward(
         });
         return 1;
     };
-    // Starting work is the site's to do, whatever is open.
-    const open = if (production or starts_work(args)) null else try work.open(init, site.address);
-    const target = if (open) |found| found.address else site.address;
-    var answer = try send(init, site, target, args, production) orelse return 1;
-
-    if (open == null and std.mem.eql(u8, answer.failure, work_failure)) {
-        const now_s: u64 = @intCast(@divTrunc(sdk.context.wall_clock_ms(init.io), 1000));
-        const name = try work.name_now(arena, now_s);
-        const start = [_][]const u8{ "work", "start", "--name", name };
-        const begun = try send(init, site, site.address, &start, false) orelse return 1;
-        const made = work.started(arena, site.address, begun.out) orelse {
-            std.debug.print("{s}", .{begun.err});
-            return 1;
-        };
-
-        try work.keep(init, made);
-        answer = try send(init, site, made.address, args, false) orelse return 1;
-    }
-
-    if (starts_work(args)) {
-        if (answer.code == 0) {
-            const made = work.started(arena, site.address, answer.out) orelse return 1;
-
-            try work.keep(init, made);
-        } else if (answer.failure.len == 0) {
-            std.debug.print("publr: {s}\n", .{work.not_hosted});
-            return 1;
-        }
-    }
+    const target = if (env) |name|
+        try copy_address(init, site, name) orelse return 1
+    else
+        site.address;
+    const answer = try send(init, site, target, args) orelse return 1;
 
     try out.writeAll(answer.out);
     std.debug.print("{s}", .{answer.err});
@@ -212,11 +257,75 @@ pub fn forward(
     return answer.code;
 }
 
-fn starts_work(args: []const []const u8) bool {
-    std.debug.assert(args.len > 0);
+/// One copy as `environments list` and `open` answer it: what `--env` needs.
+pub const Copy = struct {
+    name: []const u8,
+    aliases: []const []const u8 = &.{},
+    address: []const u8 = "",
+    current: bool = false,
+};
+pub const Copies = struct {
+    environments: []const Copy,
+};
 
-    return args.len >= 2 and std.mem.eql(u8, args[0], "work") and
-        std.mem.eql(u8, args[1], "start");
+/// The copy called `name`, by its slug or an alias; null when none is.
+pub fn copy_named(copies: []const Copy, name: []const u8) ?Copy {
+    std.debug.assert(name.len > 0);
+
+    for (copies) |copy| {
+        if (std.mem.eql(u8, copy.name, name)) {
+            return copy;
+        }
+
+        for (copy.aliases) |alias| {
+            if (std.mem.eql(u8, alias, name)) {
+                return copy;
+            }
+        }
+    }
+
+    return null;
+}
+
+/// Where `site`'s copy `name` answers, started if it was stopped; null, having said why, when
+/// it cannot be reached.
+fn copy_address(init: std.process.Init, site: credentials.Site, name: []const u8) !?[]const u8 {
+    std.debug.assert(name.len > 0);
+
+    const arena = init.arena.allocator();
+    const words = [_][]const u8{ "environments", "list" };
+    const listed = try send(init, site, site.address, &words) orelse return null;
+    const parse: std.json.ParseOptions = .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    };
+    const parsed = std.json.parseFromSliceLeaky(Copies, arena, listed.out, parse) catch {
+        std.debug.print("publr: {s} keeps no environments or branches here\n{s}", .{
+            site.address,
+            listed.err,
+        });
+        return null;
+    };
+    const copy = copy_named(parsed.environments, name) orelse {
+        std.debug.print("publr --env: no environment, branch or alias {s}; " ++
+            "`publr environments list` names them\n", .{name});
+        return null;
+    };
+
+    if (copy.address.len > 0) {
+        return copy.address;
+    }
+
+    const open = [_][]const u8{ "environments", "open", "--name", copy.name };
+    const opened = try send(init, site, site.address, &open) orelse return null;
+    const started = std.json.parseFromSliceLeaky(Copy, arena, opened.out, parse) catch null;
+
+    if (started == null or started.?.address.len == 0) {
+        std.debug.print("publr --env: {s} could not be started\n{s}", .{ name, opened.err });
+        return null;
+    }
+
+    return started.?.address;
 }
 
 /// The command posted to `/api/cli` at `target` with `site`'s token; null, having said why,
@@ -226,22 +335,14 @@ fn send(
     site: credentials.Site,
     target: []const u8,
     args: []const []const u8,
-    production: bool,
 ) !?Answer {
     std.debug.assert(target.len > 0);
     std.debug.assert(args.len > 0);
 
     const arena = init.arena.allocator();
-    // `production` only when said: a Publr from before it refuses words it does not know.
-    const payload = if (production)
-        try std.json.Stringify.valueAlloc(arena, Envelope{
-            .args = args,
-            .production = true,
-        }, .{})
-    else
-        try std.json.Stringify.valueAlloc(arena, Words{
-            .args = args,
-        }, .{});
+    const payload = try std.json.Stringify.valueAlloc(arena, Envelope{
+        .args = args,
+    }, .{});
     const reply = try post(init.io, arena, .{
         .url = try std.fmt.allocPrint(arena, "{s}{s}", .{ target, route }),
         .payload = payload,

@@ -363,7 +363,7 @@ test "a browser call: asked by the agent, read and answered by the person, taken
             .prompt = "Look at example.com",
             .provider = "scripted",
             .model = "",
-            .scope = "drafts",
+            .scope = "production",
         },
         1789650000000,
     );

@@ -15,6 +15,21 @@ pub const type_ids_max = documents.type_ids_max;
 pub const document_bytes_max = documents.document_bytes_max;
 pub const search_len_max = documents.search_len_max;
 pub const Error = documents.Error;
+
+/// How many records are in `status`, on every type.
+pub fn count_in_status(connection: *db.Db, status: []const u8) db.Error!u32 {
+    std.debug.assert(status.len > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare("SELECT count(*) FROM records WHERE status = ?1");
+    defer select.finalize();
+
+    try select.bind_text(1, status);
+
+    std.debug.assert(try select.step());
+
+    return @intCast(select.read_int());
+}
 pub const Record = documents.Record;
 pub const Match = documents.Match;
 pub const Brief = documents.Brief;

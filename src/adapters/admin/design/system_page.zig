@@ -45,7 +45,11 @@ pub fn screen(session: *Session, app: *const App) Error!void {
             app.spec.name,
         }),
         .content_href = try std.fmt.allocPrint(arena, "{s}/admin/content", .{base}),
-        .agent_href = try std.fmt.allocPrint(arena, "{s}/admin?mode=agents", .{base}),
+        .agent_href = try std.fmt.allocPrint(
+            arena,
+            "{s}/admin/settings/devices?tool=other",
+            .{base},
+        ),
         .devices_href = try std.fmt.allocPrint(arena, "{s}/admin/settings/devices", .{base}),
         .site = try std.fmt.allocPrint(arena, "{s}{s}", .{
             try definitions.host_url_of(session),

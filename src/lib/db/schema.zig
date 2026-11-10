@@ -162,6 +162,26 @@ const added_columns = [_]Added{
         .column = "language",
         .definition = "TEXT NOT NULL DEFAULT ''",
     },
+    .{
+        .table = "device_requests",
+        .column = "client_id",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "device_requests",
+        .column = "redirect_uri",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "device_requests",
+        .column = "code_challenge",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
+    .{
+        .table = "device_requests",
+        .column = "client_state",
+        .definition = "TEXT NOT NULL DEFAULT ''",
+    },
 };
 
 fn add_columns(connection: *db.Db) db.Error!void {

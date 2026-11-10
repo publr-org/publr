@@ -173,7 +173,7 @@ fn anonymous_grant(request: Request) Grant {
 }
 
 /// What the device's account may, narrowed by its scope: a `read` device reads only. What
-/// a `drafts` device may not do (publish) is known only once the write ran
+/// a device short of `publish` may not do (publish) is known only once the write ran
 /// (`SDK.check_drafts`).
 fn device_grant(roles: []const Role, token: caller_module.Caller.Token, request: Request) Grant {
     std.debug.assert(request.operation_name.len > 0);
@@ -516,7 +516,7 @@ test "devices: their account's roles, a read device reads only" {
             .id = "d_1",
             .user_id = "u_1",
             .roles = editor_roles,
-            .scope = .write,
+            .scope = .publish,
         },
     });
     try std.testing.expect((try authorize(&writer, save, &.{}, &role.core)).allows());

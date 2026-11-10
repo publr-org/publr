@@ -38,6 +38,8 @@ pub const Project = struct {
     folder: []const u8 = "",
     /// How to run this server's own binary from `folder` (`./publr`); empty outside `serve`.
     binary: []const u8 = "",
+    /// The database `serve` opened, as it was given; empty outside `serve`.
+    db_path: []const u8 = "",
     /// The apps as `serve` holds them, to load again when asked; null outside `serve`.
     apps_host: ?*@import("apps_host.zig").AppsHost = null,
     /// The apps folder of a host that is not `serve`: the browser build's, in OPFS.

@@ -17,7 +17,10 @@ const operator = @import("operator.zig");
 const apps_load = @import("apps_load.zig");
 const update = if (builtin.os.tag == .wasi) void else @import("update.zig");
 const remote = @import("remote.zig");
+const clone = @import("clone.zig");
 const agent_script = if (builtin.os.tag == .wasi) void else @import("agent_script.zig");
+const oauth = if (builtin.os.tag == .wasi) void else @import("oauth.zig");
+const mcp = if (builtin.os.tag == .wasi) void else @import("mcp.zig");
 const plugin_routes = @import("plugin_routes.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
 
@@ -71,7 +74,17 @@ pub fn register(router: *http.Router) void {
         router.post(operator.route, &operator.handle);
         router.post(apps_load.route, &apps_load.handle);
         router.post(remote.route, &remote.handle);
+        router.post(clone.pack_route, &clone.prepare);
+        router.get(clone.pack_route, &clone.piece);
         router.get(agent_script.route, &agent_script.handle);
+        router.get(oauth.resource_route, &oauth.resource);
+        router.get(oauth.resource_mcp_route, &oauth.resource);
+        router.get(oauth.server_route, &oauth.server);
+        router.post(oauth.register_route, &oauth.register);
+        router.get(oauth.authorize_route, &oauth.authorize);
+        router.post(oauth.token_route, &oauth.token);
+        router.post(mcp.route, &mcp.handle);
+        router.get(mcp.route, &mcp.refuse_stream);
         router.post(update.restart_route, &update.handle_restart);
         router.get(next_due_route, &next_due);
         plugin_operator_commands.register(router);
@@ -87,7 +100,7 @@ pub fn register(router: *http.Router) void {
     const operator_routes: u32 = if (builtin.os.tag == .wasi)
         0
     else
-        6 + plugin_operator_commands.routes_count;
+        16 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         webhook_routes.routes_count + native_plugin_routes.routes_count -
         native_plugin_routes.streams_count;

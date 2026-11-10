@@ -1,35 +1,35 @@
 import { HubPage } from "../layouts/HubPage.ptsx";
-import { AgentSetup } from "../components/AgentSetup.ptsx";
+import { ConnectTool } from "../components/ConnectTool.ptsx";
 import { Publr } from "publr-jsx";
-import { Callout } from "@publr/ui/Callout.ptsx";
-import { Card } from "@publr/ui/Card.ptsx";
-import { CardBody } from "@publr/ui/CardBody.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
 import { IsoField } from "@publr/ui/IsoField.ptsx";
 import { Link } from "@publr/ui/Link.ptsx";
 import { AskBox } from "../components/AskBox.ptsx";
-import { ProviderKey } from "../components/ProviderKey.ptsx";
-import { OfferedProviders } from "../components/OfferedProviders.ptsx";
 import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
-import { TabNav } from "@publr/ui/TabNav.ptsx";
-import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 
 export type DashboardProps = {
-  /** `keys`: a model on the person's own key builds here; `agents`: their own agent does. */
-  mode: string;
+  /** The tool picked to connect (`claude_code`, `codex`, `cursor`, `windsurf`, `other`), its
+   * setup shown; empty when none is, and always once one is connected. */
+  tool: string;
+  /** This site's MCP address, `<admin address>/mcp`, which every tool adds. */
+  mcp_address: string;
+  /** Cursor's link that adds this site's MCP server. */
+  cursor_link: string;
+  /** The address can be reached from the internet, so chat apps can add it. */
+  reachable: boolean;
   /** Whether a model provider is connected, so the prompt can build. */
   connected: boolean;
-  /** Not connected yet: the providers installed, each waiting for its key. */
-  providers?: Array<{
-    plugin: string;
-    label: string;
-    key_secret: string;
-    key_set: boolean;
-    key_url: string;
-    key_steps: string;
-  }>;
+  /** The tools connected to this site, named, the last used first; empty until one is. */
+  tool_names: string;
+  /** What only a person can settle, each leading there. */
+  waiting: Array<{ label: string; href: string }>;
+  /** What changed on the site lately, newest first. */
+  changes: Array<{ who: string; action: string; subject: string; href: string; when: string }>;
+  /** Whether this person is shown what changed and how to connect more: administrators. */
+  sees_changes: boolean;
   /** `cd` into the project's folder; empty unless the admin is open on this machine. */
   folder_command: string;
   /** The project's own binary installing the skill, run from its folder. */
@@ -42,97 +42,144 @@ export type DashboardProps = {
   agent_prompt: string;
   /** The person's earlier conversations, newest first. */
   earlier: Array<{ id: string; prompt: string; label: string; href: string }>;
-  /** The site's host sends an agent's changes to a branch (`registry.work_start`). */
-  branch_work?: boolean;
   /** Words handed over from a site page (`?ask=`), in the prompt for the person to send. */
   asked?: string;
   /** The page they were said on (`?page=`), sent with them. */
   asked_on?: string;
 };
 
-/** The overview: building this site with AI, on the person's own key or with their own agent. */
+/** The overview. Until a tool is connected, the quick start: pick it and follow its steps.
+ * Then what waits for a person and what changed on the site. The prompt only with a model provider to answer
+ * it, or words handed over from a site page to keep. */
 export function Dashboard({
-  mode,
+  tool,
+  mcp_address,
+  cursor_link,
+  reachable,
   connected,
-  providers = [],
+  tool_names,
+  waiting,
+  changes,
+  sees_changes,
   folder_command,
   install_command,
   login_command,
   agent_command,
   agent_prompt,
   earlier,
-  branch_work = false,
   asked = "",
   asked_on = "",
 }: DashboardProps) {
+  const prompting = (connected || asked !== "") && !Publr.request.admin.framed;
+  const setting_up = tool_names === "";
   return (
     <HubPage title={Publr.t("Overview")} hero>
       <div class="relative flex flex-1 flex-col">
         <IsoField />
         <div class="relative mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-8 px-5 pt-24 pb-16">
-          <div class="flex flex-col items-center gap-3">
+          {(prompting || setting_up) && <div class="flex flex-col items-center gap-3">
             <Heading level={1} size="2xl" classes="text-center">
-              {Publr.t("What do you want to build?")}
+              {prompting
+                ? Publr.t("What do you want to build?")
+                : Publr.t("Connect the tool you build with")}
             </Heading>
-            <Text as="p" variant="body-lg" tone="muted" classes="text-center">
-              {Publr.t("Describe it, and it is built here.")}
+            {setting_up && (
+              <Text as="p" variant="body-lg" tone="muted" classes="text-center">
+                {prompting
+                  ? Publr.t("Describe it, or pick what you build with.")
+                  : Publr.t("One step in the tool, one approval here.")}
+              </Text>
+            )}
+          </div>}
+          {!prompting && !setting_up && (
+            <div class="flex w-full items-center justify-between gap-4">
+              <Heading level={1} size="xl">{Publr.t("Your site")}</Heading>
+              {Publr.request.admin.site_href !== "" && (
+                <Button href={Publr.request.admin.site_href} hierarchy="secondary" size="sm">
+                  {Publr.t("View site")}
+                </Button>
+              )}
+            </div>
+          )}
+          {prompting && (
+            <div class="flex w-full flex-col gap-2">
+              <AskBox csrf={Publr.request.session.csrf} prompt={asked} page={asked_on} />
+              {!connected && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Building here runs on a model provider's key.")}{" "}
+                  <Link href="/admin/settings/ai" variant="body-sm">
+                    {Publr.t("Connect one")}
+                  </Link>
+                </Text>
+              )}
+            </div>
+          )}
+          {setting_up && (
+            <div class="flex w-full flex-col items-center gap-3">
+              {prompting && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Or build with your own tool")}
+                </Text>
+              )}
+              <ConnectTool base="/admin" tool={tool} address={mcp_address} cursor_link={cursor_link} reachable={reachable} />
+            </div>
+          )}
+          {setting_up && !prompting && !Publr.request.admin.framed && (
+            <Text as="p" variant="body-sm" tone="muted" classes="text-center">
+              {Publr.t("Prefer to build here?")}{" "}
+              <Link href="/admin/settings/ai" variant="body-sm">
+                {Publr.t("Connect a model provider")}
+              </Link>
             </Text>
-          </div>
-          <TabNav label={Publr.t("How to build")}>
-            <TabNavLink href="/admin?mode=keys" active={mode === "keys"}>
-              {Publr.t("Your keys")}
-            </TabNavLink>
-            <TabNavLink href="/admin?mode=agents" active={mode === "agents"}>
-              {Publr.t("Your agent")}
-            </TabNavLink>
-          </TabNav>
-          {mode === "agents" && (
-            <AgentSetup
-              folder_command={folder_command}
-              install_command={install_command}
-              login_command={login_command}
-              agent_command={agent_command}
-              agent_prompt={agent_prompt}
-              branch_work={branch_work}
-            />
           )}
-          {mode === "keys" && connected && !Publr.request.admin.framed && (
-            <AskBox csrf={Publr.request.session.csrf} prompt={asked} page={asked_on} />
+          {!setting_up && waiting.length > 0 && (
+            <div class="flex w-full flex-col gap-3">
+              <SectionTitle title={Publr.t("Waiting for you")} classes="px-0" />
+              {waiting.map((item) => (
+                <Link href={item.href} variant="body-md">{item.label}</Link>
+              ))}
+            </div>
           )}
-          {mode === "keys" && !connected && (
-            <Card>
-              <CardBody>
-                <div class="flex flex-col gap-5">
-                  <Text as="p" variant="body-md">
-                    {providers.length > 0
-                      ? Publr.t("Paste a key for one of them, and describe what to build here.")
-                      : Publr.t("Pick the model providers to build with, on keys of your own. Their bills are yours; Publr charges nothing.")}
+          {!setting_up && sees_changes && (
+            <div class="flex w-full flex-col gap-3">
+              <SectionTitle title={Publr.t("Recent changes")} classes="px-0" />
+              {changes.length === 0 && (
+                <Text as="p" variant="body-md" tone="muted">
+                  {Publr.t("Ask in your tool, like \"Add a recipes section\".")}
+                </Text>
+              )}
+              {changes.map((change) => (
+                <div class="flex items-baseline gap-4">
+                  <Text as="span" variant="body-sm" tone="muted" classes="w-28 shrink-0 truncate">
+                    {change.who}
                   </Text>
-                  {providers.map((provider) => (
-                    <div key={provider.plugin} class="flex flex-col gap-2">
-                      <Heading level={2} size="sm">
-                        {provider.label}
-                      </Heading>
-                      <ProviderKey
-                        key_secret={provider.key_secret}
-                        key_set={provider.key_set}
-                        key_url={provider.key_url}
-                        key_steps={provider.key_steps}
-                        from="overview"
-                      />
-                    </div>
-                  ))}
-                  {providers.length === 0 && <OfferedProviders from="overview" />}
-                  {providers.length > 0 && (
-                    <Link href="/admin/settings/ai" variant="body-sm">
-                      {Publr.t("Add another provider")}
-                    </Link>
-                  )}
+                  <div class="flex min-w-0 flex-1 items-baseline gap-1">
+                    <Text as="span" variant="body-md" classes="shrink-0">{change.action}</Text>
+                    {change.href !== "" ? (
+                      <Link href={change.href} variant="body-md" classes="min-w-0 truncate">
+                        {change.subject}
+                      </Link>
+                    ) : (
+                      <Text as="span" variant="body-md" classes="min-w-0 truncate">
+                        {change.subject}
+                      </Text>
+                    )}
+                  </div>
+                  <Text as="span" variant="body-sm" tone="muted" classes="shrink-0">
+                    {change.when}
+                  </Text>
                 </div>
-              </CardBody>
-            </Card>
+              ))}
+              {changes.length > 0 && (
+                <div class="flex justify-end">
+                  <Link href="/admin/settings/system/activity" variant="body-sm">
+                    {Publr.t("See all activity")}
+                  </Link>
+                </div>
+              )}
+            </div>
           )}
-          {mode === "keys" && earlier.length > 0 && !Publr.request.admin.framed && (
+          {earlier.length > 0 && !Publr.request.admin.framed && (
             <div class="flex w-full flex-col gap-3">
               <SectionTitle title={Publr.t("Earlier")} classes="px-0" />
               {earlier.map((item) => (
@@ -144,6 +191,14 @@ export function Dashboard({
                 </div>
               ))}
             </div>
+          )}
+          {!setting_up && sees_changes && (
+            <Text as="p" variant="body-sm" tone="muted" classes="text-center">
+              {Publr.t("Connected:")} {tool_names} ·{" "}
+              <Link href="/admin/settings/devices" variant="body-sm">
+                {Publr.t("Connect another tool")}
+              </Link>
+            </Text>
           )}
         </div>
       </div>

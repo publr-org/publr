@@ -95,7 +95,11 @@ CREATE TABLE IF NOT EXISTS device_requests (
     state      TEXT NOT NULL,
     user_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    client_id      TEXT NOT NULL DEFAULT '',
+    redirect_uri   TEXT NOT NULL DEFAULT '',
+    code_challenge TEXT NOT NULL DEFAULT '',
+    client_state   TEXT NOT NULL DEFAULT ''
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS device_requests_expires_at ON device_requests(expires_at);

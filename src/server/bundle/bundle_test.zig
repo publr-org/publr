@@ -175,6 +175,63 @@ test "a packed site unpacks elsewhere as it was, without this machine's things" 
     try std.testing.expectError(error.SiteExists, again);
 }
 
+test "a clone goes without other people, secrets, logs and the site's copies" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var runtime = try db.Runtime.init(.{});
+    defer runtime.deinit();
+    var scratch = try Scratch.init(arena);
+    defer scratch.folder.cleanup();
+    var landing = try Scratch.init(arena);
+    defer landing.folder.cleanup();
+
+    try make_site(&scratch, &runtime, arena);
+    try scratch.write("data/branches/b/data/publr.db", "copy");
+
+    const database = try std.fs.path.joinZ(arena, &.{ scratch.root, "data", "publr.db" });
+    var connection = try db.open(&runtime, database);
+
+    try connection.exec(
+        \\CREATE TABLE users (id TEXT PRIMARY KEY);
+        \\CREATE TABLE user_roles (user_id TEXT REFERENCES users(id) ON DELETE CASCADE, role TEXT,
+        \\  PRIMARY KEY (user_id, role));
+        \\CREATE TABLE activity (id INTEGER PRIMARY KEY);
+        \\CREATE TABLE errors (id INTEGER PRIMARY KEY);
+        \\CREATE TABLE plugin_log (id INTEGER PRIMARY KEY);
+        \\CREATE TABLE secrets (name TEXT PRIMARY KEY);
+        \\CREATE TABLE internal_records (id TEXT PRIMARY KEY);
+        \\INSERT INTO users VALUES ('ada'), ('bob');
+        \\INSERT INTO activity VALUES (1);
+        \\INSERT INTO secrets VALUES ('key');
+        \\INSERT INTO internal_records VALUES ('order');
+    );
+    connection.close();
+
+    const out = try std.fs.path.join(arena, &.{ scratch.root, "clone.site.tar.gz" });
+
+    _ = try bundle.pack_clone(try scratch.site(arena), arena, out, "ada", .{
+        .keep_user = "ada",
+    });
+    _ = try bundle.unpack(try landing.site(arena), arena, out, .{});
+
+    const there = try std.fs.path.joinZ(arena, &.{ landing.root, "data", "publr.db" });
+    const users = try count(&runtime, there, "SELECT count(*) FROM users");
+    const roles = try count(&runtime, there, "SELECT count(*) FROM user_roles");
+    const logged = try count(&runtime, there, "SELECT count(*) FROM activity");
+    const secrets = try count(&runtime, there, "SELECT count(*) FROM secrets");
+    const cwd = std.Io.Dir.cwd();
+    const key = try std.fs.path.join(arena, &.{ landing.root, "data", "secret.key" });
+    const copies = try std.fs.path.join(arena, &.{ landing.root, "data", "branches" });
+
+    try std.testing.expectEqual(@as(i64, 1), users);
+    try std.testing.expectEqual(@as(i64, 1), roles);
+    try std.testing.expectEqual(@as(i64, 0), logged);
+    try std.testing.expectEqual(@as(i64, 0), secrets);
+    try std.testing.expectError(error.FileNotFound, cwd.access(std.testing.io, key, .{}));
+    try std.testing.expectError(error.FileNotFound, cwd.access(std.testing.io, copies, .{}));
+}
+
 test "unpacking refuses what is not a bundle, and a bundle past the limit" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

@@ -312,7 +312,7 @@ test "the preview never shows the overview or a workspace" {
     try std.testing.expect(!previewable(""));
     try std.testing.expect(!previewable("/admin"));
     try std.testing.expect(!previewable("/admin/"));
-    try std.testing.expect(!previewable("/admin?mode=keys"));
+    try std.testing.expect(!previewable("/admin?tool=cursor"));
     try std.testing.expect(!previewable("/admin/ai"));
     try std.testing.expect(!previewable("/admin/ai/0123456789abcdefghijklmn#fields=x"));
     try std.testing.expect(!previewable("/admin/ai/ask"));

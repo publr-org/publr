@@ -22,7 +22,15 @@ pub const member_path = "/_publr/member";
 pub const address_len_max: u32 = 2048;
 
 /// What the admin's host answers itself; everything else there is the site's.
-const admin_prefixes = [_][]const u8{ "/admin/", "/api/", "/auth/", "/media/" };
+const admin_prefixes = [_][]const u8{
+    "/admin/",
+    "/api/",
+    "/auth/",
+    "/media/",
+    "/oauth/",
+    "/.well-known/oauth-",
+    "/mcp",
+};
 
 pub fn split(
     request: *Request,

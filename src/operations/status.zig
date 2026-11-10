@@ -66,6 +66,13 @@ pub fn added_statuses(ctx: *const Ctx) []const model_flow.Added {
     return merged;
 }
 
+/// How many records wait as drafts, on every type.
+pub fn drafts_waiting(ctx: *Ctx) Error!u32 {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    return store.records.count_in_status(ctx.db, "draft") catch error.Failed;
+}
+
 /// Every status the site knows: core's, then each type's own. A type's own ids are named
 /// under it, so an id is enough to find one.
 pub fn known(ctx: *Ctx) Error![]const status.Status {

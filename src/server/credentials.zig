@@ -54,6 +54,47 @@ pub fn on_this_machine(host: []const u8) bool {
         std.mem.eql(u8, host, "[::1]");
 }
 
+/// A name the OAuth rules let tokens travel to over plain http: exactly `localhost` or a
+/// loopback address, never `*.localhost`.
+pub fn loopback_name(host: []const u8) bool {
+    std.debug.assert(host.len <= address_len_max);
+
+    return std.mem.eql(u8, host, "localhost") or std.mem.startsWith(u8, host, "127.") or
+        std.mem.eql(u8, host, "[::1]");
+}
+
+/// Whether a `Host` header is one of those, its port aside.
+pub fn host_is_loopback(host: []const u8) bool {
+    std.debug.assert(host.len <= 64 << 10);
+
+    const bracketed = host.len > 0 and host[0] == '[';
+    const name_end = if (bracketed)
+        (std.mem.indexOfScalar(u8, host, ']') orelse return false) + 1
+    else
+        std.mem.indexOfScalar(u8, host, ':') orelse host.len;
+
+    return name_end <= address_len_max and loopback_name(host[0..name_end]);
+}
+
+/// Whether a `Host` header names this machine, its port aside.
+pub fn host_on_this_machine(host: []const u8) bool {
+    std.debug.assert(host.len <= 64 << 10);
+    std.debug.assert(address_len_max > 0);
+
+    const bracket_end = if (host.len > 0 and host[0] == '[')
+        std.mem.indexOfScalar(u8, host, ']')
+    else
+        null;
+    const name_end = if (bracket_end) |end|
+        end + 1
+    else
+        std.mem.indexOfScalar(u8, host, ':') orelse host.len;
+    const name = host[0..name_end];
+
+    return name.len > 0 and name.len <= address_len_max and
+        on_this_machine(name);
+}
+
 pub fn path_of(init: std.process.Init) !?[]const u8 {
     const arena = init.arena.allocator();
     const own = init.environ_map.get("PUBLR_CREDENTIALS") orelse "";
@@ -209,4 +250,41 @@ test "addresses: a scheme, no trailing slash, http only for this machine" {
         (try normalize(arena, "shop.example")).?,
     );
     try std.testing.expect(try normalize(arena, " / ") == null);
+}
+
+test "a host on this machine is told from one elsewhere" {
+    try std.testing.expect(host_on_this_machine("localhost:8080"));
+    try std.testing.expect(host_on_this_machine("blog.localhost"));
+    try std.testing.expect(host_on_this_machine("publr.local:8080"));
+    try std.testing.expect(host_on_this_machine("127.0.0.1:8096"));
+    try std.testing.expect(host_on_this_machine("[::1]:8080"));
+    try std.testing.expect(!host_on_this_machine("example.com"));
+    try std.testing.expect(!host_on_this_machine("localhost.example.com:8080"));
+    try std.testing.expect(!host_on_this_machine(""));
+}
+
+/// The Publr elsewhere this folder builds, its address on one line: the agent setup writes
+/// it, and commands from the folder go there without `--site`.
+pub const site_path = ".publr/site";
+const site_bytes_max: u32 = 512;
+
+/// The site `.publr/site` names; null when the folder has none.
+pub fn folder_site(init: std.process.Init) !?[]const u8 {
+    std.debug.assert(site_bytes_max > 0);
+
+    const arena = init.arena.allocator();
+    const limit: std.Io.Limit = .limited(site_bytes_max);
+    const text = std.Io.Dir.cwd().readFileAlloc(init.io, site_path, arena, limit) catch |err| {
+        return switch (err) {
+            error.FileNotFound => null,
+            else => err,
+        };
+    };
+    const site = std.mem.trim(u8, text, " \n\r\t");
+
+    if (site.len == 0) {
+        return null;
+    }
+
+    return site;
 }

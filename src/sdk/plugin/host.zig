@@ -82,7 +82,7 @@ const Given = struct {
     sign_in_at: ?type = null,
     admin_brand: ?type = null,
     app_picker_segment: ?type = null,
-    work_start: ?type = null,
+    copies: ?type = null,
     hosted: ?type = null,
 };
 
@@ -170,9 +170,9 @@ pub const Host = struct {
         host.give("app_picker_segment", run);
     }
 
-    /// The operation `publr work start` calls: one of the plugin's own, by its definition.
-    pub fn work_start(host: *Host, comptime Operation: type) Error!void {
-        host.give("work_start", Operation);
+    /// This site keeps copies of itself, listed by this operation of the plugin's own.
+    pub fn copies(host: *Host, comptime Operation: type) Error!void {
+        host.give("copies", Operation);
     }
 
     /// The site runs on Publr Cloud.

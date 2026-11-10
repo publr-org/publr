@@ -34,11 +34,17 @@ pub const namespace: sdk.operation.Namespace = .{
     \\never destroys anything for good (deleting a content type, purging a record): that
     \\is done in the admin. Its changes show in the activity log as `token:<id>`.
     \\`device list` and `device revoke` manage them.
+    \\
+    \\An MCP client signs in the same way through OAuth (`/oauth/authorize`,
+    \\`/oauth/token`): `device authorize` makes its request, the person approves it on the
+    \\same page, and `device exchange` trades the code it is sent back with for its token.
     ,
 };
 
 pub const Offer = @import("device/offer.zig").Offer;
-pub const operations = [_]type{ Start, Offer } ++ collect.operations ++ people.operations;
+pub const oauth = @import("device/oauth.zig");
+pub const operations = [_]type{ Start, Offer } ++ collect.operations ++ people.operations ++
+    oauth.operations;
 
 pub const example_device_code = "9f2c" ** 16;
 
@@ -56,7 +62,7 @@ pub const Start = struct {
     pub const open = true;
     pub const In = struct {
         name: []const u8,
-        scope: []const u8 = "drafts",
+        scope: []const u8 = "production",
     };
     pub const Out = struct {
         device_code: []const u8,
@@ -67,7 +73,7 @@ pub const Start = struct {
     };
     pub const example: In = .{
         .name = "An agent on Ada's laptop",
-        .scope = "drafts",
+        .scope = "production",
     };
     pub const example_out: Out = .{
         .device_code = example_device_code,
@@ -78,7 +84,7 @@ pub const Start = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "What the person sees, 1 to 80 characters",
-        .scope = "What the device asks to do: `read`, `drafts` or `write`",
+        .scope = "What the device asks to do: `read`, `write`, `production` or `publish`",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .device_code = "The device's secret for `device poll`; never shown to anyone",
@@ -135,6 +141,10 @@ pub const Stored = struct {
     name: []const u8,
     scope: []const u8,
     expires_at: i64,
+    client_id: []const u8 = "",
+    redirect_uri: []const u8 = "",
+    code_challenge: []const u8 = "",
+    client_state: []const u8 = "",
 };
 
 /// A request stored under a fresh user code, which it answers; a code another waiting
@@ -156,6 +166,10 @@ pub fn insert(ctx: *Ctx, new: Stored) Error![]const u8 {
             .name = new.name,
             .scope = new.scope,
             .expires_at = new.expires_at,
+            .client_id = new.client_id,
+            .redirect_uri = new.redirect_uri,
+            .code_challenge = new.code_challenge,
+            .client_state = new.client_state,
         }, ctx.now_ms);
 
         if (inserted) {
@@ -175,6 +189,7 @@ const Claim = collect.Claim;
 test {
     _ = people;
     _ = collect;
+    _ = oauth;
 }
 
 /// A device for the seeded editor, approved through the whole flow: its token.
@@ -259,17 +274,58 @@ test "a device signs in by link: asked, approved with less, collected once" {
     var system = harness.ctx(.system);
     try user_operations.seed_editor(&system);
 
-    const token = try approved(&harness, "write", "drafts");
+    const token = try approved(&harness, "publish", "production");
     var device = try device_ctx(&harness, token);
     const listed = try registry.SDK.dispatch(&device, people.List, .{});
 
     try std.testing.expectEqual(@as(usize, 1), listed.devices.len);
     try std.testing.expect(listed.devices[0].current);
-    try std.testing.expectEqualStrings("drafts", listed.devices[0].scope);
+    try std.testing.expectEqualStrings("production", listed.devices[0].scope);
     try std.testing.expectError(error.Denied, registry.SDK.dispatch(&device, people.List, .{
         .all = true,
     }));
-    try std.testing.expectError(error.Invalid, approved(&harness, "read", "write"));
+    try std.testing.expectError(error.Invalid, approved(&harness, "read", "publish"));
+}
+
+test "a person changes what a device may do; the device never does" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try user_operations.seed_editor(&system);
+
+    const token = try approved(&harness, "publish", "write");
+    var device = try device_ctx(&harness, token);
+    const id = (try registry.SDK.dispatch(&device, people.List, .{})).devices[0].id;
+
+    try std.testing.expectError(error.Denied, registry.SDK.dispatch(&device, people.Update, .{
+        .id = id,
+        .scope = "publish",
+    }));
+
+    const editor = (try registry.SDK.dispatch(&system, user_operations.List, .{})).users[0];
+    var person = harness.ctx(.{
+        .user = .{
+            .id = editor.id,
+            .roles = editor.roles,
+        },
+    });
+
+    try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&person, people.Update, .{
+        .id = id,
+        .scope = "drafts",
+    }));
+
+    _ = try registry.SDK.dispatch(&person, people.Update, .{
+        .id = id,
+        .scope = "production",
+    });
+
+    var again = try device_ctx(&harness, token);
+    const listed = try registry.SDK.dispatch(&again, people.List, .{});
+
+    try std.testing.expectEqualStrings("production", listed.devices[0].scope);
 }
 
 test "a person denies a device; a lapsed request is gone" {
@@ -331,7 +387,7 @@ test "a device never destroys, a drafts device never publishes, a revoked one st
         .type = "post",
         .document = record_operations.example_document,
     });
-    const token = try approved(&harness, "drafts", "drafts");
+    const token = try approved(&harness, "production", "production");
     var device = try device_ctx(&harness, token);
 
     try std.testing.expectError(error.Failed, registry.SDK.dispatch(&device, lifecycle.Purge, .{

@@ -7,7 +7,6 @@ const builtin = @import("builtin");
 const credentials = @import("credentials.zig");
 const remote = @import("remote.zig");
 const device = @import("../model/device.zig");
-const work = @import("work.zig");
 
 const Started = struct {
     device_code: []const u8,
@@ -37,7 +36,7 @@ const Listed = struct {
 const Options = struct {
     address: ?[]const u8 = null,
     name: ?[]const u8 = null,
-    scope: []const u8 = "write",
+    scope: []const u8 = "publish",
     browser: bool = true,
     /// A sign-in offered from the admin (`device offer`): taken at once, nothing to approve.
     claim: ?[]const u8 = null,
@@ -58,7 +57,7 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
     };
 
     // Without an address, the site this folder builds (`.publr/site`), else the only one.
-    const address = options.address orelse try work.folder_site(init);
+    const address = options.address orelse try credentials.folder_site(init);
 
     if (std.mem.eql(u8, command, "logout")) {
         return logout(init, out, address);

@@ -1736,14 +1736,12 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
-        /// A write about to commit for a `drafts` device: refused when it changed what
-        /// visitors see, so the whole write rolls back and waits for a person.
+        /// A write about to commit for a device that may not publish: refused when it
+        /// changed what visitors see, so the whole write rolls back and waits for a person.
         pub fn check_drafts(ctx: *Ctx) Error!void {
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
-            const scope = ctx.caller.scope() orelse return;
-
-            if (scope == .drafts and ctx.publishes) {
+            if (ctx.publishes and ctx.drafts_only()) {
                 return ctx.fail(operation.drafts_only);
             }
         }

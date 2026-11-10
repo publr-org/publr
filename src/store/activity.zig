@@ -31,6 +31,60 @@ pub const Filter = struct {
     before: ?i64 = null,
 };
 
+/// One entry of `changes`: what it takes to say it, never the whole input (a file's text).
+pub const Change = struct {
+    at: i64,
+    actor: []const u8,
+    operation: []const u8,
+    /// The first unit it changed, `record:<id>`; empty when none.
+    unit: []const u8,
+    /// `path` (or a merge's `branch`) and `transition` from its input, empty when it has none.
+    path: []const u8,
+    transition: []const u8,
+};
+
+/// How far back `changes` looks, in entries: a long run of anything else ends the list.
+pub const changes_window: u32 = 2000;
+
+/// The newest entries of the `operations` (a JSON array of names) made by someone signed in or
+/// running the site, since the site was made: its own setting up is not a change to it.
+pub fn changes(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    operations: []const u8,
+    limit: u32,
+) db.Error![]const Change {
+    std.debug.assert(limit > 0 and limit <= list_max);
+    std.debug.assert(operations.len > 0);
+
+    var select = try connection.prepare("WITH newest(id) AS " ++
+        "(SELECT coalesce(max(id), 0) - ?3 FROM activity) " ++
+        "SELECT at, actor, operation, coalesce(json_extract(units, '$[0]'), ''), " ++
+        "CASE WHEN json_valid(input) THEN coalesce(json_extract(input, '$.path'), " ++
+        "json_extract(input, '$.branch'), '') " ++
+        "ELSE '' END, " ++
+        "CASE WHEN json_valid(input) THEN coalesce(json_extract(input, '$.transition'), '') " ++
+        "ELSE '' END " ++
+        "FROM activity WHERE id > (SELECT id FROM newest) AND id > coalesce((SELECT max(id) " ++
+        "FROM activity WHERE operation = 'project.init' AND id > (SELECT id FROM newest)), 0) " ++
+        "AND operation IN (SELECT value FROM json_each(?1)) AND actor != 'anonymous' " ++
+        "AND actor NOT LIKE 'visitor:%' ORDER BY id DESC LIMIT ?2");
+    defer select.finalize();
+
+    try select.bind_text(1, operations);
+    try select.bind_int(2, limit);
+    try select.bind_int(3, changes_window);
+
+    var rows: std.ArrayList(Change) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < limit);
+        rows.append(arena, try select.read(Change, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
 pub fn append(connection: *db.Db, row: Row) db.Error!void {
     std.debug.assert(row.operation.len > 0);
     std.debug.assert(row.at >= 0);

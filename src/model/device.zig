@@ -49,12 +49,15 @@ pub fn valid_offer_code(text: []const u8) bool {
     return true;
 }
 
-/// What a device may do with its account: read only; write, but nothing visitors see
-/// changes (edits wait as drafts for a person); or everything the account may.
+/// What a device may do with its account, each giving what the last did and more: `read`;
+/// `write`, on copies of the site, publishing there included (a site without copies has only
+/// itself: there edits wait as drafts for a person); `production`, on the site itself too,
+/// edits waiting as drafts; `publish`, everything the account may.
 pub const Scope = enum {
     read,
-    drafts,
     write,
+    production,
+    publish,
 
     pub fn parse(text: []const u8) ?Scope {
         std.debug.assert(text.len <= 1 << 16);
@@ -145,12 +148,12 @@ pub fn normalize_user_code(text: []const u8) ?[user_code_len]u8 {
     return (letters[0..4] ++ "-" ++ letters[4..8]).*;
 }
 
-test "scopes order read, drafts, write" {
-    try std.testing.expectEqual(Scope.drafts, Scope.parse("drafts").?);
-    try std.testing.expect(Scope.parse("admin") == null);
-    try std.testing.expect(Scope.read.within(.drafts));
-    try std.testing.expect(Scope.drafts.within(.drafts));
-    try std.testing.expect(!Scope.write.within(.drafts));
+test "scopes order read, write, production, publish" {
+    try std.testing.expectEqual(Scope.production, Scope.parse("production").?);
+    try std.testing.expect(Scope.parse("drafts") == null);
+    try std.testing.expect(Scope.read.within(.write));
+    try std.testing.expect(Scope.production.within(.production));
+    try std.testing.expect(!Scope.publish.within(.production));
 }
 
 test "names: printable, bounded" {

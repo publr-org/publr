@@ -564,30 +564,31 @@ publr --site https://example.com --help  # its own commands, plugins included
 publr whoami                             # whose device this is, and what it may do
 ```
 
-On Publr Cloud your changes go to a branch of the site, a copy with its content, never to
-the live site. Start one for each task; every later command from this folder goes there,
-reads included, so you see what you made:
+Where the site keeps copies (environments and branches), work on one unless your person let
+you write on production. Make one for each task and name it on every command; in it you may do
+anything, publishing included, and visitors see none of it until the person merges it:
 
 ```sh
-publr --site https://example.com work start --name "Recipes section"   # prints Preview and Merge
-publr work                                # the branch this folder works in
-publr work done                           # stop sending this folder's commands there
-publr --site https://example.com --production record publish ...   # this one call, live
+publr --site https://example.com environments create --kind branch --name "Recipes section"
+publr --site https://example.com --env recipes-section record list --type post
 ```
 
-Forget to start one and your first write starts one for you, named after the time. In a
-branch you may do anything, publishing included: visitors see none of it until the person
-merges it. When you are done, give them its Preview and Merge links. Use `--production`
-only when they ask you to change the live site. A self-hosted Publr has no branches: your
-changes go to the site itself, and `work start` says so.
+When you are done, always end with the `merge` address that making it answered: they
+review the branch there and merge it. A self-hosted Publr usually has no copies: your
+changes go to the site itself.
 
-The person chooses what you may do: `write` (the default), `drafts` (you write, they
-publish) or `read`. Never ask them for a password or a token, and never paste a token anywhere: the
+With a terminal, a project can also be brought down to this computer: `publr clone <address>`
+makes a folder you work in as any local site, and `publr push` sends it up as a branch for
+your person to review and merge. A folder with `.publr/clone.json` is such a copy: it never
+writes to the live site.
+
+The person chooses what you may do: read only; read and write (on copies, where there are
+any); write on production, where your changes wait as drafts; and publish. Never ask them for a password or a token, and never paste a token anywhere: the
 link is the only way in. Removing is safe: what you delete (a record, a content type, a
 plugin, a file, a user) goes to the trash whole, and the person can restore it (`trash
 list`, `trash restore`). Only what is final waits for them: purging a record or a term, or
 removing something from the trash, is not run but put on their removal list
-(`ListedForRemoval`); they remove it themselves. Under `drafts`, a write that would publish
+(`ListedForRemoval`); they remove it themselves. Without publish, a write that would publish
 is refused with `DraftsOnly`: save drafts and tell them what waits to be published.
 
 With no files of your own to edit, the project's apps and plugins are reached through

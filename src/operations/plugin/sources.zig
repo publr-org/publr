@@ -73,7 +73,7 @@ pub const Build = struct {
 
         try check_files(ctx, in);
 
-        if (ctx.caller.scope() == .drafts) {
+        if (ctx.drafts_only()) {
             return ctx.fail(sdk.operation.drafts_only);
         }
 

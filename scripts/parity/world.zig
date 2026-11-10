@@ -328,7 +328,7 @@ fn fill_conversations(ctx: *Ctx, admin_id: []const u8) Error!void {
         .prompt = conversation.example_prompt,
         .provider = "scripted",
         .model = "",
-        .scope = "drafts",
+        .scope = "production",
     }, ctx.now_ms);
 
     try store.ai_conversations.rename(ctx.db, id, conversation.example_id);
@@ -347,27 +347,29 @@ fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
         .code_hash = [_]u8{1} ** 32,
         .user_code = people.example_code,
         .name = "An agent on Ada's laptop",
-        .scope = "drafts",
+        .scope = "production",
         .expires_at = expires_at,
     }, ctx.now_ms);
     _ = try store.device_requests.insert(ctx.db, .{
         .code_hash = publr.operations.device.hash_of(publr.operations.device.example_device_code),
         .user_code = approved_code,
         .name = "An agent on Ada's laptop",
-        .scope = "drafts",
+        .scope = "production",
         .expires_at = expires_at,
     }, ctx.now_ms);
     _ = try store.device_requests.decide(ctx.db, .{
         .user_code = approved_code,
         .state = "approved",
-        .scope = "drafts",
+        .scope = "production",
         .user_id = admin_id,
     }, ctx.now_ms);
+
+    try fill_client(ctx, admin_id);
 
     const created = try store.devices.create(ctx.db, ctx.io, ctx.arena, .{
         .user_id = admin_id,
         .name = "An agent on Ada's laptop",
-        .scope = "drafts",
+        .scope = "production",
     }, ctx.now_ms);
     var rename = try ctx.db.prepare("UPDATE devices SET id = ?1 WHERE id = ?2");
     defer rename.finalize();
@@ -375,6 +377,31 @@ fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
     try rename.bind_text(1, people.example_device_id);
     try rename.bind_text(2, created.device.id);
     try rename.exec();
+}
+
+/// An MCP client's request approved under the code `device exchange`'s example trades.
+fn fill_client(ctx: *Ctx, admin_id: []const u8) Error!void {
+    std.debug.assert(admin_id.len > 0);
+
+    const oauth = publr.operations.device.oauth;
+    const user_code = "CDFG-HJKL";
+
+    _ = try store.device_requests.insert(ctx.db, .{
+        .code_hash = publr.operations.device.hash_of(oauth.example_code),
+        .user_code = user_code,
+        .name = "Cursor",
+        .scope = "production",
+        .expires_at = ctx.now_ms + publr.model.device.request_lifetime_ms,
+        .client_id = oauth.example_client_id,
+        .redirect_uri = oauth.example_redirect,
+        .code_challenge = oauth.example_challenge,
+    }, ctx.now_ms);
+    _ = try store.device_requests.decide(ctx.db, .{
+        .user_code = user_code,
+        .state = "approved",
+        .scope = "production",
+        .user_id = admin_id,
+    }, ctx.now_ms);
 }
 
 /// The app the `apps` examples name, `www`, with the page they read and the one they remove.

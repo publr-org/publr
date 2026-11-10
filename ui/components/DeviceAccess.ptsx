@@ -1,0 +1,76 @@
+import { Publr } from "publr-jsx";
+import { CheckboxField } from "@publr/ui/CheckboxField.ptsx";
+import { ChoiceCard } from "@publr/ui/ChoiceCard.ptsx";
+
+export type DeviceAccessProps = {
+  /** What is chosen now: `read`, `write`, `production` or `publish`. */
+  scope: string;
+  /** The most on offer: what the device asked for; anything more is not shown. */
+  limit: string;
+  /** The site keeps copies of itself, so writing on it is a choice of its own. */
+  copies: boolean;
+  /** Makes the checkboxes' ids its own, for a page with several of these. */
+  prefix: string;
+  /** One choice under the other, for a narrow place like a drawer. */
+  stacked?: boolean;
+};
+
+/** What a device may do: read only, or read and write; then, each only under the one before,
+ * write on production and publish. Posts `access`, `production` and `publish`. */
+export function DeviceAccess({ scope, limit, copies, prefix, stacked = false }: DeviceAccessProps) {
+  const offers_publish = limit === "publish";
+  const offers_production = copies && (limit === "production" || limit === "publish");
+  return (
+    <div class="group/access flex flex-col gap-4" data-part="device-access">
+      <div class={["grid gap-3", stacked ? "" : "sm:grid-cols-2"]}>
+        <ChoiceCard
+          name="access"
+          value="read"
+          checked={scope === "read"}
+          title={Publr.t("Read only")}
+          description={Publr.t("See what you can see. It changes nothing.")}
+        />
+        <ChoiceCard
+          name="access"
+          value="write"
+          checked={scope !== "read"}
+          disabled={limit === "read"}
+          title={Publr.t("Read and write")}
+          description={copies
+            ? Publr.t("Work on environments and branches, publishing there included. Nothing is live until a person merges it.")
+            : Publr.t("Change content as you could, but nothing goes live until you publish it.")}
+        />
+      </div>
+      <div class="group-has-[input[value=read]:checked]/access:hidden">
+        {offers_production && (
+          <CheckboxField
+            id={prefix + "-production"}
+            name="production"
+            checked={scope === "production" || scope === "publish"}
+            label={Publr.t("Write on production")}
+            description={Publr.t("Let it change the live site too. Its changes wait as drafts for a person.")}
+          >
+            {offers_publish && (
+              <CheckboxField
+                id={prefix + "-publish"}
+                name="publish"
+                checked={scope === "publish"}
+                label={Publr.t("Publish")}
+                description={Publr.t("Not recommended: changes go live without review.")}
+              />
+            )}
+          </CheckboxField>
+        )}
+        {!copies && offers_publish && (
+          <CheckboxField
+            id={prefix + "-publish"}
+            name="publish"
+            checked={scope === "publish"}
+            label={Publr.t("Publish")}
+            description={Publr.t("Not recommended: changes go live without review.")}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

@@ -197,7 +197,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 172 + preview_pages.routes_count +
+pub const routes_count: u32 = 173 + preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
@@ -206,6 +206,8 @@ pub const routes_count: u32 = 172 + preview_pages.routes_count +
 const client_files = @import("../ui/client_files.zig");
 
 const styles_css = @embedFile("styles_css");
+const store = @import("../store.zig");
+const ai_model = @import("../model/ai.zig");
 const stores_js = @embedFile("admin_stores_js");
 /// The admin's class book for the browser's merge, installed before any store runs.
 const class_book_js = "import { useClassBook } from \"./publr-class-merge.js\";\n" ++
@@ -240,6 +242,7 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/settings/users/:id/delete", &user_pages.delete);
     router.get("/admin/settings/devices", &device_pages.list);
     router.post("/admin/settings/devices/:id/revoke", &device_pages.revoke);
+    router.post("/admin/settings/devices/:id/access", &device_pages.update);
     router.get("/admin/settings/devices/approve", &device_pages.approve_page);
     router.post("/admin/settings/devices/approve", &device_pages.decide);
     register_settings_pages(router);
@@ -984,10 +987,74 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expectEqualStrings("/admin/content", created.header("Location").?);
     try std.testing.expect(std.mem.startsWith(u8, flow.cookie, "publr_session="));
 
-    const overview = try flow.call("GET", "/admin", "");
-    const setup_line = "curl -fsSL http://h/api/agent/";
-    try std.testing.expect(std.mem.indexOf(u8, overview.body, setup_line) != null);
+    const here = try flow.call("GET", "/admin", "");
+    try std.testing.expect(std.mem.indexOf(u8, here.body, "/admin?tool=cursor") != null);
+
+    const overview = try flow.call("GET", "/admin?tool=cursor", "");
+    const add_link = "cursor://anysphere.cursor-deeplink/mcp/install?name=publr&amp;config=";
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, add_link) != null);
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, "http://h/mcp") != null);
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, "Ask in Cursor") != null);
+
+    const claude_code = try flow.call("GET", "/admin?tool=claude_code", "");
+    const add_command = "claude mcp add --transport http publr http://h/mcp";
+    try std.testing.expect(std.mem.indexOf(u8, claude_code.body, add_command) != null);
+    try std.testing.expect(std.mem.indexOf(u8, claude_code.body, "type /mcp") != null);
+
+    const codex = try flow.call("GET", "/admin?tool=codex", "");
+    try std.testing.expect(std.mem.indexOf(u8, codex.body, "codex mcp add publr --url") != null);
+    try std.testing.expect(std.mem.indexOf(u8, codex.body, "Ask in Codex") != null);
+    try std.testing.expect(std.mem.indexOf(u8, codex.body, "Cursor&#39;s chat") == null);
+    try std.testing.expect(std.mem.indexOf(u8, codex.body, "Cursor's chat") == null);
     try std.testing.expect(std.mem.indexOf(u8, overview.body, "agent-tab-here") == null);
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, "<textarea") == null);
+
+    const handed = try flow.call("GET", "/admin?ask=Add+a+page", "");
+    try std.testing.expect(std.mem.indexOf(u8, handed.body, "<textarea") != null);
+
+    const owner = (try store.users.find_by_email(
+        &harness.fixture.connection,
+        arena_state.allocator(),
+        "ada@example.com",
+    )).?.user.id;
+
+    _ = try store.devices.create(
+        &harness.fixture.connection,
+        std.testing.io,
+        arena_state.allocator(),
+        .{
+            .user_id = owner,
+            .name = ai_model.device_name,
+            .scope = "production",
+        },
+        1,
+    );
+
+    const lending = try flow.call("GET", "/admin", "");
+    try std.testing.expect(std.mem.indexOf(u8, lending.body, "/admin?tool=cursor") != null);
+
+    _ = try store.devices.create(
+        &harness.fixture.connection,
+        std.testing.io,
+        arena_state.allocator(),
+        .{
+            .user_id = owner,
+            .name = "Cursor",
+            .scope = "production",
+        },
+        2,
+    );
+
+    const set_up = try flow.call("GET", "/admin?tool=cursor", "");
+    try std.testing.expect(std.mem.indexOf(u8, set_up.body, "/admin?tool=cursor") == null);
+    try std.testing.expect(std.mem.indexOf(u8, set_up.body, "mcp/install") == null);
+    try std.testing.expect(std.mem.indexOf(u8, set_up.body, "Connect another tool") != null);
+
+    const devices_page = try flow.call("GET", "/admin/settings/devices?tool=cursor", "");
+    try std.testing.expect(std.mem.indexOf(u8, devices_page.body, "mcp/install") != null);
+    try std.testing.expect(
+        std.mem.indexOf(u8, devices_page.body, "/admin/settings/devices?tool=codex") != null,
+    );
 
     const structure = try flow.call("GET", "/admin/structure", "");
     try std.testing.expectEqual(.ok, structure.status);
@@ -1257,6 +1324,13 @@ test "admin over http: setup, login, types and content through plain forms" {
     const entry_created = try flow.call("POST", "/admin/content/create", entry_body);
     const location = entry_created.header("Location").?;
     try std.testing.expect(std.mem.startsWith(u8, location, "/admin/content/"));
+
+    const status_page = try flow.call("GET", "/admin", "");
+    try std.testing.expect(std.mem.indexOf(u8, status_page.body, "Recent changes") != null);
+    try std.testing.expect(std.mem.indexOf(u8, status_page.body, ">Hello<") != null);
+    try std.testing.expect(std.mem.indexOf(u8, status_page.body, "You") != null);
+    try std.testing.expect(std.mem.indexOf(u8, status_page.body, "Waiting for you") != null);
+    try std.testing.expect(std.mem.indexOf(u8, status_page.body, "status=is:draft") != null);
 
     const edit_page = try flow.call("GET", location, "");
     try std.testing.expect(std.mem.indexOf(u8, edit_page.body, "value=\"Hello\"") != null);

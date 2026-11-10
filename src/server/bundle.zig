@@ -18,6 +18,7 @@ const backup = @import("gate/backup.zig");
 const operator = @import("operator.zig");
 
 pub const pack = @import("bundle/pack.zig").pack;
+pub const pack_clone = @import("bundle/pack.zig").pack_clone;
 pub const unpack = @import("bundle/unpack.zig").unpack;
 pub const UnpackOptions = @import("bundle/unpack.zig").Options;
 

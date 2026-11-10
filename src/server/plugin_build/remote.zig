@@ -1,8 +1,8 @@
 //! `publr --site <address> plugin build --name <name>`: the plugin built here, by this
-//! binary's compiler, and its module sent to the Publr at `address` (or the work open in
-//! this folder) a piece at a time, then enabled when new or applied when it was there. A
-//! site that builds nothing itself (Publr Cloud's projects carry no compiler) gets its
-//! plugins this way, as one command.
+//! binary's compiler, and its module sent to the Publr at `address` (or its copy `--env`)
+//! a piece at a time, then enabled when new or applied when it was there. A site that builds
+//! nothing itself (Publr Cloud's projects carry no compiler) gets its plugins this way,
+//! as one command.
 const std = @import("std");
 const plugin_build = @import("../plugin_build.zig");
 const forwarding = @import("../remote.zig");
@@ -17,7 +17,7 @@ pub fn run(
     init: std.process.Init,
     address: []const u8,
     args: []const []const u8,
-    production: bool,
+    env: ?[]const u8,
     out: *std.Io.Writer,
 ) !u8 {
     std.debug.assert(address.len > 0);
@@ -42,17 +42,17 @@ pub fn run(
     const Asker = struct {
         init: std.process.Init,
         address: []const u8,
-        production: bool,
+        env: ?[]const u8,
 
         pub fn ask(asker: @This(), words: []const []const u8, into: *std.Io.Writer) !u8 {
-            return forwarding.forward(asker.init, asker.address, words, asker.production, into);
+            return forwarding.forward(asker.init, asker.address, words, asker.env, into);
         }
     };
     // Built against the plugins of the site it goes to.
     const there = try @import("published.zig").asked(arena, Asker{
         .init = init,
         .address = address,
-        .production = production,
+        .env = env,
     });
 
     // Its modules stay there: examples needing one of them are left to that site.
@@ -72,7 +72,7 @@ pub fn run(
     const site: Site = .{
         .init = init,
         .address = address,
-        .production = production,
+        .env = env,
     };
     var answer: std.Io.Writer.Allocating = .init(arena);
 
@@ -86,13 +86,13 @@ pub fn run(
     else
         [_][]const u8{ "plugin", "enable", "--names", request.name };
 
-    return forwarding.forward(init, address, &next, production, out);
+    return forwarding.forward(init, address, &next, env, out);
 }
 
 const Site = struct {
     init: std.process.Init,
     address: []const u8,
-    production: bool,
+    env: ?[]const u8,
 };
 
 /// The module sent as `plugin upload` pieces; the last one's answer in `answer`.
@@ -124,7 +124,7 @@ fn upload(site: Site, name: []const u8, bytes: []const u8, answer: *std.Io.Write
         };
         var discarded: std.Io.Writer.Discarding = .init(&.{});
         const into = if (last) answer else &discarded.writer;
-        const code = try forwarding.forward(site.init, site.address, &words, site.production, into);
+        const code = try forwarding.forward(site.init, site.address, &words, site.env, into);
 
         if (code != 0) {
             return code;

@@ -116,7 +116,7 @@ sequenceDiagram
     D->>P: device.start {name, scope}
     P-->>D: device code (kept), user code, approve link
     D->>A: shows the link
-    A->>P: opens it signed in, picks the scope, approves
+    A->>P: opens it signed in, picks the access, approves
     D->>P: device.poll (a read, every few seconds)
     P-->>D: approved
     D->>P: device.claim
@@ -134,8 +134,15 @@ person approved:
 | Scope | What the device may do |
 |---|---|
 | `read` | read what its account may read |
-| `drafts` | write as its account may, but nothing visitors see changes: a write that publishes or unpublishes something (a `*.published` or `*.unpublished` event) is refused whole, so edits wait as drafts for a person |
-| `write` | everything its account may |
+| `write` | write as its account may on the site's copies (environments and branches), publishing there included: nothing there is live until a person merges it. On production every write is refused with `WorksOnCopies`, making a copy excepted. On a Publr that keeps no copies, it writes to the site but nothing visitors see changes, as `production` |
+| `production` | also write on production, but nothing visitors see changes: a write that publishes or unpublishes something (a `*.published` or `*.unpublished` event) is refused whole with `DraftsOnly`, so edits wait as drafts for a person |
+| `publish` | everything its account may |
+
+The admin offers them as Read only or Read and write, then Write on production (a Publr that
+keeps copies only) and Publish, each only under the one before; Read and write is chosen to
+begin with. **Settings › Devices** has Edit access beside Revoke (`device update`): an
+account changes its own devices, an administrator anyone's, never a device itself, and it
+counts from the device's next call.
 
 Whatever its scope, a device never destroys data for good. An operation that declares
 `destroys` (purging a record or a term; pruning snapshots; removing something from the
@@ -147,6 +154,38 @@ content type, a taxonomy, a field group, a plugin, media, an app's file, a user 
 which keep a copy in the trash ([`trash`](cli/trash.md)). A device never approves another
 device, and a request carrying its token needs no CSRF token (no browser sends it on its
 own). Its changes are logged as `token:<id>`, and the activity log names the device.
+
+### MCP clients
+
+A tool that speaks MCP (Cursor, Claude Code, Claude.ai) adds a Publr by its address,
+`<admin address>/mcp`, and signs in through OAuth, which every Publr serves: the
+authorization code flow with PKCE (S256) for public clients, and registration open to any
+client. Its sign-in is a device request like the one above, approved on the same page.
+
+```mermaid
+sequenceDiagram
+    participant T as Tool
+    participant P as Publr
+    participant A as Person, in the browser
+    T->>P: POST /mcp (no token)
+    P-->>T: 401, where the OAuth metadata is
+    T->>P: POST /oauth/register {client_name, redirect_uris}
+    P-->>T: client_id
+    T->>A: opens /oauth/authorize?client_id&redirect_uri&code_challenge&state
+    A->>P: approve page, signed in: picks the access, approves
+    P-->>A: back to redirect_uri?code&state
+    A->>T: the code
+    T->>P: POST /oauth/token {code, code_verifier, client_id, redirect_uri}
+    P-->>T: the device's token
+    T->>P: POST /mcp, Authorization: Bearer <token>
+```
+
+A client's id carries the client itself (its name and return addresses, encoded), so
+registering stores nothing. A return address is `https://`, `http://` to this machine, or
+the tool's own scheme (`cursor://…`), and the approve page names it. The code it is sent back
+with is used once, within the request's ten minutes, and only with the verifier its
+challenge was made from; the request it names is never collected with `device poll` or
+`claim`.
 
 A trusted issuer (a Publr Cloud dashboard) may also get a device's token for one of its
 people with a sign-on token it signs (`device.redeem`), the trust `sign_on` already

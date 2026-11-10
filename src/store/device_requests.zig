@@ -12,6 +12,11 @@ pub const Request = struct {
     user_id: ?[]const u8,
     expires_at: i64,
     created_at: i64,
+    /// An MCP client's request (`/oauth/authorize`): empty for a device's own.
+    client_id: []const u8,
+    redirect_uri: []const u8,
+    code_challenge: []const u8,
+    client_state: []const u8,
 };
 
 pub const New = struct {
@@ -20,6 +25,10 @@ pub const New = struct {
     name: []const u8,
     scope: []const u8,
     expires_at: i64,
+    client_id: []const u8 = "",
+    redirect_uri: []const u8 = "",
+    code_challenge: []const u8 = "",
+    client_state: []const u8 = "",
 };
 
 /// False when the user code is already taken by a waiting request.
@@ -29,8 +38,8 @@ pub fn insert(connection: *db.Db, new: New, now_ms: i64) db.Error!bool {
 
     var statement = try connection.prepare(
         "INSERT INTO device_requests (code_hash, user_code, name, scope, state, expires_at, " ++
-            "created_at) VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6) " ++
-            "ON CONFLICT DO NOTHING",
+            "created_at, client_id, redirect_uri, code_challenge, client_state) " ++
+            "VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT DO NOTHING",
     );
     defer statement.finalize();
 
@@ -40,12 +49,17 @@ pub fn insert(connection: *db.Db, new: New, now_ms: i64) db.Error!bool {
     try statement.bind_text(4, new.scope);
     try statement.bind_int(5, new.expires_at);
     try statement.bind_int(6, now_ms);
+    try statement.bind_text(7, new.client_id);
+    try statement.bind_text(8, new.redirect_uri);
+    try statement.bind_text(9, new.code_challenge);
+    try statement.bind_text(10, new.client_state);
     try statement.exec();
 
     return connection.changes() == 1;
 }
 
-const columns_sql = "code_hash, user_code, name, scope, state, user_id, expires_at, created_at";
+const columns_sql = "code_hash, user_code, name, scope, state, user_id, expires_at, " ++
+    "created_at, client_id, redirect_uri, code_challenge, client_state";
 
 pub fn find_by_user_code(
     connection: *db.Db,
@@ -119,6 +133,25 @@ pub fn decide(connection: *db.Db, decision: Decision, now_ms: i64) db.Error!bool
     return connection.changes() == 1;
 }
 
+/// An approved MCP client's request, found from now on by the code its client is sent back
+/// with. False when it is not one approved and waiting.
+pub fn rekey(connection: *db.Db, user_code: []const u8, code_hash: [32]u8) db.Error!bool {
+    std.debug.assert(user_code.len > 0);
+    std.debug.assert(code_hash.len == 32);
+
+    var statement = try connection.prepare(
+        "UPDATE device_requests SET code_hash = ?1 " ++
+            "WHERE user_code = ?2 AND state = 'approved' AND client_id <> ''",
+    );
+    defer statement.finalize();
+
+    try statement.bind_blob(1, &code_hash);
+    try statement.bind_text(2, user_code);
+    try statement.exec();
+
+    return connection.changes() == 1;
+}
+
 pub fn remove(connection: *db.Db, code_hash: [32]u8) db.Error!void {
     std.debug.assert(code_hash.len == 32);
     std.debug.assert(connection.transaction_depth <= 8);
@@ -168,7 +201,7 @@ test "a request waits, is decided once, and lapses" {
         .code_hash = hash,
         .user_code = "BCDF-GHJK",
         .name = "laptop",
-        .scope = "write",
+        .scope = "publish",
         .expires_at = 10_000,
     };
 
@@ -181,14 +214,14 @@ test "a request waits, is decided once, and lapses" {
     const approve: Decision = .{
         .user_code = "BCDF-GHJK",
         .state = "approved",
-        .scope = "drafts",
+        .scope = "production",
         .user_id = user_id,
     };
     try std.testing.expect(try decide(&fixture.connection, approve, 2_000));
     try std.testing.expect(!try decide(&fixture.connection, approve, 2_000));
 
     const approved = (try find_by_code_hash(&fixture.connection, arena, hash)).?;
-    try std.testing.expectEqualStrings("drafts", approved.scope);
+    try std.testing.expectEqualStrings("production", approved.scope);
     try std.testing.expectEqualStrings(user_id, approved.user_id.?);
 
     try std.testing.expectEqual(@as(u32, 1), try cleanup(&fixture.connection, 10_000));

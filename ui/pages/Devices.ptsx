@@ -1,11 +1,20 @@
 import { Publr } from "publr-jsx";
 import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { ConnectTool } from "../components/ConnectTool.ptsx";
+import { DeviceAccess } from "../components/DeviceAccess.ptsx";
 import { Pager } from "../components/Pager.ptsx";
 import { ConfirmAction } from "../components/ConfirmAction.ptsx";
-import { Code } from "@publr/ui/Code.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Drawer } from "@publr/ui/Drawer.ptsx";
+import { DrawerClose } from "@publr/ui/DrawerClose.ptsx";
+import { DrawerContent } from "@publr/ui/DrawerContent.ptsx";
+import { DrawerHeader } from "@publr/ui/DrawerHeader.ptsx";
+import { DrawerTitle } from "@publr/ui/DrawerTitle.ptsx";
+import { DrawerTrigger } from "@publr/ui/DrawerTrigger.ptsx";
 import { Empty } from "@publr/ui/Empty.ptsx";
 import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
 import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { SectionTitle } from "@publr/ui/SectionTitle.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
 import { Table } from "@publr/ui/Table.ptsx";
@@ -16,18 +25,32 @@ import { TableRow } from "@publr/ui/TableRow.ptsx";
 import { TableCell } from "@publr/ui/TableCell.ptsx";
 
 export type DevicesProps = {
+  /** The tool picked to connect (`claude_code`, `codex`, `cursor`, `windsurf`, `other`), its
+   * setup shown; empty when none is. */
+  tool: string;
+  /** This site's MCP address, `<admin address>/mcp`, which every tool adds. */
+  mcp_address: string;
+  /** Cursor's link that adds this site's MCP server. */
+  cursor_link: string;
+  /** The address can be reached from the internet, so chat apps can add it. */
+  reachable: boolean;
+  /** The site keeps copies of itself, so writing on it is a choice of its own. */
+  copies: boolean;
   /** Every account's devices, for an administrator; else only the viewer's own. */
   everyone: boolean;
   devices: Array<{
     name: string;
-    /** `read`, `drafts` or `write`. */
+    /** `read`, `write`, `production` or `publish`. */
     scope: string;
+    /** Makes its form's ids its own. */
+    id: string;
     /** Whose account it acts for, shown to administrators. */
     email: string;
     /** When it was approved and last used, `YYYY-MM-DD HH:MM`, UTC. */
     approved: string;
     used: string;
-    /** Where Revoke posts. */
+    /** Where Edit access and Revoke post. */
+    access_action: string;
     revoke_action: string;
   }>;
   /** "51–100 of 230" when there is more than one page; empty otherwise. */
@@ -37,20 +60,28 @@ export type DevicesProps = {
 };
 
 /** The agents and tools acting for an account, each under the scope its person chose, and a
- * way to stop each one. A device is added from its own side, with `publr login`. */
-export function Devices({ everyone, devices, range, previous_href, next_href }: DevicesProps) {
+ * way to stop each one. A tool is connected from its own side, its steps here, and approved
+ * in the browser. */
+export function Devices({ tool, mcp_address, cursor_link, reachable, copies, everyone, devices, range, previous_href, next_href }: DevicesProps) {
   return (
     <IndexPage
       footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
       title={Publr.t("Devices")}
       description={Publr.t("Agents and tools that act for an account. Each does only what its person approved, and never deletes anything for good.")}
+      notice={
+        <div class="flex flex-col gap-3">
+          <SectionTitle title={Publr.t("Connect a tool")} classes="px-0" />
+          <div class="w-full max-w-2xl">
+            <ConnectTool base="/admin/settings/devices" tool={tool} address={mcp_address} cursor_link={cursor_link} reachable={reachable} start />
+          </div>
+        </div>
+      }
       empty={
         devices.length === 0 && (
           <Empty>
             <EmptyTitle>{Publr.t("No devices")}</EmptyTitle>
             <EmptyDescription>
-              {Publr.t("An agent signs in with")} <Code>publr login</Code>{" "}
-              {Publr.t("and this site's address; you approve it here.")}
+              {Publr.t("Connect a tool above; you approve it in the browser it opens.")}
             </EmptyDescription>
           </Empty>
         )
@@ -79,9 +110,12 @@ export function Devices({ everyone, devices, range, previous_href, next_href }: 
                 </TableCell>
               )}
               <TableCell>
-                {device.scope === "read" && <Status tone="neutral">{Publr.t("Read")}</Status>}
-                {device.scope === "drafts" && <Status tone="info">{Publr.t("Save drafts")}</Status>}
-                {device.scope === "write" && <Status tone="warning">{Publr.t("Write and publish")}</Status>}
+                {device.scope === "read" && <Status tone="neutral">{Publr.t("Read only")}</Status>}
+                {device.scope === "write" && (
+                  <Status tone="info">{copies ? Publr.t("Read and write, on copies") : Publr.t("Read and write")}</Status>
+                )}
+                {device.scope === "production" && <Status tone="info">{Publr.t("Read and write · production drafts")}</Status>}
+                {device.scope === "publish" && <Status tone="warning">{Publr.t("Read, write and publish")}</Status>}
               </TableCell>
               <TableCell>
                 <Text as="span" variant="body-sm" tone="muted">{device.approved}</Text>
@@ -90,13 +124,35 @@ export function Devices({ everyone, devices, range, previous_href, next_href }: 
                 <Text as="span" variant="body-sm" tone="muted">{device.used}</Text>
               </TableCell>
               <TableCell>
-                <ConfirmAction
-                  inline
-                  label={Publr.t("Revoke")}
-                  title={Publr.t("Revoke {name}?", { name: device.name })}
-                  description={Publr.t("It stops working at once. What it changed stays.")}
-                  action={device.revoke_action}
-                />
+                <div class="flex justify-end gap-2">
+                  <Drawer>
+                    <DrawerTrigger asChild>
+                      <Button type="button" hierarchy="secondary">{Publr.t("Edit access")}</Button>
+                    </DrawerTrigger>
+                    <DrawerContent label={Publr.t("Edit access")}>
+                      <DrawerHeader>
+                        <DrawerTitle>{Publr.t("What {name} may do", { name: device.name })}</DrawerTitle>
+                      </DrawerHeader>
+                      <form method="post" action={device.access_action} class="flex flex-col gap-5 p-5">
+                        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+                        <DeviceAccess scope={device.scope} limit="publish" copies={copies} prefix={device.id} stacked />
+                        <div class="flex justify-end gap-2">
+                          <DrawerClose asChild>
+                            <Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button>
+                          </DrawerClose>
+                          <Button type="submit">{Publr.t("Save")}</Button>
+                        </div>
+                      </form>
+                    </DrawerContent>
+                  </Drawer>
+                  <ConfirmAction
+                    inline
+                    label={Publr.t("Revoke")}
+                    title={Publr.t("Revoke {name}?", { name: device.name })}
+                    description={Publr.t("It stops working at once. What it changed stays.")}
+                    action={device.revoke_action}
+                  />
+                </div>
               </TableCell>
             </TableRow>
           ))}

@@ -56,7 +56,7 @@ fn expect_signed_in(
     const started = try body_as(Started, arena, start);
     const approve = [_][]const u8{
         "--as",   email,             "device",  "approve",
-        "--code", started.user_code, "--scope", "drafts",
+        "--code", started.user_code, "--scope", "production",
     };
 
     try smoke.expect_contains(init, binary, work_dir, &approve, "\"approved\": true");

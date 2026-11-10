@@ -105,7 +105,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
     defer application.deinit();
 
     const base = if (flags.url_given) model_app.path_of(flags.apps.base_url) else "";
-    var project = project_of(init.io, &application, browser_dir, base);
+    var project = project_of(init.io, &application, browser_dir, base, db_path);
 
     try name_cookies(init.arena.allocator(), &project);
     const first_port = flags.port orelse default_port(browser_dir != null);
@@ -264,11 +264,13 @@ fn project_of(
     application: *server.Server,
     browser_dir: ?[]const u8,
     base: []const u8,
+    db_path: []const u8,
 ) routes.Project {
     std.debug.assert(application.runtime.open_count == 1);
     std.debug.assert(browser_dir == null or browser_dir.?.len > 0);
 
     return .{
+        .db_path = db_path,
         .connection = &application.connection,
         .auth = &application.auth,
         .io = io,

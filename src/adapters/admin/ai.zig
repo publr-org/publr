@@ -38,7 +38,7 @@ pub fn ask(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const started = registry.SDK.dispatch(&session.ctx, ai.Ask, .{
         .prompt = post.form.text("prompt") orelse "",
-        .scope = post.form.get("scope") orelse "write",
+        .scope = post.form.get("scope") orelse "publish",
         .pictures = try pictures_of(session.arena, &post.form),
         .page = post.form.get("page") orelse "",
     }) catch |err| return admin.fail(session, err, "/admin");

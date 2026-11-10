@@ -40,8 +40,6 @@ pub const Options = struct {
     /// Who runs every command, fixed: a device sending them from elsewhere (`/api/cli`).
     /// `--as` and `--as-admin` are refused then.
     device: ?sdk.Caller = null,
-    /// The device's call said `--production` (`ctx.production`).
-    production: bool = false,
     /// Where the name of the failure a command ended with goes, for an adapter that answers
     /// it: `/api/cli` passes it to the device.
     failed: ?*[]const u8 = null,
@@ -107,7 +105,7 @@ pub fn CLI(comptime SDK: type) type {
             while (index < args.len and std.mem.startsWith(u8, args[index], "-")) : (index += 1) {
                 const flag = args[index];
                 const acting_as = std.mem.eql(u8, flag, "--as-admin") or
-                    std.mem.eql(u8, flag, "--as");
+                    std.mem.eql(u8, flag, "--as") or std.mem.eql(u8, flag, "--device");
 
                 if (acting_as and invocation.options.device != null) {
                     return fail(invocation, "a device acts as its own account; drop \"--as\"");
@@ -123,6 +121,16 @@ pub fn CLI(comptime SDK: type) type {
                     caller = try resolve_user(invocation, args[index]) orelse return failf(
                         invocation,
                         "unknown user \"{s}\"; --as takes a user id or email",
+                        .{args[index]},
+                    );
+                } else if (std.mem.eql(u8, flag, "--device")) {
+                    index += 1;
+                    if (index == args.len) {
+                        return fail(invocation, "flag \"--device\" needs a device's id");
+                    }
+                    caller = try resolve_device(invocation, args[index]) orelse return failf(
+                        invocation,
+                        "no working device \"{s}\"; `publr device list` names them",
                         .{args[index]},
                     );
                 } else if (is_help_flag(flag)) {
@@ -236,7 +244,6 @@ pub fn CLI(comptime SDK: type) type {
             ctx.agents = invocation.options.agents;
             ctx.live = invocation.options.live;
             ctx.updater = invocation.options.updater;
-            ctx.production = invocation.options.production;
             ctx.translations = invocation.options.translations;
             ctx.language.locale = language.speaks(&ctx) catch "";
 
@@ -450,6 +457,7 @@ const help_header =
     \\  --db <path>        Database file (default: data/publr.db); must come first
     \\  --as <user>        Run as this user (id or email)
     \\  --as-admin         Run as the local operator, unrestricted
+    \\  --device <id>      Run as a device approved here, with its access and its name
     \\  --version          Print version and exit
     \\  -h, --help         Print this help; after a command, print its fields
     \\
@@ -798,6 +806,38 @@ fn flag_is_bool(comptime In: type, flag: []const u8) bool {
     }
 
     return false;
+}
+
+/// A device approved here, as the caller: on this computer its id is enough, as `--as` is
+/// for an account. What it is for is limits and a name in the log, not secrecy.
+fn resolve_device(invocation: Invocation, id: []const u8) Error!?sdk.Caller {
+    std.debug.assert(id.len <= value_len_max);
+    std.debug.assert(invocation.db.transaction_depth == 0);
+
+    if (id.len == 0) {
+        return null;
+    }
+
+    const device_store = @import("../store/devices.zig");
+    const user_store = @import("../store/users.zig");
+    const device_model = @import("../model/device.zig");
+    const device = try device_store.find(invocation.db, invocation.arena, id) orelse return null;
+    const found = try user_store.find_by_id(invocation.db, invocation.arena, device.user_id);
+    const credentials = found orelse return null;
+
+    if (device.revoked_at != null or !credentials.user.active) {
+        return null;
+    }
+
+    return .{
+        .token = .{
+            .id = device.id,
+            .user_id = device.user_id,
+            .roles = credentials.user.roles,
+            .scope = device_model.Scope.parse(device.scope) orelse return null,
+            .name = device.name,
+        },
+    };
 }
 
 fn resolve_user(invocation: Invocation, id_or_email: []const u8) Error!?sdk.Caller {

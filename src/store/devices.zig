@@ -252,6 +252,37 @@ pub fn page(
     return found.items;
 }
 
+/// The devices that still work, on any account, but those named `except`: `limit` of them, the
+/// last used first.
+pub fn recently_used(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    except: []const u8,
+    limit: u32,
+) db.Error![]const Device {
+    std.debug.assert(limit > 0 and limit <= listed_max);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare(
+        "SELECT " ++ columns_sql ++ " FROM devices WHERE revoked_at IS NULL AND name != ?1 " ++
+            "ORDER BY last_used_at DESC, id DESC LIMIT ?2",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, except);
+    try select.bind_int(2, limit);
+
+    var found: std.ArrayList(Device) = .empty;
+
+    while (try select.step()) {
+        found.append(arena, try select.read(Device, arena)) catch return error.OutOfMemory;
+    }
+
+    std.debug.assert(found.items.len <= limit);
+
+    return found.items;
+}
+
 /// How many devices `list` reads in all.
 pub fn count(connection: *db.Db, user_id: ?[]const u8) db.Error!u32 {
     std.debug.assert(user_id == null or user_id.?.len > 0);
@@ -266,6 +297,23 @@ pub fn count(connection: *db.Db, user_id: ?[]const u8) db.Error!u32 {
     std.debug.assert(try select.step());
 
     return @intCast(select.read_int());
+}
+
+/// Changes what a working device may do. False when it is unknown or revoked.
+pub fn set_scope(connection: *db.Db, id: []const u8, scope: []const u8) db.Error!bool {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(scope.len > 0);
+
+    var update = try connection.prepare(
+        "UPDATE devices SET scope = ?2 WHERE id = ?1 AND revoked_at IS NULL",
+    );
+    defer update.finalize();
+
+    try update.bind_text(1, id);
+    try update.bind_text(2, scope);
+    try update.exec();
+
+    return connection.changes() > 0;
 }
 
 /// Stops a device working. False when it was unknown or already revoked.
@@ -309,14 +357,14 @@ test "create, validate, touch to the minute, revoke" {
     const new: New = .{
         .user_id = user_id,
         .name = "laptop",
-        .scope = "drafts",
+        .scope = "production",
     };
 
     const created = try create(&fixture.connection, std.testing.io, arena, new, 1_000);
     const token = created.token_text();
 
     const early = try validate(&fixture.connection, arena, token, 2_000);
-    try std.testing.expectEqualStrings("drafts", early.scope);
+    try std.testing.expectEqualStrings("production", early.scope);
     try std.testing.expectEqual(@as(i64, 1_000), early.last_used_at);
 
     const later = try validate(&fixture.connection, arena, token, 1_000 + touch_interval_ms);

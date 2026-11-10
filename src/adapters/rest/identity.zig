@@ -593,7 +593,7 @@ test "a device's bearer token: its account, its scope, no CSRF; revoked, anonymo
     const created = try device_module.create(system.db, std.testing.io, flow.arena, .{
         .user_id = editor.user.id,
         .name = "laptop",
-        .scope = "drafts",
+        .scope = "production",
     }, 1);
     const template = "{s} /api/device.{s} HTTP/1.1\r\nHost: h\r\n" ++
         "Authorization: Bearer {s}\r\nContent-Length: 0\r\n\r\n";

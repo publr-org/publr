@@ -376,9 +376,9 @@ pub const Ctx = struct {
     streams: ?*anyopaque = null,
     /// Updating Publr, where `serve` runs it.
     updater: ?Updater = null,
-    /// The device sending the call said `--production`: it means the site itself, not a copy
-    /// of it. The core reads it nowhere; a hosting service's plugin may.
-    production: bool = false,
+    /// This process is a copy of the site, an environment or a branch, not the site itself:
+    /// said by the plugin that keeps copies. A `write` device publishes freely here.
+    on_copy: bool = false,
     /// Where plugins' outside calls may go: production (the default) refuses local and
     /// private addresses and the server's own hosts; a laptop's `serve` over plain http
     /// lets a listed `localhost` in.
@@ -488,6 +488,20 @@ pub const Ctx = struct {
         }
 
         return if (ctx.operator.len > 0) ctx.operator else null;
+    }
+
+    /// Whether the device making this call must leave what visitors see as it is: a device
+    /// that may not publish here. False for anyone else.
+    pub fn drafts_only(ctx: *const Ctx) bool {
+        std.debug.assert(ctx.now_ms >= 0 or ctx.caller == .token);
+
+        const scope = ctx.caller.scope() orelse return false;
+
+        return switch (scope) {
+            .publish => false,
+            .write => !ctx.on_copy,
+            .read, .production => true,
+        };
     }
 
     pub fn fail(ctx: *Ctx, failure: @import("operation.zig").Failure) error{Failed} {
@@ -630,4 +644,31 @@ test "operation ids are unique and increasing within a ctx" {
     try std.testing.expect(second > first);
     try std.testing.expectEqual(@as(?OperationId, null), ctx.parent);
     try std.testing.expect(wall_clock_ms(std.testing.io) > 1_700_000_000_000);
+}
+
+test "who must leave what visitors see alone" {
+    const token = struct {
+        fn of(scope: @import("../model/device.zig").Scope, on_copy: bool) bool {
+            std.debug.assert(@intFromEnum(scope) < 4);
+
+            var ctx: Ctx = undefined;
+
+            ctx.caller = .{
+                .token = .{
+                    .id = "d",
+                    .user_id = "u",
+                    .scope = scope,
+                },
+            };
+            ctx.on_copy = on_copy;
+
+            return ctx.drafts_only();
+        }
+    }.of;
+
+    try std.testing.expect(token(.production, false));
+    try std.testing.expect(token(.production, true));
+    try std.testing.expect(token(.write, false));
+    try std.testing.expect(!token(.write, true));
+    try std.testing.expect(!token(.publish, false));
 }

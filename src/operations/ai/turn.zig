@@ -52,7 +52,7 @@ pub const Begin = struct {
         .token = example_token,
         .prompt = conversation.example_prompt,
         .history = &.{},
-        .scope = "drafts",
+        .scope = "production",
         .provider = "scripted",
         .model = "",
     };
@@ -437,7 +437,7 @@ test "a turn: begun once as the person's device, its steps, stopped, finished, a
         .prompt = "Add recipes",
         .provider = "scripted",
         .model = "",
-        .scope = "drafts",
+        .scope = "production",
     }, 1789650000000);
 
     // Only the local operator keeps the books.

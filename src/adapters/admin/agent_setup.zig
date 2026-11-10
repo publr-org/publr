@@ -31,7 +31,7 @@ pub fn of(session: *admin.Session, site: []const u8) admin.Error!Setup {
         agent_script.prefix,
         offered.code,
     });
-    const working = if (registry.work_start != null)
+    const working = if (registry.copies_list != null)
         try print(arena, branch_work, .{})
     else
         try print(arena, live_work, .{});
@@ -69,11 +69,10 @@ const prompt =
 ;
 
 const branch_work =
-    \\Your changes go to a branch of my site, never the live site. Start one for each task
-    \\   with `publr work start --name "<the task>"`; your later commands from this folder
-    \\   go there. When you are done, give me its Preview and Merge links. Change the live
-    \\   site only when I ask, adding `--production` to that call (`publr --production
-    \\   <command>`).
+    \\Work on a copy of my site, never the live site. Make one for each task with
+    \\   `publr environments create --kind branch --name "<the task>"`, then add
+    \\   `--env <its name>` to your commands. When you are done, always end with the `merge`
+    \\   address making it answered: I review it there and merge it.
 ;
 
 const live_work =
