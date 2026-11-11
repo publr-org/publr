@@ -49,6 +49,7 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
         .agent_prompt = "",
         .earlier = &.{},
         .mcp_address = "",
+        .mcp_name = "",
         .cursor_link = "",
         .reachable = reachable(session),
     };
@@ -62,6 +63,7 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
         const mcp = try mcp_of(session);
 
         props.mcp_address = mcp.address;
+        props.mcp_name = mcp.name;
         props.cursor_link = mcp.cursor_link;
     }
 
@@ -102,6 +104,7 @@ pub fn agents_step(
         .agent_prompt = "",
         .earlier = &.{},
         .mcp_address = "",
+        .mcp_name = "",
         .cursor_link = "",
         .reachable = false,
     };
@@ -381,6 +384,8 @@ pub fn reachable(session: *const admin.Session) bool {
 
 pub const Mcp = struct {
     address: []const u8 = "",
+    /// What a tool calls this site (`publr-<site>`), so several sites sit side by side.
+    name: []const u8 = "",
     cursor_link: []const u8 = "",
 };
 
@@ -392,25 +397,131 @@ pub fn mcp_of(session: *admin.Session) admin.Error!Mcp {
     const arena = session.arena;
     const base = try oauth.tool_base_of(session.project, session.request, arena);
     const address = try std.fmt.allocPrint(arena, "{s}{s}", .{ base, oauth.mcp_path });
+    const name = try server_name_of(session);
     const config = try std.fmt.allocPrint(arena, "{{\"url\":\"{s}\"}}", .{address});
     const encoder = std.base64.standard.Encoder;
     const encoded = try arena.alloc(u8, encoder.calcSize(config.len));
     var link: std.Io.Writer.Allocating = .init(arena);
 
     _ = encoder.encode(encoded, config);
-    link.writer.writeAll(cursor_install) catch return error.OutOfMemory;
+    link.writer.print("{s}?name={s}&config=", .{ cursor_install, name }) catch {
+        return error.OutOfMemory;
+    };
     std.Uri.Component.percentEncode(&link.writer, encoded, std.ascii.isAlphanumeric) catch {
         return error.OutOfMemory;
     };
 
     return .{
         .address = address,
+        .name = name,
         .cursor_link = link.written(),
     };
 }
 
-/// Cursor's link that adds an MCP server, its config base64 in `config`.
-const cursor_install = "cursor://anysphere.cursor-deeplink/mcp/install?name=publr&config=";
+/// Cursor's link that adds an MCP server, its name in `name` and its config base64 in
+/// `config`.
+const cursor_install = "cursor://anysphere.cursor-deeplink/mcp/install";
+
+/// What a tool calls this site: `publr-` and, on this computer, the folder `serve` runs in;
+/// elsewhere the address without its admin part (`test-m964yr--admin.publr.app` is
+/// `publr-test-m964yr`, `admin.example.com` is `publr-example-com`).
+fn server_name_of(session: *const admin.Session) admin.Error![]const u8 {
+    std.debug.assert(session.signed_in());
+
+    const host = session.request.header("host") orelse "";
+    const folder = std.fs.path.basename(session.project.folder);
+    const local = credentials.host_on_this_machine(host) and folder.len > 0;
+
+    return server_name(session.arena, if (local) folder else site_of_host(host));
+}
+
+/// A host without its port, its admin part, and Publr Cloud's own domain.
+fn site_of_host(host: []const u8) []const u8 {
+    std.debug.assert(host.len <= 64 << 10);
+
+    var site = host[0 .. std.mem.indexOfScalar(u8, host, ':') orelse host.len];
+
+    if (std.mem.startsWith(u8, site, "admin.")) {
+        site = site["admin.".len..];
+    }
+
+    if (std.mem.indexOf(u8, site, "--admin.")) |at| {
+        site = site[0..at];
+    } else if (std.mem.endsWith(u8, site, ".publr.app")) {
+        site = site[0 .. site.len - ".publr.app".len];
+    }
+
+    return site;
+}
+
+/// `publr-` and `site` in lowercase letters, digits and single dashes, at most 48 long.
+fn server_name(arena: std.mem.Allocator, site: []const u8) admin.Error![]const u8 {
+    std.debug.assert(site.len <= 64 << 10);
+
+    const prefix = "publr-";
+    const length_max: u32 = 48;
+    var name: std.ArrayList(u8) = .empty;
+
+    try name.appendSlice(arena, prefix);
+
+    for (site) |char| {
+        if (name.items.len >= length_max) {
+            break;
+        }
+
+        if (std.ascii.isAlphanumeric(char)) {
+            try name.append(arena, std.ascii.toLower(char));
+        } else if (name.items[name.items.len - 1] != '-') {
+            try name.append(arena, '-');
+        }
+    }
+
+    while (name.items[name.items.len - 1] == '-') {
+        _ = name.pop();
+    }
+
+    if (name.items.len == prefix.len - 1) {
+        return "publr";
+    }
+
+    return name.items;
+}
+
+test "a tool names each site after its folder or its address" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+
+    const arena = state.allocator();
+    const cases = [_]struct {
+        site: []const u8,
+        name: []const u8,
+    }{
+        .{
+            .site = site_of_host("test-m964yr--admin.publr.app"),
+            .name = "publr-test-m964yr",
+        },
+        .{
+            .site = site_of_host("admin.example.com:8443"),
+            .name = "publr-example-com",
+        },
+        .{
+            .site = site_of_host("shop.publr.app"),
+            .name = "publr-shop",
+        },
+        .{
+            .site = "Quickstart site",
+            .name = "publr-quickstart-site",
+        },
+        .{
+            .site = "--",
+            .name = "publr",
+        },
+    };
+
+    for (cases) |case| {
+        try std.testing.expectEqualStrings(case.name, try server_name(arena, case.site));
+    }
+}
 
 /// The person's conversations, newest first, each leading to its workspace.
 fn fill_conversations(session: *admin.Session, props: *Props) admin.Error!void {

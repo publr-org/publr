@@ -62,6 +62,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     try admin.screen(&session, .ok, views.Devices, .{
         .tool = tool,
         .mcp_address = mcp.address,
+        .mcp_name = mcp.name,
         .reachable = dashboard.reachable(&session),
         .copies = registry.copies_list != null,
         .cursor_link = mcp.cursor_link,

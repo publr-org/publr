@@ -991,18 +991,18 @@ test "admin over http: setup, login, types and content through plain forms" {
     try std.testing.expect(std.mem.indexOf(u8, here.body, "/admin?tool=cursor") != null);
 
     const overview = try flow.call("GET", "/admin?tool=cursor", "");
-    const add_link = "cursor://anysphere.cursor-deeplink/mcp/install?name=publr&amp;config=";
+    const add_link = "cursor://anysphere.cursor-deeplink/mcp/install?name=publr-h&amp;config=";
     try std.testing.expect(std.mem.indexOf(u8, overview.body, add_link) != null);
     try std.testing.expect(std.mem.indexOf(u8, overview.body, "http://h/mcp") != null);
     try std.testing.expect(std.mem.indexOf(u8, overview.body, "Ask in Cursor") != null);
 
     const claude_code = try flow.call("GET", "/admin?tool=claude_code", "");
-    const add_command = "claude mcp add --transport http publr http://h/mcp";
+    const add_command = "claude mcp add --transport http publr-h http://h/mcp";
     try std.testing.expect(std.mem.indexOf(u8, claude_code.body, add_command) != null);
     try std.testing.expect(std.mem.indexOf(u8, claude_code.body, "type /mcp") != null);
 
     const codex = try flow.call("GET", "/admin?tool=codex", "");
-    try std.testing.expect(std.mem.indexOf(u8, codex.body, "codex mcp add publr --url") != null);
+    try std.testing.expect(std.mem.indexOf(u8, codex.body, "codex mcp add publr-h --url") != null);
     try std.testing.expect(std.mem.indexOf(u8, codex.body, "Ask in Codex") != null);
     try std.testing.expect(std.mem.indexOf(u8, codex.body, "Cursor&#39;s chat") == null);
     try std.testing.expect(std.mem.indexOf(u8, codex.body, "Cursor's chat") == null);

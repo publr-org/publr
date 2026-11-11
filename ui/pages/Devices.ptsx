@@ -30,6 +30,8 @@ export type DevicesProps = {
   tool: string;
   /** This site's MCP address, `<admin address>/mcp`, which every tool adds. */
   mcp_address: string;
+  /** What a tool calls this site, `publr-<site>`. */
+  mcp_name: string;
   /** Cursor's link that adds this site's MCP server. */
   cursor_link: string;
   /** The address can be reached from the internet, so chat apps can add it. */
@@ -62,7 +64,7 @@ export type DevicesProps = {
 /** The agents and tools acting for an account, each under the scope its person chose, and a
  * way to stop each one. A tool is connected from its own side, its steps here, and approved
  * in the browser. */
-export function Devices({ tool, mcp_address, cursor_link, reachable, copies, everyone, devices, range, previous_href, next_href }: DevicesProps) {
+export function Devices({ tool, mcp_address, mcp_name, cursor_link, reachable, copies, everyone, devices, range, previous_href, next_href }: DevicesProps) {
   return (
     <IndexPage
       footer={range !== "" && <Pager range={range} previous_href={previous_href} next_href={next_href} />}
@@ -72,7 +74,7 @@ export function Devices({ tool, mcp_address, cursor_link, reachable, copies, eve
         <div class="flex flex-col gap-3">
           <SectionTitle title={Publr.t("Connect a tool")} classes="px-0" />
           <div class="w-full max-w-2xl">
-            <ConnectTool base="/admin/settings/devices" tool={tool} address={mcp_address} cursor_link={cursor_link} reachable={reachable} start />
+            <ConnectTool base="/admin/settings/devices" tool={tool} address={mcp_address} name={mcp_name} cursor_link={cursor_link} reachable={reachable} start />
           </div>
         </div>
       }

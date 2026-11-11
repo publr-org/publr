@@ -14,17 +14,19 @@ export type McpSetupProps = {
   tool: string;
   /** This site's MCP address, `<admin address>/mcp`. */
   address: string;
+  /** What the tool calls this site, `publr-<site>`, so several sites sit side by side. */
+  name: string;
   /** Cursor's link that adds this server, its config carried in it. */
   cursor_link: string;
 };
 
 /** Connecting the tool the person uses: add this site's MCP address in that tool's own way,
  * approve it in the browser it opens, then ask there. */
-export function McpSetup({ tool, address, cursor_link }: McpSetupProps) {
+export function McpSetup({ tool, address, name, cursor_link }: McpSetupProps) {
   const snippet = tool === "cursor"
-    ? "{ \"mcpServers\": { \"publr\": { \"url\": \"" + address + "\" } } }"
+    ? "{ \"mcpServers\": { \"" + name + "\": { \"url\": \"" + address + "\" } } }"
     : tool === "windsurf"
-      ? "{ \"mcpServers\": { \"publr\": { \"serverUrl\": \"" + address + "\" } } }"
+      ? "{ \"mcpServers\": { \"" + name + "\": { \"serverUrl\": \"" + address + "\" } } }"
       : address;
   return (
     <Card>
@@ -52,7 +54,7 @@ export function McpSetup({ tool, address, cursor_link }: McpSetupProps) {
                   {Publr.t("Add to Cursor")}
                 </Button>
                 <Text as="p" variant="body-sm" tone="muted">
-                  {Publr.t("Or add it to ~/.cursor/mcp.json:")}
+                  {Publr.t("It adds this site to every Cursor window, as {name}. For one project only, put this in .cursor/mcp.json in its folder:", { name })}
                 </Text>
               </div>
             )}
@@ -61,33 +63,39 @@ export function McpSetup({ tool, address, cursor_link }: McpSetupProps) {
                 <Text as="p" variant="body-sm" tone="muted">
                   {Publr.t("In a terminal, in the folder you work in:")}
                 </Text>
-                <Command command={"claude mcp add --transport http publr " + address} />
+                <Command command={"claude mcp add --transport http " + name + " " + address} />
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Claude Code keeps it for that folder only, as {name}.", { name })}
+                </Text>
               </div>
             )}
             {tool === "codex" && (
               <div class="flex flex-col gap-2">
-                <Command command={"codex mcp add publr --url " + address} />
-                <Command command="codex mcp login publr" />
+                <Command command={"codex mcp add " + name + " --url " + address} />
+                <Command command={"codex mcp login " + name} />
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Codex adds it for every project, as {name}.", { name })}
+                </Text>
               </div>
             )}
             {tool === "windsurf" && (
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Add it to ~/.codeium/windsurf/mcp_config.json, then press Refresh in Cascade's MCP panel:")}
+                {Publr.t("Add it to ~/.codeium/windsurf/mcp_config.json, then press Refresh in Cascade's MCP panel. Every Windsurf project gets it, as {name}:", { name })}
               </Text>
             )}
             {tool === "claude_ai" && (
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("In Customize, Connectors, choose Add custom connector and paste this address:")}
+                {Publr.t("In Customize, Connectors, choose Add custom connector, name it {name} and paste this address:", { name })}
               </Text>
             )}
             {tool === "chatgpt" && (
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("In Settings, Connectors, turn on Developer mode under Advanced settings. Then choose Create, paste this address and pick OAuth:")}
+                {Publr.t("In Settings, Connectors, turn on Developer mode under Advanced settings. Then choose Create, name it {name}, paste this address and pick OAuth:", { name })}
               </Text>
             )}
             {tool === "other" && (
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Its address, over HTTP:")}
+                {Publr.t("Name it {name}. Its address, over HTTP:", { name })}
               </Text>
             )}
             {tool !== "claude_code" && tool !== "codex" && (
@@ -107,7 +115,7 @@ export function McpSetup({ tool, address, cursor_link }: McpSetupProps) {
           {tool === "claude_code" && (
             <Step number={2} title={Publr.t("Sign in from Claude Code")}>
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Start Claude Code in that folder, type /mcp, choose publr, then Authenticate. Your browser opens on this site: approve it there, and choose what it may do.")}
+                {Publr.t("Start Claude Code in that folder, type /mcp, choose {name}, then Authenticate. Your browser opens on this site: approve it there, and choose what it may do.", { name })}
               </Text>
             </Step>
           )}
