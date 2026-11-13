@@ -21,7 +21,8 @@ pub fn expect_bundles(init: std.process.Init, binary: []const u8, work_dir: []co
         "--password",
         password,
     };
-    const deploy = [_][]const u8{ "cloud", "deploy", "--space", "s", "--slug", "smoke-site" };
+    // A dashboard no one signs in to: never a real deploy, whoever runs the smoke.
+    const deploy = [_][]const u8{ "cloud", "deploy", "--cloud", "http://127.0.0.1:9" };
 
     try std.Io.Dir.cwd().createDirPath(init.io, source);
     try std.Io.Dir.cwd().createDirPath(init.io, target);
@@ -30,5 +31,5 @@ pub fn expect_bundles(init: std.process.Init, binary: []const u8, work_dir: []co
     try smoke.expect_contains(init, binary, target, &.{ "unpack", file }, "Unpacked bundle-source");
     try smoke.expect_contains(init, binary, target, &.{ "db", "tables" }, "users 1 core");
     try smoke.expect_failure(init, binary, target, &.{ "unpack", file }, "has a site already");
-    try smoke.expect_failure(init, binary, source, &deploy, "PUBLR_CLOUD_TOKEN");
+    try smoke.expect_failure(init, binary, source, &deploy, "run `publr cloud login`");
 }
