@@ -550,8 +550,8 @@ fn another_server(init: std.process.Init, db_path: [:0]const u8) !bool {
     return true;
 }
 
-/// This server's session beside the database, which the CLI sends its commands through;
-/// none for the browser build's server, which owns no project.
+/// This server's session beside the database, which the CLI sends its commands through,
+/// with the admin's origin; none for the browser build's server, which owns no project.
 fn claim(
     init: std.process.Init,
     db_path: [:0]const u8,
@@ -566,9 +566,10 @@ fn claim(
         return null;
     }
 
-    const url = apps.mode.options.base_url;
-
-    return try operator.open(init.io, init.arena.allocator(), db_path, port, url);
+    return try operator.open(init.io, init.arena.allocator(), db_path, port, .{
+        .url = apps.mode.options.base_url,
+        .admin = apps.project.admin_origin,
+    });
 }
 
 /// The installed plugins a job changed in the worker (`publr queue-run`, installing from

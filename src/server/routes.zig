@@ -17,7 +17,7 @@ const operator = @import("operator.zig");
 const apps_load = @import("apps_load.zig");
 const update = if (builtin.os.tag == .wasi) void else @import("update.zig");
 const remote = @import("remote.zig");
-const clone = @import("clone.zig");
+const clone = @import("clone/site.zig");
 const agent_script = if (builtin.os.tag == .wasi) void else @import("agent_script.zig");
 const oauth = if (builtin.os.tag == .wasi) void else @import("oauth.zig");
 const mcp = if (builtin.os.tag == .wasi) void else @import("mcp.zig");
@@ -76,6 +76,8 @@ pub fn register(router: *http.Router) void {
         router.post(remote.route, &remote.handle);
         router.post(clone.pack_route, &clone.prepare);
         router.get(clone.pack_route, &clone.piece);
+        router.get(clone.pack_progress_route, &clone.pack_progress);
+        router.get(clone.size_route, &clone.size);
         router.get(agent_script.route, &agent_script.handle);
         router.get(oauth.resource_route, &oauth.resource);
         router.get(oauth.resource_mcp_route, &oauth.resource);
@@ -100,7 +102,7 @@ pub fn register(router: *http.Router) void {
     const operator_routes: u32 = if (builtin.os.tag == .wasi)
         0
     else
-        16 + plugin_operator_commands.routes_count;
+        18 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         webhook_routes.routes_count + native_plugin_routes.routes_count -
         native_plugin_routes.streams_count;

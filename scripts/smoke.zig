@@ -269,7 +269,31 @@ fn expect_content(
     try expect_contains(init, binary, work_dir, &list_anonymous, "\"records\": []");
     try expect_contains(init, binary, work_dir, &search, "\"title\": \"Smoke\"");
     try expect_contains(init, binary, work_dir, &editor_types, "\"handle\": \"post\"");
+    try expect_seed(init, binary, work_dir, admin);
     try expect_taxonomies(init, binary, work_dir, admin);
+}
+
+/// `publr seed` from a file, one document a line, in `record create_many` calls.
+fn expect_seed(
+    init: std.process.Init,
+    binary: []const u8,
+    work_dir: []const u8,
+    admin: []const u8,
+) !void {
+    std.debug.assert(admin.len > 0);
+
+    const arena = init.arena.allocator();
+    const path = try std.fmt.allocPrint(arena, "{s}/seed.jsonl", .{work_dir});
+    const lines = "{\"title\":\"Seeded one\"}\n{\"title\":\"Seeded two\"}\n";
+
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .sub_path = path,
+        .data = lines,
+    });
+
+    const seed = [_][]const u8{ "--as", admin, "seed", "--type", "post", "--file", path };
+
+    try expect_contains(init, binary, work_dir, &seed, "Seeded 2 of 2");
 }
 
 /// A taxonomy, a term under a term, a type filing records under the taxonomy, and the
@@ -823,6 +847,13 @@ fn expect_mcp(init: std.process.Init, port: u16) !void {
 
     if (std.mem.indexOf(u8, clone, "administrator_required") == null) {
         std.debug.print("smoke: serve: clone without an administrator: {s}\n", .{clone});
+        return error.SmokeFailed;
+    }
+
+    const size = try http_get(init, port, "/api/sites/size");
+
+    if (std.mem.indexOf(u8, size, "administrator_required") == null) {
+        std.debug.print("smoke: serve: a clone's size without an administrator: {s}\n", .{size});
         return error.SmokeFailed;
     }
 }

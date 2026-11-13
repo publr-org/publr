@@ -118,6 +118,7 @@ pub const own_records = [_][]const u8{
     "record.get",
     "record.list",
     "record.create",
+    "record.create_many",
     "record.save",
     "record.delete",
     "record.publish",
@@ -171,6 +172,7 @@ pub const core = [_]Permission{
         .flags = &publish_flag,
         .operations = &.{
             "record.create",
+            "record.create_many",
             "record.save",
             "record.delete",
             "record.discard_changes",
@@ -191,6 +193,7 @@ pub const core = [_]Permission{
         },
         .publishing = &.{
             "record.publish",
+            "record.create_many",
             "record.transition_many",
             "record.run_scheduled",
             "record.publish_version",

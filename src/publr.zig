@@ -290,6 +290,13 @@ pub const agents = if (builtin.os.tag == .wasi) void else @import("server/agents
 pub const apps_load = if (builtin.os.tag == .wasi) void else @import("server/apps_load.zig");
 pub const login = if (builtin.os.tag == .wasi) void else @import("server/login.zig");
 pub const skill = if (builtin.os.tag == .wasi) void else @import("server/skill.zig");
+pub const mcp_local = if (builtin.os.tag == .wasi) void else @import("server/mcp_local.zig");
+pub const setup = if (builtin.os.tag == .wasi) void else @import("server/setup.zig");
+pub const seed = if (builtin.os.tag == .wasi) void else @import("server/seed.zig");
+pub const clone_pack = if (builtin.os.tag == .wasi)
+    void
+else
+    @import("server/clone/pack_process.zig");
 pub const new_site = if (builtin.os.tag == .wasi) void else @import("server/new_site.zig");
 pub const forwarding = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
 pub const credentials = if (builtin.os.tag == .wasi) void else @import("server/credentials.zig");

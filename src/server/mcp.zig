@@ -25,7 +25,7 @@ pub const protocol_version = "2025-06-18";
 pub const args_max: u32 = 64;
 pub const body_bytes_max: u32 = 1 << 20;
 
-const instructions =
+pub const instructions =
     \\This server is one Publr site, the one its person approved. Call `setup` first: it says
     \\what this device may do and how to work. If the site is on this computer, you edit its
     \\files with your own tools and run the publr CLI in its folder. Otherwise run publr
@@ -49,7 +49,7 @@ const preamble =
     \\
 ;
 
-const run_schema =
+pub const run_schema =
     \\{"type":"object","properties":{"args":{"type":"array","items":{"type":"string"},
     \\"description":"The command's words, as after `publr`: [\"record\", \"list\"]"}},
     \\"required":["args"]}
@@ -359,13 +359,19 @@ fn setup_elsewhere(
     const base = try oauth.base_of(project, request, arena);
 
     return std.fmt.allocPrint(arena,
-        \\If you can run commands on this computer, work on a local copy of the site instead:
+        \\If you can run commands on this computer, work on a local copy of the site instead. It is
+        \\brought down once for the folder:
         \\
         \\1. In an empty folder:
         \\   `curl -fsSL https://publr.dev/install.sh | PUBLR_HOME=. PUBLR_VERSION=v{s} sh`
-        \\2. `./publr clone {s} site`. It opens your person's browser once to approve it.
-        \\3. `cd site && ../publr serve` (in the background). Build there as in any codebase, with
-        \\   your own file tools and `../publr --as-admin <command>`.
+        \\2. `./publr clone {s} site`, in the background: it runs from then on. It opens your
+        \\   person's browser on the site to approve it once, then on a page where they choose
+        \\   what comes down (everything, or without media files) and watch it come, which opens
+        \\   the site's admin, signed in, when it is here. Tell them so, and give them the address
+        \\   it prints. It then serves the site there.
+        \\3. Build in `site` as in any codebase, with your own file tools and
+        \\   `../publr --as-admin <command>` there; preview on that address, never make another
+        \\   site.
         \\4. `../publr push` sends the folder up as a branch. Give your person the links it prints:
         \\   they review it and merge it. Nothing you do there touches the live site.
         \\

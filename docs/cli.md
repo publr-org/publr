@@ -156,6 +156,44 @@ when someone asks, never a person. It takes the device the turn runs as, runs th
 loop, reports each step and ends the turn, all through the server beside it. What it did
 goes to `data/agents/<id>.log`.
 
+## Seeding
+
+```
+publr [--as-admin | --as <who>] seed --type <type> --file <path> [--publish]
+```
+
+Makes a record of the type from every document in the file: a JSON array of objects, or one
+object a line. It sends them in calls of `record create_many`, 250 at a time (fewer when
+they pass 512 KiB together), to this site or the one `--site` names, printing how many are
+in. Each call is all or nothing; a refused one stops the seed and says which document. Who
+runs it goes with every call.
+
+## Publr in an agent's tool
+
+```
+publr setup cursor|claude|codex
+publr mcp [--folder <path>]
+```
+
+`setup` adds Publr to that tool once, for every project, in the tool's own way: Cursor's
+install link (Cursor asks the person), `claude mcp add --scope user`, `codex mcp add`. The
+entry runs `publr mcp` from this binary's full path; Cursor passes each window's folder as
+`--folder`. Running it again only points the entry at this binary. Not on Windows yet.
+
+`mcp` is an MCP server over standard input and output. It passes each message, unchanged,
+to the `/mcp` of the site the folder works on, and the site's answer back: the tools are the
+site's, so one `publr` serves sites on any release. The folder is `--folder`, else Claude
+Code's `CLAUDE_PROJECT_DIR`, else the one it starts in; it, or a folder above it, either
+names a site elsewhere in `.publr/site` or is a site (`data/publr.db`), reached through the
+server running it. A folder that is neither gets the tools by name and `link` (`address`),
+which the agent calls once the person says which site the folder is for: it signs this
+computer in and writes `.publr/site`, never in a site's own folder, the home folder or the
+root. Signing in happens on the first call that needs it: the browser opens on the site's
+approve page, the call waits up to 40 seconds and otherwise answers that the person still
+has to approve. The token is kept with the CLI's, one per site for every tool, named after
+the tool ("Cursor on <computer>"). A token the site no longer accepts is forgotten, and the
+next call asks again.
+
 ## A Publr elsewhere
 
 ```
@@ -198,7 +236,8 @@ and under its name in the activity log, as `--as` does for an account.
 ## Clone and push
 
 ```
-publr clone <address or project> [<folder>]
+publr clone <address or project> [<folder>] [--media all|none] [--size] [--port <n>]
+            [--no-open] [--no-serve]
 publr push
 ```
 
@@ -208,9 +247,33 @@ every other account, secrets, plugins' internal records, the logs and the site's
 account cloning stays, an administrator. A bare project name means `https://<it>.publr.app`.
 The Publr here must be the one there; a mismatch prints the install line for the right one.
 
+`clone` is seen while it runs. It starts a small server at the folder's admin address
+(`http://admin.localhost:<port>`, `--port` or a free one) and opens its page,
+`/admin/sync`, in Publr Studio when it is installed (`publr-studio://open?url=`), else in
+the browser (`--no-open` only prints it). The page shows each step as it happens: the site
+packed there, the download and the unpacking on one bar divided into the site's parts
+(database, media, apps, plugins, each named under its stretch), placeholders. Without
+`--media`, the page first asks what comes down: everything, or the database and setup with
+placeholders for media, each with what it weighs; the clone waits for the answer. When the
+folder is written, a session for the account that cloned it is made there; the page takes
+its cookie once, and the clone becomes the folder's `publr serve` on the same address, so
+the page opens the admin signed in. `--no-serve` stops once the folder is written.
+
+The site packs itself in a process of its own (`publr clone-pack-run`, which the server
+starts without waiting), so a large database never runs the server out of SQLite memory and
+the site keeps answering while it packs. The clone asks how far it is, and the page's bar
+moves through packing, downloading and unpacking, a third each.
+
+`--size` only says what a clone would bring down (`database_bytes`, `media_files`,
+`media_bytes`, from the site's `GET /api/sites/size`), for the person to be asked first.
+`--media none` brings no media files: every media record comes, and a plain placeholder of
+the same width, height and type stands in for its file (an empty file for one that is not
+a picture), listed with its size in `.publr/placeholders`.
+
 The folder is a site of its own: `publr serve`, `--as-admin`, your own editor. `push`, run in
 it, sends it up as a branch of the site for a person to review and merge. Pushing again from
-the folder replaces the same branch. Nothing here ever writes to the live site. The Publr
+the folder replaces the same branch. A placeholder still there unchanged is never sent: the
+bundle names it, and the branch takes the live file. Nothing here ever writes to the live site. The Publr
 there must keep copies.
 
 ## The skill
@@ -232,8 +295,9 @@ also a plugin marketplace (`.claude-plugin/`) offering the same skill.
 ## While a server runs
 
 `publr serve` owns its project while it runs. It writes its port, a fresh key, a stamp
-of the binary it runs (the file's modification time, which a rebuild changes) and its
-address (`--url`, else `http://127.0.0.1:<port>`) beside the database (`<db>.serve`,
+of the binary it runs (the file's modification time, which a rebuild changes), its
+address (`--url`, else `http://127.0.0.1:<port>`) and its admin's origin, where `publr mcp`
+reaches it, beside the database (`<db>.serve`,
 readable by its user only), and removes them when it stops. `publr agents` says that
 address while it answers. Every
 other command then goes to it and runs there, as the admin's changes do: a plugin added,

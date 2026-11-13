@@ -383,16 +383,17 @@ fn register_fields(router: *http.Router, comptime base: []const u8) void {
     router.post(base ++ "/:handle/fields/:name/move", &field_pages.writes.move);
 }
 
-fn register_assets(router: *http.Router) void {
-    std.debug.assert(router.routes_len < router.routes.len - client_files.names.len - 5);
+/// What a page drawn by `render.page` loads, and nothing that needs a project: for a server
+/// that draws such a page before there is a site (`publr clone`'s progress).
+pub fn register_page_assets(router: *http.Router) void {
+    std.debug.assert(router.routes_len + page_asset_routes_count <= router.routes.len);
+
+    const before = router.routes_len;
+
     router.get("/admin/styles.css", &styles);
     router.get("/admin/stores.js", &stores);
     router.get("/admin/class-book.js", &class_book);
     router.get("/admin/editor/*", &editor_file);
-    router.get("/admin/messages/*", &@import("admin/language.zig").messages);
-    router.post("/admin/language", &@import("admin/language.zig").choose);
-    router.get("/admin/welcome", &@import("admin/welcome.zig").page);
-    router.post("/admin/welcome", &@import("admin/welcome.zig").save);
 
     inline for (client_files.names) |name| {
         router.get("/admin/" ++ name ++ ".js", &struct {
@@ -401,6 +402,19 @@ fn register_assets(router: *http.Router) void {
             }
         }.serve);
     }
+
+    std.debug.assert(router.routes_len == before + page_asset_routes_count);
+}
+
+pub const page_asset_routes_count: u32 = 4 + client_files.names.len;
+
+fn register_assets(router: *http.Router) void {
+    std.debug.assert(router.routes_len < router.routes.len - client_files.names.len - 5);
+    register_page_assets(router);
+    router.get("/admin/messages/*", &@import("admin/language.zig").messages);
+    router.post("/admin/language", &@import("admin/language.zig").choose);
+    router.get("/admin/welcome", &@import("admin/welcome.zig").page);
+    router.post("/admin/welcome", &@import("admin/welcome.zig").save);
 }
 
 const editor_files = @import("editor_files").files;
@@ -993,7 +1007,8 @@ test "admin over http: setup, login, types and content through plain forms" {
     const overview = try flow.call("GET", "/admin?tool=cursor", "");
     const add_link = "cursor://anysphere.cursor-deeplink/mcp/install?name=publr-h&amp;config=";
     try std.testing.expect(std.mem.indexOf(u8, overview.body, add_link) != null);
-    try std.testing.expect(std.mem.indexOf(u8, overview.body, "http://h/mcp") != null);
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, "publr setup cursor") != null);
+    try std.testing.expect(std.mem.indexOf(u8, overview.body, "this one is http://h.") != null);
     try std.testing.expect(std.mem.indexOf(u8, overview.body, "Ask in Cursor") != null);
 
     const claude_code = try flow.call("GET", "/admin?tool=claude_code", "");

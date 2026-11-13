@@ -4,6 +4,7 @@ const settings = @import("../../store/settings.zig");
 const backup = @import("../gate/backup.zig");
 const gate = @import("../gate.zig");
 const bundle = @import("../bundle.zig");
+const clone_rules = @import("clone.zig");
 
 /// Folders under the data folder that are this machine's: backups, agents' logs and
 /// screens, plugin builds, and installs that never finished.
@@ -25,30 +26,40 @@ const local_rows = [_][:0]const u8{
     "DELETE FROM deps_pending",
     "DELETE FROM deps_meta",
 };
-/// What a clone goes without, beyond what any bundle does: a clone is the site, not its people
-/// (`clone-and-push.md`). The logs refuse deletes, so their triggers go first; opening the
-/// clone makes them again. Every internal record goes: what holds people's data cannot be told
-/// from what does not.
-const clone_rows = [_][:0]const u8{
-    "DROP TRIGGER IF EXISTS activity_kept",
-    "DROP TRIGGER IF EXISTS activity_never_removed",
-    "DROP TRIGGER IF EXISTS errors_kept",
-    "DROP TRIGGER IF EXISTS errors_never_removed",
-    "DROP TRIGGER IF EXISTS plugin_log_kept",
-    "DROP TRIGGER IF EXISTS plugin_log_never_removed",
-    "DELETE FROM activity",
-    "DELETE FROM errors",
-    "DELETE FROM plugin_log",
-    "DELETE FROM secrets",
-    "DELETE FROM internal_records",
-};
-/// Folders and files under the data folder a clone leaves too.
-const clone_data_left_out = [_][]const u8{ "environments", "branches", "secret.key" };
+pub const Clone = clone_rules.Clone;
+/// Beside the bundle while it is made: the database copied into it.
+pub const snapshot_suffix = ".snapshot";
 
-/// A bundle made to be worked on elsewhere. `keep_user`, when given, is the one account it
-/// keeps, an administrator there.
-pub const Clone = struct {
-    keep_user: ?[]const u8 = null,
+/// How far a pack is, read from another thread. The database copy is followed by the
+/// snapshot's size (SQLite says nothing while it copies); the archive by the bytes put in it,
+/// of what a pass over the files first measured.
+pub const Progress = struct {
+    stage: std.atomic.Value(u8) = .init(@intFromEnum(Stage.copying)),
+    done: std.atomic.Value(u64) = .init(0),
+    total: std.atomic.Value(u64) = .init(0),
+
+    pub const Stage = enum(u8) {
+        copying,
+        /// This machine's rows, and what a clone leaves, taken out of the copy.
+        clearing,
+        archiving,
+        finished,
+    };
+
+    pub fn enter(progress: *Progress, stage: Stage) void {
+        std.debug.assert(@intFromEnum(stage) > progress.stage.load(.acquire) or stage == .copying);
+
+        progress.stage.store(@intFromEnum(stage), .release);
+    }
+};
+
+/// Counts what passes through a reader into a pack's `done`; read as a hasher would be.
+const Tally = struct {
+    done: *std.atomic.Value(u64),
+
+    pub fn update(tally: *Tally, bytes: []const u8) void {
+        _ = tally.done.fetchAdd(bytes.len, .monotonic);
+    }
 };
 
 const copy_buffer_bytes: u32 = 64 << 10;
@@ -91,7 +102,9 @@ fn pack_with(
 
     const io = site.io;
     const cwd = std.Io.Dir.cwd();
-    const snapshot = try std.fmt.allocPrintSentinel(arena, "{s}.snapshot", .{out_path}, 0);
+    const snapshot = try std.fmt.allocPrintSentinel(arena, "{s}" ++ snapshot_suffix, .{
+        out_path,
+    }, 0);
 
     try remove_if_there(io, snapshot);
     defer remove_if_there(io, snapshot) catch |err| {
@@ -103,6 +116,7 @@ fn pack_with(
         .name = name,
         .made_at_ms = @import("../../sdk.zig").context.wall_clock_ms(io),
         .database = site.database,
+        .placeholders = if (clone) |wanted| wanted.placeholders else &.{},
     };
     var file = try cwd.createFile(io, out_path, .{});
     defer file.close(io);
@@ -115,12 +129,23 @@ fn pack_with(
     const compressor = try std.heap.page_allocator.create(Compressor);
     defer std.heap.page_allocator.destroy(compressor);
 
-    compressor.compress = try .init(&file_writer.interface, &compressor.window, .gzip, .default);
+    // A clone is mostly media that is compressed already: packing it hard only costs time.
+    const level: std.compress.flate.Compress.Options = if (clone != null) .fastest else .default;
+
+    compressor.compress = try .init(&file_writer.interface, &compressor.window, .gzip, level);
+
+    const progress = if (clone) |wanted| wanted.progress else null;
+
+    if (progress) |watched| {
+        watched.total.store(try measured(site, arena, clone.?, manifest, snapshot), .release);
+        watched.enter(.archiving);
+    }
 
     var archive: Archive = .{
         .site = site,
         .arena = arena,
-        .clone = clone != null,
+        .clone = clone,
+        .progress = progress,
         .tar = .{
             .underlying_writer = &compressor.compress.writer,
         },
@@ -134,7 +159,34 @@ fn pack_with(
         .manifest = manifest,
         .files = archive.files,
         .bytes = archive.bytes,
+        .parts = archive.parts,
     };
+}
+
+/// The bytes the archive will take in: the same pass over the files, counting only.
+fn measured(
+    site: backup.Site,
+    arena: std.mem.Allocator,
+    clone: Clone,
+    manifest: bundle.Manifest,
+    snapshot: []const u8,
+) !u64 {
+    std.debug.assert(snapshot.len > 0);
+
+    var discarding: std.Io.Writer.Discarding = .init(&.{});
+    var measuring: Archive = .{
+        .site = site,
+        .arena = arena,
+        .clone = clone,
+        .measuring = true,
+        .tar = .{
+            .underlying_writer = &discarding.writer,
+        },
+    };
+
+    try measuring.add_all(manifest, snapshot);
+
+    return measuring.bytes;
 }
 
 fn remove_if_there(io: std.Io, path: []const u8) !void {
@@ -149,51 +201,19 @@ fn remove_if_there(io: std.Io, path: []const u8) !void {
 
 const Tree = enum { data, project };
 
-fn clone_leaves(path: []const u8) bool {
-    std.debug.assert(path.len > 0);
-
-    for (clone_data_left_out) |item| {
-        if (same_path(path, item)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// A clone's snapshot without its people: only `keep_user`'s account, made an administrator.
-fn clear_for_clone(copy: *db.Db, clone: Clone) !void {
-    std.debug.assert(clone_rows.len > 0);
-
-    inline for (clone_rows) |statement| {
-        try copy.exec(statement);
-    }
-
-    const keep = clone.keep_user orelse return;
-    var others = try copy.prepare("DELETE FROM users WHERE id != ?1");
-    defer others.finalize();
-
-    try others.bind_text(1, keep);
-    try others.exec();
-
-    var admin = try copy.prepare(
-        "INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?1, ?2)",
-    );
-    defer admin.finalize();
-
-    try admin.bind_text(1, keep);
-    try admin.bind_text(2, @import("../../model/role.zig").admin);
-    try admin.exec();
-}
-
 const Archive = struct {
     site: backup.Site,
     arena: std.mem.Allocator,
     /// Leaves what a clone leaves.
-    clone: bool = false,
+    clone: ?Clone = null,
+    /// Counts the bytes put in, for whoever follows the pack.
+    progress: ?*Progress = null,
+    /// Only counts the files and their bytes, writing nothing.
+    measuring: bool = false,
     tar: std.tar.Writer,
     files: u32 = 0,
     bytes: u64 = 0,
+    parts: bundle.Parts = .{},
 
     fn add_all(archive: *Archive, manifest: bundle.Manifest, snapshot: []const u8) !void {
         std.debug.assert(snapshot.len > 0);
@@ -204,7 +224,10 @@ const Archive = struct {
             .whitespace = .indent_2,
         });
 
-        try archive.tar.writeFileBytes(bundle.manifest_name, about, .{});
+        if (!archive.measuring) {
+            try archive.tar.writeFileBytes(bundle.manifest_name, about, .{});
+        }
+
         try archive.add_file(snapshot, try join(archive.arena, "data", site.database));
         try archive.add_tree(site.data_dir, "data", .data);
 
@@ -212,7 +235,9 @@ const Archive = struct {
             try archive.add_project_item(item);
         }
 
-        try archive.tar.finishPedantically();
+        if (!archive.measuring) {
+            try archive.tar.finishPedantically();
+        }
     }
 
     fn add_file(archive: *Archive, path: []const u8, name: []const u8) !void {
@@ -226,9 +251,29 @@ const Archive = struct {
         var reader = file.reader(io, &buffer);
         const size = try reader.getSize();
 
-        try archive.tar.writeFileStream(name, size, &reader.interface, .{});
+        if (!archive.measuring) {
+            try archive.stream(name, size, &reader.interface);
+        }
+
         archive.files += 1;
         archive.bytes += size;
+        archive.parts.count(name, size);
+    }
+
+    /// One file's bytes into the archive, counted for whoever follows the pack.
+    fn stream(archive: *Archive, name: []const u8, size: u64, reader: *std.Io.Reader) !void {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(!archive.measuring);
+
+        const progress = archive.progress orelse {
+            return archive.tar.writeFileStream(name, size, reader, .{});
+        };
+        var through: [copy_buffer_bytes]u8 = undefined;
+        var counted = reader.hashed(Tally{
+            .done = &progress.done,
+        }, &through);
+
+        try archive.tar.writeFileStream(name, size, &counted.reader, .{});
     }
 
     /// Every file under `root`, named `<prefix>/<its path>`, but what stays behind.
@@ -245,8 +290,10 @@ const Archive = struct {
         defer walker.deinit();
 
         while (try walker.next(io)) |entry| {
-            const cloned_out = archive.clone and tree == .data and
-                clone_leaves(entry.path);
+            const cloned_out = if (archive.clone) |wanted|
+                tree == .data and clone_rules.leaves(wanted, entry.path)
+            else
+                false;
 
             if (cloned_out or left_out(archive.site, entry.path, entry.basename, tree)) {
                 if (entry.kind == .directory) {
@@ -341,10 +388,17 @@ fn take_snapshot(
     std.debug.assert(path.len > 0);
     std.debug.assert(local_rows.len > 0);
 
+    // Never in a server: its own SQLite would be shut down with this one (`clone-pack-run`).
     var runtime = try db.Runtime.init(.{});
     defer runtime.deinit();
 
     try copy_database(site, arena, &runtime, path);
+
+    if (clone) |wanted| {
+        if (wanted.progress) |progress| {
+            progress.enter(.clearing);
+        }
+    }
 
     var copy = try db.open(&runtime, path);
     defer copy.close();
@@ -356,7 +410,7 @@ fn take_snapshot(
     }
 
     if (clone) |wanted| {
-        try clear_for_clone(&copy, wanted);
+        try clone_rules.clear(&copy, wanted);
     }
 
     try copy.exec("PRAGMA journal_mode = DELETE");
@@ -388,6 +442,9 @@ fn copy_database(
     var connection = try db.open(runtime, source);
     defer connection.close();
 
+    // Rebuilding a large database's indexes sorts more than a server's fixed SQLite memory
+    // holds: the copy's temporary data goes to disk.
+    try connection.exec("PRAGMA temp_store = FILE");
     try db.copy_to(&connection, path);
 }
 
@@ -405,7 +462,7 @@ fn table_of(comptime statement: []const u8) []const u8 {
     return rest[0..end];
 }
 
-fn same_path(path: []const u8, kept: []const u8) bool {
+pub fn same_path(path: []const u8, kept: []const u8) bool {
     std.debug.assert(kept.len > 0);
     std.debug.assert(path.len > 0);
 

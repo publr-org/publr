@@ -8,21 +8,21 @@ const credentials = @import("credentials.zig");
 const remote = @import("remote.zig");
 const device = @import("../model/device.zig");
 
-const Started = struct {
+pub const Started = struct {
     device_code: []const u8,
     user_code: []const u8,
     approve_path: []const u8,
     expires_at: i64,
     interval_s: u32,
 };
-const Polled = struct {
+pub const Polled = struct {
     state: []const u8,
 };
-const Claimed = struct {
+pub const Claimed = struct {
     token: []const u8,
     scope: []const u8,
 };
-const Item = struct {
+pub const Item = struct {
     id: []const u8,
     name: []const u8,
     scope: []const u8,
@@ -281,7 +281,7 @@ fn whoami(init: std.process.Init, out: *std.Io.Writer, address: ?[]const u8) !u8
 }
 
 /// The device a token is, as the Publr it belongs to lists it.
-fn current(init: std.process.Init, site: credentials.Site) !Item {
+pub fn current(init: std.process.Init, site: credentials.Site) !Item {
     std.debug.assert(site.token.len > 0);
 
     const listed = try call(init, Listed, site.address, "/api/device.list", "{}", site.token);
@@ -295,7 +295,7 @@ fn current(init: std.process.Init, site: credentials.Site) !Item {
     return error.DeviceNotFound;
 }
 
-fn call(
+pub fn call(
     init: std.process.Init,
     comptime Out: type,
     address: []const u8,
@@ -339,7 +339,7 @@ fn default_name(arena: std.mem.Allocator) ![]const u8 {
 }
 
 /// The link opened where a person can see it; nothing when there is no browser to open.
-fn open_browser(init: std.process.Init, link: []const u8) void {
+pub fn open_browser(init: std.process.Init, link: []const u8) void {
     std.debug.assert(link.len > 0);
 
     const opener = switch (builtin.os.tag) {

@@ -123,7 +123,9 @@ A deprecated operation ([Updates](updates.md#changing-publr)) still answers, wit
 | Route | What |
 |---|---|
 | `POST /api/cli` | body `{ "args" }`: a command sent by `publr --site <address>`, run here as the device whose token comes in `Authorization: Bearer`; answers `{ "code", "out", "err", "failure" }` (`failure` the name of the failure it ended with). `--as` is refused; without a device's token, `401` |
-| `POST /api/sites/pack` | an administrator (signed in, or a device with their token): this site made into a bundle for a clone ([`publr clone`](cli.md#clone-and-push)); answers `{ "bytes", "publr", "name" }`. Without one, `401` |
+| `GET /api/sites/size` | an administrator (signed in, or a device with their token): what a clone would bring down, `{ "database_bytes", "media_files", "media_bytes" }` (media without its resized copies). Without one, `401` |
+| `POST /api/sites/pack` | an administrator (signed in, or a device with their token): this site made into a bundle for a clone ([`publr clone`](cli.md#clone-and-push)), in a process of its own; `{ "media": "none" }` leaves the media files out. Answers `202` at once; asking again starts it over. Without one, `401` |
+| `GET /api/sites/pack/progress` | the same person: where the pack is, `{ "state", "through", "made", "why" }`: `packing` with `through` in ten-thousandths, `made` with `made` as `{ "bytes", "publr", "name", "parts" }`, `failed` with `why`, or `none` |
 | `GET /api/sites/pack?offset=<n>` | the same person: one piece of it, up to 1 MiB; the last piece removes it |
 | `GET /api/agent/<code>` | the shell script the Overview's setup command pipes into `sh`: Publr's installer, then `publr login <site> --claim <code>` and `publr skill install`. Anyone may fetch it; the code (`device offer`) is the credential, once, for ten minutes. A code that is not one answers `404` with a script that says so |
 | `GET /.well-known/oauth-protected-resource` (also `…/mcp`) | where `/mcp`'s tokens come from: `{ "resource", "authorization_servers", "bearer_methods_supported" }`, at the admin's address |

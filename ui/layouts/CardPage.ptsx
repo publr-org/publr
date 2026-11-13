@@ -1,5 +1,6 @@
 import { Document } from "./Document.ptsx";
 import { Mark } from "../components/Mark.ptsx";
+import { EmptyGrid } from "@publr/ui/EmptyGrid.ptsx";
 import { Heading } from "@publr/ui/Heading.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
 import { Text } from "@publr/ui/Text.ptsx";
@@ -13,15 +14,20 @@ export type CardPageProps = {
   footer?: JSX.Element;
   /** The form. */
   children?: JSX.Element;
+  /** A wide card, for a page that is watched rather than filled in (a long task's progress). */
+  wide?: boolean;
+  /** The admin's isometric lattice behind the card. */
+  lattice?: boolean;
 };
 
 /** A page before sign-in: one card in the middle of the window, with the mark, the title,
  * a line, a notice, the form and an optional footer. No chrome. */
-export function CardPage({ title, description, notice, footer, children }: CardPageProps) {
+export function CardPage({ title, description, notice, footer, children, wide = false, lattice = false }: CardPageProps) {
   return (
     <Document title={title}>
-      <main class="flex min-h-screen items-center justify-center px-5 py-10">
-        <div class="flex w-full max-w-sm flex-col gap-6 rounded-2xl border border-border bg-card p-8 shadow-sheet">
+      <main class={["flex min-h-screen items-center justify-center px-5 py-10", lattice ? "relative overflow-hidden" : ""]}>
+        {lattice && <EmptyGrid />}
+        <div class={["flex w-full flex-col gap-6 rounded-2xl border border-border bg-card p-8 shadow-sheet", wide ? "relative max-w-2xl" : "max-w-sm"]}>
           <div class="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Mark classes="size-[22px]" />
           </div>

@@ -327,6 +327,7 @@ pub const DiscardChanges = lifecycle.DiscardChanges;
 pub const Delete = lifecycle.Delete;
 pub const Purge = lifecycle.Purge;
 pub const TransitionMany = @import("record/many.zig").TransitionMany;
+pub const CreateMany = @import("record/create_many.zig").CreateMany;
 pub const DeclineRequest = @import("record/requests.zig").DeclineRequest;
 pub const HoldBack = @import("record/hold_back.zig").HoldBack;
 
@@ -835,7 +836,7 @@ pub const operations = [_]type{
     Referrers,      Delete,            DiscardChanges, Purge,          Validate,     Shown,
     Query,          Reach,             TransitionMany, DeclineRequest, TransitionAt, Unschedule,
     Markers,        Helps,             HoldBack,       RunScheduled,   Reschedule,   SaveVersion,
-    PublishVersion, SaveIntoScheduled,
+    PublishVersion, SaveIntoScheduled, CreateMany,
 };
 
 const SDK = registry.SDK;

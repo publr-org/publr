@@ -11,6 +11,8 @@ export type ConnectToolProps = {
   address: string;
   /** What a tool calls this site, `publr-<site>`. */
   name: string;
+  /** The admin's address, which an agent links a project folder to. */
+  site: string;
   /** Cursor's link that adds this site's MCP server. */
   cursor_link: string;
   /** The address can be reached from the internet, so chat apps can add it. */
@@ -20,7 +22,7 @@ export type ConnectToolProps = {
 };
 
 /** Connecting a tool to this site: pick the one you use, and its steps show. */
-export function ConnectTool({ base, tool, address, name, cursor_link, reachable, start = false }: ConnectToolProps) {
+export function ConnectTool({ base, tool, address, name, site, cursor_link, reachable, start = false }: ConnectToolProps) {
   return (
     <div class={["flex w-full flex-col gap-8", start ? "items-start" : "items-center"]}>
       <nav aria-label={Publr.t("Your own tool")} class={["flex flex-wrap gap-2", start ? "justify-start" : "justify-center"]}>
@@ -50,7 +52,7 @@ export function ConnectTool({ base, tool, address, name, cursor_link, reachable,
           {Publr.t("Other agent")}
         </Button>
       </nav>
-      {tool !== "" && <McpSetup tool={tool} address={address} name={name} cursor_link={cursor_link} />}
+      {tool !== "" && <McpSetup tool={tool} address={address} name={name} site={site} cursor_link={cursor_link} />}
     </div>
   );
 }

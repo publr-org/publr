@@ -19,6 +19,8 @@ const operator = @import("operator.zig");
 
 pub const pack = @import("bundle/pack.zig").pack;
 pub const pack_clone = @import("bundle/pack.zig").pack_clone;
+pub const PackProgress = @import("bundle/pack.zig").Progress;
+pub const snapshot_suffix = @import("bundle/pack.zig").snapshot_suffix;
 pub const unpack = @import("bundle/unpack.zig").unpack;
 pub const UnpackOptions = @import("bundle/unpack.zig").Options;
 
@@ -40,6 +42,9 @@ pub const Manifest = struct {
     made_at_ms: i64,
     /// The database's file name under `data/`.
     database: []const u8,
+    /// Media storage keys whose files it leaves out: the folder it came from held only
+    /// placeholders, so whoever unpacks it takes them from its own source.
+    placeholders: []const []const u8 = &.{},
 };
 
 pub const Packed = struct {
@@ -47,6 +52,33 @@ pub const Packed = struct {
     files: u32,
     /// Bytes before compression.
     bytes: u64,
+    /// The same bytes by what they are, for someone watching the bundle travel.
+    parts: Parts = .{},
+};
+
+/// A bundle's bytes before compression, by part: the database (and the data folder's other
+/// files), media, apps, plugins (sources and installed modules).
+pub const Parts = struct {
+    database: u64 = 0,
+    media: u64 = 0,
+    apps: u64 = 0,
+    plugins: u64 = 0,
+
+    pub fn count(parts: *Parts, name: []const u8, bytes: u64) void {
+        std.debug.assert(name.len > 0);
+
+        const starts = std.mem.startsWith;
+        const part = if (starts(u8, name, "data/media/"))
+            &parts.media
+        else if (starts(u8, name, "site/apps/"))
+            &parts.apps
+        else if (starts(u8, name, "site/plugins/") or starts(u8, name, "data/plugins/"))
+            &parts.plugins
+        else
+            &parts.database;
+
+        part.* += bytes;
+    }
 };
 
 pub const help =
@@ -164,5 +196,6 @@ fn unpack_here(
 test {
     _ = @import("bundle/pack.zig");
     _ = @import("bundle/unpack.zig");
+    _ = @import("bundle/clone.zig");
     _ = @import("bundle/bundle_test.zig");
 }

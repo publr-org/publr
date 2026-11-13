@@ -63,6 +63,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .tool = tool,
         .mcp_address = mcp.address,
         .mcp_name = mcp.name,
+        .mcp_site = mcp.site,
         .reachable = dashboard.reachable(&session),
         .copies = registry.copies_list != null,
         .cursor_link = mcp.cursor_link,

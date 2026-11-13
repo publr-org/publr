@@ -20,12 +20,14 @@ const session_bytes_max: u32 = 1024;
 
 /// `build` stamps the binary the server runs (`build_stamp`): one started from an older
 /// build of the file has another, and 0 when it is not known. `url` is where people and
-/// agents reach it (`--url`, else `http://127.0.0.1:<port>`); empty when not known.
+/// agents reach it (`--url`, else `http://127.0.0.1:<port>`); empty when not known. `admin`
+/// is the admin's origin, where its `/mcp` answers; empty when not known.
 pub const Session = struct {
     port: u16,
     key: [key_len]u8,
     build: u64 = 0,
     url: []const u8 = "",
+    admin: []const u8 = "",
 };
 
 const Envelope = struct {
@@ -44,16 +46,22 @@ pub fn path_of(arena: std.mem.Allocator, db_path: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}.serve", .{db_path});
 }
 
+pub const Addresses = struct {
+    url: []const u8,
+    admin: []const u8 = "",
+};
+
 /// `serve`, once listening: a fresh key, written with the port beside the database.
 pub fn open(
     io: std.Io,
     arena: std.mem.Allocator,
     db_path: []const u8,
     port: u16,
-    url: []const u8,
+    addresses: Addresses,
 ) !Session {
     std.debug.assert(port > 0);
-    std.debug.assert(std.mem.indexOfAny(u8, url, " \n") == null);
+    std.debug.assert(std.mem.indexOfAny(u8, addresses.url, " \n") == null);
+    std.debug.assert(std.mem.indexOfAny(u8, addresses.admin, " \n") == null);
 
     var secret: [key_len / 2]u8 = undefined;
     io.random(&secret);
@@ -62,13 +70,15 @@ pub fn open(
         .port = port,
         .key = std.fmt.bytesToHex(secret, .lower),
         .build = build_stamp(io, arena),
-        .url = url,
+        .url = addresses.url,
+        .admin = addresses.admin,
     };
-    const text = try std.fmt.allocPrint(arena, "{d} {s} {d} {s}\n", .{
+    const text = try std.fmt.allocPrint(arena, "{d} {s} {d} {s} {s}\n", .{
         port,
         &session.key,
         session.build,
-        url,
+        addresses.url,
+        addresses.admin,
     });
     var file = try std.Io.Dir.cwd().createFile(io, try path_of(arena, db_path), .{
         .permissions = .fromMode(0o600),
@@ -122,6 +132,7 @@ fn parse(text: []const u8) ?Session {
     const build_text = words.next() orelse "0";
     const build = std.fmt.parseInt(u64, build_text, 10) catch 0;
     const url = words.next() orelse "";
+    const admin = words.next() orelse "";
 
     if (key.len != key_len or port == 0) {
         return null;
@@ -132,6 +143,7 @@ fn parse(text: []const u8) ?Session {
         .key = key[0..key_len].*,
         .build = build,
         .url = url,
+        .admin = admin,
     };
 }
 
@@ -422,6 +434,12 @@ test "a session reads its port, key and build; one written before builds were ke
     const addressed = parse("8080 " ++ key ++ " 7 https://publr.local\n").?;
 
     try std.testing.expectEqualStrings("https://publr.local", addressed.url);
+    try std.testing.expectEqualStrings("", addressed.admin);
+
+    const both = " 7 http://localhost:8080 http://admin.localhost:8080\n";
+    const split = parse("8080 " ++ key ++ both).?;
+
+    try std.testing.expectEqualStrings("http://admin.localhost:8080", split.admin);
 
     const stamped = parse("8080 " ++ key ++ " 1759740000123456789\n").?;
     const unstamped = parse("8080 " ++ key ++ "\n").?;

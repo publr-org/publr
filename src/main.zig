@@ -67,6 +67,19 @@ fn run(init: std.process.Init) !u8 {
             return try publr.plugin_build_remote.run(init, address, rest[2..], env, out);
         }
 
+        if (seed_at(rest)) |at| {
+            const there: Elsewhere = .{
+                .init = init,
+                .address = address,
+                .env = env,
+            };
+
+            return try publr.seed.run(init, out, rest[at + 1 ..], .{
+                .runner = there.runner(),
+                .caller = rest[0..at],
+            });
+        }
+
         if (rest.len > 0 and !stays_here(rest)) {
             return try publr.forwarding.forward(init, address, rest, env, out);
         }
@@ -119,14 +132,21 @@ fn is_account(command: []const u8) bool {
 }
 
 /// What runs on this machine whichever site the command names: signing in and out, the
-/// skill for its agent and the guide this binary carries.
+/// skill for its agent, the guide this binary carries, and Publr for the agent's tool.
 fn stays_here(args: []const []const u8) bool {
     std.debug.assert(args.len > 0);
 
     const guide = args.len == 1 and std.mem.eql(u8, args[0], "agents");
 
     return is_account(args[0]) or guide or
-        std.mem.eql(u8, args[0], "skill");
+        std.mem.eql(u8, args[0], "skill") or is_for_tools(args[0]);
+}
+
+/// `mcp` and `setup`: Publr as an agent's tool reaches it, on this machine.
+fn is_for_tools(command: []const u8) bool {
+    std.debug.assert(command.len <= cli.value_len_max);
+
+    return std.mem.eql(u8, command, "mcp") or std.mem.eql(u8, command, "setup");
 }
 
 /// `plugin build` for a plugin whose source is in this folder: built here and its module
@@ -348,12 +368,13 @@ fn tool(
     const plugin_check = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
         std.mem.eql(u8, rest[1], "check") and !has_flag(rest, "--help");
     const login = is_account(rest[0]);
+    const for_tools = is_for_tools(rest[0]);
 
     // In the browser there is no server, no build and no compiler: the modules are `void`
     // there.
     if (builtin.os.tag == .wasi) {
         if (serve or build or zig or plugin_build or plugin_check or agents or agent or
-            apps_load or login or skill or new_site)
+            apps_load or login or skill or new_site or for_tools)
         {
             return error.Unsupported;
         }
@@ -378,6 +399,26 @@ fn tool(
             return try publr.skill.run(init, out, rest[1..]);
         }
 
+        if (seed_at(rest)) |at| {
+            const here: Here = .{
+                .init = init,
+                .db_path = db_path,
+            };
+
+            return try publr.seed.run(init, out, rest[at + 1 ..], .{
+                .runner = here.runner(),
+                .caller = rest[0..at],
+            });
+        }
+
+        if (for_tools and std.mem.eql(u8, rest[0], "mcp")) {
+            return try publr.mcp_local.run(init, rest[1..]);
+        }
+
+        if (for_tools) {
+            return try publr.setup.run(init, out, rest[1..]);
+        }
+
         if (new_site) {
             return try publr.new_site.run(init, out, rest[1..]);
         }
@@ -396,6 +437,10 @@ fn tool(
 
         if (serve) {
             return try publr.serve.run(init, db_path, rest[1..]);
+        }
+
+        if (std.mem.eql(u8, rest[0], publr.clone_pack.command)) {
+            return try publr.clone_pack.run(init, out, db_path, rest[1..]);
         }
 
         if (std.mem.eql(u8, rest[0], "queue-run")) {
@@ -470,4 +515,66 @@ fn check_apps(init: std.process.Init, out: *std.Io.Writer) !u8 {
 
     try out.print("{d} apps: compile\n", .{publr.apps.spec.all.len});
     return 0;
+}
+
+/// `publr seed`'s batches run as typed commands on this site.
+const Here = struct {
+    init: std.process.Init,
+    db_path: [:0]const u8,
+
+    fn runner(here: *const Here) publr.seed.Runner {
+        return .{
+            .context = here,
+            .run = &run_here,
+        };
+    }
+
+    fn run_here(context: *const anyopaque, words: []const []const u8, out: *std.Io.Writer) !u8 {
+        const here: *const Here = @ptrCast(@alignCast(context));
+
+        std.debug.assert(words.len > 0);
+
+        return run_command(here.init, here.db_path, words, out);
+    }
+};
+
+/// `publr seed`'s batches sent to the Publr `--site` names.
+const Elsewhere = struct {
+    init: std.process.Init,
+    address: []const u8,
+    env: ?[]const u8,
+
+    fn runner(there: *const Elsewhere) publr.seed.Runner {
+        return .{
+            .context = there,
+            .run = &run_there,
+        };
+    }
+
+    fn run_there(context: *const anyopaque, words: []const []const u8, out: *std.Io.Writer) !u8 {
+        const there: *const Elsewhere = @ptrCast(@alignCast(context));
+
+        std.debug.assert(words.len > 0);
+
+        return publr.forwarding.forward(there.init, there.address, words, there.env, out);
+    }
+};
+
+/// Where `seed` is in the words: first, or after who runs it (`--as-admin`, `--as <who>`),
+/// which every batch it sends then carries.
+fn seed_at(words: []const []const u8) ?u32 {
+    std.debug.assert(words.len <= args_max);
+
+    const at: u32 = if (words.len > 1 and std.mem.eql(u8, words[0], "--as-admin"))
+        1
+    else if (words.len > 2 and std.mem.eql(u8, words[0], "--as"))
+        2
+    else
+        0;
+
+    if (words.len > at and std.mem.eql(u8, words[at], "seed")) {
+        return at;
+    }
+
+    return null;
 }

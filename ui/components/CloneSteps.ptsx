@@ -1,0 +1,286 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Icon } from "@publr/ui/Icon.ptsx";
+import { Progress } from "@publr/ui/Progress.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+/** What a bundle weighs before compression, by part. */
+type Parts = { database: number; media: number; apps: number; plugins: number };
+
+/** Where `publr clone` is, as `/admin/sync/progress` answers it. */
+type Progressed = {
+  phase: string;
+  /** How far the site is packing it, in ten-thousandths. */
+  packed_through: number;
+  done_bytes: number;
+  total_bytes: number;
+  bytes_per_s: number;
+  placeholders: number;
+  media: boolean;
+  problem: string;
+  sign_in: string;
+  elapsed_ms: number;
+  unpacked_bytes: number;
+  parts: Parts;
+  size: { database_bytes: number; media_files: number; media_bytes: number };
+};
+
+export const state = Publr.reactive({
+  phase: "packing",
+  packed_through: 0,
+  done_bytes: 0,
+  total_bytes: 0,
+  placeholders: 0,
+  unpacked_bytes: 0,
+  media: true,
+  problem: "",
+  elapsed_ms: 0,
+  /** The site's own server answers: the page can open it. */
+  here: false,
+  asking: false,
+  /** What the page shows, kept here as values so the page redraws when they change. */
+  percent: 0,
+  width: "0%",
+  headline: "",
+  timer: "00:00:00",
+  downloaded: "",
+  /** The two ways to bring the site down, with what each weighs; while choosing. */
+  everything: "",
+  setup_only: "",
+  choosing: false,
+  /** The bar's parts, as the page was drawn with them: with media and without. */
+  layout_all: [] as Mark[],
+  layout_setup: [] as Mark[],
+});
+
+const sized = (bytes: number) =>
+  bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/** What comes down, said to the clone; it starts as soon as it hears. */
+async function choose(media: string) {
+  state.choosing = false;
+  state.media = media === "all";
+  state.phase = "packing";
+  show();
+  await fetch(Publr.url(`/admin/sync/choose?media=${media}`), { method: "POST", cache: "no-store" });
+}
+
+export const take_all = () => {
+  void choose("all");
+};
+
+export const take_setup = () => {
+  void choose("none");
+};
+
+const clock = (ms: number) => {
+  const seconds = Math.floor(ms / 1000);
+  const pad = (value: number) => `${value}`.padStart(2, "0");
+  return `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+};
+
+const layout = () => (state.media ? state.layout_all : state.layout_setup);
+
+/** How far through the site's bytes the clone is, in one pass: a third of the way while the
+ * site packs it, a third while it downloads, the last third while it unpacks. */
+const through = () => {
+  if (state.here || state.phase === "placeholders" || state.phase === "starting") return 1;
+  const total = layout().reduce((sum, mark) => sum + mark.bytes, 0);
+  const downloaded = state.total_bytes > 0 ? state.done_bytes / state.total_bytes : 0;
+  if (state.phase === "packing") return Math.min(1, state.packed_through / 10000) / 3;
+  if (state.phase === "downloading") return 1 / 3 + downloaded / 3;
+  if (state.phase === "unpacking" && total > 0) return 2 / 3 + Math.min(1, state.unpacked_bytes / total) / 3;
+  return 0;
+};
+
+/** Where on the bar `through` lands, and the part it is in: each part fills its own stretch. */
+const landing = () => {
+  const marks = layout();
+  const total = marks.reduce((sum, mark) => sum + mark.bytes, 0);
+  if (total === 0) return { at: through() * 100, part: "" };
+  let left = through() * total;
+  for (const mark of marks) {
+    if (left <= mark.bytes) return { at: mark.start + (mark.width * left) / mark.bytes, part: mark.label };
+    left -= mark.bytes;
+  }
+  return { at: 100, part: marks[marks.length - 1].label };
+};
+
+const share = () => (state.here ? 100 : Math.min(99, landing().at));
+
+const doing = () => {
+  if (state.here) return Publr.t("Done");
+  if (state.phase === "failed") return Publr.t("It stopped");
+  if (state.phase === "choosing") return Publr.t("What should come down?");
+  if (state.phase === "packing") return Publr.t("Packing it on its server");
+  if (state.phase === "downloading") {
+    const part = landing().part;
+    return part === "" ? Publr.t("Downloading") : Publr.t("Downloading {part}", { part: part.toLowerCase() });
+  }
+  if (state.phase === "unpacking") {
+    const part = landing().part;
+    return part === "" ? Publr.t("Unpacking it into this folder") : Publr.t("Unpacking {part}", { part: part.toLowerCase() });
+  }
+  if (state.phase === "placeholders") return Publr.t("Writing placeholders for media");
+  return Publr.t("Starting it here");
+};
+
+/** Every shown value from the state the clone answered. */
+function show() {
+  const whole = share();
+  state.percent = Math.round(whole);
+  state.width = `${whole}%`;
+  state.headline = state.phase === "choosing" || state.phase === "failed" ? doing() : `${state.percent}% · ${doing()}`;
+  state.timer = state.here
+    ? Publr.t("Pulled in {time}", { time: clock(state.elapsed_ms) })
+    : Publr.t("Time elapsed {time}", { time: clock(state.elapsed_ms) });
+  state.downloaded = state.phase === "downloading" && state.total_bytes > 0
+    ? Publr.t("{done} of {total} MB", {
+        done: (state.done_bytes / 1048576).toFixed(1),
+        total: (state.total_bytes / 1048576).toFixed(1),
+      })
+    : "";
+}
+
+/** The session first, from the clone while it still answers; then the site's own server. */
+async function hand_over(link: string) {
+  try {
+    await fetch(Publr.url(link), { method: "POST", credentials: "same-origin", cache: "no-store" });
+  } catch {
+    // Already handed over: the admin asks to sign in as usual.
+  }
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    try {
+      const answered = await fetch(Publr.url("/api/health"), { cache: "no-store" });
+      if (answered.ok) {
+        state.here = true;
+        show();
+        return;
+      }
+    } catch {
+      // Not listening yet: the clone gives this address to the site's server.
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+  }
+}
+
+async function follow() {
+  const ticking = window.setInterval(() => {
+    if (state.here || state.phase === "failed" || state.phase === "choosing") return;
+    state.elapsed_ms += 250;
+    show();
+  }, 250);
+  for (;;) {
+    try {
+      const answered = await fetch(Publr.url("/admin/sync/progress"), {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const found = (await answered.json()) as Progressed;
+      state.phase = found.phase;
+      state.packed_through = found.packed_through;
+      state.done_bytes = found.done_bytes;
+      state.total_bytes = found.total_bytes;
+      state.placeholders = found.placeholders;
+      state.unpacked_bytes = found.unpacked_bytes;
+      state.media = found.media;
+      state.problem = found.problem;
+      if (found.phase === "choosing" && !state.choosing && state.everything === "") {
+        state.choosing = true;
+        state.everything = Publr.t("Everything · {size}", {
+          size: sized(found.size.database_bytes + found.size.media_bytes),
+        });
+        state.setup_only = found.size.media_files > 0
+          ? Publr.t("Database and setup · {size}, {count} images as placeholders", {
+              size: sized(found.size.database_bytes),
+              count: `${found.size.media_files}`,
+            })
+          : Publr.t("Database and setup · {size}", { size: sized(found.size.database_bytes) });
+      }
+      state.elapsed_ms = found.elapsed_ms;
+      show();
+      if (found.phase === "failed") break;
+      if (found.phase === "starting" && found.sign_in !== "") {
+        await hand_over(found.sign_in);
+        break;
+      }
+    } catch {
+      // The clone stopped answering: it is handing over to the site's server.
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+  }
+  window.clearInterval(ticking);
+}
+
+Publr.effect(() => {
+  if (state.asking) return;
+  state.asking = true;
+  void follow();
+});
+
+type Mark = { label: string; at: string; span: string; start: number; width: number; bytes: number };
+
+export type CloneStepsProps = {
+  /** The bar's parts as the site weighs them, with media and without. */
+  marks_all: Mark[];
+  marks_setup: Mark[];
+};
+
+export function CloneSteps({ marks_all, marks_setup }: CloneStepsProps) {
+  state.layout_all = marks_all;
+  state.layout_setup = marks_setup;
+  return (
+    <div class="flex flex-col gap-5" data-part="clone-progress">
+      <div class="flex items-end justify-between gap-4">
+        <div class="flex items-center gap-2">
+          {!state.here && !state.choosing && state.phase !== "failed" && (
+            <Icon name="sync" size="sm" classes="shrink-0 animate-spin" />
+          )}
+          <Text as="p" variant="heading-md">
+            {state.headline}
+          </Text>
+        </div>
+        <Text as="p" variant="body-sm" tone="muted">
+          {state.timer}
+        </Text>
+      </div>
+      <div hidden={!state.media}>
+        <Progress value={state.percent} max={100} width={state.width} label="" size="lg" marks={marks_all} />
+      </div>
+      <div hidden={state.media}>
+        <Progress value={state.percent} max={100} width={state.width} label="" size="lg" marks={marks_setup} />
+      </div>
+      {state.choosing && (
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <Button type="button" hierarchy="primary" size="md" onClick={take_all}>
+            {state.everything}
+          </Button>
+          <Button type="button" hierarchy="secondary" size="md" onClick={take_setup}>
+            {state.setup_only}
+          </Button>
+        </div>
+      )}
+      {state.downloaded !== "" && (
+        <Text as="p" variant="body-sm" tone="muted">
+          {state.downloaded}
+        </Text>
+      )}
+      {!state.media && state.placeholders > 0 && (
+        <Text as="p" variant="body-sm" tone="muted">
+          {Publr.t("{count} placeholders stand in for media; your real files stay on the server.", {
+            count: `${state.placeholders}`,
+          })}
+        </Text>
+      )}
+      {state.here && (
+        <div class="flex justify-end">
+          <Button href="/admin" hierarchy="primary" size="md">
+            {Publr.t("Open your site")}
+          </Button>
+        </div>
+      )}
+      {state.phase === "failed" && <Callout tone="error" title={state.problem} />}
+    </div>
+  );
+}

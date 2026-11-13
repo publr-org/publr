@@ -1,6 +1,7 @@
 //! A device signing in by link against the running server: asked over HTTP, approved by its
 //! person from the CLI, its token claimed once; then `publr --site` and `whoami` with that
-//! token, a destroying command refused to it, and the approve page behind the sign-in.
+//! token, a destroying command refused to it, and the approve page behind the sign-in. Then
+//! `publr mcp`, which signs in the same way, in a folder linked to no site.
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
@@ -39,6 +40,7 @@ pub fn expect_devices(init: std.process.Init, binary: []const u8, work_dir: []co
     const port = try smoke.read_port(init, child.stderr.?);
 
     try expect_signed_in(init, binary, dir, port);
+    try @import("mcp_local.zig").expect_mcp_local(init, binary, work_dir);
 }
 
 /// Asked over HTTP, approved by its person from the CLI, its token claimed once.

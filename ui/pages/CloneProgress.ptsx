@@ -1,0 +1,23 @@
+import { Publr } from "publr-jsx";
+import { CardPage } from "../layouts/CardPage.ptsx";
+import { CloneSteps } from "../components/CloneSteps.ptsx";
+
+export type CloneProgressProps = {
+  /** The site being brought down, by its short name (`test-m964yr`). */
+  name: string;
+  /** The folder it goes into, by its last names (`clone-test/shop`). */
+  folder: string;
+  /** The bar's parts with media, and without (database and setup only). */
+  marks_all: Array<{ label: string; at: string; span: string; start: number; width: number; bytes: number }>;
+  marks_setup: Array<{ label: string; at: string; span: string; start: number; width: number; bytes: number }>;
+};
+
+/** `publr clone` while it runs, before the site is here: drawn by the clone itself, then
+ * handed over to the site's own server on the same address. */
+export function CloneProgress({ name, folder, marks_all, marks_setup }: CloneProgressProps) {
+  return (
+    <CardPage wide lattice title={Publr.t("Pulling {name}", { name })} description={folder}>
+      <CloneSteps marks_all={marks_all} marks_setup={marks_setup} />
+    </CardPage>
+  );
+}

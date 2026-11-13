@@ -8,6 +8,10 @@ const copy_buffer_bytes: u32 = 64 << 10;
 pub const Options = struct {
     /// The most the files may hold once unpacked; a bundle past it is refused.
     bytes_max: u64 = 64 << 30,
+    /// Raised by every file's bytes as it is written, for someone watching.
+    written: ?*std.atomic.Value(u64) = null,
+    /// False: media files are passed over (a clone's merge base holds the site without them).
+    media: bool = true,
 };
 
 /// The bundle at `bundle_path` written out as `site`: `data/` into its data folder (the
@@ -54,6 +58,8 @@ pub fn unpack(
     try write_all(site, arena, &entries, manifest, .{
         .database = database,
         .bytes_max = options.bytes_max,
+        .written = options.written,
+        .media = options.media,
     });
 
     return manifest;
@@ -92,6 +98,8 @@ fn read_manifest(arena: std.mem.Allocator, entries: *std.tar.Iterator) !bundle.M
 const Limits = struct {
     database: []const u8,
     bytes_max: u64,
+    written: ?*std.atomic.Value(u64) = null,
+    media: bool = true,
 };
 
 fn write_all(
@@ -127,7 +135,16 @@ fn write_all(
         }
 
         has_database = has_database or std.mem.eql(u8, target, limits.database);
+
+        if (!limits.media and std.mem.startsWith(u8, entry.name, "data/media/")) {
+            continue;
+        }
+
         try write_entry(site.io, entries, entry, target);
+
+        if (limits.written) |counter| {
+            _ = counter.fetchAdd(entry.size, .release);
+        }
     }
 
     if (!has_database) {

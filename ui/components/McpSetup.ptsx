@@ -16,130 +16,152 @@ export type McpSetupProps = {
   address: string;
   /** What the tool calls this site, `publr-<site>`, so several sites sit side by side. */
   name: string;
+  /** The admin's address, which an agent links a project folder to. */
+  site: string;
   /** Cursor's link that adds this server, its config carried in it. */
   cursor_link: string;
 };
 
-/** Connecting the tool the person uses: add this site's MCP address in that tool's own way,
- * approve it in the browser it opens, then ask there. */
-export function McpSetup({ tool, address, name, cursor_link }: McpSetupProps) {
-  const snippet = tool === "cursor"
-    ? "{ \"mcpServers\": { \"" + name + "\": { \"url\": \"" + address + "\" } } }"
-    : tool === "windsurf"
-      ? "{ \"mcpServers\": { \"" + name + "\": { \"serverUrl\": \"" + address + "\" } } }"
-      : address;
+/** Connecting the tool the person uses. A tool that runs on their computer (Cursor, Claude
+ * Code, Codex) gets Publr once, for every project: each project's folder is linked to its
+ * site the first time. The others add this site's MCP address in their own way. */
+export function McpSetup({ tool, address, name, site, cursor_link }: McpSetupProps) {
+  const local = tool === "cursor" || tool === "claude_code" || tool === "codex";
+  const setup = tool === "cursor"
+    ? "publr setup cursor"
+    : tool === "claude_code"
+      ? "publr setup claude"
+      : "publr setup codex";
+  const snippet = tool === "windsurf"
+    ? "{ \"mcpServers\": { \"" + name + "\": { \"serverUrl\": \"" + address + "\" } } }"
+    : address;
+  const add_title = tool === "cursor"
+    ? Publr.t("Add Publr to Cursor")
+    : tool === "claude_code"
+      ? Publr.t("Add Publr to Claude Code")
+      : tool === "codex"
+        ? Publr.t("Add Publr to Codex")
+        : tool === "windsurf"
+          ? Publr.t("Add Publr to Windsurf")
+          : tool === "claude_ai"
+            ? Publr.t("Add Publr to Claude.ai")
+            : tool === "chatgpt"
+              ? Publr.t("Add Publr to ChatGPT")
+              : Publr.t("Add Publr to your tool as an MCP server");
+  const ask_title = tool === "cursor"
+    ? Publr.t("Ask in Cursor's chat")
+    : tool === "claude_code"
+      ? Publr.t("Ask in Claude Code")
+      : tool === "codex"
+        ? Publr.t("Ask in Codex")
+        : tool === "windsurf"
+          ? Publr.t("Ask in Windsurf's Cascade")
+          : tool === "claude_ai"
+            ? Publr.t("Ask in Claude")
+            : tool === "chatgpt"
+              ? Publr.t("Ask in ChatGPT")
+              : Publr.t("Ask in your tool");
   return (
     <Card>
       <CardBody>
-        <Steps>
-          <Step
-            number={1}
-            title={tool === "cursor"
-              ? Publr.t("Add Publr to Cursor")
-              : tool === "claude_code"
-                ? Publr.t("Add Publr to Claude Code")
-                : tool === "codex"
-                  ? Publr.t("Add Publr to Codex")
-                  : tool === "windsurf"
-                    ? Publr.t("Add Publr to Windsurf")
-                    : tool === "claude_ai"
-                      ? Publr.t("Add Publr to Claude.ai")
-                      : tool === "chatgpt"
-                        ? Publr.t("Add Publr to ChatGPT")
-                        : Publr.t("Add Publr to your tool as an MCP server")}
-          >
+        {local && (
+          <div class="flex flex-col gap-5">
+            <Steps>
+              <Step number={1} title={Publr.t("Install Publr on this computer")}>
+                <div class="flex flex-col gap-2">
+                  <Command command="curl -fsSL https://publr.dev/install.sh | sh" />
+                  <Text as="p" variant="body-sm" tone="muted">
+                    {Publr.t("Skip it if publr --version already answers.")}
+                  </Text>
+                </div>
+              </Step>
+              <Step number={2} title={add_title}>
+                <div class="flex flex-col gap-2">
+                  <Command command={setup} />
+                  <Text as="p" variant="body-sm" tone="muted">
+                    {tool === "cursor"
+                      ? Publr.t("Cursor asks to install publr: choose Install. Every project gets it, once.")
+                      : tool === "claude_code"
+                        ? Publr.t("Claude Code gets it for every folder, once.")
+                        : Publr.t("Codex gets it for every project, once.")}
+                  </Text>
+                </div>
+              </Step>
+              <Step number={3} title={ask_title}>
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Open your project's folder and describe what you want. The first time, the agent asks which site the folder is for: this one is {site}. Your browser opens here once, to approve it and choose what it may do.", { site })}
+                </Text>
+              </Step>
+            </Steps>
             {tool === "cursor" && (
-              <div class="flex flex-col items-start gap-3">
-                <Button href={cursor_link} hierarchy="primary" size="md">
+              <div class="flex flex-col items-start gap-2">
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Without a terminal, add this site alone. It goes to every Cursor window, as {name}:", { name })}
+                </Text>
+                <Button href={cursor_link} hierarchy="secondary" size="sm">
                   {Publr.t("Add to Cursor")}
                 </Button>
-                <Text as="p" variant="body-sm" tone="muted">
-                  {Publr.t("It adds this site to every Cursor window, as {name}. For one project only, put this in .cursor/mcp.json in its folder:", { name })}
-                </Text>
               </div>
             )}
             {tool === "claude_code" && (
               <div class="flex flex-col gap-2">
                 <Text as="p" variant="body-sm" tone="muted">
-                  {Publr.t("In a terminal, in the folder you work in:")}
+                  {Publr.t("Or add this site alone, for one folder, as {name}. Then type /mcp in Claude Code, choose it and Authenticate:", { name })}
                 </Text>
                 <Command command={"claude mcp add --transport http " + name + " " + address} />
-                <Text as="p" variant="body-sm" tone="muted">
-                  {Publr.t("Claude Code keeps it for that folder only, as {name}.", { name })}
-                </Text>
               </div>
             )}
             {tool === "codex" && (
               <div class="flex flex-col gap-2">
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Or add this site alone, as {name}:", { name })}
+                </Text>
                 <Command command={"codex mcp add " + name + " --url " + address} />
                 <Command command={"codex mcp login " + name} />
-                <Text as="p" variant="body-sm" tone="muted">
-                  {Publr.t("Codex adds it for every project, as {name}.", { name })}
-                </Text>
               </div>
             )}
-            {tool === "windsurf" && (
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Add it to ~/.codeium/windsurf/mcp_config.json, then press Refresh in Cascade's MCP panel. Every Windsurf project gets it, as {name}:", { name })}
-              </Text>
-            )}
-            {tool === "claude_ai" && (
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("In Customize, Connectors, choose Add custom connector, name it {name} and paste this address:", { name })}
-              </Text>
-            )}
-            {tool === "chatgpt" && (
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("In Settings, Connectors, turn on Developer mode under Advanced settings. Then choose Create, name it {name}, paste this address and pick OAuth:", { name })}
-              </Text>
-            )}
-            {tool === "other" && (
-              <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Name it {name}. Its address, over HTTP:", { name })}
-              </Text>
-            )}
-            {tool !== "claude_code" && tool !== "codex" && (
+          </div>
+        )}
+        {!local && (
+          <Steps>
+            <Step number={1} title={add_title}>
+              {tool === "windsurf" && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Add it to ~/.codeium/windsurf/mcp_config.json, then press Refresh in Cascade's MCP panel. Every Windsurf project gets it, as {name}:", { name })}
+                </Text>
+              )}
+              {tool === "claude_ai" && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("In Customize, Connectors, choose Add custom connector, name it {name} and paste this address:", { name })}
+                </Text>
+              )}
+              {tool === "chatgpt" && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("In Settings, Connectors, turn on Developer mode under Advanced settings. Then choose Create, name it {name}, paste this address and pick OAuth:", { name })}
+                </Text>
+              )}
+              {tool === "other" && (
+                <Text as="p" variant="body-sm" tone="muted">
+                  {Publr.t("Name it {name}. Its address, over HTTP:", { name })}
+                </Text>
+              )}
               <div class="flex items-start gap-2">
                 <CodeBlock variant="command" classes="min-w-0 flex-1">{snippet}</CodeBlock>
                 <CopyButton text={snippet} hierarchy="tertiary" size="sm">
                   {Publr.t("Copy")}
                 </CopyButton>
               </div>
-            )}
-            {tool !== "claude_code" && (
               <Text as="p" variant="body-sm" tone="muted">
                 {Publr.t("It opens your browser on this site: approve it there, and choose what it may do.")}
               </Text>
-            )}
-          </Step>
-          {tool === "claude_code" && (
-            <Step number={2} title={Publr.t("Sign in from Claude Code")}>
+            </Step>
+            <Step number={2} title={ask_title}>
               <Text as="p" variant="body-sm" tone="muted">
-                {Publr.t("Start Claude Code in that folder, type /mcp, choose {name}, then Authenticate. Your browser opens on this site: approve it there, and choose what it may do.", { name })}
+                {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
               </Text>
             </Step>
-          )}
-          <Step
-            number={tool === "claude_code" ? 3 : 2}
-            title={tool === "claude_code"
-              ? Publr.t("Ask in Claude Code")
-              : tool === "codex"
-                ? Publr.t("Ask in Codex")
-                : tool === "cursor"
-                  ? Publr.t("Ask in Cursor's chat")
-                  : tool === "windsurf"
-                    ? Publr.t("Ask in Windsurf's Cascade")
-                    : tool === "claude_ai"
-                      ? Publr.t("Ask in Claude")
-                      : tool === "chatgpt"
-                        ? Publr.t("Ask in ChatGPT")
-                        : Publr.t("Ask in your tool")}
-          >
-            <Text as="p" variant="body-sm" tone="muted">
-              {Publr.t("Describe what you want, like \"Add a recipes section with a page listing them\".")}
-            </Text>
-          </Step>
-        </Steps>
+          </Steps>
+        )}
       </CardBody>
     </Card>
   );

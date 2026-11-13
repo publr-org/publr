@@ -50,6 +50,7 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
         .earlier = &.{},
         .mcp_address = "",
         .mcp_name = "",
+        .mcp_site = "",
         .cursor_link = "",
         .reachable = reachable(session),
     };
@@ -64,6 +65,7 @@ pub fn props_of(session: *admin.Session) admin.Error!Props {
 
         props.mcp_address = mcp.address;
         props.mcp_name = mcp.name;
+        props.mcp_site = mcp.site;
         props.cursor_link = mcp.cursor_link;
     }
 
@@ -105,6 +107,7 @@ pub fn agents_step(
         .earlier = &.{},
         .mcp_address = "",
         .mcp_name = "",
+        .mcp_site = "",
         .cursor_link = "",
         .reachable = false,
     };
@@ -386,6 +389,8 @@ pub const Mcp = struct {
     address: []const u8 = "",
     /// What a tool calls this site (`publr-<site>`), so several sites sit side by side.
     name: []const u8 = "",
+    /// The admin's address, which an agent links a folder to.
+    site: []const u8 = "",
     cursor_link: []const u8 = "",
 };
 
@@ -414,6 +419,7 @@ pub fn mcp_of(session: *admin.Session) admin.Error!Mcp {
     return .{
         .address = address,
         .name = name,
+        .site = base,
         .cursor_link = link.written(),
     };
 }
