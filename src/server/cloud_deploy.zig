@@ -1,12 +1,15 @@
 //! `publr cloud deploy`: the site in this folder made a Publr Cloud project. The site is
 //! packed (`bundle.zig`), uploaded to the account's dashboard, and made a project at the
-//! address asked for; then the folder carries the link to it (`cloud.json`), and the Cloud
-//! project is the site. Publr Studio calls the same endpoints itself. Nothing local
-//! overwrites a live site: a linked folder is refused.
+//! address asked for (or one made from the folder's name); then the folder carries the link
+//! to it (`cloud.json`), and the Cloud project is the site. Publr Studio calls the same
+//! endpoints itself. Nothing local overwrites a live site: a linked folder is refused.
+//! `publr cloud login` signs this computer in to the account first.
 const std = @import("std");
 const report = @import("../lib/report.zig");
 const backup = @import("gate/backup.zig");
 const bundle = @import("bundle.zig");
+const cloud_login = @import("cloud_deploy/login.zig");
+const defaults = @import("cloud_deploy/defaults.zig");
 
 pub const link_name = "cloud.json";
 pub const token_variable = "PUBLR_CLOUD_TOKEN";
@@ -18,9 +21,12 @@ const answer_bytes_max: u32 = 64 << 10;
 const upload_piece_bytes: u32 = 256 << 10;
 
 pub const help =
-    \\  cloud deploy --space <space> --slug <address> [--name <name>] [--cloud <dashboard>]
-    \\                    This site made a Publr Cloud project at <address>, with the
-    \\                    account token in PUBLR_CLOUD_TOKEN; the folder is linked to it
+    \\  cloud login [--cloud <dashboard>]
+    \\                    Sign this computer in to your Publr Cloud account, in the browser
+    \\  cloud deploy [--space <space>] [--slug <address>] [--name <name>] [--cloud <dashboard>]
+    \\                    This site made a Publr Cloud project, in your only space and at an
+    \\                    address made from the folder's name unless told; the folder is
+    \\                    linked to it
     \\
 ;
 
@@ -59,7 +65,7 @@ pub fn handles(args: []const []const u8) bool {
     std.debug.assert(args.len <= 128);
 
     return args.len >= 2 and std.mem.eql(u8, args[0], "cloud") and
-        std.mem.eql(u8, args[1], "deploy");
+        (std.mem.eql(u8, args[1], "deploy") or std.mem.eql(u8, args[1], "login"));
 }
 
 pub fn run(
@@ -76,14 +82,26 @@ pub fn run(
         try out.print("usage:\n{s}", .{help});
         return 2;
     };
-    const token = init.environ_map.get(token_variable) orelse {
-        report.err("publr cloud deploy: set {s} to your account's token", .{token_variable});
-        return 1;
-    };
 
     if (options.dashboard.len == 0) {
         options.dashboard = init.environ_map.get(dashboard_variable) orelse dashboard_default;
     }
+
+    if (std.mem.eql(u8, args[1], "login")) {
+        if (options.space.len > 0 or options.slug.len > 0 or options.name.len > 0) {
+            try out.print("usage:\n{s}", .{help});
+            return 2;
+        }
+
+        return cloud_login.run(init, out, options.dashboard);
+    }
+
+    const token = try cloud_login.token_for(init, options.dashboard, token_variable) orelse {
+        report.err("publr cloud deploy: not signed in to {s}; run `publr cloud login`", .{
+            options.dashboard,
+        });
+        return 1;
+    };
 
     if (try read_link(init.io, arena)) |link| {
         report.err("publr cloud deploy: this folder is {s}'s; its changes go up as a branch " ++
@@ -98,6 +116,16 @@ pub fn run(
 
     if (options.name.len == 0) {
         options.name = std.fs.path.basename(site.project_dir);
+    }
+
+    if (options.space.len == 0) {
+        options.space = try defaults.space(init.io, arena, options.dashboard, token) orelse {
+            return 1;
+        };
+    }
+
+    if (options.slug.len == 0) {
+        options.slug = try defaults.slug(init.io, arena, options.name);
     }
 
     return deploy(init, out, site, token, options);
@@ -222,11 +250,7 @@ fn parse(args: []const []const u8) ?Options {
         }
     }
 
-    if (index != args.len or options.space.len == 0 or options.slug.len == 0) {
-        return null;
-    }
-
-    return options;
+    return if (index == args.len) options else null;
 }
 
 /// The link the folder carries, or null when it has none.
@@ -363,3 +387,8 @@ const Client = struct {
         return uploaded.upload;
     }
 };
+
+test {
+    _ = cloud_login;
+    _ = defaults;
+}

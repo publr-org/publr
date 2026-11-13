@@ -447,7 +447,8 @@ const help_header =
     \\       publr db check                                      what an update would find
     \\       publr backups | restore <name>                      the backups before each update
     \\       publr pack [<file>] | unpack <file>                 the whole site in one file
-    \\       publr cloud deploy --space <s> --slug <address>     this site made a Cloud project
+    \\       publr cloud login                                   sign in to your Cloud account
+    \\       publr cloud deploy                                  this site made a Cloud project
     \\
     \\An agent building on Publr: run `publr agents` first, and read all of it. Every command
     \\with its flags, on one line each: `publr --commands`.
