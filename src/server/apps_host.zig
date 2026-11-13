@@ -122,6 +122,8 @@ pub const AppsHost = struct {
 
         try apps_adapter.load.open(project, specs, apps, host.gpa, host.index, now_ms, options);
         try host.serve_builds();
+        // Loaded from the folder: anything a CDN keeps of these apps may be stale now.
+        apps_adapter.edge.publish_apps(project);
         host.announce(specs);
     }
 

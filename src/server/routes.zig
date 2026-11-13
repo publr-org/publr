@@ -56,8 +56,6 @@ pub fn register(router: *http.Router) void {
     router.use(&@import("split.zig").split);
     // What the administrator's sandboxed frame sends is a visitor's; it reads the answers.
     router.use(&apps_adapter.framed.open_to_frame);
-    // Behind a CDN that purges: every write answers with the dependency keys it raised.
-    router.use(&apps_adapter.edge.changes);
     native_plugin_routes.register(router);
 
     const first_core = router.routes_len;
@@ -89,6 +87,8 @@ pub fn register(router: *http.Router) void {
         router.get(mcp.route, &mcp.refuse_stream);
         router.post(update.restart_route, &update.handle_restart);
         router.get(next_due_route, &next_due);
+        // Behind a CDN that purges: what was published, for whatever purges it.
+        router.get(apps_adapter.edge.published_route, &apps_adapter.edge.published);
         plugin_operator_commands.register(router);
     }
 
@@ -102,7 +102,7 @@ pub fn register(router: *http.Router) void {
     const operator_routes: u32 = if (builtin.os.tag == .wasi)
         0
     else
-        18 + plugin_operator_commands.routes_count;
+        19 + plugin_operator_commands.routes_count;
     const fixed = 9 + operator_routes + provider_routes.routes_count +
         webhook_routes.routes_count + native_plugin_routes.routes_count -
         native_plugin_routes.streams_count;

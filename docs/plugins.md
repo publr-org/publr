@@ -742,8 +742,10 @@ nothing else in the admin yet.
 
 A page with `.tabs = true` is a tabbed page: the admin draws its title and a tab bar, and
 other pages fill it by naming it in `.parent` (`&.{ "products.settings", "core.system" }`,
-the first that exists, else System settings). Core has two: System settings
-(`core.system`) and Users (`core.users`), each with its own tab first. A tab is a form, or
+the first that exists, else System settings). Core has three: System settings
+(`core.system`) and Users (`core.users`), each with its own tab first, and AI (`core.ai`),
+whose own tab, Bring your own key, comes after the plugins' (what agents did leads), and
+which `/admin/settings/ai` opens on its first tab. A tab is a form, or
 a page drawn by its operation in the frame under the tab bar (Users › Roles); `.action =
 .{ .label = "Add role", .href = "/admin/roles/add" }` puts its primary action in the
 tabbed page's header.

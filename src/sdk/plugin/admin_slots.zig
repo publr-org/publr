@@ -39,8 +39,9 @@ pub const Page = struct {
     /// other plugins' pages fill it by naming it in `.parent`. No operation or form.
     tabs: bool = false,
     /// A tab of the first tabbed page named here that exists (`"products.settings"`, System
-    /// settings `"core.system"`, Users `"core.users"`), else of System settings. A tab is a
-    /// `.form`, or drawn by its `operation` in the frame under the tabbed page's tab bar.
+    /// settings `"core.system"`, Users `"core.users"`, AI `"core.ai"`), else of System
+    /// settings. A tab is a `.form`, or drawn by its `operation` in the frame under the
+    /// tabbed page's tab bar.
     parent: []const []const u8 = &.{},
     /// A tab's primary action, in its tabbed page's header while it is open: `.{ .label =
     /// "Add role", .href = "/admin/roles/add" }`, an address in the admin.
@@ -65,6 +66,9 @@ pub const Action = struct {
 pub const system_page = "core.system";
 /// Users, the other tabbed page of core's: its own Users tab first.
 pub const users_page = "core.users";
+/// Settings › AI, a tabbed page of core's: plugins' tabs first (what agents did), then its
+/// own, the model providers on your own keys.
+pub const ai_page = "core.ai";
 
 pub const TopBar = struct {
     count: ?type = null,

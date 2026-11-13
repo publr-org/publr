@@ -37,6 +37,8 @@ pub const routes_count: u32 = 3;
 const holder = @embedFile("preview/holder.js");
 
 pub const page_for = page_module.page_for;
+/// A record's own page inside the project: its address, by its type's page and its slug.
+pub const record_path = page_module.own_path;
 
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len < router.routes.len - routes_count);

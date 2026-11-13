@@ -62,6 +62,15 @@ pub fn draw(visit: Visit) !Drawn {
     }
 
     const matched = app.program.?.match(target.path) orelse {
+        // An address a page could have: the app's own 404 page, as a visitor sees it.
+        if (!has_extension(path)) {
+            if (try not_found(visit, app)) |html| {
+                return .{
+                    .page = html,
+                };
+            }
+        }
+
         return .{
             .file = try std.fmt.allocPrint(visit.arena, "{s}{s}", .{
                 visit.project.admin_path(),
@@ -93,7 +102,13 @@ pub fn draw(visit: Visit) !Drawn {
             .page = try pages.render_file_page(visit.arena, app, route.template, context),
         };
     };
-    const entry = try entry_at(visit, handle, slug) orelse return .missing;
+    const entry = try entry_at(visit, handle, slug) orelse {
+        const html = try not_found(visit, app) orelse return .missing;
+
+        return .{
+            .page = html,
+        };
+    };
 
     context.params = .{
         .slug = slug,
@@ -102,6 +117,36 @@ pub fn draw(visit: Visit) !Drawn {
     return .{
         .page = try pages.render_shown(visit.arena, app, route.template, context, entry),
     };
+}
+
+/// The app's 404 page in preview, or null when the app has none.
+fn not_found(visit: Visit, app: *const App) !?[]const u8 {
+    std.debug.assert(visit.path.len > 0);
+    std.debug.assert(app.program != null);
+
+    const index = app.pages().error_404 orelse return null;
+    const context: PageContext = .{
+        .arena = visit.arena,
+        .project = visit.project,
+        .app = app,
+        .request = null,
+        .params = .{},
+        .live = false,
+        .caller = visit.caller,
+        .preview = true,
+        .preview_base = visit.base,
+    };
+
+    return try pages.render_file_page(visit.arena, app, index, context);
+}
+
+/// Whether the address's last segment names a file (`logo.png`), not a page.
+fn has_extension(path: []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    const last = path[(std.mem.lastIndexOfScalar(u8, path, '/') orelse 0) + 1 ..];
+
+    return std.mem.indexOfScalar(u8, last, '.') != null;
 }
 
 /// The record the `[slug]` page shows: the previewed one, with the posted form over it, when

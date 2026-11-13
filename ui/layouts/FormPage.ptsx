@@ -7,6 +7,8 @@ export type FormPageProps = {
   description?: string;
   actions?: JSX.Element;
   meta?: JSX.Element;
+  /** The page's tabs (TabNav), under the title. */
+  tabs?: JSX.Element;
   problems?: Array<{ code: string; text: string }>;
   problems_title?: string;
   notice?: JSX.Element;
@@ -29,6 +31,7 @@ export function FormPage({
   description,
   actions,
   meta,
+  tabs,
   problems = [],
   problems_title,
   notice,
@@ -47,6 +50,7 @@ export function FormPage({
           description={description}
           actions={actions}
           meta={meta}
+          tabs={tabs}
           problems={problems}
           problems_title={problems_title}
           notice={notice}

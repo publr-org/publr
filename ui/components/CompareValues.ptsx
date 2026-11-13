@@ -32,11 +32,13 @@ export type CompareValuesProps = {
   values: Array<CompareValue>;
   /** Items can be dragged out (into a value made of both versions' items). */
   draggable?: boolean;
+  /** Read as text, not in a field's box: where nothing is chosen or edited. */
+  plain?: boolean;
 };
 
 /** A field's values as one version has them: a document pointed at as its card, anything
  * else as text, with what this version added and removed marked. */
-export function CompareValues({ values, draggable = false }: CompareValuesProps) {
+export function CompareValues({ values, draggable = false, plain = false }: CompareValuesProps) {
   return (
     <div class="flex flex-col gap-2" data-part="compare-values">
       {values.length === 0 && <Text as="p" variant="body-sm" tone="muted">{Publr.t("Empty")}</Text>}
@@ -55,7 +57,7 @@ export function CompareValues({ values, draggable = false }: CompareValuesProps)
               mark={value.mark}
             />
           ) : (
-            <DiffText segments={value.segments} boxed />
+            <DiffText segments={value.segments} boxed={!plain} />
           )}
         </div>
       ))}

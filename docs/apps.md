@@ -766,14 +766,17 @@ rendered per request (dynamic pages and islands) never carries one. So at the ed
 dynamic requests reach the server; each dynamic island a page places is one of them on
 every view.
 
-Behind such a CDN the purge is as surgical as the rebuild. Each built page and static
-island also carries `Cache-Tag`: the dependency keys its build recorded (`record:<id>`,
-`type:<handle>`, `records`, `template:<path>`, …; any other byte written `%XX`), or `any`
-for what has none (the 404 page) or too many to list. Every request that may write
-answers with `X-Publr-Changed`: the keys it raised, the same way written; empty when it
-changed nothing a page reads; `*` when too many changed to name. Whatever purges the CDN
-purges those tags and `any`, so the edge drops exactly what the apps rebuild on disk,
-and every other page stays cached.
+Behind such a CDN the purge is as surgical as the rebuild, and comes after it. Whatever
+the CDN may keep from an app carries `Cache-Tag`: the app's name and, for a built page, a
+static island, a public file or a 404, the app's name with its path (`www,www:/posts/hello`;
+any other byte written `%XX`; a path too long to be a tag is left to the app's tag). The
+dependency index logs what each build published: a page or island whose bytes changed or
+that went away, and every app's name once its files are loaded again (templates, assets,
+public files). `GET /_publr/published?since=<revision>` answers what was published after
+that revision, `{"revision":…,"reset":false,"tags":[…]}`, or `reset` when the log no
+longer reaches back so far; without `since`, the revision to start from. Whatever purges
+the CDN reads it and purges those tags, so the edge drops a page once it changed on disk,
+however it changed: a write, a queued job, a scheduled change, an app loaded.
 
 ## What a publish rebuilds
 

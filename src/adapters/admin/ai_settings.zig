@@ -7,6 +7,7 @@ const providers = @import("../../operations/ai/providers.zig");
 const setup = @import("../../operations/ai/setup.zig");
 const secret = @import("../../operations/secret.zig");
 const plugin_operations = @import("../../operations/plugin.zig");
+const frame_pages = @import("frame/pages.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -14,18 +15,35 @@ const Context = admin.Context;
 const Error = admin.Error;
 const views = admin.views;
 
-pub const back = "/admin/settings/ai";
+/// Settings › AI, a tabbed page plugins' tabs fill (agent sessions); it opens on the first.
+pub const tabbed = "/admin/settings/ai";
+/// Its own tab, the providers on your own keys, where its forms come back to.
+pub const back = frame_pages.ai_keys_address;
 
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
 
+    router.get(tabbed, &first_tab);
     router.get(back, &show);
-    router.get(back ++ "/offered", &offered_json);
-    router.post(back ++ "/key", &key);
-    router.post(back ++ "/choose", &choose);
-    router.post(back ++ "/test", &test_provider);
-    router.post(back ++ "/set-up", &set_up);
+    router.get(tabbed ++ "/offered", &offered_json);
+    router.post(tabbed ++ "/key", &key);
+    router.post(tabbed ++ "/choose", &choose);
+    router.post(tabbed ++ "/test", &test_provider);
+    router.post(tabbed ++ "/set-up", &set_up);
 }
+
+/// `/admin/settings/ai`: its first tab, a plugin's when one adds itself, else its own.
+fn first_tab(request: *Request, response: *Response, ctx: *Context) Error!void {
+    std.debug.assert(request.method() == .get or request.method() == .head);
+    std.debug.assert(ctx.user_data != null);
+
+    var session = try admin.require(request, response, ctx) orelse return;
+    const tabs = try frame_pages.own_tabs_of(Tab, &session, frame_pages.ai);
+
+    return response.redirect(.see_other, tabs[0].href);
+}
+
+const Tab = views.SettingsAi.TabsItem;
 
 pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
@@ -73,6 +91,7 @@ fn screen(
     try mark_pending(session, listed.providers, rows);
 
     try admin.screen(session, status, views.SettingsAi, .{
+        .tabs = try frame_pages.own_tabs_of(Tab, session, frame_pages.ai),
         .providers = rows,
         .notice = notice,
         .problem = problem,

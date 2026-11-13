@@ -30,10 +30,10 @@ pub const references_max: u32 = record_operations.list_max;
 /// collections.
 pub const keys_max: u32 = 16384;
 pub const template_key_prefix = "template:";
-/// What a preview's page tells the tab around it: where it is, so the tab's address follows
-/// the frame and a reload comes back to the same page. Links stay plain links.
-pub const preview_report = "<script>parent.postMessage({publrPreview:" ++
-    "location.pathname+location.search},\"*\")</script>";
+/// What a preview's page does for the window around it (`preview.js`): tells the tab where
+/// it is, so the tab's address follows the frame, and lets a review mark what changed on it.
+/// Links stay plain links.
+pub const preview_report = "<script>" ++ @embedFile("preview.js") ++ "</script>";
 pub const asset_key_prefix = "asset:";
 pub const islands_prefix = "/_islands/";
 /// Where an app's generated assets are, under its mount: `/_app/islands.js`.

@@ -1,12 +1,15 @@
-//! A CDN in front, purged surgically. Every built page and static island carries the
-//! dependency keys its build recorded as `Cache-Tag`; every request that writes answers with
-//! the keys it raised, `X-Publr-Changed`. Whatever purges the CDN (Publr Cloud's router)
-//! purges exactly those tags, so the edge drops exactly what the site rebuilds on disk, and
-//! nothing else. Only with `--edge-max-age`: without a CDN that purges, neither header is
-//! sent.
+//! A CDN in front, purged by what was published. Everything a CDN may keep from an app
+//! carries `Cache-Tag`: the app's name, and for a page, a static island, a public file or a
+//! 404, the app's name with its path (`www:/posts/hello`). The dependency index logs what
+//! the build published (a page or island whose bytes changed or that went away, a whole app
+//! after its files changed); `GET /_publr/published?since=<revision>` reads that log, and
+//! whatever purges the CDN (Publr Cloud's router) purges exactly those tags. So the edge
+//! drops what changed on disk, only once it changed, however the change came: a write, a
+//! queued job, a scheduled change, an app loaded. Only with `--edge-max-age`: without a
+//! CDN, no tag is sent.
 //!
-//! A key is a tag as it is, when it is plain (letters, digits and `._:/-`); any other byte
-//! is written `%XX`, the same both ways, so a tag and its purge always match.
+//! A tag is the name as it is, when it is plain (letters, digits and `._:/-`); any other
+//! byte is written `%XX`, the same both ways, so a tag and its purge always match.
 
 const std = @import("std");
 const http = @import("../../lib/http.zig");
@@ -14,101 +17,107 @@ const App = @import("state.zig").App;
 const Project = @import("../../server/project.zig").Project;
 const artifacts = @import("artifacts.zig");
 
-/// The tag every artifact without keys carries (the 404 page, a page whose keys cannot be
-/// told): any change purges it, as every changed-keys answer names it too.
-pub const any_tag = "any";
-/// Changed keys past this many are `*`: purge the whole site.
-pub const changed_max: u32 = 900;
-/// Cloudflare's limit for one response's tags is 16 KB; kept under it.
-pub const tags_bytes_max: u32 = 15_000;
-pub const changed_header = "X-Publr-Changed";
+pub const published_route = "/_publr/published";
+/// A path's tag past this many bytes is left out: the app's tag alone purges it. Under what
+/// a purger names in one tag (Publr Cloud keeps 256 bytes, the project's id included).
+pub const tag_bytes_max: u32 = 200;
 
-/// A built file's `Cache-Tag`: the keys the app's page or island at `url` recorded when it
-/// was built, or `any` when it has none (or null: the 404 page, never indexed) or they
-/// would not fit.
+/// A response a CDN may keep: tagged with its app and, when it answers a path of the app
+/// (a page, an island, a public file, a 404), that path too.
 pub fn tag(
     response: *http.Response,
-    app: *App,
+    app: *const App,
     arena: std.mem.Allocator,
     url: ?[]const u8,
 ) !void {
-    std.debug.assert(app.css.len > 0);
+    std.debug.assert(app.spec.name.len > 0);
 
     if (app.options.edge_max_age == 0) {
         return;
     }
 
-    const inside = url orelse return response.set_header("Cache-Tag", any_tag);
-    const name = try artifacts.name(arena, app, inside);
-    const keys = app.index.keys_of(arena, name) catch &.{};
-    const value = try joined(arena, keys, tags_bytes_max) orelse any_tag;
+    var out: std.Io.Writer.Allocating = .init(arena);
+
+    try write_tag(&out.writer, app.spec.name);
+
+    const app_end = out.written().len;
+
+    if (url) |path| {
+        std.debug.assert(path.len > 0 and path[0] == '/');
+
+        try out.writer.writeByte(',');
+        try write_tag(&out.writer, try artifacts.name(arena, app, path));
+    }
+
+    // A path too long to be a tag: the app's tag alone still purges it.
+    const too_long = out.written().len - app_end > tag_bytes_max + 1;
+    const value = if (too_long) out.written()[0..app_end] else out.written();
 
     try response.set_header("Cache-Tag", value);
 }
 
-/// Router middleware: a request that may write (anything but a read) answers with the keys
-/// it raised, as tags: empty when it changed nothing a page depends on, `*` when too many
-/// changed to name.
-pub fn changes(
-    request: *http.Request,
-    response: *http.Response,
-    ctx: *http.Context,
-    next: http.Router.Next,
-) anyerror!void {
+/// `GET /_publr/published?since=<revision>`: what was published after that revision, as
+/// tags, `reset` when the log no longer reaches back so far (drop everything). Without
+/// `since`, the revision alone: where a reader starts. Only public paths are named.
+pub fn published(request: *http.Request, response: *http.Response, ctx: *http.Context) !void {
     std.debug.assert(ctx.user_data != null);
+    std.debug.assert(request.method() == .get or request.method() == .head);
 
     const project = Project.of(ctx);
+    const arena = response.arena;
 
     if (project.apps.len == 0) {
-        return next.run(request, response, ctx);
+        return response.json(.ok, .{
+            .revision = 0,
+            .reset = false,
+            .tags = &[_][]const u8{},
+        });
     }
 
-    const app = &project.apps[0];
-    const read = switch (request.method()) {
-        .get, .head, .options => true,
-        else => false,
-    };
+    const index = project.apps[0].index;
+    const asked = http.Form.query_param(arena, request.query(), "since");
+    const since = if (asked) |text| std.fmt.parseInt(u64, text, 10) catch null else null;
 
-    if (read or app.options.edge_max_age == 0) {
-        return next.run(request, response, ctx);
+    if (since == null) {
+        return response.json(.ok, .{
+            .revision = try index.published_revision(),
+            .reset = false,
+            .tags = &[_][]const u8{},
+        });
     }
 
-    const before = try app.index.revision();
+    const found = try index.published_since(arena, since.?);
+    const tags = try arena.alloc([]const u8, found.names.len);
 
-    try next.run(request, response, ctx);
+    for (found.names, tags) |name, *each| {
+        var out: std.Io.Writer.Allocating = .init(arena);
 
-    const since = try app.index.changes_since(response.arena, before);
-    const value = if (since.reset or since.keys.len > changed_max)
-        "*"
-    else
-        try joined(response.arena, since.keys, std.math.maxInt(u32)) orelse "*";
+        try write_tag(&out.writer, name);
+        each.* = out.written();
+    }
 
-    try response.set_header(changed_header, value);
+    try response.json(.ok, .{
+        .revision = found.revision,
+        .reset = found.reset,
+        .tags = tags,
+    });
 }
 
-/// Keys as tags, comma-separated; null when they would pass `bytes_max`.
-fn joined(arena: std.mem.Allocator, keys: []const []const u8, bytes_max: u32) !?[]const u8 {
-    std.debug.assert(bytes_max > 0);
+/// Every app of the project published whole: its files changed (templates, assets, public
+/// files), so anything the edge keeps of it may be stale.
+pub fn publish_apps(project: *const Project) void {
+    std.debug.assert(project.apps.len <= 1024);
+    std.debug.assert(project.connection.transaction_depth == 0);
 
-    if (keys.len == 0) {
-        return "";
+    if (project.apps.len == 0 or project.apps[0].options.edge_max_age == 0) {
+        return;
     }
 
-    var out: std.Io.Writer.Allocating = .init(arena);
-
-    for (keys, 0..) |key, index| {
-        if (index > 0) {
-            try out.writer.writeByte(',');
-        }
-
-        try write_tag(&out.writer, key);
-
-        if (out.written().len > bytes_max) {
-            return null;
-        }
+    for (project.apps) |*app| {
+        project.apps[0].index.publish(&.{app.spec.name}) catch |err| {
+            std.log.warn("apps: {s} not published for the edge: {t}", .{ app.spec.name, err });
+        };
     }
-
-    return out.written();
 }
 
 pub fn write_tag(writer: *std.Io.Writer, key: []const u8) !void {
@@ -126,22 +135,16 @@ pub fn write_tag(writer: *std.Io.Writer, key: []const u8) !void {
     }
 }
 
-test "keys become tags, the same way every time" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
+test "names become tags, the same way every time" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
 
-    const keys = [_][]const u8{ "record:9f2c", "type:post", "template:content/my page.publr" };
-    const value = (try joined(arena, &keys, 1000)).?;
+    try write_tag(&out.writer, "www:/posts/my page");
+    try std.testing.expectEqualStrings("www:/posts/my%20page", out.written());
 
-    try std.testing.expectEqualStrings(
-        "record:9f2c,type:post,template:content/my%20page.publr",
-        value,
-    );
-    try std.testing.expectEqualStrings("", (try joined(arena, &.{}, 1000)).?);
-    try std.testing.expect(try joined(arena, &keys, 20) == null);
+    out.clearRetainingCapacity();
 
-    // A comma inside a key never splits it.
-    const odd = (try joined(arena, &.{"a,b"}, 1000)).?;
-    try std.testing.expectEqualStrings("a%2Cb", odd);
+    // A comma inside a name never splits it.
+    try write_tag(&out.writer, "a,b");
+    try std.testing.expectEqualStrings("a%2Cb", out.written());
 }

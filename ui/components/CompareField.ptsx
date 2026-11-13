@@ -15,6 +15,8 @@ export type CompareFieldProps = {
   right_note?: string;
   /** Shown quieter: a field neither version changed. */
   dim?: boolean;
+  /** Values read as text, not in a field's box. */
+  plain?: boolean;
 };
 
 /** One field in two versions, side by side: each version's value, what it changed marked. Each
@@ -28,6 +30,7 @@ export function CompareField({
   left_note = "",
   right_note = "",
   dim = false,
+  plain = false,
 }: CompareFieldProps) {
   return (
     <div class={["grid grid-cols-2", dim ? "opacity-60" : ""]} data-quiet="true" data-conflict="false" data-part="compare-field">
@@ -39,7 +42,7 @@ export function CompareField({
             <DiffText segments={left_changes} classes="ml-auto min-w-0 truncate whitespace-nowrap text-xs leading-5" />
           )}
         </div>
-        <CompareValues values={left} />
+        <CompareValues values={left} plain={plain} />
       </div>
       <div class="flex flex-col gap-2 border-l border-border px-5 py-5">
         <div class="flex h-5 min-w-0 items-center gap-2">
@@ -49,7 +52,7 @@ export function CompareField({
             <DiffText segments={right_changes} classes="ml-auto min-w-0 truncate whitespace-nowrap text-xs leading-5" />
           )}
         </div>
-        <CompareValues values={right} />
+        <CompareValues values={right} plain={plain} />
       </div>
     </div>
   );

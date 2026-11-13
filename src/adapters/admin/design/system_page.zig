@@ -38,7 +38,7 @@ pub fn screen(session: *Session, app: *const App) Error!void {
         .library = library,
         .moodboard_count = @floatFromInt(board.items.len),
         .ai_ready = ai.connected(&session.ctx),
-        .ai_settings_href = try std.fmt.allocPrint(arena, "{s}/admin/settings/ai", .{base}),
+        .ai_settings_href = try std.fmt.allocPrint(arena, "{s}/admin/settings/ai/keys", .{base}),
         .ask_href = try std.fmt.allocPrint(arena, "{s}/admin/ai/ask", .{base}),
         .moodboard_href = try std.fmt.allocPrint(arena, "{s}/admin/design/moodboard?app={s}", .{
             base,

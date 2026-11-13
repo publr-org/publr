@@ -385,6 +385,13 @@ pub fn not_found(
     const path = target.path;
     const basename = path[(std.mem.lastIndexOfScalar(u8, path, '/') orelse 0) + 1 ..];
 
+    // Tagged with the path asked for: a page built there later purges the kept 404.
+    try edge.tag(response, app, ctx.arena, try model_dimension.under(
+        ctx.arena,
+        target.place.address,
+        path,
+    ));
+
     // A path with an extension is something a browser asked for on its own (favicon.ico,
     // a .map): the plain 404, not the page.
     if (std.mem.indexOfScalar(u8, basename, '.') != null or app.program == null) {
@@ -398,9 +405,6 @@ pub fn not_found(
             .max_age = page_max_age,
             .stale = page_stale,
         };
-
-        // Never indexed: whatever changes, a page might now live where it answered.
-        try edge.tag(response, app, ctx.arena, null);
 
         return apps_adapter.serve_file(request, response, app, .not_found, html, cache);
     }

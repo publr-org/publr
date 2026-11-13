@@ -185,6 +185,11 @@ pub fn serve(response: *Response, app: *const App, served: Served, cache: Cache)
 
         try response.set_header("CDN-Cache-Control", lifetime);
     }
+
+    // Whatever a CDN may keep is the app's at least: purged when the app's files change.
+    if (served != .render and response.header("Cache-Tag") == null) {
+        try edge.tag(response, app, response.arena, null);
+    }
 }
 
 /// A built file with its `ETag`: a consumer that already holds these exact bytes gets
@@ -846,7 +851,7 @@ test "a CDN keeps built pages and static islands longer, never what a gate made 
     try std.testing.expectEqualStrings("no-store", gated.header("CDN-Cache-Control").?);
 }
 
-test "behind a CDN: built files carry their keys, a write answers with the keys it raised" {
+test "behind a CDN: what is kept is tagged by app and path, purged once it is rewritten" {
     var harness: Harness = undefined;
     try harness.init(.{
         .edge_max_age = 86_400,
@@ -863,55 +868,51 @@ test "behind a CDN: built files carry their keys, a write answers with the keys 
     _ = try build.build(harness.app, &harness.flow.project);
 
     const arena = harness.arena_state.allocator();
+    const name = harness.app.spec.name;
     const page = try harness.get(try std.fmt.allocPrint(arena, "/posts/{s}", .{slug}));
-    const tags = page.header("Cache-Tag").?;
-    try std.testing.expect(contains(tags, "record:"));
-    try std.testing.expect(contains(tags, "template:"));
+    const tags = try std.fmt.allocPrint(arena, "{s},{s}:/posts/{s}", .{ name, name, slug });
+    try std.testing.expectEqualStrings(tags, page.header("Cache-Tag").?);
 
-    // The 404 page is never indexed: any change purges it.
-    try std.testing.expectEqualStrings("any", (try harness.get("/nowhere")).header("Cache-Tag").?);
+    // A 404 carries the path asked for: a page built there later purges it.
+    const missing = try std.fmt.allocPrint(arena, "{s},{s}:/nowhere", .{ name, name });
+    const nowhere = try harness.get("/nowhere");
+    try std.testing.expectEqualStrings(missing, nowhere.header("Cache-Tag").?);
 
-    var system = harness.inner.ctx(.system);
-    system.now_ms = sdk.context.wall_clock_ms(std.testing.io);
-    try @import("../operations/user.zig").seed_admin(&system);
+    const start = try harness.get(edge.published_route);
+    const revision = std.json.parseFromSliceLeaky(struct {
+        revision: u64,
+    }, arena, start.body, .{
+        .ignore_unknown_fields = true,
+    }) catch unreachable;
 
-    // A write that changes nothing a page reads: an empty answer, nothing to purge.
-    const login = "POST /api/auth/sign-in HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
-        "Content-Length: 0\r\n\r\n";
-    const signed = try harness.flow.call(
-        login,
-        "{\"email\":\"admin@example.com\",\"password\":\"correct horse battery\"}",
-    );
-    try std.testing.expectEqualStrings("", signed.header(edge.changed_header).?);
+    // Nothing is published until the rebuild wrote it.
+    _ = try harness.publish("More");
 
-    // A post created and published through the API: exactly the keys it raised.
-    const cookie = signed.header("Set-Cookie").?;
-    const pair = cookie[0..std.mem.indexOfScalar(u8, cookie, ';').?];
-    const csrf_at = std.mem.indexOf(u8, signed.body, "\"csrf\":\"").? + 8;
-    const csrf = signed.body[csrf_at .. csrf_at + @import("../lib/auth.zig").csrf.token_len];
-    const head = "POST /api/record.{s} HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
-        "Cookie: {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: 0\r\n\r\n";
-    const create = try harness.flow.head(head, .{ "create", pair, csrf });
-    const document = "{\"type\":\"post\",\"document\":\"{\\\"title\\\":\\\"More\\\"}\"}";
-    const created = try harness.flow.call(create, document);
-    try std.testing.expectEqual(@as(u16, 200), created.status.code());
+    const since = try std.fmt.allocPrint(arena, "{s}?since={d}", .{
+        edge.published_route,
+        revision.revision,
+    });
+    const before = try harness.get(since);
+    try std.testing.expect(!contains(before.body, "/posts/more"));
 
-    const id_at = std.mem.indexOf(u8, created.body, "\"id\":\"").? + 6;
-    const id = created.body[id_at..std.mem.indexOfScalarPos(u8, created.body, id_at, '"').?];
-    const publish = try harness.flow.head(head, .{ "publish", pair, csrf });
-    const published = try harness.flow.call(publish, try std.fmt.allocPrint(
-        harness.arena_state.allocator(),
-        "{{\"id\":\"{s}\"}}",
-        .{id},
-    ));
-    try std.testing.expectEqual(@as(u16, 200), published.status.code());
+    const later = sdk.context.wall_clock_ms(std.testing.io) + deps.quiet_ms + 1;
+    rebuild.flush(&harness.flow.project, later);
 
-    const changed = published.header(edge.changed_header).?;
-    try std.testing.expect(contains(changed, "record:"));
-    try std.testing.expect(contains(changed, "type:post"));
+    const after = try harness.get(since);
+    const more = try std.fmt.allocPrint(arena, "{s}:/posts/more", .{name});
+    const listing = try std.fmt.allocPrint(arena, "{s}:/posts\"", .{name});
+    const untouched = try std.fmt.allocPrint(arena, "/posts/{s}", .{slug});
+    try std.testing.expect(contains(after.body, "\"reset\":false"));
+    try std.testing.expect(contains(after.body, more));
+    try std.testing.expect(contains(after.body, listing));
+    try std.testing.expect(!contains(after.body, untouched));
 
-    // A read never answers with it.
-    try std.testing.expect(page.header(edge.changed_header) == null);
+    // An app loaded from its folder again: the whole app.
+    edge.publish_apps(&harness.flow.project);
+
+    const reloaded = try harness.get(since);
+    const whole = try std.fmt.allocPrint(arena, "\"{s}\"", .{name});
+    try std.testing.expect(contains(reloaded.body, whole));
 }
 
 test "build writes the site, serve prefers the files, a publish rewrites what read the change" {

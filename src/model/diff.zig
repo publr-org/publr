@@ -15,6 +15,8 @@ pub const Segment = struct {
 /// Above this many cells (the words left on one side times the other's), the middle is
 /// shown as removed then added.
 const cells_max: u32 = 160_000;
+/// The same for a file's lines: a line weighs more, and a file is read whole.
+const line_cells_max: u32 = 40_000;
 const tokens_max: u32 = 100_000;
 
 /// `after` as segments: what both have, what `before` had and `after` dropped (removed), and
@@ -25,6 +27,35 @@ pub fn words(arena: std.mem.Allocator, before: []const u8, after: []const u8) ![
 
     const old_tokens = try tokens(arena, before);
     const new_tokens = try tokens(arena, after);
+    const segments = try segmented(arena, old_tokens, new_tokens, cells_max);
+
+    return tidied(arena, segments);
+}
+
+/// `after` as `words` gives it, a whole line at a time: each segment is lines, each with its
+/// line break.
+pub fn lines(arena: std.mem.Allocator, before: []const u8, after: []const u8) ![]const Segment {
+    std.debug.assert(before.len <= std.math.maxInt(u32));
+    std.debug.assert(after.len <= std.math.maxInt(u32));
+
+    const old_lines = try lines_of(arena, before);
+    const new_lines = try lines_of(arena, after);
+    const segments = try segmented(arena, old_lines, new_lines, line_cells_max);
+
+    std.debug.assert(segments.len <= tokens_max * 2);
+
+    return segments;
+}
+
+fn segmented(
+    arena: std.mem.Allocator,
+    old_tokens: []const []const u8,
+    new_tokens: []const []const u8,
+    bound: u32,
+) ![]const Segment {
+    std.debug.assert(bound <= cells_max);
+    std.debug.assert(old_tokens.len <= tokens_max + 1 and new_tokens.len <= tokens_max + 1);
+
     const start = common_start(old_tokens, new_tokens);
     const end = common_end(old_tokens[start..], new_tokens[start..]);
     const old_middle = old_tokens[start .. old_tokens.len - end];
@@ -35,7 +66,7 @@ pub fn words(arena: std.mem.Allocator, before: []const u8, after: []const u8) ![
 
     try out.add_all(old_tokens[0..start], .same);
 
-    if (old_middle.len * new_middle.len > cells_max) {
+    if (old_middle.len * new_middle.len > bound) {
         try out.add_all(old_middle, .removed);
         try out.add_all(new_middle, .added);
     } else {
@@ -44,7 +75,7 @@ pub fn words(arena: std.mem.Allocator, before: []const u8, after: []const u8) ![
 
     try out.add_all(old_tokens[old_tokens.len - end ..], .same);
 
-    return tidied(arena, out.segments.items);
+    return out.segments.items;
 }
 
 /// Changes only a space or a mark apart read as one: the old phrase struck, then the new
@@ -305,6 +336,32 @@ fn tokens(arena: std.mem.Allocator, text: []const u8) ![]const []const u8 {
     return found.items;
 }
 
+/// The text cut into lines, each with its line break (the last may have none), each a slice
+/// of `text`.
+fn lines_of(arena: std.mem.Allocator, text: []const u8) ![]const []const u8 {
+    std.debug.assert(text.len <= std.math.maxInt(u32));
+    std.debug.assert(tokens_max > 0);
+
+    var found: std.ArrayList([]const u8) = .empty;
+    var index: usize = 0;
+
+    while (index < text.len) {
+        if (found.items.len == tokens_max) {
+            try found.append(arena, text[index..]);
+
+            break;
+        }
+
+        const start = index;
+        const newline = std.mem.indexOfScalarPos(u8, text, start, '\n');
+
+        index = if (newline) |at| at + 1 else text.len;
+        try found.append(arena, text[start..index]);
+    }
+
+    return found.items;
+}
+
 fn is_word(char: u8) bool {
     return std.ascii.isAlphanumeric(char) or char >= 0x80;
 }
@@ -348,6 +405,26 @@ test "a word changed shows removed and added beside the rest" {
 
     for (cases) |case| {
         const segments = try words(arena, case[0], case[1]);
+
+        try std.testing.expectEqualStrings(case[2], try shown(arena, segments));
+    }
+}
+
+test "a file changed shows whole lines removed and added beside the rest" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const cases = [_][3][]const u8{
+        .{ "a\nb\nc\n", "a\nB\nc\n", "a\n[-b\n][+B\n]c\n" },
+        .{ "a\nb\n", "a\nb\nc\n", "a\nb\n[+c\n]" },
+        .{ "a\nb\nc", "a\nc", "a\n[-b\n]c" },
+        .{ "", "new\n", "[+new\n]" },
+        .{ "gone\n", "", "[-gone\n]" },
+        .{ "same\n", "same\n", "same\n" },
+    };
+
+    for (cases) |case| {
+        const segments = try lines(arena, case[0], case[1]);
 
         try std.testing.expectEqualStrings(case[2], try shown(arena, segments));
     }

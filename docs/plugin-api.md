@@ -1249,7 +1249,7 @@ Settings pages may name operations made with `publr.operation.define`.
 
 A page that says `.tabs = true` is a tabbed page the admin draws; a page naming it in
 `.parent` (`&.{ "products.settings", "core.system" }`, the first that exists, else System
-settings; Users is `core.users`) is one of its tabs: a form, or drawn by its operation in
+settings; Users is `core.users`, AI `core.ai`) is one of its tabs: a form, or drawn by its operation in
 the frame under the tab bar, with `.action = .{ .label, .href }` in the header.
 
 A page that also says `.top_bar = .{ .count = Count }` is in the top bar too, for whoever may

@@ -198,6 +198,8 @@ fn serve_from(
 
     switch (result) {
         .served => {
+            try apps_adapter.edge.tag(response, app, ctx.arena, inside);
+
             const cache: apps_adapter.Cache = .{
                 .max_age = pages.page_max_age,
                 .stale = pages.page_stale,

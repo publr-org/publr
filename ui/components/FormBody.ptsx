@@ -14,6 +14,8 @@ export type FormBodyProps = {
   header?: JSX.Element;
   /** A row of facts under the title: a status, when it was saved. */
   meta?: JSX.Element;
+  /** The page's tabs (TabNav), under the title: a tabbed page's own tab drawn as a form. */
+  tabs?: JSX.Element;
   /** What stopped the last save: what each is about (a field's path) and what is wrong. */
   problems?: Array<{ code: string; text: string }>;
   problems_title?: string;
@@ -52,6 +54,7 @@ export function FormBody({
   actions,
   header,
   meta,
+  tabs,
   problems = [],
   problems_title = "",
   notice,
@@ -76,6 +79,11 @@ export function FormBody({
         {!bare && meta && (
           <div class={["flex min-h-12 flex-wrap items-center gap-3 border-y border-border py-2.5", stacked ? "px-4" : "px-5"]}>
             {meta}
+          </div>
+        )}
+        {!bare && tabs && (
+          <div class={["flex items-center gap-4 border-y border-border py-2", stacked ? "px-4" : "px-5"]}>
+            {tabs}
           </div>
         )}
         <div class={["flex w-full flex-col gap-6", wide ? "" : "max-w-4xl", stacked ? "px-4" : "px-5", focus ? "mx-auto" : "", meta ? "pt-6" : ""]}>

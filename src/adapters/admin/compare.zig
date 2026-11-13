@@ -6,6 +6,7 @@ const diff = @import("../../model/diff.zig");
 const field = @import("compare/field.zig");
 pub const Kind = @import("../../model/kinds.zig").Kind;
 pub const plugin = @import("compare/plugin.zig");
+const file_lines = @import("compare/lines.zig");
 
 /// A value as a version holds it: its JSON, its text, and for a document it points at, that
 /// document's card.
@@ -39,6 +40,32 @@ pub fn shown(arena: std.mem.Allocator, known: []const Kind, values: []const Valu
     std.debug.assert(found.len == values.len);
 
     return found;
+}
+
+/// Each value as `shown` gives it; a file (`lines`) changed against `base` with the lines it
+/// changed marked in its box, the runs it left alone folded.
+pub fn marked(
+    arena: std.mem.Allocator,
+    known: []const Kind,
+    mode: []const u8,
+    base: []const Value,
+    values: []const Value,
+) ![]const Shown {
+    std.debug.assert(mode.len > 0);
+
+    const found = try shown(arena, known, values);
+    const file = std.mem.eql(u8, mode, "lines") and base.len == 1 and values.len == 1;
+
+    if (!file or same(base, values)) {
+        return found;
+    }
+
+    const copies = try arena.dupe(Shown, found);
+
+    copies[0].segments = try file_lines.marked(arena, base[0].text, values[0].text);
+    std.debug.assert(copies.len == 1);
+
+    return copies;
 }
 
 /// One value as people see it, marked `same`, `added` or `removed`.
@@ -94,9 +121,9 @@ pub fn one(
 }
 
 /// What `after` changed against `before`, to read beside the value: a text word by word, a
-/// field's definition line by line, a list or a card item by item, what it dropped struck
-/// through. None when nothing changed, or when the value is new whole (all of it is in its
-/// box already).
+/// file as how many lines it added and removed, a field's definition line by line, a list or
+/// a card item by item, what it dropped struck through. None when nothing changed, or when
+/// the value is new whole (all of it is in its box already).
 pub fn changes(
     arena: std.mem.Allocator,
     mode: []const u8,
@@ -108,6 +135,12 @@ pub fn changes(
 
     if (same(before, after) or before.len == 0) {
         return &.{};
+    }
+
+    if (std.mem.eql(u8, mode, "lines") and before.len == 1 and after.len <= 1) {
+        const now = if (after.len == 1) after[0].text else "";
+
+        return file_lines.summary(arena, before[0].text, now);
     }
 
     if (after.len == 1 and is_object(after[0].json) and is_object(before[0].json)) {

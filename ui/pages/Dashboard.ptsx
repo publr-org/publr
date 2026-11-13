@@ -113,7 +113,7 @@ export function Dashboard({
               {!connected && (
                 <Text as="p" variant="body-sm" tone="muted">
                   {Publr.t("Building here runs on a model provider's key.")}{" "}
-                  <Link href="/admin/settings/ai" variant="body-sm">
+                  <Link href="/admin/settings/ai/keys" variant="body-sm">
                     {Publr.t("Connect one")}
                   </Link>
                 </Text>
@@ -133,7 +133,7 @@ export function Dashboard({
           {setting_up && !prompting && !Publr.request.admin.framed && (
             <Text as="p" variant="body-sm" tone="muted" classes="text-center">
               {Publr.t("Prefer to build here?")}{" "}
-              <Link href="/admin/settings/ai" variant="body-sm">
+              <Link href="/admin/settings/ai/keys" variant="body-sm">
                 {Publr.t("Connect a model provider")}
               </Link>
             </Text>

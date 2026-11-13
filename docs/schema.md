@@ -957,7 +957,7 @@ the database under `storage_key`.
 Index `media_created (created_at, record)` serves the newest-first list;
 `media_hash (hash)` finds an upload of the same bytes.
 
-## `deps_edges`, `deps_artifacts`, `deps_pending`, `deps_meta`
+## `deps_edges`, `deps_artifacts`, `deps_pending`, `deps_changes`, `deps_published`, `deps_meta`
 
 The dependency index, owned by the `publr_deps` library and created by it in
 the same database (`Server.init` opens it), shared by every app. `deps_edges (artifact,
@@ -965,8 +965,12 @@ key)` is what
 every built page or fragment read; `deps_artifacts (artifact, hash)` the hash
 of its last bytes, so an unchanged rebuild writes nothing; `deps_pending
 (key, batch)` the changed keys waiting to be planned, `batch` 0 while
-collecting; `deps_meta (name, value)` the batch counter and the time of the
-last change. Keys are `record:<id>`, `type:<handle>`, `records`,
+collecting; `deps_changes (revision, key)` the keys each change raised, by revision;
+`deps_published (revision, name)` what each build published, by revision: an artifact
+whose bytes changed or that went away, or an app's name after its files changed, which a
+CDN in front purges (both logs keep their last 10,000 revisions); `deps_meta (name,
+value)` the batch counter, both logs' revisions and floors, and the time of the last
+change. Keys are `record:<id>`, `type:<handle>`, `records`,
 `template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
 (`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](apps.md).
 

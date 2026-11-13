@@ -585,23 +585,51 @@ const Plugins = struct {
         };
     }
 
-    fn tick(plugins: *Plugins) void {
+    /// Whether an installed plugin changed (added, removed, enabled, updated, its grants)
+    /// since the last call, here or in the worker.
+    fn changed(plugins: *Plugins) bool {
         const connection = &plugins.application.connection;
 
         std.debug.assert(connection.transaction_depth == 0);
 
-        const now_loaded = store.sandboxed_plugins.stamp(connection) catch return;
+        const now_loaded = store.sandboxed_plugins.stamp(connection) catch return false;
 
         if (std.meta.eql(now_loaded, plugins.loaded)) {
-            return;
+            return false;
         }
 
         plugins.loaded = now_loaded;
+
+        return true;
+    }
+
+    fn reload(plugins: *Plugins) void {
+        const connection = &plugins.application.connection;
+
+        std.debug.assert(connection.transaction_depth == 0);
+
         plugins.application.sandboxed_plugins.load_all(connection) catch |err| {
             std.log.err("plugins: reload failed: {t}", .{err});
         };
     }
 };
+
+/// A plugin may draw into any page (its display hooks), and no page records reading it: the
+/// built apps are built again, and published whole for a CDN in front.
+fn rebuild_for_plugins(project: *const routes.Project) void {
+    std.debug.assert(project.connection.transaction_depth == 0);
+    std.debug.assert(project.apps.len > 0);
+
+    for (project.apps) |*app| {
+        if (app.output == null or app.program == null) {
+            continue;
+        }
+
+        _ = apps_adapter.build.build_or_fail(app, project);
+    }
+
+    apps_adapter.edge.publish_apps(project);
+}
 
 fn run_loop(
     listener: *http.App,
@@ -636,7 +664,17 @@ fn run_loop(
 
         if (worker) |keeper| {
             keeper.tick(sdk.context.wall_clock_ms(project.io));
-            plugins.tick();
+        }
+
+        if (plugins.changed()) {
+            // Changed in the worker: loaded again here, as it loads again what changed here.
+            if (worker != null) {
+                plugins.reload();
+            }
+
+            if (project.apps.len > 0) {
+                rebuild_for_plugins(project);
+            }
         }
 
         // A failed load is watched too: fixing the file is what loads it again.

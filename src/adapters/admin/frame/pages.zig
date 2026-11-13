@@ -69,6 +69,58 @@ pub const Page = struct {
 const prefix = "/admin/plugin";
 pub const system = admin_slots.system_page;
 pub const users = admin_slots.users_page;
+pub const ai = admin_slots.ai_page;
+
+/// One of core's own tabbed pages: where it is, what it is called, and its own tab, which
+/// leads its tab bar, or follows the plugins' tabs (`own_last`).
+const Own = struct {
+    name: []const u8,
+    address: []const u8,
+    title: []const u8,
+    description: []const u8,
+    own_tab: []const u8,
+    own_last: bool = false,
+};
+
+const owns = [_]Own{
+    .{
+        .name = system,
+        .address = "/admin/settings/system",
+        .title = "System settings",
+        .description = "How this Publr runs, and the conventions the site follows.",
+        .own_tab = "General",
+    },
+    .{
+        .name = users,
+        .address = "/admin/settings/users",
+        .title = "Users",
+        .description = "Who may sign in, and what they may do.",
+        .own_tab = "Users",
+    },
+    .{
+        .name = ai,
+        .address = ai_keys_address,
+        .title = "AI",
+        .description = "What agents did on the site, and the models you build with.",
+        .own_tab = "Bring your own key",
+        .own_last = true,
+    },
+};
+
+/// The AI page's own tab, models on your own keys; `/admin/settings/ai` opens the first tab.
+pub const ai_keys_address = "/admin/settings/ai/keys";
+
+fn own_of(name: []const u8) ?Own {
+    std.debug.assert(name.len > 0);
+
+    for (owns) |own| {
+        if (std.mem.eql(u8, own.name, name)) {
+            return own;
+        }
+    }
+
+    return null;
+}
 
 /// The tabbed page `tab` shows in, as `<plugin>.<path>`: the first of its `parent` that is a
 /// tabbed page in `list`, else System settings. Null for a page that is not a tab.
@@ -82,7 +134,7 @@ pub fn parent_of(list: []const Page, tab: Page) ?[]const u8 {
     var buffer: [128]u8 = undefined;
 
     for (tab.parent) |wanted| {
-        if (std.mem.eql(u8, wanted, system) or std.mem.eql(u8, wanted, users)) {
+        if (own_of(wanted) != null) {
             return wanted;
         }
 
@@ -141,24 +193,19 @@ pub fn header_of(
     var links: std.ArrayList(Tab) = .empty;
     var header: Header(Tab) = undefined;
 
-    if (std.mem.eql(u8, parent, system) or std.mem.eql(u8, parent, users)) {
-        const own = std.mem.eql(u8, parent, system);
-        const address = if (own) "/admin/settings/system" else "/admin/settings/users";
+    const own = own_of(parent);
 
+    if (own) |found| {
         header = .{
-            .title = try session.translated(if (own) "System settings" else "Users", .{}),
-            .description = try session.translated(if (own)
-                "How this Publr runs, and the conventions the site follows."
-            else
-                "Who may sign in, and what they may do.", .{}),
-            .address = address,
+            .title = try session.translated(found.title, .{}),
+            .description = try session.translated(found.description, .{}),
+            .address = found.address,
             .tabs = &.{},
         };
-        try links.append(session.arena, .{
-            .label = try session.translated(if (own) "General" else "Users", .{}),
-            .href = address,
-            .active = false,
-        });
+
+        if (!found.own_last) {
+            try links.append(session.arena, try own_tab(Tab, session, found));
+        }
     } else {
         var buffer: [128]u8 = undefined;
         const tabbed = for (list) |one| {
@@ -183,9 +230,61 @@ pub fn header_of(
         });
     }
 
+    if (own) |found| {
+        if (found.own_last) {
+            try links.append(session.arena, try own_tab(Tab, session, found));
+        }
+    }
+
     header.tabs = links.items;
 
     return header;
+}
+
+fn own_tab(comptime Tab: type, session: *Session, own: Own) admin.Error!Tab {
+    std.debug.assert(own.address.len > 0);
+
+    return .{
+        .label = try session.translated(own.own_tab, .{}),
+        .href = own.address,
+        .active = false,
+    };
+}
+
+/// The tabs of core's tabbed page `name` as its own page draws them: the plugins' tabs
+/// around its own, which is lit.
+pub fn own_tabs_of(
+    comptime Tab: type,
+    session: *Session,
+    name: []const u8,
+) admin.Error![]const Tab {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const own = own_of(name).?;
+    const list = try all(session);
+    var links: std.ArrayList(Tab) = .empty;
+    var lit = try own_tab(Tab, session, own);
+
+    lit.active = true;
+
+    if (!own.own_last) {
+        try links.append(session.arena, lit);
+    }
+
+    for (try tabs_of(session.arena, list, name)) |tab| {
+        try links.append(session.arena, .{
+            .label = try session.declared(tab.label),
+            .href = try tab.href(session.arena),
+            .active = false,
+        });
+    }
+
+    if (own.own_last) {
+        try links.append(session.arena, lit);
+    }
+
+    return links.items;
 }
 
 /// Every page the viewer may open, compiled-in plugins' first, in name order. A tabbed page
