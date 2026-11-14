@@ -10,6 +10,8 @@ const backup = @import("../gate/backup.zig");
 const bundle = @import("../bundle.zig");
 const clone_rules = @import("../bundle/clone.zig");
 const pack_process = @import("pack_process.zig");
+const activity = @import("../../store/activity.zig");
+const media_store = @import("../../store/media.zig");
 const Project = @import("../project.zig").Project;
 
 pub const pack_route = "/api/sites/pack";
@@ -18,6 +20,7 @@ pub const size_route = "/api/sites/size";
 pub const piece_bytes_max: u32 = 1 << 20;
 const clones_dir = ".clones";
 const walk_entries_max: u32 = 1 << 24;
+const key_len_max: u32 = 256;
 
 /// What a clone would bring down. Media files are counted from the folder, without the
 /// resized copies the site keeps (`media/.cache`), which a clone never takes.
@@ -27,11 +30,22 @@ pub const Size = struct {
     media_bytes: u64,
     apps_bytes: u64 = 0,
     plugins_bytes: u64 = 0,
+    /// The newest activity entry: a clone that took an older one is behind.
+    latest_change: i64 = 0,
 };
 
-/// What `POST /api/sites/pack` takes: `media` "none" for a bundle without media files.
+/// A media file a clone has already, by its storage key and its hash.
+pub const Held = struct {
+    key: []const u8,
+    hash: []const u8,
+};
+
+/// What `POST /api/sites/pack` takes: `media` "none" for a bundle without media files;
+/// `have`, the media files the asking folder holds, which the bundle leaves out when the site's
+/// are the same (a pull brings only what changed).
 const Asked = struct {
     media: []const u8 = "all",
+    have: []const Held = &.{},
 };
 
 /// The bundle made, as `GET /api/sites/pack/progress` answers once it is.
@@ -103,12 +117,20 @@ pub fn prepare(
         .ignore_unknown_fields = true,
     }) catch Asked{};
 
+    const held = held_here(project, arena, asked.have) catch |err| {
+        std.log.warn("clone: reading the media held: {t}", .{err});
+        return response.json(.internal_server_error, .{
+            .@"error" = "pack_failed",
+        });
+    };
+
     pack_process.start(project.io, arena, .{
         .db_path = project.db_path,
         .folder = project.folder,
         .out = path,
         .keep_user = user,
         .media = !std.mem.eql(u8, asked.media, "none"),
+        .have = held,
     }) catch |err| {
         std.log.warn("clone: packing not started: {t}", .{err});
         return response.json(.internal_server_error, .{
@@ -119,6 +141,34 @@ pub fn prepare(
     try response.json(.accepted, .{
         .packing = true,
     });
+}
+
+/// The keys of the media files `have` names that this site holds the same: what the bundle
+/// can leave out.
+fn held_here(
+    project: *const Project,
+    arena: std.mem.Allocator,
+    have: []const Held,
+) ![]const []const u8 {
+    std.debug.assert(project.db_path.len > 0);
+
+    var same: std.ArrayList([]const u8) = .empty;
+
+    for (have) |file| {
+        if (file.key.len == 0 or file.key.len > key_len_max) {
+            continue;
+        }
+
+        const row = try media_store.by_key(project.connection, arena, file.key) orelse continue;
+
+        if (std.mem.eql(u8, row.hash, file.hash)) {
+            try same.append(arena, file.key);
+        }
+    }
+
+    std.debug.assert(same.items.len <= have.len);
+
+    return same.items;
 }
 
 /// `GET /api/sites/pack/progress`: where this person's pack is.
@@ -227,8 +277,15 @@ pub fn size(request: *http.Request, response: *http.Response, ctx: *http.Context
 
     _ = try administrator(project, request, response, ctx.arena) orelse return;
 
-    const weighed = weigh(project.io, ctx.arena, project.db_path, project.folder) catch |err| {
+    var weighed = weigh(project.io, ctx.arena, project.db_path, project.folder) catch |err| {
         std.log.warn("clone: weighing the site failed: {t}", .{err});
+        return response.json(.internal_server_error, .{
+            .@"error" = "size_failed",
+        });
+    };
+
+    weighed.latest_change = activity.latest(project.connection) catch |err| {
+        std.log.warn("clone: reading the latest change failed: {t}", .{err});
         return response.json(.internal_server_error, .{
             .@"error" = "size_failed",
         });

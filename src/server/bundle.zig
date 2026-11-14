@@ -45,6 +45,9 @@ pub const Manifest = struct {
     /// Media storage keys whose files it leaves out: the folder it came from held only
     /// placeholders, so whoever unpacks it takes them from its own source.
     placeholders: []const []const u8 = &.{},
+    /// The site's newest activity entry when it was packed (`store/activity.zig`'s `latest`):
+    /// a clone asks later whether the site moved past it.
+    latest_change: i64 = 0,
 };
 
 pub const Packed = struct {

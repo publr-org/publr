@@ -4,12 +4,10 @@ const std = @import("std");
 const backup = @import("../gate/backup.zig");
 const bundle = @import("../bundle.zig");
 const clone = @import("../clone.zig");
+const linking = @import("link.zig");
 
 const base_dir = clone.base_dir;
-const clone_path = clone.clone_path;
 const db_path = clone.db_path;
-const Link = clone.Link;
-const branch_suffix_len: u32 = 6;
 
 /// `folder` the site, `.publr/base/` the same site as it was (database and structure, no
 /// media), and the link back.
@@ -24,44 +22,32 @@ pub fn write_folder(
     std.debug.assert(folder.len > 0);
 
     const base = try std.fs.path.join(arena, &.{ folder, base_dir });
-
-    try unpack_into(init, arena, folder, download, .{
+    const manifest = try unpack_into(init, arena, folder, download, .{
         .written = written,
     });
-    try unpack_into(init, arena, base, download, .{
+
+    _ = try unpack_into(init, arena, base, download, .{
         .media = false,
     });
     try keep_only_database(init.io, arena, base);
 
-    var random: [branch_suffix_len]u8 = undefined;
+    var dir = try std.Io.Dir.cwd().openDir(init.io, folder, .{});
+    defer dir.close(init.io);
 
-    init.io.random(&random);
-
-    for (&random) |*byte| {
-        byte.* = "abcdefghijkmnpqrstuvwxyz23456789"[byte.* & 31];
-    }
-
-    const text = try std.json.Stringify.valueAlloc(arena, Link{
+    try linking.write(init.io, arena, dir, .{
         .site = address,
-        .branch = try std.fmt.allocPrint(arena, "work-{s}", .{&random}),
-    }, .{
-        .whitespace = .indent_2,
-    });
-    const link = try std.fs.path.join(arena, &.{ folder, clone_path });
-
-    try std.Io.Dir.cwd().writeFile(init.io, .{
-        .sub_path = link,
-        .data = text,
+        .branch = try linking.new_branch(init.io, arena),
+        .pulled = manifest.latest_change,
     });
 }
 
-fn unpack_into(
+pub fn unpack_into(
     init: std.process.Init,
     arena: std.mem.Allocator,
     folder: []const u8,
     download: []const u8,
     options: bundle.UnpackOptions,
-) !void {
+) !bundle.Manifest {
     std.debug.assert(folder.len > 0);
 
     const database = try std.fs.path.join(arena, &.{ folder, db_path });
@@ -70,11 +56,11 @@ fn unpack_into(
 
     const site = try backup.Site.of(init.io, arena, database, folder);
 
-    _ = try bundle.unpack(site, arena, download, options);
+    return bundle.unpack(site, arena, download, options);
 }
 
 /// Everything in the base's data folder but its database: media stays once, in the site.
-fn keep_only_database(io: std.Io, arena: std.mem.Allocator, base: []const u8) !void {
+pub fn keep_only_database(io: std.Io, arena: std.mem.Allocator, base: []const u8) !void {
     std.debug.assert(base.len > 0);
 
     const data = try std.fs.path.join(arena, &.{ base, "data" });

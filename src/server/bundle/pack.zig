@@ -1,6 +1,7 @@
 const std = @import("std");
 const db = @import("../../lib/db.zig");
 const settings = @import("../../store/settings.zig");
+const activity = @import("../../store/activity.zig");
 const backup = @import("../gate/backup.zig");
 const gate = @import("../gate.zig");
 const bundle = @import("../bundle.zig");
@@ -111,8 +112,10 @@ fn pack_with(
         std.log.warn("removing {s}: {t}", .{ snapshot, err });
     };
 
+    const taken = try take_snapshot(site, arena, snapshot, clone);
     const manifest: bundle.Manifest = .{
-        .release = try take_snapshot(site, arena, snapshot, clone),
+        .release = taken.release,
+        .latest_change = taken.latest_change,
         .name = name,
         .made_at_ms = @import("../../sdk.zig").context.wall_clock_ms(io),
         .database = site.database,
@@ -376,15 +379,21 @@ pub fn left_out(site: backup.Site, path: []const u8, basename: []const u8, tree:
     return false;
 }
 
+const Snapshot = struct {
+    /// The release that last opened it, empty for none.
+    release: []const u8,
+    latest_change: i64,
+};
+
 /// The database copied to `path`, consistent while a server writes to the original
 /// (`VACUUM INTO`), with this machine's rows taken out and the pages that held them
-/// rewritten; the release that last opened it, empty for none.
+/// rewritten.
 fn take_snapshot(
     site: backup.Site,
     arena: std.mem.Allocator,
     path: [:0]const u8,
     clone: ?Clone,
-) ![]const u8 {
+) !Snapshot {
     std.debug.assert(path.len > 0);
     std.debug.assert(local_rows.len > 0);
 
@@ -402,6 +411,12 @@ fn take_snapshot(
 
     var copy = try db.open(&runtime, path);
     defer copy.close();
+
+    // Read before a clone empties the log.
+    const latest_change = if (try db.schema.has_table(&copy, "activity"))
+        try activity.latest(&copy)
+    else
+        0;
 
     inline for (local_rows) |statement| {
         if (try db.schema.has_table(&copy, comptime table_of(statement))) {
@@ -422,11 +437,15 @@ fn take_snapshot(
 
     std.debug.assert(!row);
 
-    if (!try db.schema.has_table(&copy, "settings")) {
-        return "";
-    }
+    const release = if (try db.schema.has_table(&copy, "settings"))
+        try settings.get(&copy, arena, gate.release_key) orelse ""
+    else
+        "";
 
-    return try settings.get(&copy, arena, gate.release_key) orelse "";
+    return .{
+        .release = release,
+        .latest_change = latest_change,
+    };
 }
 
 fn copy_database(

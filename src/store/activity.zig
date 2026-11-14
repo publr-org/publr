@@ -85,6 +85,54 @@ pub fn changes(
     return rows.items;
 }
 
+/// The newest entry's id, 0 for an empty log: it moves with every write, so a copy that took
+/// it knows whether the site changed since.
+pub fn latest(connection: *db.Db) db.Error!i64 {
+    std.debug.assert(list_max > 0);
+
+    var select = try connection.prepare("SELECT coalesce(max(id), 0) FROM activity");
+    defer select.finalize();
+
+    const found = try select.step();
+
+    std.debug.assert(found);
+
+    const id = select.read_int();
+
+    std.debug.assert(id >= 0);
+
+    return id;
+}
+
+/// The newest write to the site itself, 0 for none: what only concerns the people working on
+/// it (their accounts, devices, sign-ins, pins, views, AI conversations) and the site setting
+/// itself up are left out. `until_ms`: only what was made by then.
+pub fn latest_site_write(connection: *db.Db, until_ms: ?i64) db.Error!i64 {
+    std.debug.assert(list_max > 0);
+    std.debug.assert(until_ms == null or until_ms.? >= 0);
+
+    var select = try connection.prepare("SELECT coalesce(max(id), 0) FROM activity WHERE " ++
+        "operation NOT LIKE 'user.%' AND operation NOT LIKE 'device.%' AND " ++
+        "operation NOT LIKE 'sign\\_on.%' ESCAPE '\\' AND operation NOT LIKE 'identity.%' AND " ++
+        "operation NOT LIKE 'rail.%' AND operation NOT LIKE 'view%' AND " ++
+        "operation NOT LIKE 'ai.%' AND operation NOT LIKE 'health.%' AND " ++
+        "operation NOT LIKE 'job.%' AND operation != 'project.init' AND " ++
+        "(?1 IS NULL OR at <= ?1)");
+    defer select.finalize();
+
+    try bind_optional_int(&select, 1, until_ms);
+
+    const found = try select.step();
+
+    std.debug.assert(found);
+
+    const id = select.read_int();
+
+    std.debug.assert(id >= 0);
+
+    return id;
+}
+
 pub fn append(connection: *db.Db, row: Row) db.Error!void {
     std.debug.assert(row.operation.len > 0);
     std.debug.assert(row.at >= 0);

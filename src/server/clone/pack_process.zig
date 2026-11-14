@@ -19,11 +19,19 @@ const copied_at: u32 = 1000;
 const cleared_at: u32 = 1500;
 const whole: u32 = 10_000;
 
+const have_suffix = ".have";
+const have_bytes_max: u32 = 64 << 20;
 const progress_suffix = ".progress";
 const made_suffix = ".made";
 const failed_suffix = ".failed";
 const pid_suffix = ".pid";
-const sides = [_][]const u8{ progress_suffix, made_suffix, failed_suffix, pid_suffix };
+const sides = [_][]const u8{
+    progress_suffix,
+    made_suffix,
+    failed_suffix,
+    pid_suffix,
+    have_suffix,
+};
 
 /// What the packing process made, as it says it.
 pub const Made = struct {
@@ -40,6 +48,10 @@ pub const Asked = struct {
     out: []const u8,
     keep_user: []const u8,
     media: bool = true,
+    /// Media storage keys the asking folder holds the same: left out of the bundle.
+    have: []const []const u8 = &.{},
+    /// In the packing process: the file `have` was written to, one key a line.
+    have_path: []const u8 = "",
 };
 
 /// Where a pack is, as the server reads it from the files beside the bundle.
@@ -72,6 +84,22 @@ pub fn start(io: std.Io, arena: std.mem.Allocator, asked: Asked) !void {
 
     if (asked.folder.len > 0) {
         try argv.appendSlice(arena, &.{ "--folder", asked.folder });
+    }
+
+    if (asked.have.len > 0) {
+        const have_path = try side(arena, asked.out, have_suffix);
+        var lines: std.ArrayList(u8) = .empty;
+
+        for (asked.have) |key| {
+            try lines.appendSlice(arena, key);
+            try lines.append(arena, '\n');
+        }
+
+        try std.Io.Dir.cwd().writeFile(io, .{
+            .sub_path = have_path,
+            .data = lines.items,
+        });
+        try argv.appendSlice(arena, &.{ "--have", have_path });
     }
 
     const child = try std.process.spawn(io, .{
@@ -238,7 +266,7 @@ pub fn run(
 
     var asked = parse(args) orelse {
         std.debug.print("usage: publr --db <db> {s} --out <path> --keep-user <id> " ++
-            "[--media all|none] [--folder <path>]\n", .{command});
+            "[--media all|none] [--folder <path>] [--have <file>]\n", .{command});
         return 2;
     };
     asked.db_path = db_path;
@@ -284,6 +312,7 @@ fn packed_here(init: std.process.Init, arena: std.mem.Allocator, asked: Asked) !
     const made = try bundle.pack_clone(site, arena, asked.out, name, .{
         .keep_user = asked.keep_user,
         .media = asked.media,
+        .placeholders = try held_keys(init.io, arena, asked),
         .progress = &progress,
     });
     const stat = try std.Io.Dir.cwd().statFile(init.io, asked.out, .{});
@@ -294,6 +323,27 @@ fn packed_here(init: std.process.Init, arena: std.mem.Allocator, asked: Asked) !
         .name = name,
         .parts = made.parts,
     };
+}
+
+/// The keys the asking folder holds, from the file the server wrote; none without one, or
+/// for a pack without media.
+fn held_keys(io: std.Io, arena: std.mem.Allocator, asked: Asked) ![]const []const u8 {
+    std.debug.assert(asked.out.len > 0);
+
+    if (asked.have_path.len == 0 or !asked.media) {
+        return &.{};
+    }
+
+    const limit: std.Io.Limit = .limited(have_bytes_max);
+    const text = try std.Io.Dir.cwd().readFileAlloc(io, asked.have_path, arena, limit);
+    var keys: std.ArrayList([]const u8) = .empty;
+    var lines = std.mem.tokenizeScalar(u8, text, '\n');
+
+    while (lines.next()) |key| {
+        try keys.append(arena, key);
+    }
+
+    return keys.items;
 }
 
 /// Says how far the pack is, four times a second, until it is told to stop.
@@ -389,6 +439,8 @@ fn parse(args: []const []const u8) ?Asked {
             asked.folder = value;
         } else if (std.mem.eql(u8, flag, "--db")) {
             asked.db_path = value;
+        } else if (std.mem.eql(u8, flag, "--have")) {
+            asked.have_path = value;
         } else {
             return null;
         }

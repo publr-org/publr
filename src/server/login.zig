@@ -40,6 +40,9 @@ const Options = struct {
     browser: bool = true,
     /// A sign-in offered from the admin (`device offer`): taken at once, nothing to approve.
     claim: ?[]const u8 = null,
+    /// A token from the site's trusted issuer (a Publr Cloud dashboard), redeemed for a
+    /// device's token at once (`device.redeem`).
+    sign_on: ?[]const u8 = null,
 };
 
 pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8) !u8 {
@@ -49,7 +52,8 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
     const options = parse(args[1..]) orelse {
         std.debug.print(
             "usage: publr login <address> [--name <name>] [--scope read|drafts|write] " ++
-                "[--no-browser] [--claim <code>]\n       publr logout [<address>]\n" ++
+                "[--no-browser] [--claim <code>] [--sign-on <token>]\n" ++
+                "       publr logout [<address>]\n" ++
                 "       publr whoami [<address>]\n",
             .{},
         );
@@ -81,7 +85,7 @@ fn parse(args: []const []const u8) ?Options {
     while (index < args.len) : (index += 1) {
         const arg = args[index];
         const valued = std.mem.eql(u8, arg, "--name") or std.mem.eql(u8, arg, "--scope") or
-            std.mem.eql(u8, arg, "--claim");
+            std.mem.eql(u8, arg, "--claim") or std.mem.eql(u8, arg, "--sign-on");
 
         if (valued and index + 1 == args.len) {
             return null;
@@ -96,6 +100,9 @@ fn parse(args: []const []const u8) ?Options {
         } else if (std.mem.eql(u8, arg, "--claim")) {
             index += 1;
             options.claim = args[index];
+        } else if (std.mem.eql(u8, arg, "--sign-on")) {
+            index += 1;
+            options.sign_on = args[index];
         } else if (std.mem.eql(u8, arg, "--no-browser")) {
             options.browser = false;
         } else if (std.mem.startsWith(u8, arg, "-") or options.address != null) {
@@ -127,15 +134,10 @@ fn login(init: std.process.Init, out: *std.Io.Writer, options: Options) !u8 {
     }
 
     const name = options.name orelse try default_name(arena);
-    const device_code = if (options.claim) |code|
-        code
+    const claimed = if (options.sign_on) |token|
+        try redeemed(init, address, token, name, options.scope)
     else
-        try approved(init, out, address, name, options) orelse return 1;
-    const code_body = try std.json.Stringify.valueAlloc(arena, .{
-        .device_code = device_code,
-        .name = name,
-    }, .{});
-    const claimed = try call(init, Claimed, address, "/api/device.claim", code_body, null);
+        try collected(init, out, address, name, options) orelse return 1;
     const scope = claimed.scope;
     const site: credentials.Site = .{
         .address = address,
@@ -153,6 +155,58 @@ fn login(init: std.process.Init, out: *std.Io.Writer, options: Options) !u8 {
     try out.print("✓ {s} · {s} · {s}\n", .{ who.email, address, scope });
 
     return 0;
+}
+
+/// The token a request its person approved (or a code offered from the admin) gives; null,
+/// having said why, when they did not approve it.
+fn collected(
+    init: std.process.Init,
+    out: *std.Io.Writer,
+    address: []const u8,
+    name: []const u8,
+    options: Options,
+) !?Claimed {
+    std.debug.assert(address.len > 0);
+    std.debug.assert(name.len > 0);
+
+    const device_code = if (options.claim) |code|
+        code
+    else
+        try approved(init, out, address, name, options) orelse return null;
+    const body = try std.json.Stringify.valueAlloc(init.arena.allocator(), .{
+        .device_code = device_code,
+        .name = name,
+    }, .{});
+
+    return try call(init, Claimed, address, "/api/device.claim", body, null);
+}
+
+/// The token the site gives at once for a sign-on token its trusted issuer signed
+/// (`device.redeem`): the issuer has its person's approval already.
+fn redeemed(
+    init: std.process.Init,
+    address: []const u8,
+    token: []const u8,
+    name: []const u8,
+    scope: []const u8,
+) !Claimed {
+    std.debug.assert(address.len > 0);
+    std.debug.assert(token.len > 0);
+
+    const body = try std.json.Stringify.valueAlloc(init.arena.allocator(), .{
+        .token = token,
+        .name = name,
+        .scope = scope,
+    }, .{});
+    const Redeemed = struct {
+        token: []const u8,
+    };
+    const answer = try call(init, Redeemed, address, "/api/device.redeem", body, null);
+
+    return .{
+        .token = answer.token,
+        .scope = scope,
+    };
 }
 
 /// The device code of a request its person approved in the admin, after showing them the

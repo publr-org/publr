@@ -10,6 +10,7 @@ const backup = @import("gate/backup.zig");
 const bundle = @import("bundle.zig");
 const cloud_login = @import("cloud_deploy/login.zig");
 const defaults = @import("cloud_deploy/defaults.zig");
+const login = @import("login.zig");
 const server = @import("../server.zig");
 
 pub const link_name = "cloud.json";
@@ -106,7 +107,7 @@ pub fn run(
 
     if (try read_link(init.io, arena)) |link| {
         report.err("publr cloud deploy: this folder is {s}'s; its changes go up as a branch " ++
-            "(not built yet), never over the live site", .{link.address});
+            "(publr push), never over the live site", .{link.address});
         return 1;
     }
 
@@ -216,8 +217,38 @@ fn deploy(
         deployed.admin,
         link_name,
     });
+    try sign_in_folder(init, out, client, deployed);
 
     return 0;
+}
+
+/// This computer signed in to the project as the account that deployed it, through the
+/// dashboard's sign-on, so the folder pulls and pushes (`publr pull`, `publr push`) with
+/// nothing to approve. A refusal only means signing in later with `publr login`.
+fn sign_in_folder(
+    init: std.process.Init,
+    out: *std.Io.Writer,
+    client: Client,
+    deployed: Deployed,
+) !void {
+    std.debug.assert(deployed.slug.len > 0);
+    std.debug.assert(deployed.address.len > 0);
+
+    const sent = try std.json.Stringify.valueAlloc(client.arena, .{
+        .project = deployed.slug,
+    }, .{});
+    const answer = try client.call("cloud.sign_on_token", sent);
+    const Signed = struct {
+        token: []const u8,
+    };
+    const signed = try client.answered(Signed, answer) orelse return;
+    const words = [_][]const u8{ "login", deployed.address, "--sign-on", signed.token };
+
+    if (try login.run(init, out, &words) != 0) {
+        report.err("publr cloud deploy: sign in later to pull and push: publr login {s}", .{
+            deployed.address,
+        });
+    }
 }
 
 fn address_free(client: Client, out: *std.Io.Writer, slug: []const u8) !bool {

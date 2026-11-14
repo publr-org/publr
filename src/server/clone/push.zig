@@ -8,36 +8,45 @@ const credentials = @import("../credentials.zig");
 const upload = @import("../cloud_deploy/upload.zig");
 const clone = @import("../clone.zig");
 const placeholders = @import("placeholders.zig");
+const linking = @import("link.zig");
+const changes = @import("changes.zig");
+const pulling = @import("pull.zig");
 
 const push_path = "/api/environments/push";
 const push_dir = ".publr/push";
 const upload_piece_bytes: u32 = 256 << 10;
-const link_bytes_max: u32 = 4 << 10;
-const clone_path = clone.clone_path;
 const base_dir = clone.base_dir;
 const db_path = clone.db_path;
-const Link = clone.Link;
 
 pub fn push(init: std.process.Init, out: *std.Io.Writer) !u8 {
-    std.debug.assert(link_bytes_max > 0);
+    std.debug.assert(upload_piece_bytes > 0);
 
     const arena = init.arena.allocator();
     const cwd = std.Io.Dir.cwd();
-    const text = cwd.readFileAlloc(init.io, clone_path, arena, .limited(link_bytes_max)) catch {
+    var link = try linking.read(init.io, arena, cwd) orelse {
         report.err("publr push: not a clone here; `publr clone <address>` makes one", .{});
         return 1;
     };
-    const link = try std.json.parseFromSliceLeaky(Link, arena, text, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    });
     const site = try credentials.find(init, link.site) orelse {
         report.err("publr push: not signed in to {s}; run \"publr login {s}\"", .{
             link.site,
             link.site,
         });
-        return 1;
+        return pulling.signed_out;
     };
+    const folder_path = try cwd.realPathFileAlloc(init.io, ".", arena);
+
+    if (!try pulling.ensure_base(init, site, &link, folder_path)) {
+        return 1;
+    }
+
+    // What is sent, named before packing: work made while it goes up is not in it.
+    const sent = try changes.mark(init.io, arena, folder_path, link.since);
+
+    if (sent.len == 0) {
+        try out.print("Nothing to push: this folder is as {s} is\n", .{link.site});
+        return 0;
+    }
 
     try cwd.createDirPath(init.io, push_dir);
     defer cwd.deleteTree(init.io, push_dir) catch |err| {
@@ -78,6 +87,9 @@ pub fn push(init: std.process.Init, out: *std.Io.Writer) !u8 {
     else
         pushed.merge;
 
+    link.branch = pushed.name;
+    link.pushed = sent;
+    try linking.write(init.io, arena, cwd, link);
     try out.print("Pushed as the branch {s}\n  Preview  {s}\n" ++
         "  Merge    {s}  (a person reviews it)\n", .{
         pushed.name,

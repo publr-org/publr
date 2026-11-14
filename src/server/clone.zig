@@ -18,24 +18,19 @@ const opening = @import("clone/opening.zig");
 const writing = @import("clone/folder.zig");
 
 const version = @import("../publr.zig").version;
-pub const clone_path = ".publr/clone.json";
 pub const base_dir = ".publr/base";
 pub const db_path = "data/publr.db";
-
-/// What `.publr/clone.json` keeps: where the folder came from and the branch it pushes to.
-pub const Link = struct {
-    site: []const u8,
-    branch: []const u8,
-};
 
 pub fn handles(args: []const []const u8) bool {
     std.debug.assert(args.len > 0);
 
-    return std.mem.eql(u8, args[0], "clone") or std.mem.eql(u8, args[0], "push");
+    return std.mem.eql(u8, args[0], "clone") or std.mem.eql(u8, args[0], "push") or
+        std.mem.eql(u8, args[0], "pull");
 }
 
 const usage = "usage: publr clone <address or project> [<folder>] [--media all|none] " ++
-    "[--size] [--port <n>] [--no-open] [--no-serve]\n       publr push";
+    "[--size] [--port <n>] [--no-open] [--no-serve]\n       publr push\n" ++
+    "       publr pull [--check]";
 
 /// What `publr clone` was asked: `--media none` brings no media files down (placeholders
 /// stand in); `--size` only says what a clone would bring down.
@@ -59,6 +54,17 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, args: []const []const u8
 
     if (std.mem.eql(u8, args[0], "push")) {
         return @import("clone/push.zig").push(init, out);
+    }
+
+    if (std.mem.eql(u8, args[0], "pull")) {
+        const checking = args.len == 2 and std.mem.eql(u8, args[1], "--check");
+
+        if (args.len > 1 and !checking) {
+            report.err("{s}", .{usage});
+            return 2;
+        }
+
+        return @import("clone/pull.zig").pull(init, out, checking);
     }
 
     const asked = parse(args[1..]) orelse {
@@ -289,7 +295,8 @@ fn bring_down(
 
     const arena = init.arena.allocator();
     var why: []const u8 = "";
-    const made = try prepared(init, site, asked.media, shared, &why) orelse {
+    const media_asked = if (asked.media) "{}" else "{\"media\":\"none\"}";
+    const made = try prepared(init, site, media_asked, shared, &why) orelse {
         shared.problem = why;
         return error.NotPrepared;
     };
@@ -358,21 +365,22 @@ fn name_of(address: []const u8) []const u8 {
     return if (cut > 0) first[0..cut] else "site";
 }
 
-/// The site packed for this clone, followed while it packs; null when it was not, with why
-/// in `why`, for people.
-fn prepared(
+/// The site packed for this clone (`asked`, what `POST /api/sites/pack` takes), followed
+/// while it packs; null when it was not, with why in `why`, for people.
+pub fn prepared(
     init: std.process.Init,
     site: credentials.Site,
-    media: bool,
+    asked: []const u8,
     shared: *progress.Shared,
     why: *[]const u8,
 ) !?site_side.Prepared {
     std.debug.assert(site.token.len > 0);
+    std.debug.assert(asked.len > 0);
 
     const arena = init.arena.allocator();
     const reply = try remote.post(init.io, arena, .{
         .url = try std.fmt.allocPrint(arena, "{s}{s}", .{ site.address, site_side.pack_route }),
-        .payload = if (media) "{}" else "{\"media\":\"none\"}",
+        .payload = asked,
         .token = site.token,
     });
 
@@ -428,6 +436,9 @@ test {
     _ = @import("clone/entry.zig");
     _ = @import("clone/opening.zig");
     _ = @import("clone/folder.zig");
+    _ = @import("clone/link.zig");
+    _ = @import("clone/changes.zig");
+    _ = @import("clone/pull.zig");
 }
 
 test "a folder is named after the site's first name" {

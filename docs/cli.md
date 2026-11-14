@@ -198,6 +198,7 @@ next call asks again.
 
 ```
 publr login <address> [--name <name>] [--scope read|write|production|publish] [--no-browser] [--claim <code>]
+            [--sign-on <token>]
 publr logout [<address>]
 publr whoami [<address>]
 publr --site <address> [--env <name>] <command ...>
@@ -209,7 +210,9 @@ a browser), its person approves it in that Publr's admin and chooses what it may
 (`--scope` caps what is on offer), and the token is kept in
 `~/.publr/credentials` (or `$PUBLR_CREDENTIALS`), readable by its user only, by address.
 `--claim <code>` takes a sign-in the person already gave (`device offer`, the code in the
-Overview's setup command) instead: nothing to approve.
+Overview's setup command) instead: nothing to approve. `--sign-on <token>` takes a token
+the site's trusted issuer signed (a Publr Cloud dashboard's `cloud.sign_on_token`) and
+redeems it for the device's token at once (`device.redeem`): nothing to approve either.
 It is never printed. `--name` is what the person sees; it defaults to "The publr CLI on"
 this machine's name.
 
@@ -239,6 +242,7 @@ and under its name in the activity log, as `--as` does for an account.
 publr clone <address or project> [<folder>] [--media all|none] [--size] [--port <n>]
             [--no-open] [--no-serve]
 publr push
+publr pull [--check]
 ```
 
 `clone` signs in as a device if this machine is not yet, and writes the site to a folder: its
@@ -272,9 +276,28 @@ a picture), listed with its size in `.publr/placeholders`.
 
 The folder is a site of its own: `publr serve`, `--as-admin`, your own editor. `push`, run in
 it, sends it up as a branch of the site for a person to review and merge. Pushing again from
-the folder replaces the same branch. A placeholder still there unchanged is never sent: the
+the folder replaces the same branch; a folder with nothing of its own has nothing to push. A placeholder still there unchanged is never sent: the
 bundle names it, and the branch takes the live file. Nothing here ever writes to the live site. The Publr
 there must keep copies.
+
+`pull`, run in the folder, brings the site down again, only what changed: the database
+when the site moved past what the folder last took (its newest activity entry, kept in
+`.publr/clone.json`), and of the media only the files the folder does not hold the same
+(by storage key and hash). The folder's database, apps, plugins and `publr.zon` become the
+site's, new media files are added and those the site no longer has removed; what was
+replaced is kept once in `.publr/previous/`. This machine's sign-ins, devices and sign-on
+trust stay. A pull never touches the folder's own work: its writes to the site since it
+came down, and its apps, plugins and `publr.zon` where they differ from `.publr/base/`. A
+folder with work not pushed, or pushed and waiting for review, is refused (exit 4) until
+the branch is merged (the site's `merge.accept`); then the merged site comes down. A
+server running the folder is refused too (exit 5): stop it first. Not signed in exits 3.
+`--check` changes nothing and prints where the folder is, as JSON: `changes` (work of its
+own), `unsent` (not pushed), `waiting` (pushed, not merged), `behind` (the site moved).
+
+A folder deployed with `cloud deploy` is a clone of its project too: its first `pull` or
+`push` makes `.publr/clone.json` from `cloud.json` and takes the project as it is now as
+`.publr/base/`, leaving the folder as it is; what the folder wrote after it was deployed
+counts as its own work.
 
 ## The skill
 
@@ -341,7 +364,9 @@ them for `--space`), and an address made from the folder's name with a random en
 gets its database made first, as `serve` would. It checks the address, packs the site, uploads it
 to the dashboard, and has the project made from it, in your space only. The folder then
 carries the link (`cloud.json`: the dashboard, space, project, address and admin) and is
-refused next time: changes reach a live site only through Cloud.
+refused next time: changes reach a live site only through Cloud, as a branch (`publr push`).
+Last, it signs this computer in to the project as you, through the dashboard's sign-on
+(`login --sign-on`), so the folder pulls and pushes with nothing to approve.
 
 ## Global flags
 
