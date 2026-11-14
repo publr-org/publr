@@ -46,9 +46,29 @@ pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len == before + routes_count);
 }
 
+/// Whether the app at the request's host and path has a page at exactly that path, which
+/// then answers in place of core's route.
+pub fn own_page(request: *const Request, ctx: *http.Context) bool {
+    std.debug.assert(ctx.user_data != null);
+    std.debug.assert(request.path().len > 0);
+
+    const project = Project.of(ctx);
+
+    if (project.apps_failed) {
+        return false;
+    }
+
+    const host = request.header("host") orelse "";
+    const target = project.resolve(host, request.path()) orelse return false;
+    const program = target.app.program orelse return false;
+    const matched = program.match(target.path) orelse return false;
+
+    return matched.slug == null;
+}
+
 /// Every request no other route took: the app mounted where it asked. With no app there,
 /// `/` opens the admin and anything else is not found.
-fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anyerror!void {
+pub fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anyerror!void {
     std.debug.assert(ctx.user_data != null);
     std.debug.assert(request.path().len > 0);
 
@@ -520,6 +540,10 @@ const middleware_testing = struct {
             return request.redirect("/login");
         }
 
+        if (std.mem.eql(u8, request.path(), "/oauth/authorize")) {
+            return request.respond(200, "the app's own sign-in");
+        }
+
         if (std.mem.eql(u8, request.path(), "/count")) {
             const listed = try request.call(record_operations.List, .{
                 .type = "post",
@@ -590,6 +614,14 @@ test "middleware answers before the site, or lets the request through" {
     const expected = "{\"method\":\"POST\",\"posts\":1,\"nickname\":null}";
 
     try std.testing.expectEqualStrings(expected, counted.body);
+
+    // The addresses tools sign in through are the app's first, core's when it is silent.
+    const own = try harness.get("/oauth/authorize?client_id=publr-cli");
+    try std.testing.expectEqualStrings("the app's own sign-in", own.body);
+
+    const core = try harness.get("/.well-known/oauth-authorization-server");
+    try std.testing.expectEqual(@as(u16, 200), core.status.code());
+    try std.testing.expect(std.mem.indexOf(u8, core.body, "authorization_endpoint") != null);
 
     // Silence: the site as usual.
     const home = try harness.get("/");

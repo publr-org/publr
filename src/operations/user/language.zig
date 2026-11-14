@@ -115,7 +115,7 @@ pub const Language = struct {
         .shown = "The language the admin speaks to you",
         .choices = "Each language the admin speaks: `locale` and its own name",
         .chosen_translations = "The translations picked where several disagree, as JSON",
-        .answered = "Whether you ever chose; the admin asks once at the first sign-in",
+        .answered = "Whether you ever chose; until then the site's default, else English",
     };
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {

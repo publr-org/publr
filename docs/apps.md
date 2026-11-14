@@ -654,7 +654,10 @@ An app that should never show it, even to administrators, opts out in its `<head
 
 An app's `middleware.zig` sees every request for the app before anything else does,
 whatever its method: pages, not-found pages, islands. It answers the request or lets it
-through. `/admin`, `/api`, `/auth` and the app's assets (`/_app/`) never reach it.
+through. `/admin`, `/api`, `/auth` and the app's assets (`/_app/`) never reach it. The
+addresses tools sign in through (`/oauth/…`, `/.well-known/oauth-…`, `/mcp`) reach it
+first, so an app may answer them itself, with its middleware or a page at that exact path;
+otherwise the site's own sign-in for tools answers them.
 
 ```zig
 const std = @import("std");

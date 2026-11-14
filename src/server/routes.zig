@@ -77,14 +77,14 @@ pub fn register(router: *http.Router) void {
         router.get(clone.pack_progress_route, &clone.pack_progress);
         router.get(clone.size_route, &clone.size);
         router.get(agent_script.route, &agent_script.handle);
-        router.get(oauth.resource_route, &oauth.resource);
-        router.get(oauth.resource_mcp_route, &oauth.resource);
-        router.get(oauth.server_route, &oauth.server);
-        router.post(oauth.register_route, &oauth.register);
-        router.get(oauth.authorize_route, &oauth.authorize);
-        router.post(oauth.token_route, &oauth.token);
-        router.post(mcp.route, &mcp.handle);
-        router.get(mcp.route, &mcp.refuse_stream);
+        router.get(oauth.resource_route, app_first(oauth.resource));
+        router.get(oauth.resource_mcp_route, app_first(oauth.resource));
+        router.get(oauth.server_route, app_first(oauth.server));
+        router.post(oauth.register_route, app_first(oauth.register));
+        router.get(oauth.authorize_route, app_first(oauth.authorize));
+        router.post(oauth.token_route, app_first(oauth.token));
+        router.post(mcp.route, app_first(mcp.handle));
+        router.get(mcp.route, app_first(mcp.refuse_stream));
         router.post(update.restart_route, &update.handle_restart);
         router.get(next_due_route, &next_due);
         // Behind a CDN that purges: what was published, for whatever purges it.
@@ -129,6 +129,27 @@ pub fn private_by_default(
     }
 
     std.debug.assert(response.header("Cache-Control") != null);
+}
+
+/// An address an app may answer itself, as the Cloud dashboard signs Studio and the CLI in
+/// to an account: the app's own page there, else its middleware, else core's answer.
+fn app_first(comptime handler: anytype) http.Router.Handler {
+    return &struct {
+        fn handle(request: *Request, response: *Response, ctx: *Context) anyerror!void {
+            std.debug.assert(ctx.user_data != null);
+            std.debug.assert(request.path().len > 0);
+
+            if (apps_adapter.own_page(request, ctx)) {
+                return apps_adapter.dispatch(request, response, ctx);
+            }
+
+            if (try apps_adapter.middleware.first(request, response, ctx)) {
+                return;
+            }
+
+            return handler(request, response, ctx);
+        }
+    }.handle;
 }
 
 pub fn register_static(router: *http.Router) void {

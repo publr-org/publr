@@ -10,6 +10,7 @@ const backup = @import("gate/backup.zig");
 const bundle = @import("bundle.zig");
 const cloud_login = @import("cloud_deploy/login.zig");
 const defaults = @import("cloud_deploy/defaults.zig");
+const server = @import("../server.zig");
 
 pub const link_name = "cloud.json";
 pub const token_variable = "PUBLR_CLOUD_TOKEN";
@@ -109,6 +110,8 @@ pub fn run(
         return 1;
     }
 
+    try open_once(init, db_path);
+
     const site = backup.Site.of(init.io, arena, db_path, null) catch |err| {
         report.err("publr cloud deploy: no site here ({s}: {t})", .{ db_path, err });
         return 1;
@@ -129,6 +132,30 @@ pub fn run(
     }
 
     return deploy(init, out, site, token, options);
+}
+
+/// A site made and never run (`publr new`, or by hand beside its `publr.zon`) has no
+/// database yet: it is made here, as `serve` makes it, so the site goes up like any other.
+fn open_once(init: std.process.Init, db_path: [:0]const u8) !void {
+    std.debug.assert(db_path.len > 0);
+
+    const cwd = std.Io.Dir.cwd();
+
+    if (cwd.access(init.io, db_path, .{})) |_| {
+        return;
+    } else |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    }
+
+    cwd.access(init.io, "publr.zon", .{}) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+
+    var application: server.Server = undefined;
+    try application.init(init, db_path);
+    application.deinit();
 }
 
 fn deploy(

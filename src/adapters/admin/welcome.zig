@@ -1,6 +1,7 @@
 //! A new person's first screen (`/admin/welcome`): the password when they came by
 //! invitation (`?token=`, the link an administrator sends), and the language the admin
-//! speaks to them, always. The admin sends anyone who never chose a language here first.
+//! speaks to them. Anyone else who never chose gets the site's default, else English, and
+//! changes it from their account.
 const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
@@ -18,16 +19,6 @@ const Form = admin.Form;
 const views = admin.views;
 
 pub const path = "/admin/welcome";
-
-/// Where the admin sends a person still to be welcomed, coming back to `back`.
-pub fn address_of(session: *const Session, back: []const u8) Error![]const u8 {
-    std.debug.assert(back.len > 0);
-
-    return std.fmt.allocPrint(session.arena, "{s}?back={s}", .{
-        path,
-        try admin.query_value(session.arena, back),
-    });
-}
 
 pub fn page(request: *Request, response: *Response, ctx: *Context) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);

@@ -27,6 +27,8 @@ pub const Sources = struct {
     toolchain_archive: ?[]const u8 = null,
     /// What one type and one entry may hold (`limits.zig`).
     limits: limits_module.Limits = .{},
+    /// In Debug, the request arenas name the call sites that fill them (`-Darena-trace`).
+    arena_trace: bool = false,
 };
 
 /// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/plugins` and
@@ -79,6 +81,11 @@ pub fn sources(builder: *std.Build) Sources {
         "The carried compiler's archive, built before for this target by " ++
             "`zig build toolchain` in ../lib/zig, used instead of building it",
     );
+    const arena_trace = builder.option(
+        bool,
+        "arena-trace",
+        "In Debug, name the call sites that fill a request's arena (slow: a stack per allocation)",
+    ) orelse false;
     // Empty is none: a project building on this one passes its own option through.
     const toolchain_archive = if (toolchain_archive_option) |path|
         (if (path.len == 0) null else path)
@@ -93,6 +100,7 @@ pub fn sources(builder: *std.Build) Sources {
         .compiler = compiler,
         .toolchain_archive = toolchain_archive,
         .limits = limits_module.from(builder),
+        .arena_trace = arena_trace,
     };
     const root = builder.build_root.path.?;
 
@@ -137,6 +145,7 @@ pub fn add_module(
     const publr_http = builder.dependency("publr_http", .{
         .target = target,
         .release = optimize != .Debug,
+        .@"arena-trace" = from.arena_trace,
     });
     const publr_auth = builder.dependency("publr_auth", .{
         .target = target,

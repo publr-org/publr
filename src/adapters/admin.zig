@@ -750,26 +750,6 @@ pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Ses
         return null;
     }
 
-    // A person who never chose the admin's language is welcomed first, whatever page
-    // they opened; a script's read is not turned away.
-    const page_asked = request.method() == .get and
-        !std.mem.eql(u8, request.header("accept") orelse "", "application/json");
-
-    if (session.language.welcome and page_asked) {
-        const welcome = @import("admin/welcome.zig");
-
-        // The page with its query: a sign-in handed over (`?name=…&return=…`) goes on after.
-        const query = request.query();
-        const asked = if (query.len > 0)
-            try std.fmt.allocPrint(session.arena, "{s}?{s}", .{ request.path(), query })
-        else
-            request.path();
-
-        try response.redirect(.see_other, try welcome.address_of(&session, asked));
-
-        return null;
-    }
-
     return session;
 }
 

@@ -298,13 +298,13 @@ folder's delete moves what it held up a level.
 
 The admin speaks English, and any language a plugin brings PO files for (a language pack
 such as `language_pl`, or a plugin's own words); people cannot add languages, only
-administrators, by installing them. Each person picks theirs on the welcome screen
-(`/admin/welcome`), which everyone new sees once before anything else: an invited person
-chooses their password there too (the invitation link is `/admin/welcome?token=…`). The
-page is written in, and preselects, the browser's language when the admin speaks it;
-under the list, a person missing theirs is told to ask an administrator and carry on in
-English. Later, the account menu changes it (Language, under their name: Site default,
-then each language, `user set_language`). The site's default for everyone who picked none
+administrators, by installing them. The first account picks it while setting up the site,
+and the choice becomes the site's default too. An invited person picks theirs with their
+password on the welcome screen (the invitation link is `/admin/welcome?token=…`), which
+is written in, and preselects, the browser's language when the admin speaks it. Everyone
+else, an account made from the command line or signed in from Publr Cloud, starts in the
+site's default, else English, and is never stopped to choose. The account menu changes it
+(Language, under their name: Site default, then each language, `user set_language`). The site's default for everyone who picked none
 is under Settings › System › General (`project set_admin_language`). A message no
 catalogue has is shown in English.
 

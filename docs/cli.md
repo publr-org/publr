@@ -337,7 +337,8 @@ sign-ins. The dashboard's Account page lists it, with Sign out.
 makes this site a Publr Cloud project. It takes the token `cloud login` kept
 (`PUBLR_CLOUD_TOKEN` instead, when set), your space when you have one (with several it lists
 them for `--space`), and an address made from the folder's name with a random ending
-(`shop-k3v9q2`) unless `--slug` names one. It checks the address, packs the site, uploads it
+(`shop-k3v9q2`) unless `--slug` names one. A site never run yet (straight from `publr new`)
+gets its database made first, as `serve` would. It checks the address, packs the site, uploads it
 to the dashboard, and has the project made from it, in your space only. The folder then
 carries the link (`cloud.json`: the dashboard, space, project, address and admin) and is
 refused next time: changes reach a live site only through Cloud.

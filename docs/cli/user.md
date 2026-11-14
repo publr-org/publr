@@ -158,5 +158,5 @@ Output: `{ "destroyed" }` (false when the token was unknown or already expired).
 
 The language the admin speaks to the caller: `chosen` (empty: the site's), `site`, `shown`,
 the `choices` (English and every language a plugin translates the admin into) and whether
-the caller ever `answered` (the admin's welcome screen asks once). `set_language
+the caller ever `answered` (until then the site's default, else English). `set_language
 --language <code>` chooses one of the choices, or empty for the site's.

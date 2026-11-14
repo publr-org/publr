@@ -21,8 +21,6 @@ pub const Language = struct {
     messages: []const u8 = "",
     /// The catalogue's script, for the render's script engine.
     script: []const u8 = "",
-    /// The person never chose and the admin speaks more than English: welcome them first.
-    welcome: bool = false,
 };
 
 /// The person's language, for a session signed in; English for one that is not.
@@ -48,11 +46,7 @@ fn chosen(session: *Session) admin.Error!Language {
         std.log.err("languages: the chosen translations: {t}", .{err});
     };
 
-    var found = try in(session, shown.shown);
-
-    found.welcome = !shown.answered;
-
-    return found;
+    return in(session, shown.shown);
 }
 
 /// The admin speaking `locale`: its catalogue, the script's address; English when no

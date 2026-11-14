@@ -1,7 +1,9 @@
 //! Middleware: an app's `middleware.zig`, compiled in, sees every request for the app
 //! before anything else does (pages, not-found pages, islands, any method) and either
 //! answers it or lets it through. `/admin`, `/api`, `/auth` and the app's assets are
-//! core's and never reach it.
+//! core's and never reach it. The sign-in addresses for tools (`/oauth/…`,
+//! `/.well-known/oauth-…`, `/mcp`) reach it, and the app's page at that exact path, before
+//! core answers them.
 //!
 //! ```zig
 //! const std = @import("std");
@@ -245,6 +247,24 @@ pub const Request = struct {
         };
     }
 };
+
+/// Asks the middleware of the app at the request's host and path, before core answers an
+/// address an app may answer itself: true when it answered.
+pub fn first(incoming: *const http.Request, response: *http.Response, ctx: *http.Context) !bool {
+    std.debug.assert(ctx.user_data != null);
+    std.debug.assert(incoming.path().len > 0);
+
+    const project = Project.of(ctx);
+
+    if (project.apps_failed) {
+        return false;
+    }
+
+    const host = incoming.header("host") orelse "";
+    const target = project.resolve(host, incoming.path()) orelse return false;
+
+    return answer(project, target.app, target.path, ctx.arena, incoming, response);
+}
 
 /// Asks the app's middleware about the request: true when it answered, and `response`
 /// holds its answer.
