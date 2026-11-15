@@ -14,7 +14,7 @@ export const state = Publr.reactive({
  * `notes?week=2`; or an address in the admin, `/admin/roles/add`. Nothing else leaves the
  * frame as an address. */
 const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
-const admin_address = /^\/admin\/[^\s#]*$/;
+const admin_address = /^\/admin(\/[^\s#]*)?$/;
 
 export function go(to: string, plugin: string, current: string) {
   if (admin_address.test(to)) {
