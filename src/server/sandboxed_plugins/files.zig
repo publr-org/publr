@@ -66,7 +66,8 @@ pub const Files = struct {
         return files.dir.readFileAlloc(files.io, name, gpa, .limited(sandboxed_plugin.bytes_max));
     }
 
-    /// Stores `bytes` under their hash, once; answers the hash.
+    /// Stores `bytes` under their hash, once; answers the hash. A module already there is
+    /// marked as just written, so a sweep leaves it alone while the install commits.
     pub fn store(files: *const Files, bytes: []const u8, hash_out: *[hash_len]u8) !void {
         std.debug.assert(bytes.len > 0);
         std.debug.assert(bytes.len <= sandboxed_plugin.bytes_max);
@@ -81,7 +82,12 @@ pub const Files = struct {
                 .sub_path = name,
                 .data = bytes,
             });
+            return;
         };
+
+        try files.dir.setTimestamps(files.io, name, .{
+            .modify_timestamp = .now,
+        });
     }
 
     /// Writes one piece of an upload at `offset` into `incoming/<name>.part`: the first piece
@@ -129,12 +135,14 @@ pub const Files = struct {
         return received;
     }
 
-    /// Removes every stored module no row names: what a removal, an update or a cancelled
-    /// update left behind, once it committed.
+    /// Removes every stored module no row names and nothing wrote in the last `settle`: what
+    /// a removal, an update or a cancelled update left behind. A module younger than that
+    /// may belong to an install another process has not committed yet.
     pub fn sweep(files: *const Files, keep: []const []const u8) void {
         // Three modules a plugin, for the installed ones and the ones in the trash.
         std.debug.assert(keep.len <= sandboxed_plugin.sandboxed_plugins_max * 6);
 
+        const now = std.Io.Timestamp.now(files.io, .real);
         var iterator = files.dir.iterate();
         var seen: u32 = 0;
 
@@ -145,7 +153,13 @@ pub const Files = struct {
 
             const stem = std.mem.cutSuffix(u8, entry.name, ".wasm") orelse continue;
 
-            if (entry.kind == .file and valid_hash(stem) and !listed(keep, stem)) {
+            if (entry.kind != .file or !valid_hash(stem) or listed(keep, stem)) {
+                continue;
+            }
+
+            const stat = files.dir.statFile(files.io, entry.name, .{}) catch continue;
+
+            if (settled(stat.mtime, now)) {
                 files.remove(stem);
             }
         }
@@ -205,6 +219,17 @@ fn less_than(_: void, left: []const u8, right: []const u8) bool {
     return std.mem.lessThan(u8, left, right);
 }
 
+/// How long a module no row names is left alone: longer than any install stays uncommitted.
+pub const settle_seconds: i64 = 60 * 60;
+
+/// Whether a module written at `written` is old enough, at `now`, to sweep.
+fn settled(written: std.Io.Timestamp, now: std.Io.Timestamp) bool {
+    std.debug.assert(settle_seconds > 0);
+    std.debug.assert(now.nanoseconds > 0);
+
+    return now.toSeconds() - written.toSeconds() >= settle_seconds;
+}
+
 fn listed(keep: []const []const u8, hash: []const u8) bool {
     std.debug.assert(hash.len == hash_len);
 
@@ -257,4 +282,49 @@ test "hashes are lowercase hex of the content" {
     try std.testing.expect(valid_upload("greeter-0.1.0.wasm"));
     try std.testing.expect(!valid_upload("../greeter.wasm"));
     try std.testing.expect(!valid_upload(".hidden"));
+}
+
+test "a sweep removes modules no row names once they settle, never a fresh one" {
+    var scratch = std.testing.tmpDir(.{});
+    defer scratch.cleanup();
+
+    const io = std.testing.io;
+    var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buffer, ".zig-cache/tmp/{s}", .{scratch.sub_path});
+    var files = try Files.open(io, path);
+    defer files.close();
+
+    var kept: [hash_len]u8 = undefined;
+    var fresh: [hash_len]u8 = undefined;
+    var stale: [hash_len]u8 = undefined;
+    var stored_again: [hash_len]u8 = undefined;
+
+    try files.store("kept", &kept);
+    try files.store("fresh", &fresh);
+    try files.store("stale", &stale);
+    try files.store("stored again", &stored_again);
+
+    const long_ago: std.Io.File.SetTimestamp = .{
+        .new = std.Io.Timestamp.now(io, .real).subDuration(.fromSeconds(settle_seconds * 2)),
+    };
+
+    for ([_]*const [hash_len]u8{ &kept, &stale, &stored_again }) |hash| {
+        var name_buffer: [hash_len + 5]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buffer, "{s}.wasm", .{hash});
+
+        try files.dir.setTimestamps(io, name, .{
+            .modify_timestamp = long_ago,
+        });
+    }
+
+    // An install storing a module already on the drive marks it as just written.
+    try files.store("stored again", &stored_again);
+    files.sweep(&.{&kept});
+
+    const gpa = std.testing.allocator;
+
+    gpa.free(try files.read(gpa, &kept));
+    gpa.free(try files.read(gpa, &fresh));
+    gpa.free(try files.read(gpa, &stored_again));
+    try std.testing.expectError(error.FileNotFound, files.read(gpa, &stale));
 }
