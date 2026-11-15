@@ -3,7 +3,7 @@
 How people get in, and how Publr keeps everyone else out. The mechanics live in
 operations (`project.init`, `users.sign_in`, `users.sign_out`,
 `users.set_password`, ...) so the CLI, the HTTP routes and plugins all go
-through the same doors; see [CLI: users](adapters/cli/user.md) and [REST API](rest.md)
+through the same doors; see [CLI: users](cli/user.md) and [REST API](rest.md)
 for the surfaces.
 
 ## Signing in

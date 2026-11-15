@@ -1,6 +1,7 @@
 # Admin
 
-The admin, served by the same binary at `/admin`, is a thin adapter over the
+The admin, served by the same binary on an origin of its own (`serve --admin-url`; by default
+`admin.<the site's host>` on its port, so `admin.localhost:<port>` on this machine), is a thin adapter over the
 operations, like the CLI and the REST API: every form posts to a handler that
 calls one operation with the signed-in user's grant, then redirects. Its pages
 are authored in PTSX under `ui/` (`layouts/`, `pages/`, `components/`) on the
@@ -69,7 +70,7 @@ form, are `IndexSection`s: a heading row with its own actions, then the list or 
 content.
 
 ```
-publr serve --port 8080      # then open http://127.0.0.1:8080/admin
+publr serve --port 8080      # then open http://admin.localhost:8080/admin
 ```
 
 | Path | What |

@@ -1,9 +1,9 @@
 # Content
 
 How Publr models what it stores. The operations are documented in the CLI
-reference ([content_type](adapters/cli/content_type.md), [record](adapters/cli/record.md),
-[taxonomy](adapters/cli/taxonomy.md), [term](adapters/cli/term.md),
-[status](adapters/cli/status.md)); the tables in [Database schema](schema.md).
+reference ([content_type](cli/content_type.md), [record](cli/record.md),
+[taxonomy](cli/taxonomy.md), [term](cli/term.md),
+[status](cli/status.md)); the tables in [Database schema](schema.md).
 
 A content type is data: a name and a list of fields, stored in the database,
 editable at runtime. It has a kind: a **record type** holds any number of

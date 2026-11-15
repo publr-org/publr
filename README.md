@@ -435,7 +435,7 @@ plugin API stays honest: Publr is its heaviest user.
 
 ## Status
 
-**v0.2, early access.** Publr is moving fast, and formats may still change between
+**Early access.** Publr is moving fast, and formats may still change between
 releases. [Updates](docs/updates.md)
 
 ## Learn more
