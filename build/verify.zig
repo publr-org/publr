@@ -83,9 +83,7 @@ pub fn add(builder: *std.Build, parts: Parts) void {
     full.dependOn(browser_step);
     builder.step("parity", "Run every printed example").dependOn(parity_step);
 
-    if (hook.add_check(builder, parts.checks.fixture_exe, browser_step)) |local_hook| {
-        full.dependOn(local_hook);
-    }
+    full.dependOn(hook.add_check(builder, parts.checks.fixture_exe, browser_step));
 }
 
 /// The plugins under `-Dplugins` beside a project (`-Dplugins=../plugins`): every one compiled
