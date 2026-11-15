@@ -7,6 +7,7 @@ const pages = @import("frame/pages.zig");
 const panels = @import("frame/panels.zig");
 const records = @import("../../operations/record.zig");
 const document = @import("frame/document.zig");
+const model_app = @import("../../model/app.zig");
 const sdk = @import("../../sdk.zig");
 const site_dimensions = @import("../../operations/dimensions.zig");
 const plugin_context = @import("../../sdk/plugin/context.zig");
@@ -381,7 +382,13 @@ fn send(session: *Session, base: []const u8, html: []const u8) Error!void {
     document.write(&out.writer, base, html, session.ctx.view, own) catch {
         return error.OutOfMemory;
     };
-    try response.set_header("Content-Security-Policy", document.policy);
+    const project = session.project;
+    const admin_address = if (project.split()) project.admin_origin else project.site_origin;
+
+    try response.set_header("Content-Security-Policy", try document.policy_for(
+        session.arena,
+        model_app.origin_of(admin_address),
+    ));
     try response.set_header("Cache-Control", "no-store");
     try response.set_header("Referrer-Policy", "no-referrer");
     try response.set_header("X-Content-Type-Options", "nosniff");

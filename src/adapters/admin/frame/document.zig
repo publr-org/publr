@@ -12,6 +12,22 @@ pub const policy = "sandbox allow-scripts allow-popups allow-popups-to-escape-sa
     "img-src 'self' data:; font-src 'self'; connect-src 'none'; form-action 'none'; " ++
     "base-uri 'none'; frame-ancestors 'self'";
 
+/// `policy` with the admin's `origin` beside every `'self'`: WebKit weighs `'self'` against
+/// the sandbox's opaque origin, so there it matches nothing, and the frame's stylesheet and
+/// scripts, and the admin framing it, are refused unless the origin is named outright.
+pub fn policy_for(arena: std.mem.Allocator, origin: []const u8) error{OutOfMemory}![]const u8 {
+    std.debug.assert(origin.len <= 64 << 10);
+    std.debug.assert(std.mem.indexOfAny(u8, origin, "; \r\n") == null);
+
+    if (origin.len == 0) {
+        return policy;
+    }
+
+    const named = try std.fmt.allocPrint(arena, "'self' {s}", .{origin});
+
+    return std.mem.replaceOwned(u8, arena, policy, "'self'", named);
+}
+
 /// What the frame asks of the admin, by `postMessage` to its parent: run one of the
 /// plugin's operations (`publr.send`), go to another of its pages or an address in the
 /// admin (`publr.navigate`, or a link clicked), and its height, so the frame grows with
@@ -303,4 +319,26 @@ test "the frame's policy keeps it sandboxed, offline and framed only by the admi
     try std.testing.expect(std.mem.indexOf(u8, policy, "allow-same-origin") == null);
     try std.testing.expect(std.mem.indexOf(u8, policy, "connect-src 'none'") != null);
     try std.testing.expect(std.mem.indexOf(u8, policy, "frame-ancestors 'self'") != null);
+}
+
+test "the frame's policy names the admin's origin when there is one" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+
+    const named = try policy_for(arena, "http://admin.localhost:8107");
+
+    try std.testing.expectEqualStrings(policy, try policy_for(arena, ""));
+    try std.testing.expect(std.mem.endsWith(
+        u8,
+        named,
+        "frame-ancestors 'self' http://admin.localhost:8107",
+    ));
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        named,
+        "script-src 'self' http://admin.localhost:8107 'unsafe-inline'",
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, named, "connect-src 'none'") != null);
 }
