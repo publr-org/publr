@@ -11,8 +11,6 @@ const server = @import("../server.zig");
 const sdk = @import("../sdk.zig");
 const Project = @import("project.zig").Project;
 const apps_load = @import("apps_load.zig");
-const plugin_build = @import("plugin_build.zig");
-const toolchain = @import("toolchain.zig");
 
 pub const route = "/_publr/cli";
 pub const key_len: u32 = 64;
@@ -303,7 +301,6 @@ pub fn handle(
             .plugin_states = project.plugin_states,
             .files = project.files,
             .apps = project.apps_folder(),
-            .builder = project.builder,
             .agents = project.agents,
             .live = project.live,
             .updater = project.updater,
@@ -340,9 +337,8 @@ pub const Commands = struct {
     db_path: [:0]const u8,
     local: ?*server.Server = null,
     arena_bytes: []u8 = &.{},
-    /// What the `apps` and `plugin build` operations reach with no server running.
+    /// What the `apps` operations reach with no server running.
     checker: apps_load.Checker = undefined,
-    builder: plugin_build.Builder = undefined,
 
     pub fn run(commands: *Commands, args: []const []const u8, out: *std.Io.Writer) !u8 {
         std.debug.assert(args.len > 0);
@@ -356,10 +352,6 @@ pub const Commands = struct {
 
         commands.checker = .{
             .init = commands.init,
-        };
-        commands.builder = .{
-            .io = commands.init.io,
-            .db_path = commands.db_path,
         };
 
         std.debug.assert(commands.arena_bytes.len == server.request_arena_bytes);
@@ -378,20 +370,8 @@ pub const Commands = struct {
                 .plugin_states = &application.plugin_states,
                 .files = application.files_of(),
                 .apps = commands.checker.folder(),
-                .builder = try commands.local_builder(),
             },
         );
-    }
-
-    /// Builds started here install into the database themselves once built.
-    fn local_builder(commands: *Commands) !?sdk.context.PluginBuilder {
-        std.debug.assert(commands.db_path.len > 0);
-
-        if (!toolchain.carried) {
-            return null;
-        }
-
-        return try commands.builder.hook(commands.init.arena.allocator());
     }
 
     fn open_local(commands: *Commands) !*server.Server {

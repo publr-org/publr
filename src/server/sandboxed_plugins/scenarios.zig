@@ -1578,3 +1578,47 @@ test "secrets: declared, not granted; refused unset or undeclared; one value, sh
 
     try std.testing.expect(std.mem.indexOf(u8, refused[1], "does not declare") != null);
 }
+
+test "a server with no transient plugins loads the installed ones as before" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    try std.testing.expect(scenario.host.transient == null);
+    try scenario.host.load_all(&scenario.harness.fixture.connection);
+    try std.testing.expectEqual(0, scenario.host.loaded.items.len);
+
+    const sandboxed = try scenario.install();
+
+    try std.testing.expectEqualStrings("greeter", sandboxed.name);
+    try std.testing.expect(scenario.host.loaded.items[0].transient == null);
+}
+
+test "a transient plugin runs from its file and keeps what it writes in memory" {
+    var scenario: Scenario = undefined;
+    try scenario.init();
+    defer scenario.deinit();
+
+    const transient_module = @import("transient.zig");
+    const system = scenario.ctx(.system);
+    var transient: transient_module.Transient = undefined;
+
+    try transient.open(std.testing.allocator, std.testing.io, system.auth, &.{scenario.path});
+    defer transient.close();
+
+    scenario.host.transient = &transient;
+    try scenario.host.load_all(&scenario.harness.fixture.connection);
+    try std.testing.expectEqual(1, scenario.host.loaded.items.len);
+    try std.testing.expect(scenario.host.loaded.items[0].transient != null);
+    try std.testing.expectEqual(1, try scenario.total(admin, greet, "{\"note\":\"hi\"}"));
+    try std.testing.expectEqual(2, try scenario.total(admin, greet, "{\"note\":\"again\"}"));
+
+    // Nothing of it in the site: no row, no type, no record.
+    const site = scenario.ctx(.system);
+    const store = @import("../../store.zig");
+
+    try std.testing.expectEqual(0, (try store.sandboxed_plugins.list(site.db, site.arena)).len);
+    const visit = try store.content_types.get_by_handle(site.db, site.arena, "greeter.visit");
+
+    try std.testing.expect(visit == null);
+}

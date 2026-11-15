@@ -131,13 +131,13 @@ test "a packed site unpacks elsewhere as it was, without this machine's things" 
 
     try make_site(&source, &runtime, arena);
 
-    const file = try std.fs.path.join(arena, &.{ source.root, "ada.site.tar.gz" });
-    const made = try bundle.pack(try source.site(arena), arena, file, "ada");
+    const file = try std.fs.path.join(arena, &.{ source.root, "ada.exported" });
+    const made = try bundle.export_to(try source.site(arena), arena, file, "ada", null);
 
     try std.testing.expectEqualStrings("0.4.0", made.manifest.release);
     try std.testing.expectEqual(@as(u32, 7), made.files);
 
-    const manifest = try bundle.unpack(try target.site(arena), arena, file, .{});
+    const manifest = try bundle.import_from(try target.site(arena), arena, file, .{});
 
     try std.testing.expectEqualStrings("ada", manifest.name);
 
@@ -170,7 +170,7 @@ test "a packed site unpacks elsewhere as it was, without this machine's things" 
     try std.testing.expectEqual(@as(i64, 2), settings);
 
     // Never over a site: the database is there now.
-    const again = bundle.unpack(try target.site(arena), arena, file, .{});
+    const again = bundle.import_from(try target.site(arena), arena, file, .{});
 
     try std.testing.expectError(error.SiteExists, again);
 }
@@ -232,7 +232,7 @@ test "a clone goes without other people, secrets, logs and the site's copies" {
     try std.testing.expectError(error.FileNotFound, cwd.access(std.testing.io, copies, .{}));
 }
 
-test "unpacking refuses what is not a bundle, and a bundle past the limit" {
+test "importing refuses what is not an export, and one past the limit" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -243,19 +243,19 @@ test "unpacking refuses what is not a bundle, and a bundle past the limit" {
     var target = try Scratch.init(arena);
     defer target.folder.cleanup();
 
-    try source.write("plain.txt", "not a bundle at all");
+    try source.write("plain/notes.txt", "not an export at all");
 
-    const plain = try std.fs.path.join(arena, &.{ source.root, "plain.txt" });
-    const refused = bundle.unpack(try target.site(arena), arena, plain, .{});
+    const plain = try std.fs.path.join(arena, &.{ source.root, "plain" });
+    const refused = bundle.import_from(try target.site(arena), arena, plain, .{});
 
     try std.testing.expectError(error.NotABundle, refused);
     try make_site(&source, &runtime, arena);
 
-    const file = try std.fs.path.join(arena, &.{ source.root, "ada.site.tar.gz" });
+    const file = try std.fs.path.join(arena, &.{ source.root, "ada.exported" });
 
-    _ = try bundle.pack(try source.site(arena), arena, file, "ada");
+    _ = try bundle.export_to(try source.site(arena), arena, file, "ada", null);
 
-    const big = bundle.unpack(try target.site(arena), arena, file, .{
+    const big = bundle.import_from(try target.site(arena), arena, file, .{
         .bytes_max = 8,
     });
 

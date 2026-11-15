@@ -165,7 +165,7 @@ jobs:
         working-directory: publr
         env: { PREVIOUS: "${{ needs.version.outputs.previous }}" }
         run: |
-          zig build -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
+          zig build --prefix ../out
           binary="$PWD/../out/bin/publr"
           test "$("$binary" --version)" = "publr $VERSION"
           previous_binary=""
@@ -182,12 +182,12 @@ jobs:
           mkdir -p ../upgrade-sites
           if [ -f fixtures/upgrade/START ]; then
             zig build upgrade-fixture -Dupgrade-binary="$binary" \
-              -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE"
+             
             cp ".zig-cache/upgrade-sites/$VERSION.tar.gz" "../upgrade-sites/upgrade-$VERSION.tar.gz"
             cp .zig-cache/upgrade-sites/lived.tar.gz ../upgrade-sites/upgrade-lived.tar.gz
           fi
           zig build upgrade -Dupgrade-binary="$binary" -Dupgrade-previous="$previous_binary" \
-            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" 2>&1 | tee ../upgrade.txt
+            2>&1 | tee ../upgrade.txt
           test "${PIPESTATUS[0]}" -eq 0
 
       - uses: actions/upload-artifact@v4
@@ -220,14 +220,13 @@ jobs:
 
       - uses: ./publr/.github/actions/workspace
         with:
-          target: ${{ matrix.target }}
           commits: ${{ needs.version.outputs.commits }}
 
       - name: zig build
         working-directory: publr
         run: |
           zig build -Dtarget=${{ matrix.target }} -Dcpu=baseline -Doptimize=ReleaseSafe \
-            -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --prefix ../out
+            --prefix ../out
           cp ../out/bin/publr ../${{ matrix.file }}
 
       - name: Check it reports the version
@@ -265,10 +264,9 @@ jobs:
         working-directory: dist
         env: { COMMITS: "${{ needs.version.outputs.commits }}" }
         run: |
-          cp ../publr/install.sh .
           printf '%s\n' "$COMMITS" > workspace.txt
           chmod +x publr-*
-          sha256sum publr-* install.sh workspace.txt > SHA256SUMS
+          sha256sum publr-* workspace.txt > SHA256SUMS
           for file in publr-*; do sha256sum "$file" > "$file.sha256"; done
           cat SHA256SUMS
 
@@ -303,9 +301,10 @@ jobs:
       - name: Release
         run: |
           cat > notes.md <<EOF
-          Download \`publr\` for your OS and CPU below, or install it with
-          \`curl -fsSL https://raw.githubusercontent.com/publr-org/publr/$TAG/install.sh | sh\`.
-          Each binary has its SHA-256 next to it, and \`SHA256SUMS\` lists every file.
+          On your computer, the \`publr\` command runs this release for each site that pins it:
+          \`brew install publr-org/tap/publr\` or \`curl -fsSL https://publr.dev/install.sh | sh\`.
+          On a server, download \`publr\` for its OS and CPU below. Each binary has its SHA-256
+          next to it, and \`SHA256SUMS\` lists every file.
 
           macOS builds are not signed yet. If macOS refuses to open \`publr\`, run
           \`xattr -d com.apple.quarantine publr\` once.

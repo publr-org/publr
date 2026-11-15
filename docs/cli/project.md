@@ -1,7 +1,6 @@
 # CLI: `project`
 
-The installation itself. `publr init` (short for `publr project init`) sets a
-fresh project up: it creates the first admin and marks the project as initialised,
+The installation itself. `publr project init` sets a fresh project up: it creates the first admin and marks the project as initialised,
 exactly once. Back to the [CLI reference](../cli.md).
 
 ## `init`
@@ -26,7 +25,7 @@ never asked; accounts added later choose theirs on their first visit.
 Output: `{ "user_id", "roles", "password" }` (`password` only when generated).
 
 ```
-$ publr init --email ada@example.com --display_name Ada
+$ publr project init --email ada@example.com --display_name Ada
 {
   "user_id": "3f9c...",
   "roles": ["admin"]
@@ -85,7 +84,7 @@ $ publr --as-admin project move_app --from www --to site
 ## `put`
 
 Anything the project stores put exactly as another copy of the project keeps it, with its
-ids: what keeps copies (environments, branches) in step, so a thing keeps one id in every
+ids: what keeps copies (environments, branches) in sync, so a thing keeps one id in every
 copy. Each unit is a `kind`, an `id` and its `rows`: its stored rows as JSON objects by
 column, by table, `{}` to remove it. Its own row is updated in place, the rows hanging from
 it replaced whole; a unit already as given is not written, so running a call twice changes

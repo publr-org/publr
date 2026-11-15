@@ -8,7 +8,7 @@
 //!   device's token.
 
 const std = @import("std");
-const credentials = @import("credentials.zig");
+const hosts = @import("hosts.zig");
 const http = @import("../lib/http.zig");
 const registry = @import("registry.zig");
 const oauth_model = @import("../model/oauth.zig");
@@ -40,7 +40,7 @@ pub fn base_of(project: *const Project, request: *const Request, arena: std.mem.
 
     // A tool asking at a loopback address is answered there: over plain http it may send
     // tokens only to one, and `admin.localhost` is not.
-    const asked_at_loopback = credentials.host_is_loopback(request.header("host") orelse "");
+    const asked_at_loopback = hosts.host_is_loopback(request.header("host") orelse "");
 
     if (project.split() and !asked_at_loopback) {
         return std.fmt.allocPrint(arena, "{s}{s}", .{ project.admin_origin, project.admin_path() });

@@ -1,8 +1,8 @@
 # CLI: `device`
 
 Agents and tools acting for an account, signed in by link. How devices work and what each
-scope allows is in [Authentication: Devices](../auth.md#devices); `publr login` runs the
-device's side for you ([CLI: A Publr elsewhere](../cli.md#a-publr-elsewhere)). Back to the
+scope allows is in [Authentication: Devices](../auth.md#devices); the `publr` command's
+`login` runs the device's side for you ([CLI: The publr command](../cli.md#the-publr-command)). Back to the
 [CLI reference](../cli.md).
 
 ## `start`

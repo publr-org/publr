@@ -64,6 +64,9 @@ pub const Server = struct {
         });
         errdefer server.runtime.deinit();
 
+        // A project's first database: Publr sets the project up (`starter.zig`).
+        const first = builtin.os.tag != .wasi and !exists(process.io, db_path);
+
         server.connection = try db.open(&server.runtime, db_path);
         errdefer server.connection.close();
 
@@ -75,6 +78,11 @@ pub const Server = struct {
         @memcpy(&server.limits.secret, server.auth.secret[0..server.limits.secret.len]);
 
         try server.open_gate(process, db_path);
+
+        if (first) {
+            _ = try @import("server/starter.zig").set_up(process.io, process.arena.allocator());
+        }
+
         server.index = try deps.Index.open(&server.connection, .{
             .quiet_ms = deps.quiet_ms,
         });
@@ -179,6 +187,11 @@ pub const Server = struct {
 
         server.plugin_states.deinit();
 
+        // The plugins this server was started with, held in memory for it alone.
+        if (server.sandboxed_plugins.transient) |transient| {
+            transient.close();
+        }
+
         server.sandboxed_plugins.deinit();
 
         server.media.close();
@@ -229,6 +242,14 @@ fn sibling_dir(arena: std.mem.Allocator, db_path: []const u8, name: []const u8) 
     const parent = std.fs.path.dirname(db_path) orelse ".";
 
     return std.fs.path.join(arena, &.{ if (parent.len == 0) "." else parent, name });
+}
+
+fn exists(io: std.Io, path: []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    std.Io.Dir.cwd().access(io, path, .{}) catch return false;
+
+    return true;
 }
 
 fn ensure_parent_dir(io: std.Io, path: []const u8) !void {

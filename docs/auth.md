@@ -241,7 +241,7 @@ to everyone. Finer rules (per-type access, owning records) are plugin policies, 
 
 ## Setup, exactly once
 
-`publr init` creates the first admin. It works only while no admin exists and
+`publr project init` creates the first admin. It works only while no admin exists and
 the project has never been initialised; the fact is recorded in the database in
 the same transaction, so deleting users later does not reopen it, and nobody
 can run it again, not even the local operator. Anyone may call it, so run it

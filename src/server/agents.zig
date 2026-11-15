@@ -2,7 +2,6 @@
 //! the binary so it always describes this Publr), then what only this machine and this
 //! build know: where the SDK's source is, and every permission a plugin may ask for.
 const std = @import("std");
-const toolchain = @import("toolchain.zig");
 const permission = @import("../model/permission.zig");
 const operator = @import("operator.zig");
 
@@ -26,11 +25,7 @@ pub fn run(init: std.process.Init, out: *std.Io.Writer, db_path: []const u8) !u8
             "and it prints its address.\n\n");
     }
 
-    if (toolchain.unpack(init)) |tools| {
-        try out.print("The SDK's source: `{s}/src`.\n", .{tools.sdk});
-    } else |err| {
-        try out.print("The SDK's source is not available here ({t}).\n", .{err});
-    }
+    try out.writeAll("The SDK's source: `publr plugin sdk --out <folder>` writes it out.\n");
 
     try out.writeAll("\n## Permissions\n\n| Key | Tier | What the administrator reads |" ++
         " Operations |\n|---|---|---|---|\n");

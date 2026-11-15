@@ -34,8 +34,6 @@ each concern lives in `build/<topic>.zig`.
 | `-Dbrowser-debug=true` | `false` | `browser` (Debug wasm with panic messages) |
 | `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
 | `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
-| `-Dcompiler=false` | `true` | leave out the compiler for sandboxed plugins (`publr zig`, about 8 MB); the test fixture is built without it |
-| `-Dtoolchain-archive=<file>` | none | carry this archive as that compiler instead of building it: `zig build toolchain -Dtarget=<the same target>` in `../lib/zig` makes it (`zig-out/toolchain.tar.gz`). CI keeps one per target until Zig changes |
 | `-Dplugins=<dir>` | `plugins` | the folder of plugins, one each, relative to this repository; `publr.zon` beside it names the ones compiled in (`.plugins = .{ .native = ... }`), the rest are built for the sandbox |
 | `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/plugins` and `<dir>/publr.zon` (each option above still wins); the binary reads the preset's apps wherever it runs when the project has no `apps/` of its own |
 
@@ -77,13 +75,15 @@ and `portal`, which has no pages, on a subdomain.
 
 ## The plugins
 
-`build/sandboxed_plugins.zig` builds each plugin for the sandbox the way its users do:
-it runs the `publr` just built, `publr plugin build --name <name> --dir <folder> --out
-<file>`, with the toolchain written out under `.zig-cache/publr-toolchain` rather than
-the user's cache. That compiles the plugin, the `publr` module and a generated root that
-exports the module's entry points (`publr_alloc`, `publr_free`, `publr_invoke`,
-`publr_manifest`) for `wasm32-freestanding` with a 256 KiB stack, by the compiler Publr
-carries (`../lib/zig`: no LLVM, so modules are larger than an LLVM build's). The `publr`
+`build/sandboxed_plugins.zig` builds each plugin for the sandbox the way its users do
+(`build/plugin_compile.zig`): the `publr` just built runs `plugin prepare`, the Zig running
+the build compiles what it printed, with its cache under `.zig-cache/publr-plugins`, and
+`publr plugin check --file --no-examples` makes the module whole, as the `publr` command's
+`plugin build` does with the compiler it carries (`../lib/zig`: no LLVM). That compiles the
+plugin, the `publr` module and a generated root that exports the module's entry points
+(`publr_alloc`, `publr_free`, `publr_invoke`, `publr_manifest`) for `wasm32-freestanding`
+with a 256 KiB stack, by Zig's own backend (no LLVM, so modules are larger than an LLVM
+build's). The `publr`
 module is the core's own source, packed into the binary with the build (`sdk_archive`);
 what the sandbox never reaches (SQLite, the HTTP server, the apps) is an empty module in
 its place, so a plugin that reaches for them fails to compile. The manifest (see

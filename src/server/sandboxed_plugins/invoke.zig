@@ -2,6 +2,7 @@
 //! runs as itself: its calls are dispatched as a plugin caller holding its grants, narrowed
 //! to the roles of the account it acts for, within its limits.
 const std = @import("std");
+const transient_module = @import("transient.zig");
 const permission_define = @import("../../sdk/plugin/permission_define.zig");
 const wasm = @import("publr_wasm");
 const sdk = @import("../../sdk.zig");
@@ -364,7 +365,15 @@ fn publr_call(
         return wire.code_of(error.Unavailable);
     }
 
-    const output = registry.SDK.call_json(ctx, name, input) catch |err| {
+    // A transient plugin's own records live in the server's memory, never in the site.
+    const memory = invocation.loaded.transient;
+    const own = transient_module.own_record_call(invocation.loaded.own_types, name, input);
+    var held_ctx: sdk.Ctx = undefined;
+    const target = if (memory != null and own) blk: {
+        held_ctx = memory.?.context_of(ctx);
+        break :blk &held_ctx;
+    } else ctx;
+    const output = registry.SDK.call_json(target, name, input) catch |err| {
         // A refusal goes back with its name, for the plugin's `ctx.failure()`.
         if (err == error.Failed) if (ctx.failure) |failure| {
             if (reply(env, failure.name, result_ptr) != wire.ok) {

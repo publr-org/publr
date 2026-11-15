@@ -91,6 +91,20 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const title = try session.declared(page.label);
     const operations = try pages.operations_of(&session, page.plugin);
+
+    if (page.bare) {
+        return admin.screen(&session, .ok, admin.views.PluginBarePage, .{
+            .title = title,
+            .src = src,
+            .plugin = page.plugin,
+            .page = page.path,
+            .csrf = session.csrf_token(),
+            .operations = operations,
+        }, .{
+            .settings_path = request.path(),
+        });
+    }
+
     const all_pages = try pages.all(&session);
     const parent = pages.parent_of(all_pages, page) orelse {
         return admin.screen(&session, .ok, admin.views.PluginPage, .{

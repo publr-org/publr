@@ -35,6 +35,9 @@ pub const Page = struct {
     /// `.none`: no entry in the menu; the page still opens at its address, for links of the
     /// plugin's own.
     menu: ?enum { none } = null,
+    /// Drawn alone: no rail, sidebar or top bar around it, the plugin frame filling the
+    /// window, for a page that stands on its own (a long task's progress on a `CardPage`).
+    bare: bool = false,
     /// A tabbed page: the admin draws it, its title over a tab bar and the open tab, and
     /// other plugins' pages fill it by naming it in `.parent`. No operation or form.
     tabs: bool = false,

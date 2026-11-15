@@ -1,16 +1,15 @@
 # Building on Publr: a guide for agents
 
-You are working in a Publr project for someone. This guide is built into the `publr`
-binary they run (`publr agents` prints it), so it describes exactly the Publr in front of
+You are working in a Publr project for someone. This guide is built into the Publr release
+the site runs (`publr agents` prints it), so it describes exactly the Publr in front of
 you. Read it whole before changing anything.
 
 ## The project
 
-Every `publr` in this guide means this site's own binary, run from the site's folder:
-the one its `publr.zon` names in `.binary`, else the first of `./publr`, `../publr`,
-`./zig-out/bin/publr`, `../zig-out/bin/publr` that exists (sites beside a shared binary,
-or a Publr checkout with its own build). Never a `publr` from the PATH. A project (a
-site) is the folder `publr` runs in:
+Every `publr` in this guide is the `publr` command (`brew install publr-org/tap/publr` or
+`curl -fsSL https://publr.dev/install.sh | sh`), run in the site's folder. There it hands
+every command of Publr's own to the release the site pins in its `publr.zon`, so what this
+guide says is what answers. A project (a site) is the folder Publr runs in:
 
 ```
 data/publr.db                       the database: content, users, installed plugins
@@ -24,8 +23,9 @@ people use at an address: a website, a shop, or a whole product with its own sig
 dashboards and forms for its users, separate from Publr's admin. An app that needs logic
 of its own brings a plugin for it.
 
-`publr serve` runs the site and the admin (`http://127.0.0.1:8080/admin`). While it runs,
-every other `publr` command is sent to it and takes effect at once: you never restart it.
+`publr start` runs the site and the admin in the background (`publr open` opens the admin,
+signed in; `publr ls` says where each site answers). While it runs, every other `publr`
+command is sent to it and takes effect at once: you never restart it.
 `publr --help` lists Publr's own commands; installed plugins bring namespaces of their own
 (`publr --as-admin plugin list` names the plugins). `publr <namespace> --help` lists a
 namespace's commands, either kind, and `publr <namespace> <verb> --help` explains one.
@@ -314,8 +314,8 @@ write; and the admin and the pages match what you agreed.
 publr plugin build --name guestbook
 ```
 
-This compiles `plugins/guestbook/main.zig` with the compiler inside `publr` (no
-Zig needed), then installs it: a new plugin is added and enabled, one already there gets
+This compiles `plugins/guestbook/main.zig` against the site's release with the compiler
+the `publr` command carries (no Zig needed), then installs it: a new plugin is added and enabled, one already there gets
 this as its next version, the previous kept to roll back to. When the compiler reports an
 error, fix the source and run it again. To change a plugin, edit it, raise `.version`, and
 build again. Built again unchanged, it says it is up to date. When it says it builds
@@ -341,9 +341,8 @@ for you. A page of its own is for what that cannot do. Start from a working one:
 publr --as-admin plugin scaffold --name notes --page list   # or --page form
 ```
 
-It answers every file of a plugin with a page (`{ path, content }`); hand them to
-`plugin build --name notes --files <files>`, or write them into `plugins/notes/` and run
-`publr plugin build --name notes`. The page is listed in Settings and shown in the plugin
+It answers every file of a plugin with a page (`{ path, content }`); write them into
+`plugins/notes/` and run `publr plugin build --name notes`. The page is listed in Settings and shown in the plugin
 frame, looking like the admin's own. Keep it that way:
 
 - **Compose, never style.** The page returns an admin layout (`IndexPage`, `FormPage`)
@@ -591,24 +590,21 @@ removing something from the trash, is not run but put on their removal list
 (`ListedForRemoval`); they remove it themselves. Without publish, a write that would publish
 is refused with `DraftsOnly`: save drafts and tell them what waits to be published.
 
-With no files of your own to edit, the project's apps and plugins are reached through
-operations: `apps files`, `apps read`, `apps write --path <app>/<path> --content <text>`,
-`apps remove`, each live as soon as it is written (`apps load` answers why they do not
-load when they do not);
-and `plugin build --name <name> --files '[{"path":"main.zig","content":"..."}]'`, which
-builds and installs on the server, with `plugin build_log --name <name>` to follow it.
-With the plugin's source in this folder, `publr plugin build --name <name>` builds it here
-and sends the module, and it is the only way on Publr Cloud: its projects build nothing
-themselves. A file that is not text (an icon, an image) goes with `apps write
---encoding base64 --content <base64>`.
+With no files of your own to edit, the project's apps are reached through operations:
+`apps files`, `apps read`, `apps write --path <app>/<path> --content <text>`, `apps
+remove`, each live as soon as it is written (`apps load` answers why they do not load when
+they do not). A file that is not text (an icon, an image) goes with `apps write --encoding
+base64 --content <base64>`. A plugin is built on a computer: with its source in this
+folder, `publr plugin build --name <name>` builds it here against the site's release and
+sends the module. A site builds nothing itself.
 
-Where Publr may not write in your home folder (a sandbox), point its cache at the project:
-`PUBLR_CACHE_DIR=$PWD/.publr/cache`.
+Where the `publr` command may not write in your home folder (a sandbox), point its cache at
+the project: `PUBLR_CACHE_DIR=$PWD/.publr/cache`.
 
 ## Where to read more
 
 - `publr skill`: the short version of how to decide where each need goes, and when Publr
   itself may change (only as a generic pull request).
 - `publr --help`, and `--help` on any namespace or command.
-- The SDK's source, as this binary builds plugins against it: `publr agents` ends with
-  where it is on this machine. Start at `publr.zig` and `sdk/plugin/`.
+- The SDK's source, as this release builds plugins against it: `publr plugin sdk --out
+  <folder>` writes it. Start at `publr.zig` and `sdk/plugin/`.

@@ -81,7 +81,6 @@ fn add_publr(
     chosen.native = .{
         .names = native,
     };
-    chosen.compiler = false;
 
     const library = core.add_module(builder, target, optimize, chosen);
     const exe = builder.addExecutable(.{

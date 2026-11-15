@@ -178,7 +178,7 @@ What each opens:
   changes, and a transition into or out of a published status answers `.pending` for
   someone who may publish to approve; with it, they go live. Private and internal types
   only when named. `records.destroy` alone removes a record for good.
-- `project.put` is for plugins keeping copies of a project in step (rollbacks, merges):
+- `project.put` is for plugins keeping copies of a project in sync (rollbacks, merges):
   `project.put` puts anything it stores (records, internal records, terms, content types,
   taxonomies, field groups, roles, users, installed plugins' rows) exactly as another copy
   keeps it, ids and history kept; records and terms land as the same change made by a
@@ -724,6 +724,12 @@ is the easy default. The frame reaches the admin only through the bridge:
 What the frame draws never reaches the admin, so it needs no sanitizing and no
 permission.
 
+`.bare = true` draws the page alone: no rail, sidebar or top bar, the frame filling the
+window, for a page that stands on its own, such as a long task's progress on a `CardPage`
+(the clone's progress page in the `publr` command is one). It is the same frame page
+otherwise: the same sandbox, bridge and checks, shown to whoever may call its read; give
+it `.menu = .none` when it should not be listed.
+
 A page can also be a declaration, with no views of the plugin's: `.form = .{ .read =
 Read, .save = Save }` instead of `.operation`. The admin
 draws it as one of its own pages (no frame: nothing of the plugin's is drawn), a field for
@@ -737,7 +743,7 @@ one row only, a radio (the main language), and a column in
 disabled in that row, saying so; a new row starts from each item field's default.
 `.suggest = Common`, a read answering items by list, offers them to add from a dropdown,
 each named by its `name`; `.preview = Preview`, a read taking `Save`'s
-input and answering as `Read`, keeps the shown columns in step as people type. It works the same for an installed plugin, which draws
+input and answering as `Read`, keeps the shown columns in sync as people type. It works the same for an installed plugin, which draws
 nothing else in the admin yet.
 
 A page with `.tabs = true` is a tabbed page: the admin draws its title and a tab bar, and
@@ -761,6 +767,25 @@ from a list of fields and the operation that saves them) make the page look like
 admin's own without styling it. `publr plugin build` writes `ui/operations.d.ts`, each
 operation's input and output as TypeScript, and `plugin scaffold` gives a working plugin
 to start from.
+
+## Transient plugins
+
+`publr serve --plugin <file.wasm>` (repeated for more, up to eight) starts a server with a
+sandboxed plugin of its own: loaded from the file for that server alone, never installed.
+Nothing of it reaches the site: no row among the installed plugins, no module in the data
+folder, no type or record in the database, so a site's export, pack, push or deploy never
+carries it. It runs like an installed plugin (operations, hooks, pages in the plugin frame,
+records), holding everything it asks for, as the person who started the server chose it.
+Its records live in a database the server keeps in memory, made for it and gone when it
+stops: they last as long as the server, whatever happens to the plugin's instance. Its
+record calls on its own types are answered there; one naming no type reaches only its own
+records. An installed plugin of the same name wins, and the transient one is left out.
+Queued work runs in its own process (`queue-run`), which does not load transient plugins:
+their jobs and event hooks do not run there.
+
+Tools use them for pages that belong to a moment rather than to the site: `publr clone`
+shows a clone's progress with one, a page on the clone's own address while the site comes
+down.
 
 ## One folder, and which are compiled in
 
@@ -791,12 +816,14 @@ installed at runtime. A plugin never says which it is: trusting code with everyt
 its owner's choice, never its author's. `zig build` compiles in the ones listed (a name
 `plugins/` lacks fails the build).
 
-`publr plugin build --name <name>` builds `plugins/<name>/main.zig` for the sandbox with the
-compiler Publr carries, so no Zig is needed: its manifest is read from the module itself and written into it, then it is added
+`publr plugin build --name <name>`, the `publr` command's, builds `plugins/<name>/main.zig`
+for the sandbox with the compiler the command carries, against the site's release (`plugin
+prepare`, then `plugin check --file`), so no Zig is needed: its manifest is read from the
+module itself and written into it, then it is added
 and enabled (a new plugin) or applied as its next version (one already there, the previous
 kept to roll back to). What it asks for is granted by tier; high requests wait for an
 administrator. Built again unchanged, it is up to date. `zig build sandboxed-plugins` builds
-every plugin under `plugins/` that is not compiled in with the same command into
+every plugin under `plugins/` that is not compiled in the same way into
 `zig-out/sandboxed-plugins/<name>.wasm`, as the tests build theirs; see
 [Build](build.md#the-plugins).
 
@@ -823,18 +850,19 @@ a plugin grants only its own operations.
 
 ## Which one to pick
 
-| | Built-in | Installed (DLP) |
-|---|---|---|
-| Added by | developer or build tool | admin, marketplace, repository |
-| Needs a rebuild | yes | no |
-| Access | full, trusted | SDK only, within its permissions |
-| Isolation | none, it is part of the binary | sandboxed |
-| Can be disabled or removed by the user | no | yes |
-| Deep integrations (database, cache, ...) | yes | no |
-| HTTP routes of its own | yes | not yet |
-| Admin pages, panels and a top bar item | yes | yes, in the plugin frame |
-| State, process hooks, operator commands | yes | not yet |
-| Uses only the public SDK | works | works |
+| | Built-in | Installed (DLP) | Transient |
+|---|---|---|---|
+| Added by | developer or build tool | admin, marketplace, repository | whoever starts the server (`serve --plugin`) |
+| Needs a rebuild | yes | no | no |
+| Access | full, trusted | SDK only, within its permissions | SDK only, everything it asks for |
+| Isolation | none, it is part of the binary | sandboxed | sandboxed |
+| Can be disabled or removed by the user | no | yes | gone when the server stops |
+| Deep integrations (database, cache, ...) | yes | no | no |
+| HTTP routes of its own | yes | not yet | not yet |
+| Admin pages, panels and a top bar item | yes | yes, in the plugin frame | yes, in the plugin frame |
+| What it keeps | the site's database | the site's database | memory, for the server's life |
+| State, process hooks, operator commands | yes | not yet | not yet |
+| Uses only the public SDK | works | works | works |
 
 ## Writing a built-in plugin
 

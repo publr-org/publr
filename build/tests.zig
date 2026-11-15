@@ -33,8 +33,6 @@ pub fn add(
 
     var fixture_from = core.with_apps(from, fixture_apps_dir);
 
-    // Smoke drives this binary as one built without the compiler, and the tests need none.
-    fixture_from.compiler = false;
     // Whatever the project compiles in (`plugins/`, `publr.zon`) never reaches the checks:
     // core is tested with none, the test plugins being installed where a check wants them.
     fixture_from.plugins_dir = sandboxed_plugins.fixture_dir;

@@ -13,9 +13,10 @@ than a file is an **island**: a fragment of a page fetched after the page loads,
 rendered at build or per request. Templates and generated client code live in the
 binary; public files stay on disk.
 
-A project with no apps is valid: `/` opens the admin. `publr new` starts a site with
-Publr's starter, one app at the root (`apps/www`), then the site's own to change or delete;
-`publr new <name> --admin-only` starts it with none. A project may also start from a preset
+A project with no apps is valid: `/` opens the admin. A new site gets Publr's starter when
+Publr first sets it up and its folder has no `apps/`: one app at the root (`apps/www`), then
+the site's own to change or delete; an empty `apps/` (the `publr` command's `new
+--admin-only` makes one) means it starts with none. A project may also start from a preset
 (a website, a SaaS, a multi-tenant product) or from scratch.
 
 ## An app

@@ -8,7 +8,6 @@ const lifecycle = @import("plugin/lifecycle.zig");
 const versions = @import("plugin/versions.zig");
 const dependents = @import("plugin/dependents.zig");
 const views = @import("plugin/detail.zig");
-const sources = @import("plugin/sources.zig");
 const scaffold = @import("plugin/scaffold.zig");
 const data = @import("plugin/data.zig");
 const grants = @import("plugin/grants.zig");
@@ -657,7 +656,7 @@ pub const operations = [_]type{
     List,         Get,          Upload,     Add,  Enable,   Disable, Update, Rollback,
     CancelUpdate, GrantRequest, Revoke,     Deny, SetGrant, Remove,  Data,   EraseData,
     LeftBehind,   RestoreData,  Interfaces,
-} ++ sources.operations ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
+} ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
     @import("plugin/log.zig").operations;
 
 pub const Piece = data.Piece;

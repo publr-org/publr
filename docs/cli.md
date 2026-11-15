@@ -23,35 +23,25 @@ The database is `data/publr.db` by default and is created on first use.
 
 ## Sites
 
-```
-publr new <name> [--admin-only]
-```
+A site is a folder Publr runs in: `publr.zon`, `apps/`, `plugins/`, and `data/` once it
+first runs. Publr gives a project its starter when it first sets it up (the first `serve`,
+`project init` or any command that makes its database), if `publr.zon` names it and the
+folder has no `apps/` at all: `apps/www`, one page at `/` with links to deploy and to the
+docs, the site's own to change. An empty `apps/` means none, and `/` opens the admin. The
+first admin is made on the admin's setup page, or with `project init`. A Publr checkout is
+a site too, run by its own build. Sites on one binary share its built-in plugins; a site's
+own plugins are sandboxed.
 
-A site is a folder `publr` runs in: `publr.zon`, `apps/`, `plugins/`, and `data/` once it
-first runs. Several sites may share one binary, each a folder beside it:
-
-```
-sites/
-  publr          the binary (the installer puts it here; nothing goes on the PATH)
-  blog/          publr.zon, apps/, plugins/, data/
-  shop/
-```
-
-`new` makes `<name>/` in the current folder, with a `publr.zon` naming it and Publr's
-starter in `apps/www`: one page at `/` with links to deploy and to the docs, the site's own
-to change. `--admin-only` leaves `apps/` empty, so `/` opens the admin. Where the
-binary is not one of the places agents look first (`publr`, `../publr`,
-`zig-out/bin/publr`, `../zig-out/bin/publr`, from the site), `publr.zon` also names it
-(`.binary`), relative when near and absolute when far. Then `cd <name>` and `serve`; the
-first admin is made on the admin's setup page, or with `init`. A Publr checkout is a site
-too, run by its own build. Sites on one binary share its built-in plugins; a site's own
-plugins are sandboxed.
+Making sites, running them in the background, signing in to a Publr elsewhere, cloning,
+pulling and pushing, packing a site into one file, deploying to Publr Cloud, building
+plugins and setting up an agent's tool are the `publr` command's, which runs each site on
+the Publr release it pins: [The publr command](#the-publr-command).
 
 ## Serving
 
 ```
 publr [--db <path>] serve [--port <n>] [--static [--full]] [--dev] [--out <dir>] [--url <base>]
-                          [--admin-url <url>] [--apps <dir>] [--idle-stop <s>]
+                          [--admin-url <url>] [--sync-url <url>] [--apps <dir>] [--idle-stop <s>]
 ```
 
 Starts the HTTP server on `127.0.0.1` and runs until the process is stopped.
@@ -69,8 +59,10 @@ the next free one (at most 20 tries) and prints the port it took. With
 | `--out <dir>` | The built apps to serve when they exist, one folder each (default `output`). |
 | `--idle-stop <s>` | Stop after this many seconds without a request (default: never): a server started on demand that goes away when nobody uses it. |
 | `--admin-url <url>` | The admin's own address, on another host or port than the site's; by default `admin.<the site's host>` on its port (`http://admin.localhost:8080` for a site on this machine), and a site on a bare IP address must name one. A path under it (`https://cloud.publr.app/spaces/ada/shop`) is for a host shared by several admins: the proxy in front takes the path off, and every address and cookie the admin sends back carries it. The site's host then sends `/admin` there, the admin's host sends the site's pages back, and a signed-in administrator sees the site as it is, with no frame ([apps.md](apps.md#the-toolbar)). |
+| `--sync-url <url>` | Where other computers clone, pull and push this site when that is not its own address: a host that keeps sync traffic away from the CDN in front of its pages (Publr Cloud: `https://sync.cloud.publr.app:8443/<site>--admin`). `/api/health` says it as `sync`; the `publr` command syncs there when it is given. |
 | `--url <base>` | The project's public address: the apps' sitemaps, and the domain subdomain apps hang from (default `http://127.0.0.1:8080`). A path in it (`https://example.com/site`) is where the whole project is served: requests are answered under it, and every address it sends back (pages, assets, redirects, cookies) carries it. |
 | `--apps <dir>` | Where each app's public files are read from, `<dir>/<folder>/public` (default `apps`). |
+| `--plugin <file>` | A transient plugin: this sandboxed plugin's `.wasm`, loaded for this server alone and never installed; what it keeps lives in memory and goes when the server stops. Repeat for more, up to eight. See [Transient plugins](plugins.md#transient-plugins). |
 
 ## Building
 
@@ -100,36 +92,29 @@ not compile is named with the reason and the apps loaded before keep serving. (A
 the project's own `apps/`, else the build's folder. `--apps` is refused while a server
 runs, since the server reads only its own folder. See [Apps](apps.md).
 
-## The compiler
+## Plugins built elsewhere
 
 ```
-publr [--db <path>] zig <args>
-```
-
-Zig 0.16.0, carried in the binary, with the arguments as given and its exit code. It builds
-WebAssembly only, the way sandboxed plugins are built (it has no LLVM), so no Zig needs to
-be installed.
-
-```
-publr [--db <path>] plugin build --name <name> [--dir <folder>] [--out <file>]
+publr plugin prepare --name <name> [--dir <folder>] --out <folder> [--with <x.wasm>]...
+                     [--interfaces <file>]
+publr plugin check --file <module.wasm> --dir <folder> [--views <folder>] [--with <x.wasm>]...
+                   [--types] [--no-examples]
+publr plugin sdk --out <folder>
 publr plugin check --dir <folder>
 ```
 
-Builds the plugin whose source is `<folder>/main.zig` (default
-`plugins/<name>`) with that compiler, reads its manifest from the module and
-writes it in, then adds and enables it, or applies it as the next version of the one
-already there. The compiler's messages print as they are; built again unchanged, it says
-the plugin is up to date. `--out <file>` only builds it, into that file, and installs
-nothing. A plugin registered through `publr.plugin.define` is held to the plugin checks
-first, and its doc comments are read beside it as its words. `plugin check --dir <folder>`
-runs the checks alone and prints each problem with its file and line. See
+Publr carries no compiler; the `publr` command compiles a sandboxed plugin against this
+release, around these. `prepare` checks the plugin's source and writes what the compile
+takes into a new or empty folder: this release's SDK, the plugin's docs module, its
+lowered views and the published interfaces it builds against (the site's, those
+`--interfaces` holds, or this binary's), then prints the compiler's arguments as JSON
+(`args`, `module`, `views`, `dir`). `check --file` makes the compiled module whole (its
+manifest read by running it and written in, with its source and its views' browser code),
+says what its sandboxed build left out and runs its examples beside the site's plugins
+(`--no-examples` leaves them; `--types` writes its types beside its views). It installs
+nothing: `plugin add --file` does. `sdk` writes this release's SDK alone. `check --dir`
+runs the plugin checks over a source and prints each problem with its file and line. See
 [Plugins](plugins.md).
-
-`init` and `serve` write the compiler and the SDK plugins build against out once per
-machine (about 35 MB), into `$PUBLR_CACHE_DIR`, else `$XDG_CACHE_HOME/publr`, else
-`~/.cache/publr`; every project on the machine shares them. When they cannot be written,
-they warn and carry on: only compiling needs them. A binary built with `-Dcompiler=false`
-carries neither, and `publr zig` and `plugin build` say so.
 
 ## For agents
 
@@ -144,8 +129,8 @@ conversation's agent starts every turn with it and the guide below, so it works 
 instead of exploring with `--help`.
 
 Prints the guide for an agent building on this Publr ([Agents](agents.md), built into the
-binary so it always matches it), then where the SDK's source is on this machine and every
-permission a plugin may ask for, with its tier. `publr --help` points agents to it.
+binary so it always matches it), then how to get the SDK's source and every permission a
+plugin may ask for, with its tier. `publr --help` points agents to it.
 
 ```
 publr agent --conversation <id>
@@ -164,163 +149,42 @@ publr [--as-admin | --as <who>] seed --type <type> --file <path> [--publish]
 
 Makes a record of the type from every document in the file: a JSON array of objects, or one
 object a line. It sends them in calls of `record create_many`, 250 at a time (fewer when
-they pass 512 KiB together), to this site or the one `--site` names, printing how many are
-in. Each call is all or nothing; a refused one stops the seed and says which document. Who
+they pass 512 KiB together), printing how many are in. Each call is all or nothing; a refused one stops the seed and says which document. Who
 runs it goes with every call.
 
-## Publr in an agent's tool
+## The publr command
 
-```
-publr setup cursor|claude|codex
-publr mcp [--folder <path>]
-```
+The `publr` command (`brew install publr-org/tap/publr`, `curl -fsSL
+https://publr.dev/install.sh | sh`, or inside Publr Studio) works around Publr from
+outside: `new` and `init` make sites, `start`, `stop`, `open` and `logs` run them,
+`login`, `logout`, `whoami` and `--site` reach a Publr elsewhere as a device, `clone`,
+`pull` and `push` keep a folder's copy of a site and send its work up as a branch, `pack`
+and `unpack` write a site as one file and back, `cloud login` and `deploy` make a site a
+Publr Cloud project, `plugin build` builds a plugin, and `mcp`, `setup` and `skill` give
+an agent's tool Publr. In a site's folder every other word goes to that site's Publr.
 
-`setup` adds Publr to that tool once, for every project, in the tool's own way: Cursor's
-install link (Cursor asks the person), `claude mcp add --scope user`, `codex mcp add`. The
-entry runs `publr mcp` from this binary's full path; Cursor passes each window's folder as
-`--folder`. Running it again only points the entry at this binary. Not on Windows yet.
+What it reaches on a site: `POST /api/cli` runs the words it sends as the device whose
+token comes with them ([REST](rest.md)); the device operations sign it in
+([`device`](cli/device.md)); a site hands its data to a clone (`GET /api/sites/size`,
+`POST /api/sites/pack`), packing itself in a process of its own (`publr clone-pack-run`,
+which the server starts without waiting) so a large database never runs the server out of
+SQLite memory and the site keeps answering; and `site export`, `site import`, `site
+state` and `site placeholders` below do the data work of a pack, a clone, a pull and a
+push in the folder.
 
-`mcp` is an MCP server over standard input and output. It passes each message, unchanged,
-to the `/mcp` of the site the folder works on, and the site's answer back: the tools are the
-site's, so one `publr` serves sites on any release. The folder is `--folder`, else Claude
-Code's `CLAUDE_PROJECT_DIR`, else the one it starts in; it, or a folder above it, either
-names a site elsewhere in `.publr/site` or is a site (`data/publr.db`), reached through the
-server running it. A folder that is neither gets the tools by name and `link` (`address`),
-which the agent calls once the person says which site the folder is for: it signs this
-computer in and writes `.publr/site`, never in a site's own folder, the home folder or the
-root. Signing in happens on the first call that needs it: the browser opens on the site's
-approve page, the call waits up to 40 seconds and otherwise answers that the person still
-has to approve. The token is kept with the CLI's, one per site for every tool, named after
-the tool ("Cursor on <computer>"). A token the site no longer accepts is forgotten, and the
-next call asks again.
-
-## A Publr elsewhere
-
-```
-publr login <address> [--name <name>] [--scope read|write|production|publish] [--no-browser] [--claim <code>]
-            [--sign-on <token>]
-publr logout [<address>]
-publr whoami [<address>]
-publr --site <address> [--env <name>] <command ...>
-```
-
-`login` signs this machine in to the Publr at `<address>` as a device
-([Authentication: Devices](auth.md#devices)): it prints a link (and opens it when there is
-a browser), its person approves it in that Publr's admin and chooses what it may do
-(`--scope` caps what is on offer), and the token is kept in
-`~/.publr/credentials` (or `$PUBLR_CREDENTIALS`), readable by its user only, by address.
-`--claim <code>` takes a sign-in the person already gave (`device offer`, the code in the
-Overview's setup command) instead: nothing to approve. `--sign-on <token>` takes a token
-the site's trusted issuer signed (a Publr Cloud dashboard's `cloud.sign_on_token`) and
-redeems it for the device's token at once (`device.redeem`): nothing to approve either.
-It is never printed. `--name` is what the person sees; it defaults to "The publr CLI on"
-this machine's name.
-
-`--site <address>` (or `PUBLR_SITE`) sends a command to that Publr with its token: the
-words go as they are and are read there, so its plugins' commands and its help are what
-answer. `--as` and `--as-admin` are refused there; the device is who you are. `logout`
-revokes the device there and forgets it here; `whoami` says whose it is, its scope and its
-name. With one address kept, `logout` and `whoami` need none.
-
-A folder whose `.publr/site` holds an address builds that Publr: its commands go there as
-if `--site` named it, and `logout` and `whoami` mean it. The setup an Overview offers for
-an agent (`curl … | sh`) writes it. `agents`, `skill`, `login`, `logout` and `whoami` always run
-on this machine.
-
-`--env <name>` sends the command to that environment or branch of the Publr, with the same
-token. Without it a command goes to production. Copies are made as any are: `publr
-environments create --kind branch --name <what>`. A device without **Write on production**
-may make one, but every other write to production is refused with `WorksOnCopies`. A Publr
-that keeps no copies has only itself.
-
-On this computer, `--device <id>` runs a command as a device approved here, with its access
-and under its name in the activity log, as `--as` does for an account.
-
-## Clone and push
-
-```
-publr clone <address or project> [<folder>] [--media all|none] [--size] [--port <n>]
-            [--no-open] [--no-serve]
-publr push
-publr pull [--check]
-```
-
-`clone` signs in as a device if this machine is not yet, and writes the site to a folder: its
-database, media, apps, plugins and `publr.zon`. Only an administrator can. It leaves behind
-every other account, secrets, plugins' internal records, the logs and the site's copies; the
-account cloning stays, an administrator. A bare project name means `https://<it>.publr.app`.
-The Publr here must be the one there; a mismatch prints the install line for the right one.
-
-`clone` is seen while it runs. It starts a small server at the folder's admin address
-(`http://admin.localhost:<port>`, `--port` or a free one) and opens its page,
-`/admin/sync`, in Publr Studio when it is installed (`publr-studio://open?url=`), else in
-the browser (`--no-open` only prints it). The page shows each step as it happens: the site
-packed there, the download and the unpacking on one bar divided into the site's parts
-(database, media, apps, plugins, each named under its stretch), placeholders. Without
-`--media`, the page first asks what comes down: everything, or the database and setup with
-placeholders for media, each with what it weighs; the clone waits for the answer. When the
-folder is written, a session for the account that cloned it is made there; the page takes
-its cookie once, and the clone becomes the folder's `publr serve` on the same address, so
-the page opens the admin signed in. `--no-serve` stops once the folder is written.
-
-The site packs itself in a process of its own (`publr clone-pack-run`, which the server
-starts without waiting), so a large database never runs the server out of SQLite memory and
-the site keeps answering while it packs. The clone asks how far it is, and the page's bar
-moves through packing, downloading and unpacking, a third each.
-
-`--size` only says what a clone would bring down (`database_bytes`, `media_files`,
-`media_bytes`, from the site's `GET /api/sites/size`), for the person to be asked first.
-`--media none` brings no media files: every media record comes, and a plain placeholder of
-the same width, height and type stands in for its file (an empty file for one that is not
-a picture), listed with its size in `.publr/placeholders`.
-
-The folder is a site of its own: `publr serve`, `--as-admin`, your own editor. `push`, run in
-it, sends it up as a branch of the site for a person to review and merge. Pushing again from
-the folder replaces the same branch; a folder with nothing of its own has nothing to push. A placeholder still there unchanged is never sent: the
-bundle names it, and the branch takes the live file. Nothing here ever writes to the live site. The Publr
-there must keep copies.
-
-`pull`, run in the folder, brings the site down again, only what changed: the database
-when the site moved past what the folder last took (its newest activity entry, kept in
-`.publr/clone.json`), and of the media only the files the folder does not hold the same
-(by storage key and hash). The folder's database, apps, plugins and `publr.zon` become the
-site's, new media files are added and those the site no longer has removed; what was
-replaced is kept once in `.publr/previous/`. This machine's sign-ins, devices and sign-on
-trust stay. A pull never touches the folder's own work: its writes to the site since it
-came down, and its apps, plugins and `publr.zon` where they differ from `.publr/base/`. A
-folder with work not pushed, or pushed and waiting for review, is refused (exit 4) until
-the branch is merged (the site's `merge.accept`); then the merged site comes down. A
-server running the folder is refused too (exit 5): stop it first. Not signed in exits 3.
-`--check` changes nothing and prints where the folder is, as JSON: `changes` (work of its
-own), `unsent` (not pushed), `waiting` (pushed, not merged), `behind` (the site moved).
-
-A folder deployed with `cloud deploy` is a clone of its project too: its first `pull` or
-`push` makes `.publr/clone.json` from `cloud.json` and takes the project as it is now as
-`.publr/base/`, leaving the folder as it is; what the folder wrote after it was deployed
-counts as its own work.
-
-## The skill
-
-```
-publr skill
-publr skill install [--agent claude|codex|cursor|pi | --dir <path>]
-```
-
-`skill` prints the build-on-publr skill this binary carries: how an agent decides where a
-need goes, what it never does, and when core may change. `skill install` writes it, with
-its references, into the folder it runs in, where agents that load skills find it: in
-`.agents/skills/build-on-publr/`, which Codex, Cursor, Pi and other agents following Agent
-Skills read, and in `.claude/skills/build-on-publr/` for Claude Code. `--agent` writes
-only that agent's folder (Cursor's is `.cursor/skills/`, Pi's `.pi/skills/`), `--dir` only
-the folder named. The repository is
-also a plugin marketplace (`.claude-plugin/`) offering the same skill.
+`--env <name>` runs a command in that environment or branch of this Publr, through the
+plugin that keeps the copies. Copies are made as any are: `publr environments create
+--kind branch --name <what>`. A device without **Write on production** may make one, but
+every other write to production is refused with `WorksOnCopies`. On this computer,
+`--device <id>` runs a command as a device approved here, with its access and under its
+name in the activity log, as `--as` does for an account.
 
 ## While a server runs
 
 `publr serve` owns its project while it runs. It writes its port, a fresh key, a stamp
 of the binary it runs (the file's modification time, which a rebuild changes), its
-address (`--url`, else `http://127.0.0.1:<port>`) and its admin's origin, where `publr mcp`
-reaches it, beside the database (`<db>.serve`,
+address (`--url`, else `http://127.0.0.1:<port>`) and its admin's origin, where the `publr`
+command's `mcp` reaches it, beside the database (`<db>.serve`,
 readable by its user only), and removes them when it stops. `publr agents` says that
 address while it answers. Every
 other command then goes to it and runs there, as the admin's changes do: a plugin added,
@@ -338,43 +202,42 @@ refuse it. `publr db tables` counts every table's rows. `publr backups` lists th
 taken before each update and `publr restore <name>` puts one back, once `serve` is stopped.
 They open the database without the gate. See [Updates](updates.md) and [`update`](cli/update.md).
 
-## A whole site in one file
+## A site's data, moved
 
-`publr pack [<file>]` writes the site in this folder as one file, `<folder>.site.tar.gz`
-unless named: a gzipped tar with a manifest (`publr-site.json`: format, version, the Publr
-that packed it, the release that last opened the database, name, time), `data/` (a
-consistent snapshot of the database, safe while `serve` runs, media, installed plugins, the
-secrets' key) and `site/` (`publr.zon`, `apps/`, `plugins/`). What is only this machine's
-stays behind: sessions, devices, used sign-on tokens and whom the site trusts to sign people
-in, live agents, the build index, caches, backups, agents' logs, plugin builds, built pages
-and the serve marker. `publr unpack <file>` writes a packed site into this folder, which must
-have none; a bundle from a newer format, a name that would land outside the site, or a link
-is refused.
+`publr site export --to <folder>` writes the site into a new or empty folder, for the
+`publr` command to move it (its pack, push, deploy and clone): a manifest
+(`publr-site.json`: format, version, the Publr that exported it, the release that last
+opened the database, name, time), `data/` (a consistent snapshot of the database, media,
+installed plugins, the secrets' key) and `site/` (`publr.zon`, `apps/`, `plugins/`). What is
+only this computer's stays behind: sessions, devices, used sign-on tokens and whom the site
+trusts to sign people in, live agents, the build index, caches, backups, agents' logs,
+plugin builds, built pages and the serve marker. It is safe while `serve` runs, and refused
+into the site's data folder. `--clone` leaves what a
+clone leaves (the activity, error and plugin logs, secrets and their key, internal records),
+`--no-media` leaves the media files (their records stay), and `--placeholders <file>` names
+media storage keys, one a line, whose files stay behind (the manifest lists them).
+`publr site import --from <folder> [--no-media]` takes such a folder into this one, with
+every check: refused while `serve` runs, into a folder with a site, from a
+newer format, past the size cap, for a link or a name outside the site; nothing is left
+behind when it is refused. `--keep-local <database>` carries this computer's rows from
+another database into the imported one (whom it trusts to sign people in, the sessions and
+devices of the accounts it still has), as a pull keeps them. Both exit 1 when refused, 2 for
+wrong words.
 
-`publr cloud login [--cloud <dashboard>]` signs this computer in to your Publr Cloud
-account (`PUBLR_CLOUD`, else `https://cloud.publr.app`), as Publr Studio does: the browser
-opens on Cloud's sign-in, you approve "Publr CLI", and the token is kept with the CLI's other
-sign-ins. The dashboard's Account page lists it, with Sign out.
-
-`publr cloud deploy [--space <space>] [--slug <address>] [--name <name>] [--cloud <dashboard>]`
-makes this site a Publr Cloud project. It takes the token `cloud login` kept
-(`PUBLR_CLOUD_TOKEN` instead, when set), your space when you have one (with several it lists
-them for `--space`), and an address made from the folder's name with a random ending
-(`shop-k3v9q2`) unless `--slug` names one. A site never run yet (straight from `publr new`)
-gets its database made first, as `serve` would. It checks the address, packs the site, uploads it
-to the dashboard, and has the project made from it, in your space only. The folder then
-carries the link (`cloud.json`: the dashboard, space, project, address and admin) and is
-refused next time: changes reach a live site only through Cloud, as a branch (`publr push`).
-Last, it signs this computer in to the project as you, through the dashboard's sign-on
-(`login --sign-on`), so the folder pulls and pushes with nothing to approve.
+`publr site state [--until <ms>]` says, as JSON, what tooling needs of the site's own data:
+`release` (this Publr), `latest_change` (the newest activity entry), `latest_write` (the
+newest write to the site, made by `<ms>` when given; sign-ins, devices, views and the like
+are not writes) and `media` (every media record's storage key and hash). `publr site
+placeholders` writes a stand-in for every media record whose file is missing (a grey
+picture of its size and type, an SVG of its size; nothing for other files) and prints each
+one's storage key and bytes, a tab between, one a line; refused while `serve` runs.
 
 ## Global flags
 
 | Flag | Meaning |
 |---|---|
 | `--db <path>` | Use this database file. Must come first. |
-| `--site <address>` | Send the command to the Publr at that address, as this machine's device there (after `--db`, before the command); `PUBLR_SITE` does the same. See [A Publr elsewhere](#a-publr-elsewhere). |
-| `--env <name>` | Run the command in that environment or branch. See [A Publr elsewhere](#a-publr-elsewhere). |
+| `--env <name>` | Run the command in that environment or branch. See [The publr command](#the-publr-command). |
 | `--device <id>` | Run as a device approved here, with its access and its name. Refused from elsewhere. |
 | `--as <user>` | Run as that user, by id or email; the user's roles apply. |
 | `--as-admin` | Run as the local operator (`system`), unrestricted. |
@@ -424,7 +287,7 @@ runnable example.
 | Namespace | What it covers |
 |---|---|
 | [`heartbeat`](cli/heartbeat.md) | Liveness and version checks |
-| [`project`](cli/project.md) | The installation itself: `publr init`, and what a change rebuilds |
+| [`project`](cli/project.md) | The installation itself: `project init`, and what a change rebuilds |
 | [`user`](cli/user.md) | Accounts, roles, passwords and signing in |
 | [`role`](cli/role.md) | The roles, what each lets its accounts call, and changing them |
 | [`identity`](cli/identity.md) | Signing in with a provider: which accounts, and whether sign-up is open |

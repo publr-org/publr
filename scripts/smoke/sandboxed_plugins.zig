@@ -10,6 +10,7 @@ pub fn expect_plugin_build(
     binary: []const u8,
     work_dir: []const u8,
     fixtures: []const u8,
+    module: []const u8,
 ) !void {
     std.debug.assert(binary.len > 0);
     std.debug.assert(std.fs.path.isAbsolute(fixtures));
@@ -17,11 +18,19 @@ pub fn expect_plugin_build(
     const arena = init.arena.allocator();
     const dir = try std.fmt.allocPrint(arena, "{s}/plugin-build", .{work_dir});
     const source = try std.fmt.allocPrint(arena, "{s}/greeter", .{fixtures});
-    const build = [_][]const u8{ "plugin", "build", "--name", "greeter", "--dir", source };
+    const prepared = try std.fmt.allocPrint(arena, "{s}/prepared", .{dir});
+    const sdk = try std.fmt.allocPrint(arena, "{s}/sdk", .{dir});
+    const prepare = [_][]const u8{
+        "plugin", "prepare", "--name", "greeter", "--dir", source, "--out", prepared,
+    };
+    // A built module already carries its manifest: checked once, never twice.
+    const check = [_][]const u8{ "plugin", "check", "--file", module, "--dir", source };
 
     try std.Io.Dir.cwd().createDirPath(init.io, dir);
-    try smoke.expect_contains(init, binary, dir, &build, "\"enabled\": true");
-    try smoke.expect_contains(init, binary, dir, &build, "greeter is up to date");
+    try smoke.expect_contains(init, binary, dir, &prepare, "\"args\"");
+    try smoke.expect_failure(init, binary, dir, &check, "carries its manifest already");
+    try smoke.expect_contains(init, binary, dir, &.{ "plugin", "sdk", "--out", sdk }, sdk);
+    try std.Io.Dir.cwd().access(init.io, try std.fs.path.join(arena, &.{ sdk, "guest.zig" }), .{});
 }
 
 pub fn expect_sandboxed_plugins(

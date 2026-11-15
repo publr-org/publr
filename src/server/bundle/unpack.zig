@@ -14,11 +14,8 @@ pub const Options = struct {
     media: bool = true,
 };
 
-/// The bundle at `bundle_path` written out as `site`: `data/` into its data folder (the
-/// database under the site's own name), `site/` into its project folder. Refused when the
-/// site has a database already, for a manifest of another format or a newer version, and
-/// for a name that would land outside the two folders, a link, or more than `bytes_max`.
-/// A refused bundle leaves no database behind, so it can be tried again.
+/// The bundle at `bundle_path` (a gzipped tar: a branch pushed to this site, a pack a
+/// clone made) written out as `site`, with every check `import_from` makes.
 pub fn unpack(
     site: backup.Site,
     arena: std.mem.Allocator,
@@ -54,13 +51,110 @@ pub fn unpack(
         .link_name_buffer = &link_buffer,
     });
     const manifest = try read_manifest(arena, &entries);
-
-    try write_all(site, arena, &entries, manifest, .{
+    var landing: Landing = .{
+        .site = site,
+        .arena = arena,
+        .manifest = manifest,
         .database = database,
-        .bytes_max = options.bytes_max,
-        .written = options.written,
-        .media = options.media,
-    });
+        .options = options,
+    };
+
+    while (try entries.next()) |entry| {
+        if (entry.kind == .sym_link) {
+            return error.InvalidBundle;
+        }
+
+        const target = try landing.place(entry.name, entry.kind == .directory, entry.size) orelse
+            continue;
+        const writing = try Writing.open(site.io, target);
+        defer writing.close(site.io);
+
+        try entries.streamRemaining(entry, &writing.writer.interface);
+        try landing.written(writing, entry.size);
+    }
+
+    try landing.finish();
+
+    return manifest;
+}
+
+/// The bundle's files, unpacked in `folder` (as `site import` and `export_to` lay them),
+/// taken in as `site`: `data/` into its data folder (the database under the site's own
+/// name), `site/` into its project folder. Refused when the site has a database already,
+/// for a manifest of another format or a newer version, and for a name that would land
+/// outside the two folders, a link, or more than `bytes_max`. A refused import leaves no
+/// database behind, so it can be tried again. The folder stays as it was.
+pub fn import_from(
+    site: backup.Site,
+    arena: std.mem.Allocator,
+    folder: []const u8,
+    options: Options,
+) !bundle.Manifest {
+    std.debug.assert(folder.len > 0);
+    std.debug.assert(options.bytes_max > 0);
+
+    const io = site.io;
+    const cwd = std.Io.Dir.cwd();
+    const database = try std.fs.path.join(arena, &.{ site.data_dir, site.database });
+
+    if (cwd.access(io, database, .{})) |_| {
+        return error.SiteExists;
+    } else |_| {}
+
+    errdefer cwd.deleteFile(io, database) catch |err| {
+        std.log.debug("removing the unfinished {s}: {t}", .{ database, err });
+    };
+
+    var root = cwd.openDir(io, folder, .{
+        .iterate = true,
+    }) catch return error.NotABundle;
+    defer root.close(io);
+
+    const limit: std.Io.Limit = .limited(manifest_bytes_max);
+    const about = root.readFileAlloc(io, bundle.manifest_name, arena, limit) catch
+        return error.NotABundle;
+    const manifest = try parse_manifest(arena, about);
+    var landing: Landing = .{
+        .site = site,
+        .arena = arena,
+        .manifest = manifest,
+        .database = database,
+        .options = options,
+    };
+    var walker = try root.walk(arena);
+    defer walker.deinit();
+
+    while (try walker.next(io)) |entry| {
+        if (entry.kind == .sym_link) {
+            return error.InvalidBundle;
+        }
+
+        if (entry.kind != .file) {
+            continue;
+        }
+
+        const name = try arena.dupe(u8, entry.path);
+
+        std.mem.replaceScalar(u8, name, std.fs.path.sep, '/');
+
+        if (std.mem.eql(u8, name, bundle.manifest_name)) {
+            continue;
+        }
+
+        var source = try root.openFile(io, entry.path, .{});
+        defer source.close(io);
+        var source_buffer: [copy_buffer_bytes]u8 = undefined;
+        var reader = source.reader(io, &source_buffer);
+        const size = try reader.getSize();
+        const target = try landing.place(name, false, size) orelse continue;
+        const writing = try Writing.open(io, target);
+        defer writing.close(io);
+
+        _ = try reader.interface.streamRemaining(&writing.writer.interface);
+        try landing.written(writing, size);
+    }
+
+    try landing.finish();
 
     return manifest;
 }
@@ -80,6 +174,16 @@ fn read_manifest(arena: std.mem.Allocator, entries: *std.tar.Iterator) !bundle.M
     try entries.reader.readSliceAll(about);
     entries.unread_file_bytes = 0;
 
+    return parse_manifest(arena, about);
+}
+
+fn parse_manifest(arena: std.mem.Allocator, about: []const u8) !bundle.Manifest {
+    std.debug.assert(manifest_bytes_max > 0);
+
+    if (about.len > manifest_bytes_max) {
+        return error.NotABundle;
+    }
+
     const manifest = std.json.parseFromSliceLeaky(bundle.Manifest, arena, about, .{
         .ignore_unknown_fields = true,
     }) catch return error.NotABundle;
@@ -95,91 +199,93 @@ fn read_manifest(arena: std.mem.Allocator, entries: *std.tar.Iterator) !bundle.M
     return manifest;
 }
 
-const Limits = struct {
-    database: []const u8,
-    bytes_max: u64,
-    written: ?*std.atomic.Value(u64) = null,
-    media: bool = true,
-};
-
-fn write_all(
+/// Where each file of a bundle lands, and the checks on the way: names inside the site's
+/// two folders, the size cap, media passed over when asked, the database there at the end.
+const Landing = struct {
     site: backup.Site,
     arena: std.mem.Allocator,
-    entries: *std.tar.Iterator,
     manifest: bundle.Manifest,
-    limits: Limits,
-) !void {
-    std.debug.assert(limits.database.len > 0);
-    std.debug.assert(limits.bytes_max > 0);
+    /// The site's own database file.
+    database: []const u8,
+    options: Options,
+    bytes: u64 = 0,
+    has_database: bool = false,
 
-    var written: u64 = 0;
-    var has_database = false;
+    /// Where `name` goes, its folder made; null when it is passed over (a folder, or media
+    /// not wanted). Refused for a name outside the two folders or past the cap.
+    fn place(landing: *Landing, name: []const u8, directory: bool, size: u64) !?[]const u8 {
+        std.debug.assert(landing.options.bytes_max > 0);
 
-    while (try entries.next()) |entry| {
-        if (entry.kind == .sym_link) {
-            return error.InvalidBundle;
-        }
-
-        const target = try target_of(site, arena, manifest, entry.name) orelse
+        const target = try target_of(landing.site, landing.arena, landing.manifest, name) orelse
             return error.InvalidBundle;
 
-        if (entry.kind == .directory) {
-            try std.Io.Dir.cwd().createDirPath(site.io, target);
-            continue;
+        if (directory) {
+            try std.Io.Dir.cwd().createDirPath(landing.site.io, target);
+            return null;
         }
 
-        written = std.math.add(u64, written, entry.size) catch return error.TooLarge;
+        landing.bytes = std.math.add(u64, landing.bytes, size) catch return error.TooLarge;
 
-        if (written > limits.bytes_max) {
+        if (landing.bytes > landing.options.bytes_max) {
             return error.TooLarge;
         }
 
-        has_database = has_database or std.mem.eql(u8, target, limits.database);
+        landing.has_database = landing.has_database or std.mem.eql(u8, target, landing.database);
 
-        if (!limits.media and std.mem.startsWith(u8, entry.name, "data/media/")) {
-            continue;
+        if (!landing.options.media and std.mem.startsWith(u8, name, "data/media/")) {
+            return null;
         }
 
-        try write_entry(site.io, entries, entry, target);
+        if (std.fs.path.dirname(target)) |parent| {
+            try std.Io.Dir.cwd().createDirPath(landing.site.io, parent);
+        }
 
-        if (limits.written) |counter| {
-            _ = counter.fetchAdd(entry.size, .release);
+        return target;
+    }
+
+    fn written(landing: *Landing, writing: *Writing, size: u64) !void {
+        try writing.writer.interface.flush();
+
+        if (landing.options.written) |counter| {
+            _ = counter.fetchAdd(size, .release);
         }
     }
 
-    if (!has_database) {
-        return error.InvalidBundle;
+    fn finish(landing: *const Landing) !void {
+        if (!landing.has_database) {
+            return error.InvalidBundle;
+        }
     }
-}
+};
 
-fn write_entry(
-    io: std.Io,
-    entries: *std.tar.Iterator,
-    entry: std.tar.Iterator.File,
-    target: []const u8,
-) !void {
-    std.debug.assert(target.len > 0);
-    std.debug.assert(entry.kind == .file);
+/// One file being written, never over another; the secrets' key its owner's alone, as it was
+/// made.
+const Writing = struct {
+    file: std.Io.File,
+    buffer: [copy_buffer_bytes]u8,
+    writer: std.Io.File.Writer,
 
-    const cwd = std.Io.Dir.cwd();
+    fn open(io: std.Io, target: []const u8) !*Writing {
+        std.debug.assert(target.len > 0);
 
-    if (std.fs.path.dirname(target)) |parent| {
-        try cwd.createDirPath(io, parent);
+        const private = std.mem.eql(u8, std.fs.path.basename(target), "secret.key");
+        const writing = try std.heap.page_allocator.create(Writing);
+        errdefer std.heap.page_allocator.destroy(writing);
+
+        writing.file = try std.Io.Dir.cwd().createFile(io, target, .{
+            .exclusive = true,
+            .permissions = if (private) .fromMode(0o600) else .default_file,
+        });
+        writing.writer = writing.file.writer(io, &writing.buffer);
+
+        return writing;
     }
 
-    // The secrets' key opens every secret: its owner's alone, as it was made.
-    const private = std.mem.eql(u8, std.fs.path.basename(target), "secret.key");
-    var out = try cwd.createFile(io, target, .{
-        .exclusive = true,
-        .permissions = if (private) .fromMode(0o600) else .default_file,
-    });
-    defer out.close(io);
-    var buffer: [copy_buffer_bytes]u8 = undefined;
-    var writer = out.writer(io, &buffer);
-
-    try entries.streamRemaining(entry, &writer.interface);
-    try writer.interface.flush();
-}
+    fn close(writing: *Writing, io: std.Io) void {
+        writing.file.close(io);
+        std.heap.page_allocator.destroy(writing);
+    }
+};
 
 /// Where a bundle's `name` goes: `data/<path>` under the data folder (its database under
 /// the site's own name), `site/<item>/...` under the project folder for the project's

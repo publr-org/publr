@@ -1,21 +1,19 @@
-//! Media a clone came without (`publr clone --media none`): every media record stays, and a
-//! placeholder of the same width, height and type stands in for its file, so pages lay out
-//! as they will live. `.publr/placeholders` lists them with their sizes; `push` leaves out
-//! each one still there unchanged, so a live file is never replaced by a placeholder.
+//! Media a site came without (a clone made with `--media none`): every media record stays,
+//! and a placeholder of the same width, height and type stands in for its file, so pages lay
+//! out as they will live. `publr site placeholders` draws them and lists each with its size;
+//! the `publr` command keeps that list, and leaves out of a push each one still unchanged.
 const std = @import("std");
 const db = @import("../../lib/db.zig");
 const files = @import("../../lib/files.zig");
 const image = @import("../../lib/image.zig");
 const encode = @import("../../lib/image/encode.zig").encode;
 
-pub const list_path = ".publr/placeholders";
 const database_path = "data/publr.db";
 const media_dir = "data/media";
 /// The longest side a placeholder is drawn at; the record keeps the real size.
 const side_max: u32 = 1600;
 const side_default: u32 = 800;
 const page_rows: u32 = 500;
-const list_bytes_max: u32 = 64 << 20;
 const grey: u8 = 228;
 
 const Row = struct {
@@ -31,8 +29,14 @@ pub const Written = struct {
     bytes: u64,
 };
 
-/// A placeholder for every media record of the clone in `folder`, and their list.
-pub fn write_all(io: std.Io, arena: std.mem.Allocator, folder: []const u8) !Written {
+/// A placeholder for every media record of the site in `folder` whose file is missing, each
+/// written to `list` as its storage key and bytes, a tab between, one a line.
+pub fn write_missing(
+    io: std.Io,
+    arena: std.mem.Allocator,
+    folder: []const u8,
+    list: *std.Io.Writer,
+) !Written {
     std.debug.assert(folder.len > 0);
 
     var runtime = try db.Runtime.init(.{});
@@ -44,7 +48,6 @@ pub fn write_all(io: std.Io, arena: std.mem.Allocator, folder: []const u8) !Writ
     }));
     defer connection.close();
 
-    var list: std.Io.Writer.Allocating = .init(arena);
     var written: Written = .{
         .files = 0,
         .bytes = 0,
@@ -60,7 +63,7 @@ pub fn write_all(io: std.Io, arena: std.mem.Allocator, folder: []const u8) !Writ
         for (rows) |row| {
             const bytes = try write_one(io, page_arena.allocator(), folder, row) orelse continue;
 
-            try list.writer.print("{s}\t{d}\n", .{ row.storage_key, bytes });
+            try list.print("{s}\t{d}\n", .{ row.storage_key, bytes });
             written.files += 1;
             written.bytes += bytes;
         }
@@ -71,14 +74,6 @@ pub fn write_all(io: std.Io, arena: std.mem.Allocator, folder: []const u8) !Writ
 
         after = try arena.dupe(u8, rows[rows.len - 1].record);
     }
-
-    const path = try std.fs.path.join(arena, &.{ folder, list_path });
-
-    try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(path).?);
-    try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = path,
-        .data = list.written(),
-    });
 
     return written;
 }
@@ -112,8 +107,14 @@ fn write_one(io: std.Io, arena: std.mem.Allocator, folder: []const u8, row: Row)
         return null;
     }
 
-    const bytes = try drawn(arena, row);
     const path = try std.fs.path.join(arena, &.{ folder, media_dir, row.storage_key });
+
+    // A file the folder holds is the real one: only missing ones get a placeholder.
+    if (std.Io.Dir.cwd().access(io, path, .{})) |_| {
+        return null;
+    } else |_| {}
+
+    const bytes = try drawn(arena, row);
 
     try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(path).?);
     try std.Io.Dir.cwd().writeFile(io, .{
@@ -197,37 +198,6 @@ fn format_of(mime_type: []const u8) ?image.Format {
     return null;
 }
 
-/// The storage keys under `folder` whose files are still the placeholders `write_all` left:
-/// one replaced since (a real file fetched, an image edited) is the folder's own again.
-pub fn still_there(io: std.Io, arena: std.mem.Allocator, folder: []const u8) ![]const []const u8 {
-    std.debug.assert(folder.len > 0);
-
-    const cwd = std.Io.Dir.cwd();
-    const path = try std.fs.path.join(arena, &.{ folder, list_path });
-    const text = cwd.readFileAlloc(io, path, arena, .limited(list_bytes_max)) catch |err| {
-        return switch (err) {
-            error.FileNotFound => &.{},
-            else => err,
-        };
-    };
-    var kept: std.ArrayList([]const u8) = .empty;
-    var lines = std.mem.tokenizeScalar(u8, text, '\n');
-
-    while (lines.next()) |line| {
-        const tab = std.mem.indexOfScalar(u8, line, '\t') orelse continue;
-        const key = line[0..tab];
-        const bytes = std.fmt.parseInt(u64, line[tab + 1 ..], 10) catch continue;
-        const file = try std.fs.path.join(arena, &.{ folder, media_dir, key });
-        const stat = cwd.statFile(io, file, .{}) catch continue;
-
-        if (stat.size == bytes and files.valid_key(key)) {
-            try kept.append(arena, key);
-        }
-    }
-
-    return kept.items;
-}
-
 test "a placeholder keeps the picture's shape and type, at a bounded size" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -259,36 +229,4 @@ test "a placeholder keeps the picture's shape and type, at a bounded size" {
     try std.testing.expectEqual(@as(u32, 40), image.size_of(png).?.width);
     try std.testing.expect(std.mem.indexOf(u8, svg, "width=\"40\"") != null);
     try std.testing.expect(format_of("application/pdf") == null);
-}
-
-test "a placeholder replaced since is the folder's own again" {
-    var scratch = std.testing.tmpDir(.{});
-    defer scratch.cleanup();
-
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-
-    const arena = arena_state.allocator();
-    const io = std.testing.io;
-    const root = try scratch.dir.realPathFileAlloc(io, ".", arena);
-
-    try scratch.dir.createDirPath(io, "data/media/2026/11");
-    try scratch.dir.createDirPath(io, ".publr");
-    try scratch.dir.writeFile(io, .{
-        .sub_path = "data/media/2026/11/kept.png",
-        .data = "1234",
-    });
-    try scratch.dir.writeFile(io, .{
-        .sub_path = "data/media/2026/11/fetched.png",
-        .data = "the real one",
-    });
-    try scratch.dir.writeFile(io, .{
-        .sub_path = list_path,
-        .data = "2026/11/kept.png\t4\n2026/11/fetched.png\t4\n",
-    });
-
-    const kept = try still_there(io, arena, root);
-
-    try std.testing.expectEqual(@as(usize, 1), kept.len);
-    try std.testing.expectEqualStrings("2026/11/kept.png", kept[0]);
 }

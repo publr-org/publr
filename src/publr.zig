@@ -269,12 +269,8 @@ pub const operations = struct {
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");
-pub const toolchain = if (builtin.os.tag == .wasi) void else @import("server/toolchain.zig");
+pub const plugin_sdk = if (builtin.os.tag == .wasi) void else @import("server/plugin_sdk.zig");
 pub const plugin_build = if (builtin.os.tag == .wasi) void else @import("server/plugin_build.zig");
-pub const plugin_build_remote = if (builtin.os.tag == .wasi)
-    void
-else
-    @import("server/plugin_build/remote.zig");
 pub const plugin_check = if (builtin.os.tag == .wasi)
     void
 else
@@ -282,24 +278,15 @@ else
 pub const operator = if (builtin.os.tag == .wasi) void else @import("server/operator.zig");
 pub const database = if (builtin.os.tag == .wasi) void else @import("server/database.zig");
 pub const bundle = if (builtin.os.tag == .wasi) void else @import("server/bundle.zig");
-pub const clone = if (builtin.os.tag == .wasi) void else @import("server/clone.zig");
 pub const gate_backup = if (builtin.os.tag == .wasi) void else @import("server/gate/backup.zig");
-pub const cloud_deploy = if (builtin.os.tag == .wasi) void else @import("server/cloud_deploy.zig");
 pub const update = if (builtin.os.tag == .wasi) void else @import("server/update.zig");
 pub const agents = if (builtin.os.tag == .wasi) void else @import("server/agents.zig");
 pub const apps_load = if (builtin.os.tag == .wasi) void else @import("server/apps_load.zig");
-pub const login = if (builtin.os.tag == .wasi) void else @import("server/login.zig");
-pub const skill = if (builtin.os.tag == .wasi) void else @import("server/skill.zig");
-pub const mcp_local = if (builtin.os.tag == .wasi) void else @import("server/mcp_local.zig");
-pub const setup = if (builtin.os.tag == .wasi) void else @import("server/setup.zig");
 pub const seed = if (builtin.os.tag == .wasi) void else @import("server/seed.zig");
 pub const clone_pack = if (builtin.os.tag == .wasi)
     void
 else
     @import("server/clone/pack_process.zig");
-pub const new_site = if (builtin.os.tag == .wasi) void else @import("server/new_site.zig");
-pub const forwarding = if (builtin.os.tag == .wasi) void else @import("server/remote.zig");
-pub const credentials = if (builtin.os.tag == .wasi) void else @import("server/credentials.zig");
 pub const queue_worker = if (builtin.os.tag == .wasi) void else @import("server/queue_worker.zig");
 /// Queued work's passes: the worker's on a server, after each answer in the browser.
 pub const queued_jobs = @import("server/queued_jobs.zig");

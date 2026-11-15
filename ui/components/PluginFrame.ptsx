@@ -105,11 +105,13 @@ export type PluginFrameProps = {
   csrf: string;
   /** The plugin's own operations: the only ones the frame may ask for. */
   operations: string[];
+  /** As tall as the window, whatever the frame shows: a page drawn alone. */
+  fill?: boolean;
 };
 
 /** A plugin's page in the plugin frame: an opaque, sandboxed iframe that grows with what
  * it shows and talks to the admin only through `received`. */
-export function PluginFrame({ src, title, plugin, page, csrf, operations }: PluginFrameProps) {
+export function PluginFrame({ src, title, plugin, page, csrf, operations, fill = false }: PluginFrameProps) {
   state.plugin = plugin;
   state.page = page;
   state.csrf = csrf;
@@ -123,7 +125,7 @@ export function PluginFrame({ src, title, plugin, page, csrf, operations }: Plug
         title={title}
         sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
         class="block min-h-full w-full flex-1 border-0"
-        style={state.height > 0 ? `height:${state.height}px` : ""}
+        style={fill ? "height:100vh" : state.height > 0 ? `height:${state.height}px` : ""}
         onWindowMessage={received}
       ></iframe>
       <PluginTour />

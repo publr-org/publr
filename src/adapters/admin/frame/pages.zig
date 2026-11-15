@@ -29,6 +29,8 @@ pub const Page = struct {
     preview: []const u8 = "",
     /// Left out of the menu (`.menu = .none`); still opened at its address.
     hidden: bool = false,
+    /// Drawn alone, the frame filling the window: no rail, sidebar or top bar.
+    bare: bool = false,
     /// A tabbed page, drawn by the admin around the pages naming it in `parent`.
     tabs: bool = false,
     /// A tab of the first of these tabbed pages that exists: a form, or drawn by its
@@ -322,6 +324,7 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .suggest = page.suggest,
                 .preview = page.preview,
                 .hidden = page.hidden,
+                .bare = page.bare,
                 .tabs = page.tabs,
                 .parent = page.parent,
                 .action_label = page.action_label,
@@ -357,6 +360,7 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .suggest = if (page.form) |form| name_of(form.suggest) else "",
             .preview = if (page.form) |form| name_of(form.preview) else "",
             .hidden = page.menu != null,
+            .bare = page.bare,
             .tabs = page.tabs,
             .parent = page.parent,
             .action_label = if (page.action) |action| action.label else "",

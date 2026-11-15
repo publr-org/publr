@@ -15,6 +15,7 @@ pub const layouts = [_][]const u8{
     "CardPage",
     "ListDetailPage",
     "FramePage",
+    "BareFramePage",
     "WorkspacePage",
     "AroundPage",
     "PanelPage",
@@ -28,7 +29,7 @@ const spacing_prefixes = [_][]const u8{
 
 pub fn check(modules: []const *const Module) !void {
     std.debug.assert(modules.len > 0);
-    std.debug.assert(layouts.len == 9);
+    std.debug.assert(layouts.len == 10);
 
     for (modules) |module| {
         try check_imports(module);

@@ -1,6 +1,6 @@
 //! `publr seed --type <type> --file <path> [--publish]`: a file of documents made into records,
-//! in calls of `record create_many` (250 at a time, fewer when they are large), on this site
-//! or the one `--site` names. The file is a JSON array of objects, or one object a line.
+//! in calls of `record create_many` (250 at a time, fewer when they are large). The file is
+//! a JSON array of objects, or one object a line.
 const std = @import("std");
 const create_many = @import("../operations/record/create_many.zig");
 
@@ -17,7 +17,7 @@ const usage =
     \\
 ;
 
-/// Runs one command's words where the seed goes: this site, or the one `--site` names.
+/// Runs one command's words on the site the seed goes to.
 pub const Runner = struct {
     context: *const anyopaque,
     run: *const Run,

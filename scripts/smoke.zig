@@ -44,24 +44,15 @@ pub fn main(init: std.process.Init) !u8 {
     try expect_contains(init, binary, work_dir, &admin_check, "\"caller\": \"system\"");
     try expect_contains(init, binary, work_dir, &.{"--help"}, "heartbeat check");
     try expect_namespaces(init, binary, work_dir);
-    try expect_compiler(init, binary, bare, work_dir);
     try expect_contains(init, bare, work_dir, &.{"agents"}, "publr plugin build --name");
-    try expect_contains(init, bare, work_dir, &.{"skill"}, "name: build-on-publr");
-    try expect_contains(init, bare, work_dir, &.{ "new", "smoke-site" }, "apps/www (the starter)");
-    try expect_contains(
-        init,
-        bare,
-        work_dir,
-        &.{ "new", "smoke-admin", "--admin-only" },
-        "apps/ (empty: / opens the admin)",
-    );
+    try expect_starter(init, bare, work_dir);
     try expect_contains(init, bare, work_dir, &.{"--help"}, "run `publr agents` first");
     try expect_contains(init, bare, work_dir, &.{"--commands"}, "content_type get --type <text>");
     try expect_auth(init, binary, work_dir);
     const sandboxed = @import("smoke/sandboxed_plugins.zig");
 
     try sandboxed.expect_sandboxed_plugins(init, binary, work_dir, module);
-    try sandboxed.expect_plugin_build(init, bare, work_dir, fixtures);
+    try sandboxed.expect_plugin_build(init, bare, work_dir, fixtures, module);
     try expect_build(init, binary, work_dir, "smoke@example.com");
     try expect_serve(init, binary, work_dir, version);
     try expect_bare(init, bare, work_dir);
@@ -73,6 +64,7 @@ pub fn main(init: std.process.Init) !u8 {
     try @import("smoke/ai.zig").expect_ai(init, binary, work_dir);
     try @import("smoke/browser.zig").expect_browser(init, binary, work_dir);
     try @import("smoke/updates.zig").expect_updates(init, binary, work_dir);
+    try @import("smoke/transient.zig").expect_transient(init, binary, work_dir, module);
 
     std.debug.print("smoke: ok\n", .{});
 
@@ -193,7 +185,7 @@ fn expect_auth(init: std.process.Init, binary: []const u8, work_dir: []const u8)
     const email = "smoke@example.com";
     const password = "smoke test pass";
     const setup = [_][]const u8{
-        "init", "--email", email, "--display_name", "Smoke", "--password", password,
+        "project", "init", "--email", email, "--display_name", "Smoke", "--password", password,
     };
     const setup_again = [_][]const u8{
         "project",        "init", "--email",    "x@example.com",
@@ -656,28 +648,6 @@ fn expect_site(init: std.process.Init, port: u16) !void {
     }
 }
 
-/// The real binary carries the compiler; the fixture, built with `-Dcompiler=false`, says it
-/// does not and fails, and nothing else about it changes.
-fn expect_compiler(
-    init: std.process.Init,
-    without: []const u8,
-    with: []const u8,
-    work_dir: []const u8,
-) !void {
-    std.debug.assert(!std.mem.eql(u8, without, with));
-    std.debug.assert(work_dir.len > 0);
-
-    try expect_output(init, with, work_dir, &.{ "zig", "version" }, "0.16.0\n");
-
-    const refused = try run_publr(init, without, work_dir, &.{ "zig", "version" });
-    const failed = refused.term != .exited or refused.term.exited != 1;
-
-    if (failed or std.mem.indexOf(u8, refused.stderr, "without the compiler") == null) {
-        std.debug.print("smoke: zig: a binary without the compiler: {s}\n", .{refused.stderr});
-        return error.SmokeFailed;
-    }
-}
-
 /// While `serve` runs it owns the project: it leaves its session beside the database, the
 /// CLI sends it its commands, and a second server for the same database is refused.
 fn expect_operator(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
@@ -731,6 +701,59 @@ fn expect_apps_folder(init: std.process.Init, binary: []const u8, work_dir: []co
         .data = "<p>{oops(</p>\n",
     });
     try expect_failure(init, binary, dir, &load, "content/broken.publr");
+}
+
+/// A named project gets the starter app when Publr first sets it up; one whose `apps`
+/// folder is there and empty (admin-only) stays without it.
+fn expect_starter(init: std.process.Init, binary: []const u8, work_dir: []const u8) !void {
+    std.debug.assert(binary.len > 0);
+    std.debug.assert(work_dir.len > 0);
+
+    const arena = init.arena.allocator();
+    const cwd = std.Io.Dir.cwd();
+    const site = try std.fmt.allocPrint(arena, "{s}/smoke-site", .{work_dir});
+    const admin_only = try std.fmt.allocPrint(arena, "{s}/smoke-admin", .{work_dir});
+    const setup = [_][]const u8{
+        "project",
+        "init",
+        "--email",
+        "starter@example.com",
+        "--display_name",
+        "Starter",
+        "--password",
+        "starter smoke pass",
+    };
+    const names = [_][]const u8{ "smoke-site", "smoke-admin" };
+    const www = try std.fs.path.join(arena, &.{ site, "apps", "www", "app.zon" });
+
+    for ([_][]const u8{ site, admin_only }, names) |dir, name| {
+        try cwd.createDirPath(init.io, dir);
+        try cwd.writeFile(init.io, .{
+            .sub_path = try std.fs.path.join(arena, &.{ dir, "publr.zon" }),
+            .data = try std.fmt.allocPrint(arena, ".{{\n    .name = \"{s}\",\n}}\n", .{name}),
+        });
+    }
+
+    try cwd.createDirPath(init.io, try std.fs.path.join(arena, &.{ admin_only, "apps" }));
+    try expect_contains(init, binary, site, &setup, "\"roles\": [");
+    try expect_contains(init, binary, admin_only, &setup, "\"roles\": [");
+
+    cwd.access(init.io, www, .{}) catch {
+        std.debug.print("smoke: starter: {s} has no apps/www\n", .{site});
+        return error.SmokeFailed;
+    };
+
+    var apps = try cwd.openDir(init.io, try std.fs.path.join(arena, &.{ admin_only, "apps" }), .{
+        .iterate = true,
+    });
+    defer apps.close(init.io);
+
+    var entries = apps.iterate();
+
+    if (try entries.next(init.io)) |entry| {
+        std.debug.print("smoke: starter: admin-only apps holds {s}\n", .{entry.name});
+        return error.SmokeFailed;
+    }
 }
 
 /// A Publr with no apps: its `serve` opens the admin at `/`.

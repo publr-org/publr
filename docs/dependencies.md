@@ -14,7 +14,7 @@ dependency-free C. Ours to keep: vendored as-is in this repository, compiled by
 | `publr_auth` (`../lib/auth`) | Our own argon2id hashing, sign-in throttle, CSRF tokens, origin check | sibling checkout | Ours | Signing in, and nothing about users. |
 | `publr_deps` (`../lib/deps`) | Our own dependency index: what each built artifact read, and the queue of changes to rebuild from | sibling checkout | Ours | Publishing rewrites only the pages that changed. |
 | `publr_wasm` (`../lib/wasm`) | Our own sandbox, with WAMR's fast interpreter inside it | WAMR 2.4.5 | Apache-2.0 WITH LLVM-exception | Running installed plugins nobody vouched for. |
-| `publr_zig` (`../lib/zig`) | Zig's compiler, built without LLVM, packed with its standard library and a prebuilt compiler_rt into the binary | Zig 0.16.0 | MIT | Building sandboxed plugins where no Zig is installed (`publr zig`). |
+| `publr_zig` (`../lib/zig`) | Its `pack` tool, at build time only: packs the SDK plugins build against into the binary (`plugin sdk`, `plugin prepare`) | sibling checkout | Ours | One archive, written out the same way by the `publr` command's compiler. |
 | `../publr-js/dist` | PublrJS, the client runtime behind the `data-p-*` wires, read by the build as-is | sibling checkout | Ours | The interactive half of the site's components. |
 | `pjsx` (`../pjsx`) | Our own PJSX compiler and its render runtime; build-time, plus the runtime the generated views call | sibling checkout | Ours | The admin's pages, from `.ptsx` to Zig. |
 | `publr_jit` (`../jit`) | Our own class-to-CSS compiler; build-time for the stylesheet, in the binary for class merging | sibling checkout | Ours | The admin's stylesheet, and stacked class attributes merged at render. |

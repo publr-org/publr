@@ -27,8 +27,6 @@ pub const Options = struct {
     files: ?@import("../lib/files.zig").Files = null,
     /// The project's apps, where a server holds them.
     apps: ?sdk.context.AppsFolder = null,
-    /// Building plugins from their sources, where a server carries the compiler.
-    builder: ?sdk.context.PluginBuilder = null,
     /// Running a conversation's turn beside the server, where one runs.
     agents: ?sdk.context.AgentStarter = null,
     live: ?sdk.context.Live = null,
@@ -152,18 +150,6 @@ pub fn CLI(comptime SDK: type) type {
                 return 2;
             }
 
-            if (std.mem.eql(u8, args[index], "init")) {
-                var aliased: [args_max + 1][]const u8 = undefined;
-                const rest = args[index + 1 ..];
-                if (rest.len > args_max - 2) return fail(invocation, "too many arguments");
-
-                aliased[0] = "project";
-                aliased[1] = "init";
-                @memcpy(aliased[2 .. 2 + rest.len], rest);
-
-                return dispatch_command(invocation, caller, aliased[0 .. 2 + rest.len], out);
-            }
-
             return dispatch_command(invocation, caller, args[index..], out);
         }
 
@@ -240,7 +226,6 @@ pub fn CLI(comptime SDK: type) type {
             ctx.plugin_states = invocation.options.plugin_states;
             ctx.files = invocation.options.files;
             ctx.apps = invocation.options.apps;
-            ctx.builder = invocation.options.builder;
             ctx.agents = invocation.options.agents;
             ctx.live = invocation.options.live;
             ctx.updater = invocation.options.updater;
@@ -439,16 +424,16 @@ pub fn CLI(comptime SDK: type) type {
 
 const help_header =
     \\Usage: publr [--db <path>] [options] <namespace> <verb> [--field value ...]
-    \\       publr init --email <email> --display_name <name>   first run: create the admin
+    \\       publr project init --email <email> --display_name <name>   first run: the admin
     \\       publr serve [--port <n>]                            start the server
-    \\       publr plugin build --name <name>                    build and install a plugin
     \\       publr apps load                                     load the apps' changes
-    \\       publr zig <args>                                    the compiler for plugins
+    \\       publr plugin prepare | check --file | sdk           a plugin built elsewhere
+    \\       publr site export --to <dir> | import --from <dir>  the site's data, moved
     \\       publr db check                                      what an update would find
     \\       publr backups | restore <name>                      the backups before each update
-    \\       publr pack [<file>] | unpack <file>                 the whole site in one file
-    \\       publr cloud login                                   sign in to your Cloud account
-    \\       publr cloud deploy                                  this site made a Cloud project
+    \\
+    \\Making, cloning, packing, deploying sites and building plugins is the `publr` command's:
+    \\`brew install publr-org/tap/publr` or `curl -fsSL https://publr.dev/install.sh | sh`.
     \\
     \\An agent building on Publr: run `publr agents` first, and read all of it. Every command
     \\with its flags, on one line each: `publr --commands`.
@@ -1208,8 +1193,4 @@ test "empty commands, oversized caller names and a full init alias fail graceful
     const auth = &harness.auth;
     const long_as = try Command.run(connection, io, fixed, auth, &too_long, &output, options);
     try std.testing.expectEqual(@as(u8, 2), long_as);
-    var alias: [args_max][]const u8 = @splat("--help");
-    alias[0] = "init";
-    const aliased = try Command.run(connection, io, fixed, &harness.auth, &alias, &output, options);
-    try std.testing.expectEqual(@as(u8, 2), aliased);
 }

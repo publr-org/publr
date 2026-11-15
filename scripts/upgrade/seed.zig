@@ -192,8 +192,8 @@ fn admin(seed: *Seed, fresh: bool) !void {
 
     if (fresh) {
         _ = try seed.publr(&.{
-            "init",          "--email",    seed.admin,            "--display_name",
-            "Fixture admin", "--password", facts_module.password,
+            "project",        "init",          "--email",    seed.admin,
+            "--display_name", "Fixture admin", "--password", facts_module.password,
         });
     } else {
         _ = try seed.publr(&.{

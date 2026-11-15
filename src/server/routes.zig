@@ -195,6 +195,7 @@ fn health(request: *Request, response: *Response, ctx: *Context) Error!void {
         .version = out.version,
         .echo = out.echo,
         .caller = out.caller,
+        .sync = project.sync_origin,
     });
 }
 

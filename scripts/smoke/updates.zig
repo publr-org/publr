@@ -13,7 +13,7 @@ pub fn expect_updates(init: std.process.Init, binary: []const u8, work_dir: []co
 
     const dir = try std.fmt.allocPrint(init.arena.allocator(), "{s}/updates", .{work_dir});
     const setup = [_][]const u8{
-        "init", "--email", email, "--display_name", "Updates", "--password", password,
+        "project", "init", "--email", email, "--display_name", "Updates", "--password", password,
     };
 
     try std.Io.Dir.cwd().createDirPath(init.io, dir);

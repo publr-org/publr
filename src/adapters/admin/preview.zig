@@ -16,7 +16,7 @@ const registry = @import("../../server/registry.zig");
 const record_operations = @import("../../operations/record.zig");
 const identity_module = @import("../rest/identity.zig");
 const shell = @import("../apps/shell.zig");
-const credentials = @import("../../server/credentials.zig");
+const hosts = @import("../../server/hosts.zig");
 const page_module = @import("preview/page.zig");
 const Project = @import("../../server/project.zig").Project;
 
@@ -190,7 +190,7 @@ fn sealed(request: *const admin.Request, response: *Response, html: []const u8) 
 
     // A branch on this machine has a port of its own, so the review in its base, which frames
     // this preview, is another origin; on a host a copy's admin is under its base's.
-    const here = credentials.host_on_this_machine(request.header("host") orelse "");
+    const here = hosts.host_on_this_machine(request.header("host") orelse "");
 
     try response.set_header(
         "Content-Security-Policy",

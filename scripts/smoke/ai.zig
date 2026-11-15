@@ -37,7 +37,7 @@ pub fn expect_ai(init: std.process.Init, binary: []const u8, work_dir: []const u
     const dir = try std.fmt.allocPrint(arena, "{s}/ai", .{work_dir});
     const script_path = try std.fmt.allocPrint(arena, "{s}/script.json", .{dir});
     const setup = [_][]const u8{
-        "init", "--email", email, "--display_name", "Ai", "--password", password,
+        "project", "init", "--email", email, "--display_name", "Ai", "--password", password,
     };
     const cwd = std.Io.Dir.cwd();
 

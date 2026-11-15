@@ -21,10 +21,6 @@ pub const Sources = struct {
     /// Where `serve` reads each app's `public/` files by default: `apps`, relative to where
     /// it runs, or (built with `-Dpreset`) the preset's apps folder, wherever it runs.
     public_dir: []const u8 = "apps",
-    /// Whether the binary carries the compiler for sandboxed plugins (`publr zig`).
-    compiler: bool = true,
-    /// That compiler's archive built before for the same target, instead of building it.
-    toolchain_archive: ?[]const u8 = null,
     /// What one type and one entry may hold (`limits.zig`).
     limits: limits_module.Limits = .{},
     /// In Debug, the request arenas name the call sites that fill them (`-Darena-trace`).
@@ -70,35 +66,17 @@ pub fn sources(builder: *std.Build) Sources {
         "apps-max",
         "How many apps one project may compile in (default: 32)",
     ) orelse apps.apps_max_default;
-    const compiler = builder.option(
-        bool,
-        "compiler",
-        "Carry the compiler for sandboxed plugins, `publr zig` (default: true)",
-    ) orelse true;
-    const toolchain_archive_option = builder.option(
-        []const u8,
-        "toolchain-archive",
-        "The carried compiler's archive, built before for this target by " ++
-            "`zig build toolchain` in ../lib/zig, used instead of building it",
-    );
     const arena_trace = builder.option(
         bool,
         "arena-trace",
         "In Debug, name the call sites that fill a request's arena (slow: a stack per allocation)",
     ) orelse false;
-    // Empty is none: a project building on this one passes its own option through.
-    const toolchain_archive = if (toolchain_archive_option) |path|
-        (if (path.len == 0) null else path)
-    else
-        null;
     const chosen: Sources = .{
         .apps_dir = apps_dir,
         .plugins_dir = plugins_dir,
         .native = native_plugins.native_of(builder, plugins_dir),
         .apps_max = apps_max,
         .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
-        .compiler = compiler,
-        .toolchain_archive = toolchain_archive,
         .limits = limits_module.from(builder),
         .arena_trace = arena_trace,
     };
@@ -224,19 +202,10 @@ pub fn add_module(
 
     module.addImport("publr_wasm", publr_wasm.module("publr_wasm"));
 
-    // The browser build has no compiler, nor the files the CLI hands out.
+    // The browser build has no CLI, nor the guide it hands out.
     if (target.result.os.tag != .wasi) {
         module.addAnonymousImport("agents_guide", .{
             .root_source_file = builder.path("docs/agents.md"),
-        });
-        module.addAnonymousImport("installer", .{
-            .root_source_file = builder.path("install.sh"),
-        });
-        module.addAnonymousImport("skill", .{
-            .root_source_file = builder.path("skills/build-on-publr/SKILL.md"),
-        });
-        module.addAnonymousImport("skill_core_changes", .{
-            .root_source_file = builder.path("skills/build-on-publr/references/core-changes.md"),
         });
     }
 
@@ -266,7 +235,7 @@ pub fn add_module(
         .root_source_file = generated.expressions,
     });
     add_apps(builder, module, generated, optimize, from);
-    add_compiler(builder, module, target, optimize, from, generated.out);
+    add_sdk(builder, module, target, from, generated.out);
 
     std.debug.assert(module.link_libc == true);
     std.debug.assert(module.root_source_file != null);
@@ -274,44 +243,32 @@ pub fn add_module(
     return module;
 }
 
-/// The compiler for sandboxed plugins, built for `target` without LLVM, unless the binary is
-/// built without it (`-Dcompiler=false`) or for the browser. `toolchain_options.compiler`
-/// says which.
-fn add_compiler(
+/// The SDK sandboxed plugins are built against, carried wherever there is a file system:
+/// `plugin sdk` and `plugin prepare` write it out for the compiler outside this binary (the
+/// `publr` command's). `sdk_options.sdk` says whether it is there. The archive is packed by
+/// `../lib/zig`'s `pack` tool; Publr carries no compiler.
+fn add_sdk(
     builder: *std.Build,
     module: *std.Build.Module,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
     from: Sources,
     views: std.Build.LazyPath,
 ) void {
     std.debug.assert(module.root_source_file != null);
     std.debug.assert(builder.build_root.path != null);
 
-    const carried = from.compiler and target.result.os.tag != .wasi;
+    const has_sdk = target.result.os.tag != .wasi;
     const options = builder.addOptions();
 
-    options.addOption(bool, "compiler", carried);
-    module.addImport("toolchain_options", options.createModule());
+    options.addOption(bool, "sdk", has_sdk);
+    module.addImport("sdk_options", options.createModule());
 
-    if (!carried) {
+    if (!has_sdk) {
         return;
     }
 
-    const release = optimize != .Debug;
-    const publr_zig = if (from.toolchain_archive) |archive|
-        builder.dependency("publr_zig", .{
-            .target = target,
-            .release = release,
-            .@"toolchain-archive" = archive,
-        })
-    else
-        builder.dependency("publr_zig", .{
-            .target = target,
-            .release = release,
-        });
+    const publr_zig = builder.dependency("publr_zig", .{});
 
-    module.addImport("publr_zig", publr_zig.module("publr_zig"));
     module.addAnonymousImport("sdk_archive", .{
         .root_source_file = sandboxed_plugins.sdk_archive(
             builder,

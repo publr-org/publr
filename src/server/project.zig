@@ -71,8 +71,6 @@ pub const Project = struct {
     plugin_states: ?*anyopaque = null,
     /// The media library's files, which every context made for a request carries.
     files: ?@import("../lib/files.zig").Files = null,
-    /// Building plugins from their sources, where `serve` carries the compiler.
-    builder: ?sdk.context.PluginBuilder = null,
     /// Running a conversation's turn beside the server, where `serve` can.
     agents: ?sdk.context.AgentStarter = null,
     /// The workspaces watching conversations, told of each change.
@@ -88,6 +86,9 @@ pub const Project = struct {
     visitor_cookie: []const u8 = @import("../adapters/apps/visitor.zig").cookie_name,
     /// On the site's host, who the toolbar is for (`split.zig`).
     member_cookie: []const u8 = @import("../adapters/rest/identity.zig").member_cookie_name,
+    /// Where other computers clone, pull and push this site (`serve --sync-url`); empty: its
+    /// own addresses. Said in `/api/health`.
+    sync_origin: []const u8 = "",
     /// Where the admin answers when it is not on the site's host (`serve --admin-url`):
     /// `http://admin.localhost:8080`; empty when the admin is at `/admin` beside the site.
     admin_origin: []const u8 = "",

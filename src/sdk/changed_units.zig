@@ -8,7 +8,6 @@ const content_types = @import("../operations/content_type.zig");
 const taxonomies = @import("../operations/taxonomy.zig");
 const custom_fields = @import("../operations/custom_fields.zig");
 const plugins = @import("../operations/plugin.zig");
-const plugin_sources = @import("../operations/plugin/sources.zig");
 const views = @import("../operations/view.zig");
 const view_defaults = @import("../operations/view_default.zig");
 const snapshots = @import("../operations/snapshot.zig");
@@ -212,7 +211,6 @@ const writes = [_]type{
     Field(plugins.SetGrant, .plugin, .in, "name"),
     PluginData(plugins.Remove, "trash"),
     PluginData(plugins.EraseData, "pieces"),
-    Field(plugin_sources.Build, .plugin, .in, "name"),
     Field(views.Create, .view, .out, "id"),
     Field(views.Update, .view, .in, "id"),
     Field(views.Delete, .view, .in, "id"),

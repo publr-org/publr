@@ -18,4 +18,4 @@ jobs:
 
       - name: Formatting and tidy
         working-directory: publr
-        run: zig build check -Dtoolchain-archive="$PUBLR_TOOLCHAIN_ARCHIVE" --summary failures
+        run: zig build check --summary failures

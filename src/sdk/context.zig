@@ -12,18 +12,6 @@ pub const OperationId = u64;
 /// typed ones), then the queue for the `on` hooks.
 pub const Notify = *const fn (ctx: *Ctx, emitted: Emitted, after: bool) void;
 
-/// Builds a sandboxed plugin from its sources in the project, in a process of its own (the
-/// server answers on meanwhile), then installs it: what `plugin build` starts for an agent.
-pub const PluginBuilder = struct {
-    context: *anyopaque,
-    /// Where each plugin's sources are: `<plugins_dir>/<name>/`.
-    plugins_dir: []const u8,
-    /// Where each build writes what it did: `<logs_dir>/<name>.log`.
-    logs_dir: []const u8,
-    /// Starts the build: null once started, else why it could not be.
-    start: *const fn (context: *anyopaque, name: []const u8) ?[]const u8,
-};
-
 /// Starts a conversation's turn in a process of its own beside the server (`publr agent`),
 /// which asks the server for its device and reports each step back.
 pub const AgentStarter = struct {
@@ -360,8 +348,6 @@ pub const Ctx = struct {
     apps: ?AppsFolder = null,
     /// Where installed translations disagree, where a server worked it out.
     translations: ?Translations = null,
-    /// Building plugins from their sources, where a server carries the compiler.
-    builder: ?PluginBuilder = null,
     /// Running a conversation's turn beside the server, where one runs.
     agents: ?AgentStarter = null,
     /// The pages watching conversations, where `serve` holds them.

@@ -1,5 +1,5 @@
 //! `GET /api/agent/<code>`: the setup an agent's computer runs, `curl -fsSL <it> | sh`. It
-//! installs the publr command (Publr's installer, carried in this binary), signs the
+//! installs the publr command (its installer, `https://publr.dev/install.sh`), signs the
 //! computer in to this site with the sign-in the Overview offered (`device offer`, the code
 //! in the address), gives the agent in the folder it runs in the Publr skill, and names the
 //! site in `.publr/site` so the folder's commands go there. Nothing in
@@ -11,7 +11,7 @@ const Project = @import("project.zig").Project;
 
 pub const route = "/api/agent/:code";
 pub const prefix = "/api/agent/";
-const installer = @embedFile("installer");
+pub const installer_url = "https://publr.dev/install.sh";
 const address_len_max: u32 = 512;
 
 pub fn handle(
@@ -20,7 +20,6 @@ pub fn handle(
     ctx: *http.Context,
 ) http.Error!void {
     std.debug.assert(ctx.user_data != null);
-    std.debug.assert(installer.len > 0);
 
     const code = request.param("code") orelse "";
     const site = try address_of(request, ctx.arena, Project.of(ctx));
@@ -34,7 +33,7 @@ pub fn handle(
         site,
         site,
         code,
-        installer,
+        installer_url,
     });
 
     try response.set_header("Cache-Control", "no-store");
@@ -90,9 +89,7 @@ const template =
     \\code='{s}'
     \\bin_dir="${{PUBLR_BIN_DIR:-$HOME/.local/bin}}"
     \\
-    \\(
-    \\{s}
-    \\)
+    \\curl -fsSL '{s}' | PUBLR_BIN_DIR="$bin_dir" sh
     \\
     \\if ! "$bin_dir/publr" login "$site" --claim "$code"; then
     \\    echo "publr: this command was used already or is older than ten minutes;" >&2

@@ -1424,7 +1424,7 @@ fn write_preloads(writer: *std.Io.Writer, base: []const u8, page: *const engine.
 
 /// Before any of the page's own scripts: `Publr.islands.condition(name, fn)`, where a page
 /// names the browser conditions its `dynamic-if` islands wait on, with `signedIn` (Publr's
-/// own hint, kept in step with the session by the server) already there; and `whenReady`,
+/// own hint, kept in sync with the session by the server) already there; and `whenReady`,
 /// which the loader runs its conditional islands through once every script on the page
 /// has run, so a condition is never judged missing only because its script came later.
 const island_conditions =

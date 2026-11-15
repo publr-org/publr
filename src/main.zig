@@ -43,11 +43,7 @@ fn run(init: std.process.Init) !u8 {
     var db_path: [:0]const u8 = db_path_default;
     var rest = args;
 
-    var env: ?[]const u8 = null;
-
     if (builtin.os.tag != .wasi) {
-        env = try remote_env(init, &rest);
-
         const command = try before_command(init, rest, db_path);
 
         rest = command.args;
@@ -58,31 +54,6 @@ fn run(init: std.process.Init) !u8 {
         if (rest.len < 2 or rest[1].len == 0) return error.InvalidArguments;
         db_path = try init.arena.allocator().dupeZ(u8, rest[1]);
         rest = rest[2..];
-    }
-
-    // Everything goes to the Publr named, its help and its plugins' commands too; signing in
-    // and out of it are this machine's.
-    if (try site_of(init, &rest)) |address| {
-        if (rest.len > 0 and try builds_here(init, rest)) {
-            return try publr.plugin_build_remote.run(init, address, rest[2..], env, out);
-        }
-
-        if (seed_at(rest)) |at| {
-            const there: Elsewhere = .{
-                .init = init,
-                .address = address,
-                .env = env,
-            };
-
-            return try publr.seed.run(init, out, rest[at + 1 ..], .{
-                .runner = there.runner(),
-                .caller = rest[0..at],
-            });
-        }
-
-        if (rest.len > 0 and !stays_here(rest)) {
-            return try publr.forwarding.forward(init, address, rest, env, out);
-        }
     }
 
     if (try tool(init, out, db_path, rest)) |code| {
@@ -97,17 +68,10 @@ fn run(init: std.process.Init) !u8 {
         return if (rest.len == 0) 2 else 0;
     }
 
-    const code = run_command(init, db_path, rest, out) catch |err| {
+    return run_command(init, db_path, rest, out) catch |err| {
         report.err("publr: {s}", .{@errorName(err)});
         return 1;
     };
-
-    // A new project has the compiler for its plugins ready, as it has its database.
-    if (code == 0 and is_init(rest) and builtin.os.tag != .wasi) {
-        publr.toolchain.prepare(init);
-    }
-
-    return code;
 }
 
 fn has_flag(args: []const []const u8, flag: []const u8) bool {
@@ -121,111 +85,6 @@ fn has_flag(args: []const []const u8, flag: []const u8) bool {
     }
 
     return false;
-}
-
-/// `login`, `logout` or `whoami`: about this machine's devices, never sent elsewhere.
-fn is_account(command: []const u8) bool {
-    std.debug.assert(command.len <= cli.value_len_max);
-
-    return std.mem.eql(u8, command, "login") or std.mem.eql(u8, command, "logout") or
-        std.mem.eql(u8, command, "whoami");
-}
-
-/// What runs on this machine whichever site the command names: signing in and out, the
-/// skill for its agent, the guide this binary carries, and Publr for the agent's tool.
-fn stays_here(args: []const []const u8) bool {
-    std.debug.assert(args.len > 0);
-
-    const guide = args.len == 1 and std.mem.eql(u8, args[0], "agents");
-
-    return is_account(args[0]) or guide or
-        std.mem.eql(u8, args[0], "skill") or is_for_tools(args[0]);
-}
-
-/// `mcp` and `setup`: Publr as an agent's tool reaches it, on this machine.
-fn is_for_tools(command: []const u8) bool {
-    std.debug.assert(command.len <= cli.value_len_max);
-
-    return std.mem.eql(u8, command, "mcp") or std.mem.eql(u8, command, "setup");
-}
-
-/// `plugin build` for a plugin whose source is in this folder: built here and its module
-/// sent, so a site without a compiler of its own (Publr Cloud) still gets it.
-fn builds_here(init: std.process.Init, args: []const []const u8) !bool {
-    std.debug.assert(args.len > 0);
-
-    const build = args.len >= 4 and std.mem.eql(u8, args[0], "plugin") and
-        std.mem.eql(u8, args[1], "build") and !has_flag(args, "--files") and
-        !has_flag(args, "--help");
-
-    // The browser build has no compiler: its `plugin_build` is `void`.
-    if (builtin.os.tag == .wasi or !build) {
-        return false;
-    } else {
-        const arena = init.arena.allocator();
-        const request = publr.plugin_build.parse(arena, args[2..]) orelse return false;
-        const source = try std.fs.path.join(arena, &.{ request.dir, "main.zig" });
-
-        std.Io.Dir.cwd().access(init.io, source, .{}) catch return false;
-
-        return true;
-    }
-}
-
-/// A leading `--env <name>`, taken off the words, for a command going to a Publr elsewhere;
-/// on this computer it is left for the plugin that keeps the copies.
-fn remote_env(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
-    std.debug.assert(rest.len <= args_max);
-
-    const words = rest.*;
-    const at: u32 = if (words.len >= 2 and std.mem.eql(u8, words[0], "--site")) 2 else 0;
-    const named = words.len >= at + 2 and std.mem.eql(u8, words[at], "--env");
-
-    if (!named) {
-        return null;
-    }
-
-    const site_after = words.len >= 4 and std.mem.eql(u8, words[2], "--site");
-    const elsewhere = at == 2 or site_after or init.environ_map.get("PUBLR_SITE") != null or
-        try publr.credentials.folder_site(init) != null;
-
-    if (!elsewhere) {
-        return null;
-    }
-
-    const kept = try init.arena.allocator().alloc([]const u8, words.len - 2);
-
-    @memcpy(kept[0..at], words[0..at]);
-    @memcpy(kept[at..], words[at + 2 ..]);
-    rest.* = kept;
-
-    return words[at + 1];
-}
-
-/// The Publr elsewhere a command goes to: `--site <address>` (taken off the words), else
-/// `PUBLR_SITE`, else the one the folder builds (`.publr/site`); null to run it here.
-fn site_of(init: std.process.Init, rest: *[]const []const u8) !?[]const u8 {
-    const named = rest.len >= 2 and std.mem.eql(u8, rest.*[0], "--site");
-    const site = if (named)
-        rest.*[1]
-    else if (init.environ_map.get("PUBLR_SITE")) |variable|
-        variable
-    else if (try publr.credentials.folder_site(init)) |folder|
-        folder
-    else
-        return null;
-
-    if (named) {
-        rest.* = rest.*[2..];
-    }
-
-    if (site.len == 0 or builtin.os.tag == .wasi) {
-        return error.InvalidArguments;
-    }
-
-    std.debug.assert(site.len > 0);
-
-    return site;
 }
 
 /// The command as the plugins' pre-command hooks leave it.
@@ -296,27 +155,6 @@ fn run_command(
     return commands.run(args, out);
 }
 
-/// `init`, or the operation it stands for, `project init`, after any global flags.
-fn is_init(args: []const []const u8) bool {
-    std.debug.assert(args.len > 0);
-    std.debug.assert(args.len <= args_max);
-
-    var index: u32 = 0;
-
-    while (index < args.len and std.mem.startsWith(u8, args[index], "--")) {
-        const valued = std.mem.eql(u8, args[index], "--as") or
-            std.mem.eql(u8, args[index], "--device");
-
-        index += if (valued) 2 else 1;
-    }
-
-    const command = args[@min(index, args.len)..];
-    const operation = command.len > 1 and std.mem.eql(u8, command[0], "project") and
-        std.mem.eql(u8, command[1], "init");
-
-    return (command.len > 0 and std.mem.eql(u8, command[0], "init")) or operation;
-}
-
 fn collect_args(init: std.process.Init, storage: *[args_max][]const u8) ![]const []const u8 {
     var iterator = try init.minimal.args.iterateAllocator(init.arena.allocator());
     var count: u32 = 0;
@@ -336,9 +174,10 @@ fn collect_args(init: std.process.Init, storage: *[args_max][]const u8) ![]const
     return storage[0..count];
 }
 
-/// The commands that are not operations: `serve`, `build`, `zig`, `login`, `logout`, `whoami`,
-/// `skill`, `new`, `db check`, `backups`, `restore`, `pack`, `unpack`, `cloud deploy`,
-/// `check-apps` and `check-plugins`. Null for anything else, which the CLI answers.
+/// The commands that are not operations: `serve`, `build`, `agents`, `agent`, `seed`,
+/// `apps load`, `plugin check`, `plugin sdk`, `plugin prepare`, `site`, `db`, `backups`,
+/// `restore`, the processes `serve` starts beside it, `check-apps` and `check-plugins`. Null
+/// for anything else, which the CLI answers.
 fn tool(
     init: std.process.Init,
     out: *std.Io.Writer,
@@ -353,50 +192,33 @@ fn tool(
 
     const serve = std.mem.eql(u8, rest[0], "serve");
     const build = std.mem.eql(u8, rest[0], "build");
-    const zig = std.mem.eql(u8, rest[0], "zig");
     const agents = rest.len == 1 and std.mem.eql(u8, rest[0], "agents");
     const agent = std.mem.eql(u8, rest[0], "agent");
-    const skill = std.mem.eql(u8, rest[0], "skill");
-    const new_site = std.mem.eql(u8, rest[0], "new");
     // As the local operator; `apps.load` is the operation a device or `--as` reaches.
     const apps_load = rest.len > 1 and std.mem.eql(u8, rest[0], "apps") and
         std.mem.eql(u8, rest[1], "load") and !has_flag(rest, "--help");
-    // With `--files`, the sources come in the command: the operation, not the build here.
-    const plugin_build = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
-        std.mem.eql(u8, rest[1], "build") and !has_flag(rest, "--files") and
-        !has_flag(rest, "--help");
     const plugin_check = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
         std.mem.eql(u8, rest[1], "check") and !has_flag(rest, "--help");
-    const login = is_account(rest[0]);
-    const for_tools = is_for_tools(rest[0]);
+    const plugin_sdk = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
+        std.mem.eql(u8, rest[1], "sdk") and !has_flag(rest, "--help");
+    const plugin_prepare = rest.len > 1 and std.mem.eql(u8, rest[0], "plugin") and
+        std.mem.eql(u8, rest[1], "prepare") and !has_flag(rest, "--help");
 
-    // In the browser there is no server, no build and no compiler: the modules are `void`
-    // there.
+    // In the browser there is no server, no build and no SDK to write out: the modules are
+    // `void` there.
     if (builtin.os.tag == .wasi) {
-        if (serve or build or zig or plugin_build or plugin_check or agents or agent or
-            apps_load or login or skill or new_site or for_tools)
-        {
+        const plugins = plugin_check or plugin_sdk or plugin_prepare;
+
+        if (serve or build or plugins or agents or agent or apps_load) {
             return error.Unsupported;
         }
     } else {
-        if (zig) {
-            return try publr.toolchain.run(init, rest[1..]);
-        }
-
         if (agents) {
             return try publr.agents.run(init, out, db_path);
         }
 
         if (agent) {
             return try publr.agent.run(init, db_path, rest[1..]);
-        }
-
-        if (login) {
-            return try publr.login.run(init, out, rest);
-        }
-
-        if (skill) {
-            return try publr.skill.run(init, out, rest[1..]);
         }
 
         if (seed_at(rest)) |at| {
@@ -411,28 +233,24 @@ fn tool(
             });
         }
 
-        if (for_tools and std.mem.eql(u8, rest[0], "mcp")) {
-            return try publr.mcp_local.run(init, rest[1..]);
-        }
-
-        if (for_tools) {
-            return try publr.setup.run(init, out, rest[1..]);
-        }
-
-        if (new_site) {
-            return try publr.new_site.run(init, out, rest[1..]);
-        }
-
         if (apps_load) {
             return try publr.apps_load.run(init, db_path, rest[2..]);
         }
 
-        if (plugin_build) {
-            return try publr.plugin_build.run(init, db_path, rest[2..]);
+        if (plugin_check and has_flag(rest, "--file")) {
+            return try publr.plugin_build.check_file(init, db_path, rest[2..]);
         }
 
         if (plugin_check) {
             return try publr.plugin_check.run(init, rest[2..]);
+        }
+
+        if (plugin_sdk) {
+            return try publr.plugin_sdk.write_sdk(init, out, rest[2..]);
+        }
+
+        if (plugin_prepare) {
+            return try publr.plugin_build.prepare(init, out, db_path, rest[2..]);
         }
 
         if (serve) {
@@ -449,14 +267,6 @@ fn tool(
 
         if (std.mem.eql(u8, rest[0], "update-run")) {
             return try publr.update.run(init, db_path, rest[1..]);
-        }
-
-        if (publr.cloud_deploy.handles(rest) and !has_flag(rest, "--help")) {
-            return try publr.cloud_deploy.run(init, out, db_path, rest);
-        }
-
-        if (publr.clone.handles(rest) and !has_flag(rest, "--help")) {
-            return try publr.clone.run(init, out, rest);
         }
 
         if (publr.bundle.handles(rest) and !has_flag(rest, "--help")) {
@@ -535,28 +345,6 @@ const Here = struct {
         std.debug.assert(words.len > 0);
 
         return run_command(here.init, here.db_path, words, out);
-    }
-};
-
-/// `publr seed`'s batches sent to the Publr `--site` names.
-const Elsewhere = struct {
-    init: std.process.Init,
-    address: []const u8,
-    env: ?[]const u8,
-
-    fn runner(there: *const Elsewhere) publr.seed.Runner {
-        return .{
-            .context = there,
-            .run = &run_there,
-        };
-    }
-
-    fn run_there(context: *const anyopaque, words: []const []const u8, out: *std.Io.Writer) !u8 {
-        const there: *const Elsewhere = @ptrCast(@alignCast(context));
-
-        std.debug.assert(words.len > 0);
-
-        return publr.forwarding.forward(there.init, there.address, words, there.env, out);
     }
 };
 

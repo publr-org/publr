@@ -383,9 +383,8 @@ fn register_fields(router: *http.Router, comptime base: []const u8) void {
     router.post(base ++ "/:handle/fields/:name/move", &field_pages.writes.move);
 }
 
-/// What a page drawn by `render.page` loads, and nothing that needs a project: for a server
-/// that draws such a page before there is a site (`publr clone`'s progress).
-pub fn register_page_assets(router: *http.Router) void {
+/// What a page drawn by `render.page` loads, and nothing that needs a project.
+fn register_page_assets(router: *http.Router) void {
     std.debug.assert(router.routes_len + page_asset_routes_count <= router.routes.len);
 
     const before = router.routes_len;
@@ -406,7 +405,7 @@ pub fn register_page_assets(router: *http.Router) void {
     std.debug.assert(router.routes_len == before + page_asset_routes_count);
 }
 
-pub const page_asset_routes_count: u32 = 4 + client_files.names.len;
+const page_asset_routes_count: u32 = 4 + client_files.names.len;
 
 fn register_assets(router: *http.Router) void {
     std.debug.assert(router.routes_len < router.routes.len - client_files.names.len - 5);

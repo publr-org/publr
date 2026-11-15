@@ -1,10 +1,10 @@
 const std = @import("std");
+const transient_module = @import("sandboxed_plugins/transient.zig");
 const queue_worker = @import("queue_worker.zig");
 const limits = @import("../model/limits.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
 const server = @import("../server.zig");
 const report = @import("../lib/report.zig");
-const toolchain = @import("toolchain.zig");
 const operator = @import("operator.zig");
 const routes = @import("routes.zig");
 const http = @import("../lib/http.zig");
@@ -14,7 +14,6 @@ const sdk = @import("../sdk.zig");
 const store = @import("../store.zig");
 const build_command = @import("build.zig");
 const apps_host = @import("apps_host.zig");
-const plugin_build = @import("plugin_build.zig");
 const live = @import("live.zig");
 const agent_start = @import("agent_start.zig");
 const update = @import("update.zig");
@@ -41,12 +40,18 @@ const Flags = struct {
     url_given: bool = false,
     /// `--admin-url`: the admin's own origin, away from the site's; empty: `/admin` beside it.
     admin_url: []const u8 = "",
+    /// `--sync-url`: where other computers clone, pull and push this site; empty: its own
+    /// addresses.
+    sync_url: []const u8 = "",
     /// Why the flags were refused, printed with the help by `run`; parsing prints nothing.
     refused: []const u8 = "",
     /// A flag `serve` does not know.
     unknown: []const u8 = "",
     /// `--auto-update patch`: apply the newest patch of this minor once a day.
     auto_update: bool = false,
+    /// `--plugin <file>`, each: transient plugins, for this server alone.
+    plugins: [transient_module.transients_max][]const u8 = undefined,
+    plugins_len: u32 = 0,
     help: bool = false,
 };
 
@@ -78,6 +83,7 @@ fn open_application(
     application: *server.Server,
     init: std.process.Init,
     db_path: [:0]const u8,
+    flags: *const Flags,
 ) !void {
     std.debug.assert(db_path.len > 0);
 
@@ -85,8 +91,28 @@ fn open_application(
         update.go_back(init, db_path, err);
         return err;
     };
+    errdefer application.deinit();
 
+    try inject(init, application, flags);
     std.debug.assert(application.runtime.open_count == 1);
+}
+
+/// The transient plugins `--plugin` names, loaded after the installed ones: kept in memory,
+/// closed with the server (`Server.deinit`).
+fn inject(init: std.process.Init, application: *server.Server, flags: *const Flags) !void {
+    std.debug.assert(flags.plugins_len <= transient_module.transients_max);
+
+    const paths = flags.plugins[0..flags.plugins_len];
+
+    if (paths.len == 0) {
+        return;
+    }
+
+    const transient = try init.arena.allocator().create(transient_module.Transient);
+
+    try transient.open(init.gpa, init.io, &application.auth, paths);
+    application.sandboxed_plugins.transient = transient;
+    try application.sandboxed_plugins.load_all(&application.connection);
 }
 
 /// Serves until stopped; `restart` when an update asked for it.
@@ -101,7 +127,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
     }
 
     var application: server.Server = undefined;
-    try open_application(&application, init, db_path);
+    try open_application(&application, init, db_path, &flags);
     defer application.deinit();
 
     const base = if (flags.url_given) model_app.path_of(flags.apps.base_url) else "";
@@ -140,7 +166,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
         try split_hosts(
             &project,
             init.arena.allocator(),
-            flags.admin_url,
+            &flags,
             apps.mode.options.base_url,
         );
         apps.start();
@@ -206,10 +232,6 @@ fn helpers_of(init: std.process.Init, db_path: [:0]const u8, auto_update: bool) 
     std.debug.assert(db_path.len > 0);
 
     return .{
-        .builder = .{
-            .io = init.io,
-            .db_path = db_path,
-        },
         .updater = .{
             .io = init.io,
             .db_path = db_path,
@@ -307,14 +329,20 @@ fn name_cookies(arena: std.mem.Allocator, project: *routes.Project) !void {
 /// The admin answers on an origin of its own, never the site's: `--admin-url`, else
 /// `admin.<the site's host>` on the site's port (`admin.localhost` for a site on this
 /// machine), and the site's host no longer serves it.
+/// The site's and the admin's origins from the flags (and where the site is synced, when
+/// `--sync-url` names it), checked to be two hosts.
 fn split_hosts(
     project: *routes.Project,
     arena: std.mem.Allocator,
-    given_admin_url: []const u8,
+    flags: *const Flags,
     site_url: []const u8,
 ) !void {
     std.debug.assert(project.admin_origin.len == 0);
     std.debug.assert(site_url.len > 0);
+
+    const given_admin_url = flags.admin_url;
+
+    project.sync_origin = std.mem.trimEnd(u8, flags.sync_url, "/");
 
     const admin_url = if (given_admin_url.len > 0)
         given_admin_url
@@ -493,10 +521,8 @@ fn apps_mode(arena: std.mem.Allocator, flags: Flags, bound: u16) !apps_host.Mode
 }
 
 /// The processes `serve` starts beside itself, each reporting back through the operator
-/// channel, so only beside a CLI session: plugin builds (with the compiler carried) and
-/// conversations' turns.
+/// channel, so only beside a CLI session: conversations' turns and updates.
 const Helpers = struct {
-    builder: plugin_build.Builder,
     starter: agent_start.Starter = undefined,
     hub: live.Hub = .{},
     updater: update.Updater,
@@ -507,8 +533,8 @@ const Helpers = struct {
         project: *routes.Project,
         session: bool,
     ) !void {
-        std.debug.assert(helpers.builder.db_path.len > 0);
-        std.debug.assert(project.builder == null and project.agents == null);
+        std.debug.assert(helpers.updater.db_path.len > 0);
+        std.debug.assert(project.agents == null);
 
         if (!session) {
             return;
@@ -518,28 +544,21 @@ const Helpers = struct {
 
         helpers.starter = .{
             .io = init.io,
-            .db_path = helpers.builder.db_path,
+            .db_path = helpers.updater.db_path,
         };
         project.agents = try helpers.starter.hook(arena);
         project.live = helpers.hub.live();
         project.updater = try helpers.updater.hook(arena);
         project.auto_update = if (helpers.updater.auto) &helpers.updater else null;
-
-        if (toolchain.carried) {
-            project.builder = try helpers.builder.hook(arena);
-        }
     }
 };
 
 /// Whether a server already runs for this database, said when it does: one project, one
-/// owner. When none does, the compiler for plugins is made ready before serving.
+/// owner.
 fn another_server(init: std.process.Init, db_path: [:0]const u8) !bool {
     std.debug.assert(db_path.len > 0);
 
-    const running = try operator.find(init.io, init.arena.allocator(), db_path) orelse {
-        toolchain.prepare(init);
-        return false;
-    };
+    const running = try operator.find(init.io, init.arena.allocator(), db_path) orelse return false;
 
     std.debug.assert(running.port > 0);
     report.err("publr serve: a server already runs for {s} on port {d}", .{
@@ -823,6 +842,9 @@ const help =
     \\                    (http://admin.localhost:8080): the site's host then sends /admin
     \\                    there, and a signed-in administrator sees the site as it is; a
     \\                    path under it when the host is shared, the proxy taking it off
+    \\  --sync-url <url>  Where other computers clone, pull and push this site, when not its
+    \\                    own addresses (a host that keeps sync away from a CDN); said in
+    \\                    /api/health as `sync`
     \\  --url <base>      The project's public address: the apps' sitemaps, and the domain
     \\                    their subdomains hang from (default: this server's own address);
     \\                    a path in it is where the whole project is served
@@ -835,6 +857,9 @@ const help =
     \\  --edge-max-age <s>
     \\                    How long a CDN in front may keep built pages and static islands
     \\                    (CDN-Cache-Control); for a CDN purged on every change (default 0)
+    \\  --plugin <file>   A transient plugin: this sandboxed plugin's .wasm, loaded for this
+    \\                    server alone, never installed; what it keeps lives in memory and
+    \\                    goes when the server stops (repeat for more, up to 8)
     \\  --browser [<dir>] Serve the in-browser build statically (default zig-out/browser)
     \\  -h, --help        Print this help
     \\
@@ -897,7 +922,7 @@ fn parse_flags(args: []const []const u8) Flags {
             index += 1;
             if (index == args.len) {
                 return .{
-                    .refused = "--out, --url and --apps need a value",
+                    .refused = "--out, --url, --apps, --plugin and --sync-url need a value",
                 };
             }
             option.* = args[index];
@@ -1013,6 +1038,16 @@ fn text_option(flags: *Flags, arg: []const u8) ?*[]const u8 {
 
     if (std.mem.eql(u8, arg, "--apps")) {
         return &flags.apps.apps_dir;
+    }
+
+    if (std.mem.eql(u8, arg, "--sync-url")) {
+        return &flags.sync_url;
+    }
+
+    // Each `--plugin` takes the next place; past the last, it is refused as unknown.
+    if (std.mem.eql(u8, arg, "--plugin") and flags.plugins_len < transient_module.transients_max) {
+        flags.plugins_len += 1;
+        return &flags.plugins[flags.plugins_len - 1];
     }
 
     return null;
@@ -1163,6 +1198,11 @@ test "serve flags validate counts and paths before startup" {
     try std.testing.expect(parse_flags(&many).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--out", "" }).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--url", "///" }).refused.len > 0);
+    try std.testing.expectEqualStrings(
+        "https://sync.publr.app/ada--admin",
+        parse_flags(&.{ "--sync-url", "https://sync.publr.app/ada--admin" }).sync_url,
+    );
+    try std.testing.expect(parse_flags(&.{"--sync-url"}).refused.len > 0);
     try std.testing.expectEqualStrings(
         "http://admin.localhost:8080",
         parse_flags(&.{ "--admin-url", "http://admin.localhost:8080/" }).admin_url,

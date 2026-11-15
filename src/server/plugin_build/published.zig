@@ -70,6 +70,32 @@ pub fn asked(arena: std.mem.Allocator, asker: anytype) ![]const published.Interf
     return found.items;
 }
 
+/// The interfaces a file holds, written as `plugin interfaces` answers them
+/// (`{ "interfaces": [...] }`, every page in one): a site elsewhere's, asked by whoever builds
+/// for it.
+pub fn from_file(init: std.process.Init, path: []const u8) ![]const published.Interface {
+    std.debug.assert(path.len > 0);
+
+    const arena = init.arena.allocator();
+    const limit: std.Io.Limit = .limited(answer_bytes_max);
+    const text = std.Io.Dir.cwd().readFileAlloc(init.io, path, arena, limit) catch |err| {
+        report.err("publr plugin prepare: --interfaces {s}: {t}", .{ path, err });
+        return error.Unavailable;
+    };
+    const Listing = struct {
+        interfaces: []const published.Interface = &.{},
+    };
+    const listing = std.json.parseFromSliceLeaky(Listing, arena, text, .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    }) catch {
+        report.err("publr plugin prepare: --interfaces {s} could not be read", .{path});
+        return error.Unavailable;
+    };
+
+    return listing.interfaces;
+}
+
 /// `there` with each `--with` package's interface over the one of the same name.
 pub fn with_packages(
     init: std.process.Init,

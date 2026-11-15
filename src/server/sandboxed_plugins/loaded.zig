@@ -30,6 +30,8 @@ pub const Loaded = struct {
     held: []const model.permission.Held,
     own_types: []const []const u8,
     limits: sandboxed_plugin.Effective,
+    /// Given to this server alone (`serve --plugin`): its records live in this memory.
+    transient: ?*@import("transient.zig").Transient = null,
 
     /// Loads a stored row and its module. `bytes` become the plugin's; on error, freed.
     pub fn init(

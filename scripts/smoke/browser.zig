@@ -30,7 +30,7 @@ pub fn expect_browser(init: std.process.Init, binary: []const u8, work_dir: []co
     const dir = try std.fmt.allocPrint(arena, "{s}/browser", .{work_dir});
     const script_path = try std.fmt.allocPrint(arena, "{s}/script.json", .{dir});
     const setup = [_][]const u8{
-        "init", "--email", email, "--display_name", "Browser", "--password", password,
+        "project", "init", "--email", email, "--display_name", "Browser", "--password", password,
     };
     const cwd = std.Io.Dir.cwd();
 

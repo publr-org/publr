@@ -276,7 +276,7 @@ pub const Field = struct {
     label: []const u8 = "",
     /// The names a value may be, when it is one of a set.
     values: []const []const u8 = &.{},
-    /// Each value's words, the first line of its `///` (`1,000`), in step with `values`;
+    /// Each value's words, the first line of its `///` (`1,000`), in sync with `values`;
     /// empty where it has none.
     words: []const []const u8 = &.{},
     /// A list of items' fields, each plain (`json`, a list of `{ code, label }`).
@@ -312,6 +312,8 @@ pub const Page = struct {
     preview: []const u8 = "",
     /// `.menu = .none`: left out of the menu, still opened at its address.
     hidden: bool = false,
+    /// Drawn alone, the frame filling the window: no rail, sidebar or top bar.
+    bare: bool = false,
     /// A tabbed page, filled by other pages naming it in `parent`.
     tabs: bool = false,
     /// The tabbed pages this page is a tab of, the first that exists (`products.settings`).

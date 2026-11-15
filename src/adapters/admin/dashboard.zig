@@ -2,7 +2,7 @@ const std = @import("std");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const definitions = @import("definitions.zig");
-const credentials = @import("../../server/credentials.zig");
+const hosts = @import("../../server/hosts.zig");
 const ai = @import("../../operations/ai.zig");
 const ai_model = @import("../../model/ai.zig");
 const people = @import("../../operations/device/people.zig");
@@ -358,7 +358,7 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
     const project = session.project;
     const host = session.request.header("host") orelse "";
 
-    if (registry.hosted or project.folder.len == 0 or !credentials.host_on_this_machine(host)) {
+    if (registry.hosted or project.folder.len == 0 or !hosts.host_on_this_machine(host)) {
         const host_url = try definitions.host_url_of(session);
         const site = try std.fmt.allocPrint(arena, "{s}{s}", .{ host_url, project.admin_path() });
         const agent = try agent_setup.of(session, site);
@@ -382,7 +382,7 @@ fn fill_agents(session: *admin.Session, props: *Props) admin.Error!void {
 pub fn reachable(session: *const admin.Session) bool {
     std.debug.assert(session.signed_in());
 
-    return !credentials.host_on_this_machine(session.request.header("host") orelse "");
+    return !hosts.host_on_this_machine(session.request.header("host") orelse "");
 }
 
 pub const Mcp = struct {
@@ -436,7 +436,7 @@ fn server_name_of(session: *const admin.Session) admin.Error![]const u8 {
 
     const host = session.request.header("host") orelse "";
     const folder = std.fs.path.basename(session.project.folder);
-    const local = credentials.host_on_this_machine(host) and folder.len > 0;
+    const local = hosts.host_on_this_machine(host) and folder.len > 0;
 
     return server_name(session.arena, if (local) folder else site_of_host(host));
 }

@@ -1,0 +1,15 @@
+import { BareFramePage } from "../layouts/BareFramePage.ptsx";
+
+export type PluginBarePageProps = {
+  title: string;
+  src: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  operations: string[];
+};
+
+/** A page a plugin brings to stand on its own (`.bare = true`). */
+export function PluginBarePage({ title, src, plugin, page, csrf, operations }: PluginBarePageProps) {
+  return <BareFramePage title={title} src={src} plugin={plugin} page={page} csrf={csrf} operations={operations} />;
+}

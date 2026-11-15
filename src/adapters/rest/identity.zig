@@ -492,7 +492,6 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     ctx.files = project.files;
     ctx.apps = project.apps_folder();
     ctx.translations = if (project.languages) |languages| languages.view() else null;
-    ctx.builder = project.builder;
     ctx.agents = project.agents;
     ctx.live = project.live;
     ctx.updater = project.updater;

@@ -1,7 +1,13 @@
 //! What a new site starts with when it has a front end: an app copied into its `apps/`,
-//! then the site's own. The page tells a site on Publr Cloud from one running on its own by
+//! then the site's own. Publr writes it when it first sets a project up (`set_up`), as a
+//! meta framework's default page; a project made with an empty `apps/` (admin only) gets
+//! none. The page tells a site on Publr Cloud from one running on its own by
 //! `Publr.build.managed()`, so the same files serve both.
 const std = @import("std");
+
+/// The project file a site's folder holds, naming it.
+pub const project_file = "publr.zon";
+const project_bytes_max: u32 = 1 << 20;
 
 pub const File = struct {
     path: []const u8,
@@ -47,6 +53,37 @@ pub fn write(io: std.Io, arena: std.mem.Allocator, apps: []const u8, starter: St
             .data = file.data,
         });
     }
+}
+
+/// The default starter written into this folder's `apps/`, when this folder is a project
+/// (its `publr.zon` names it) with no `apps` folder at all; true when it was written. Run
+/// once, as the project's database is first made.
+pub fn set_up(io: std.Io, arena: std.mem.Allocator) !bool {
+    std.debug.assert(default.files.len > 0);
+
+    const cwd = std.Io.Dir.cwd();
+
+    if (cwd.access(io, "apps", .{})) |_| {
+        return false;
+    } else |_| {}
+
+    const limit: std.Io.Limit = .limited(project_bytes_max);
+    const text = cwd.readFileAllocOptions(io, project_file, arena, limit, .of(u8), 0) catch
+        return false;
+    const Project = struct {
+        name: []const u8 = "",
+    };
+    const project = std.zon.parse.fromSliceAlloc(Project, arena, text, null, .{
+        .ignore_unknown_fields = true,
+    }) catch return false;
+
+    if (project.name.len == 0) {
+        return false;
+    }
+
+    try write(io, arena, "apps", default);
+
+    return true;
 }
 
 test "the default starter is one app at the root, its page reading where it runs" {

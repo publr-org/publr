@@ -1,7 +1,7 @@
 # CLI: `user`
 
 Accounts, roles, passwords and signing in. The first admin comes from
-[`publr init`](project.md); after that, create accounts with `user create`. An
+[`publr project init`](project.md); after that, create accounts with `user create`. An
 account holds one or more roles and may call what any of them grants: core's
 `admin` (everything) and `editor` (content, not users, structure or settings), and
 whatever the plugins declare ([`role list`](role.md)). `sign_in`, `sign_out` and `set_password` are open to

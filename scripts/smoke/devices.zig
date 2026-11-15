@@ -1,7 +1,7 @@
 //! A device signing in by link against the running server: asked over HTTP, approved by its
-//! person from the CLI, its token claimed once; then `publr --site` and `whoami` with that
-//! token, a destroying command refused to it, and the approve page behind the sign-in. Then
-//! `publr mcp`, which signs in the same way, in a folder linked to no site.
+//! person from the CLI, its token claimed once; then that token naming the device and sending
+//! commands through `/api/cli`, a destroying one listed, and the approve page behind the
+//! sign-in.
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
@@ -21,7 +21,14 @@ pub fn expect_devices(init: std.process.Init, binary: []const u8, work_dir: []co
 
     const dir = try std.fmt.allocPrint(init.arena.allocator(), "{s}/devices", .{work_dir});
     const setup = [_][]const u8{
-        "init", "--email", email, "--display_name", "Device", "--password", "device smoke pass",
+        "project",
+        "init",
+        "--email",
+        email,
+        "--display_name",
+        "Device",
+        "--password",
+        "device smoke pass",
     };
 
     try std.Io.Dir.cwd().createDirPath(init.io, dir);
@@ -40,7 +47,6 @@ pub fn expect_devices(init: std.process.Init, binary: []const u8, work_dir: []co
     const port = try smoke.read_port(init, child.stderr.?);
 
     try expect_signed_in(init, binary, dir, port);
-    try @import("mcp_local.zig").expect_mcp_local(init, binary, work_dir);
 }
 
 /// Asked over HTTP, approved by its person from the CLI, its token claimed once.
@@ -73,80 +79,55 @@ fn expect_signed_in(
     const claim = try smoke.http_post(init, port, "/api/device.claim", code);
     const claimed = try body_as(Claimed, arena, claim);
 
-    try expect_remote(init, binary, work_dir, port, claimed.token);
+    try expect_remote(init, port, claimed.token);
 
     const page = try smoke.http_get(init, port, "/admin/settings/devices/approve?code=BCDF-GHJK");
 
     try expect_in("approve page signed out", page, "Location: /admin/login?return=");
 }
 
-/// `whoami` and a command sent with `--site`, as the device; destroying refused.
+/// The device's token at the site: it names the device, sends commands through `/api/cli`
+/// (what the `publr` command's `--site` uses), and a destroying one is listed, never run.
 fn expect_remote(
     init: std.process.Init,
-    binary: []const u8,
-    work_dir: []const u8,
     port: u16,
     token: []const u8,
 ) !void {
     std.debug.assert(token.len > 0);
+    std.debug.assert(port > 0);
 
     const arena = init.arena.allocator();
-    const address = try std.fmt.allocPrint(arena, "http://127.0.0.1:{d}", .{port});
-    const file = try std.fmt.allocPrint(arena, "{s}/credentials", .{work_dir});
-    const kept = try std.fmt.allocPrint(arena, "{{\"sites\":[{{\"address\":\"{s}\"," ++
-        "\"token\":\"{s}\"}}]}}", .{ address, token });
+    const bearer = try std.fmt.allocPrint(arena, "Authorization: Bearer {s}\r\n", .{token});
+    const devices = try smoke.http_post_headers(init, port, "/api/device.list", bearer, "{}");
 
-    try std.Io.Dir.cwd().writeFile(init.io, .{
-        .sub_path = file,
-        .data = kept,
-    });
+    try expect_in("device.list", devices, "smoke device");
 
-    const whoami = try run_signed_in(init, binary, work_dir, file, &.{"whoami"});
+    const types = try smoke.http_post_headers(
+        init,
+        port,
+        "/api/cli",
+        bearer,
+        "{\"args\":[\"content_type\",\"list\"]}",
+    );
 
-    try expect_in("whoami", whoami.stdout, "smoke device");
-
-    const types = try run_signed_in(init, binary, work_dir, file, &.{
-        "--site", address, "content_type", "list",
-    });
-
-    try expect_in("--site content_type list", types.stdout, "\"types\"");
+    try expect_in("/api/cli content_type list", types, "types");
 
     // Final, so not run: listed for the device's person (a missing record is listed too:
     // the person's own removal finds it gone).
-    const purge = try run_signed_in(init, binary, work_dir, file, &.{
-        "--site", address, "record", "purge", "--id", "0190a1b2c3d40001a1b2c3d4",
-    });
+    const purge = try smoke.http_post_headers(
+        init,
+        port,
+        "/api/cli",
+        bearer,
+        "{\"args\":[\"record\",\"purge\",\"--id\",\"0190a1b2c3d40001a1b2c3d4\"]}",
+    );
 
-    try expect_in("--site record purge", purge.stderr, "Listed for removal");
-}
+    try expect_in("/api/cli record purge", purge, "Listed for removal");
 
-fn run_signed_in(
-    init: std.process.Init,
-    binary: []const u8,
-    work_dir: []const u8,
-    credentials: []const u8,
-    args: []const []const u8,
-) !std.process.RunResult {
-    std.debug.assert(args.len < 8);
-    std.debug.assert(credentials.len > 0);
+    const list_words = "{\"args\":[\"content_type\",\"list\"]}";
+    const anonymous = try smoke.http_post(init, port, "/api/cli", list_words);
 
-    var environ = try init.environ_map.clone(init.arena.allocator());
-    var argv: [9][]const u8 = undefined;
-
-    try environ.put("PUBLR_CREDENTIALS", credentials);
-    argv[0] = binary;
-
-    for (args, 0..) |arg, index| argv[index + 1] = arg;
-
-    return std.process.run(init.arena.allocator(), init.io, .{
-        .argv = argv[0 .. args.len + 1],
-        .cwd = .{
-            .path = work_dir,
-        },
-        .environ_map = &environ,
-        .stdout_limit = .limited(1 << 20),
-        .stderr_limit = .limited(1 << 20),
-    });
+    try expect_in("/api/cli signed out", anonymous, "device_required");
 }
 
 /// The JSON body of a raw HTTP answer.

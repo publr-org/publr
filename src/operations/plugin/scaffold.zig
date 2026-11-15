@@ -1,11 +1,10 @@
 //! A plugin to start from: a working plugin with a page of its own in the admin, made of
 //! the design system's composites and reading and writing through `call` and `query`. It
-//! writes nothing: its files go to `plugin build` (or into `plugins/<name>/` by hand),
-//! so an agent in a terminal and a chat in the browser start the same way.
+//! writes nothing: its files go into `plugins/<name>/` of a site's folder on a computer,
+//! where the `publr` command builds them (`publr plugin build --name <name>`).
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const plugin_model = @import("../../model/sandboxed_plugin.zig");
-const sources = @import("sources.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -14,6 +13,12 @@ const Error = sdk.Error;
 pub const operations = [_]type{Scaffold};
 
 pub const Shape = enum { list, form };
+
+/// One file of the plugin, its path inside the plugin's folder.
+pub const Source = struct {
+    path: []const u8,
+    content: []const u8,
+};
 
 const icons_list = "plus\nx-close\nchevron-up\nchevron-down\nlist-unordered\n";
 
@@ -24,9 +29,9 @@ pub const Scaffold = struct {
         \\Anyone signed in to the admin; writes nothing. `--page list` gives entries people
         \\add and remove, drawn in the plugin frame with the design system's composites,
         \\`call` and `query`; `--page form` one set of settings people edit, a page by
-        \\declaration the admin draws itself, compiled in or installed alike. Hand the
-        \\files to `plugin build --name <name> --files <files>`, or write them into
-        \\`plugins/<name>/` and run `publr plugin build --name <name>`.
+        \\declaration the admin draws itself, compiled in or installed alike. Write the
+        \\files into `plugins/<name>/` of the site's folder on a computer and run
+        \\`publr plugin build --name <name>` there: building needs a computer.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -34,7 +39,7 @@ pub const Scaffold = struct {
         page: Shape = .list,
     };
     pub const Out = struct {
-        files: []const sources.Source,
+        files: []const Source,
     };
     pub const example: In = .{
         .name = "notes",
@@ -67,11 +72,11 @@ pub const Scaffold = struct {
     }
 };
 
-fn files_of(arena: std.mem.Allocator, name: []const u8, shape: Shape) Error![]const sources.Source {
+fn files_of(arena: std.mem.Allocator, name: []const u8, shape: Shape) Error![]const Source {
     std.debug.assert(name.len > 0);
 
     const pascal = try pascal_of(arena, name);
-    var files: std.ArrayList(sources.Source) = .empty;
+    var files: std.ArrayList(Source) = .empty;
     const main = if (shape == .list)
         @embedFile("scaffold/list_main.zig.txt")
     else
@@ -93,7 +98,7 @@ fn files_of(arena: std.mem.Allocator, name: []const u8, shape: Shape) Error![]co
 
 fn add(
     arena: std.mem.Allocator,
-    files: *std.ArrayList(sources.Source),
+    files: *std.ArrayList(Source),
     path: []const u8,
     content: []const u8,
 ) Error!void {

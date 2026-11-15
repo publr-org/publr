@@ -40,7 +40,7 @@ pub const Put = struct {
     pub const description = "Put anything the project stores exactly as another copy of it " ++
         "keeps it, with its ids";
     pub const details =
-        \\For plugins that keep copies of a project in step (a rollback, a promotion, a
+        \\For plugins that keep copies of a project in sync (a rollback, a promotion, a
         \\merge): each unit's stored rows as JSON objects by column, by table, `{}` to
         \\remove it. Kinds and their tables: `record` (`records`, `record_values`,
         \\`record_terms`), `term` (`terms`, `term_values`), `internal` (`internal_records`,

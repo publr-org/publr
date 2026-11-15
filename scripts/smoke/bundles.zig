@@ -1,5 +1,6 @@
-//! A site in one file from the outside: `pack` in one folder, `unpack` in another, a second
-//! `unpack` there refused, and `cloud deploy` refused without the account's token.
+//! A site's data moved from the outside: `site export` in one folder, `site import` of it in
+//! another, a second import there refused, and an export into a folder that is not empty
+//! refused.
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
@@ -10,26 +11,26 @@ pub fn expect_bundles(init: std.process.Init, binary: []const u8, work_dir: []co
     const arena = init.arena.allocator();
     const source = try std.fmt.allocPrint(arena, "{s}/bundle-source", .{work_dir});
     const target = try std.fmt.allocPrint(arena, "{s}/bundle-target", .{work_dir});
-    const file = try std.fmt.allocPrint(arena, "{s}/site.site.tar.gz", .{source});
-    const password = "bundle smoke pass";
+    const exported = try std.fmt.allocPrint(arena, "{s}/bundle-export", .{work_dir});
     const setup = [_][]const u8{
+        "project",
         "init",
         "--email",
         "bundle@example.com",
         "--display_name",
         "Bundle",
         "--password",
-        password,
+        "bundle smoke pass",
     };
-    // A dashboard no one signs in to: never a real deploy, whoever runs the smoke.
-    const deploy = [_][]const u8{ "cloud", "deploy", "--cloud", "http://127.0.0.1:9" };
+    const export_words = [_][]const u8{ "site", "export", "--to", exported };
+    const import_words = [_][]const u8{ "site", "import", "--from", exported };
 
     try std.Io.Dir.cwd().createDirPath(init.io, source);
     try std.Io.Dir.cwd().createDirPath(init.io, target);
     try smoke.expect_contains(init, binary, source, &setup, "\"roles\": [");
-    try smoke.expect_contains(init, binary, source, &.{ "pack", file }, "Packed");
-    try smoke.expect_contains(init, binary, target, &.{ "unpack", file }, "Unpacked bundle-source");
+    try smoke.expect_contains(init, binary, source, &export_words, "Exported");
+    try smoke.expect_failure(init, binary, source, &export_words, "the folder is not empty");
+    try smoke.expect_contains(init, binary, target, &import_words, "Imported");
     try smoke.expect_contains(init, binary, target, &.{ "db", "tables" }, "users 1 core");
-    try smoke.expect_failure(init, binary, target, &.{ "unpack", file }, "has a site already");
-    try smoke.expect_failure(init, binary, source, &deploy, "run `publr cloud login`");
+    try smoke.expect_failure(init, binary, target, &import_words, "has a site already");
 }

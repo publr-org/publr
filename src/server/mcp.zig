@@ -9,7 +9,7 @@ const sdk = @import("../sdk.zig");
 const version = @import("../publr.zig").version;
 const registry = @import("registry.zig");
 const identity_module = @import("../adapters/rest/identity.zig");
-const credentials = @import("credentials.zig");
+const hosts = @import("hosts.zig");
 const remote = @import("remote.zig");
 const oauth = @import("oauth.zig");
 const agents = @import("agents.zig");
@@ -246,7 +246,7 @@ fn setup_of(
 
     const host = request.header("host") orelse "";
     const here = !registry.hosted and project.folder.len > 0 and
-        credentials.host_on_this_machine(host);
+        hosts.host_on_this_machine(host);
     const on_copies = device.scope == .write and registry.copies_list != null;
 
     if (!here) {
@@ -362,21 +362,20 @@ fn setup_elsewhere(
         \\If you can run commands on this computer, work on a local copy of the site instead. It is
         \\brought down once for the folder:
         \\
-        \\1. In an empty folder:
-        \\   `curl -fsSL https://publr.dev/install.sh | PUBLR_HOME=. PUBLR_VERSION=v{s} sh`
-        \\2. `./publr clone {s} site`, in the background: it runs from then on. It opens your
-        \\   person's browser on the site to approve it once, then on a page where they choose
-        \\   what comes down (everything, or without media files) and watch it come, which opens
-        \\   the site's admin, signed in, when it is here. Tell them so, and give them the address
-        \\   it prints. It then serves the site there.
-        \\3. Build in `site` as in any codebase, with your own file tools and
-        \\   `../publr --as-admin <command>` there; preview on that address, never make another
+        \\1. Install the publr command: `curl -fsSL https://publr.dev/install.sh | sh`
+        \\   (or `brew install publr-org/tap/publr`).
+        \\2. `publr clone {s}` in your person's terminal or in the background. It opens their
+        \\   browser on the site to approve it once, brings the site down into a folder of its
+        \\   own on the release the site runs, starts it, and opens its admin, signed in. Give
+        \\   them the address it prints.
+        \\3. Build in that folder as in any codebase, with your own file tools and
+        \\   `publr --as-admin <command>` there; preview on that address, never make another
         \\   site.
-        \\4. `../publr push` sends the folder up as a branch. Give your person the links it prints:
-        \\   they review it and merge it. Nothing you do there touches the live site.
+        \\4. `publr push` in the folder sends it up as a branch. Give your person the links it
+        \\   prints: they review it and merge it. Nothing you do there touches the live site.
         \\
         \\Otherwise: {s}
-    , .{ version, base, by_run }) catch error.OutOfMemory;
+    , .{ base, by_run }) catch error.OutOfMemory;
 }
 
 fn args_of(arena: std.mem.Allocator, params: Value) error{OutOfMemory}!?[]const []const u8 {

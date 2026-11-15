@@ -77,15 +77,24 @@ pub fn add_step(
     }
 }
 
-/// Each plugin under `dir` built by `publr plugin build --out`, with the compiler the
-/// `publr` just built carries, written out into the build cache rather than the user's.
+/// Each plugin under `dir` built as the `publr` command builds one: `publr` (just built)
+/// prepares it, the Zig running this build compiles it for wasm32, `publr` checks the module
+/// (`plugin_compile.zig`).
 pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8) SandboxedPlugins {
     std.debug.assert(dir.len > 0);
     std.debug.assert(builder.build_root.path != null);
 
     const names = discover(builder, dir);
     const files = builder.allocator.alloc(std.Build.LazyPath, names.len) catch @panic("OOM");
-    const cache = builder.pathFromRoot(".zig-cache/publr-toolchain");
+    const cache = builder.pathFromRoot(".zig-cache/publr-plugins");
+    const compiler = builder.addExecutable(.{
+        .name = "plugin_compile",
+        .root_module = builder.createModule(.{
+            .root_source_file = builder.path("build/plugin_compile.zig"),
+            .target = builder.graph.host,
+            .optimize = .Debug,
+        }),
+    });
 
     // Those building against others (`builds_with.zon`) after the rest, with each one's module.
     for ([_]bool{ false, true }) |second| for (names, 0..) |name, index| {
@@ -96,19 +105,18 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
             continue;
         }
 
-        const run = builder.addRunArtifact(publr);
+        const run = builder.addRunArtifact(compiler);
 
-        run.addArgs(&.{ "plugin", "build", "--name", name, "--dir" });
+        run.addArtifactArg(publr);
+        run.addArgs(&.{ builder.graph.zig_exe, cache, name });
         run.addDirectoryArg(builder.path(source));
+        files[index] = run.addOutputFileArg(builder.fmt("{s}.wasm", .{name}));
 
         for (with) |other| {
             run.addArg("--with");
             run.addFileArg(built_before(names, files[0..names.len], other, name));
         }
 
-        run.addArg("--out");
-        files[index] = run.addOutputFileArg(builder.fmt("{s}.wasm", .{name}));
-        run.setEnvironmentVariable("PUBLR_CACHE_DIR", cache);
         // What a fixture leaves out of the sandbox is a notice for plugin authors; these
         // leave it out on purpose. A failed build still fails the step, on its exit code.
         _ = run.captureStdErr(.{});
@@ -162,7 +170,7 @@ fn built_before(
     diagnostic.fail("{s}/builds_with.zon names {s}, which is not beside it", .{ name, other });
 }
 
-/// The SDK a plugin is built against, as `publr plugin build` finds it: `src/` (the Zig
+/// The SDK a plugin is built against, as `publr plugin prepare` writes it: `src/` (the Zig
 /// files only), `stubs/` and `guest.zig`, packed by `pack` into one archive. For a plugin's
 /// views: `ws/`, the admin's views, the design system and the icons as the lowering reads
 /// them; `ui/views` (the generated Zig, for the real props, and the stand-ins);
@@ -305,9 +313,9 @@ fn stubs_of(builder: *std.Build) *std.Build.Step.WriteFile {
 }
 
 const stub_imports = [_][]const u8{
-    "publr_http", "publr_auth",        "publr_deps", "publr_jit",    "native_plugins",
-    "views",      "runtime",           "apps",       "apps_options", "publr_wasm",
-    "publr_zig",  "toolchain_options",
+    "publr_http",  "publr_auth", "publr_deps", "publr_jit",    "native_plugins",
+    "views",       "runtime",    "apps",       "apps_options", "publr_wasm",
+    "sdk_options",
 };
 
 fn discover(builder: *std.Build, dir: []const u8) []const []const u8 {

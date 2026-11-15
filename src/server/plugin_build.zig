@@ -1,12 +1,13 @@
-//! `publr plugin build`: a sandboxed plugin's source built into its module by the compiler
-//! the binary carries, its manifest read from the module itself and written into its
-//! `publr` section, then added through the plugin operations: enabled when new, applied as
-//! the next version when it is already there. What it asks for is granted by tier, as when
-//! an administrator adds it; high requests wait for approval.
+//! A sandboxed plugin's build, around a compiler outside this binary (the `publr`
+//! command's): `plugin prepare` checks the source and writes what the compile takes (this
+//! release's SDK, the docs module, the lowered views, the published interfaces) with the
+//! recipe's arguments; `plugin check --file` makes the compiled module whole (its manifest
+//! read by running it and written into its `publr` section) and runs its examples. Adding it
+//! is `plugin add`'s.
 const std = @import("std");
 const doc_reader = @import("../sdk/plugin/doc_reader.zig");
 const wasm = @import("publr_wasm");
-const toolchain = @import("toolchain.zig");
+const plugin_sdk = @import("plugin_sdk.zig");
 const invoke = @import("sandboxed_plugins/invoke.zig");
 const wire = @import("../sdk/plugin/wire.zig");
 const plugin_manifest = @import("../sdk/plugin/manifest.zig");
@@ -31,38 +32,6 @@ pub const Request = struct {
 const published = @import("../sdk/published.zig");
 const published_dir = @import("plugin_build/published.zig");
 const examples = @import("plugin_build/examples.zig");
-const store = @import("../store.zig");
-
-pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const u8) !u8 {
-    std.debug.assert(db_path.len > 0);
-
-    const request = parse(init.arena.allocator(), args) orelse {
-        report.err("usage: publr plugin build --name <name> [--dir <folder>] [--out <file>]", .{});
-        return 2;
-    };
-    const data_dir = std.fs.path.dirname(db_path) orelse ".";
-    const built = request.out orelse try std.fmt.allocPrint(
-        init.arena.allocator(),
-        "{s}/builds/{s}.wasm",
-        .{ data_dir, request.name },
-    );
-
-    // Built only, it builds against this binary's built-in plugins; installed here, against
-    // every plugin the site has.
-    const site: Site = if (request.out != null) .{
-        .interfaces = @import("registry.zig").published_interfaces,
-    } else try site_of(init, db_path);
-
-    if (!try built_module(init, request, built, site)) {
-        return 1;
-    }
-
-    if (request.out != null) {
-        return 0;
-    }
-
-    return install(init, db_path, request.name, built);
-}
 
 /// What a build has of the site it builds for: each plugin's published interface, and the
 /// modules of the plugins it has installed, for its examples.
@@ -82,45 +51,117 @@ fn site_of(init: std.process.Init, db_path: [:0]const u8) !Site {
     };
     defer commands.deinit();
 
-    const Asker = struct {
-        commands: *operator.Commands,
-
-        pub fn ask(asker: @This(), words: []const []const u8, out: *std.Io.Writer) !u8 {
-            var as_admin: [8][]const u8 = undefined;
-
-            std.debug.assert(words.len < as_admin.len);
-
-            as_admin[0] = "--as-admin";
-            @memcpy(as_admin[1 .. words.len + 1], words);
-
-            return asker.commands.run(as_admin[0 .. words.len + 1], out);
-        }
-    };
-
     const arena = init.arena.allocator();
-    const interfaces = try published_dir.asked(arena, Asker{
+    const asker: Asker = .{
         .commands = &commands,
-    });
-    const rows = try store.sandboxed_plugins.list(&commands.local.?.connection, arena);
+    };
     const dir = std.fs.path.dirname(db_path) orelse ".";
-    var modules: std.ArrayList(examples.Module) = .empty;
 
-    for (rows) |row| {
-        if (row.enabled) {
-            const file = try std.fmt.allocPrint(arena, "{s}.wasm", .{row.hash});
+    return .{
+        .interfaces = try published_dir.asked(arena, asker),
+        .modules = try installed_modules(arena, asker, dir),
+    };
+}
+
+/// Commands run as the site's administrator: in the server when one runs, else here.
+const Asker = struct {
+    commands: *operator.Commands,
+
+    pub fn ask(asker: Asker, words: []const []const u8, out: *std.Io.Writer) !u8 {
+        var as_admin: [8][]const u8 = undefined;
+
+        std.debug.assert(words.len < as_admin.len);
+
+        as_admin[0] = "--as-admin";
+        @memcpy(as_admin[1 .. words.len + 1], words);
+
+        return asker.commands.run(as_admin[0 .. words.len + 1], out);
+    }
+};
+
+/// Each enabled installed plugin's module, by its hash in `<data>/plugins/`. Asked as every
+/// other command is, so it works whether `serve` runs or not: the plugins page by page,
+/// then each one's hash.
+fn installed_modules(
+    arena: std.mem.Allocator,
+    asker: Asker,
+    dir: []const u8,
+) ![]const examples.Module {
+    std.debug.assert(dir.len > 0);
+
+    const Listed = struct {
+        name: []const u8,
+        mode: []const u8,
+        enabled: bool,
+    };
+    const Page = struct {
+        plugins: []const Listed = &.{},
+        total: u32 = 0,
+    };
+    var modules: std.ArrayList(examples.Module) = .empty;
+    var offset: u32 = 0;
+
+    while (offset < plugins_listed_max) : (offset += list_page) {
+        var answer: std.Io.Writer.Allocating = .init(arena);
+        const at = try std.fmt.allocPrint(arena, "{d}", .{offset});
+        const limit = try std.fmt.allocPrint(arena, "{d}", .{list_page});
+        const words = [_][]const u8{ "plugin", "list", "--limit", limit, "--offset", at };
+
+        if (try asker.ask(&words, &answer.writer) != 0) {
+            return error.Unavailable;
+        }
+
+        const page = try std.json.parseFromSliceLeaky(Page, arena, answer.written(), .{
+            .ignore_unknown_fields = true,
+        });
+
+        for (page.plugins) |plugin| {
+            if (!plugin.enabled or !std.mem.eql(u8, plugin.mode, "sandboxed")) {
+                continue;
+            }
+
+            const hash = try hash_of(arena, asker, plugin.name);
+            const file = try std.fmt.allocPrint(arena, "{s}.wasm", .{hash});
 
             try modules.append(arena, .{
-                .name = row.name,
+                .name = plugin.name,
                 .path = try std.fs.path.join(arena, &.{ dir, "plugins", file }),
             });
         }
+
+        if (offset + list_page >= page.total) {
+            break;
+        }
     }
 
-    return .{
-        .interfaces = interfaces,
-        .modules = modules.items,
-    };
+    return modules.items;
 }
+
+/// The hash of the module the installed plugin `name` runs, as `plugin get` answers it.
+fn hash_of(arena: std.mem.Allocator, asker: Asker, name: []const u8) ![]const u8 {
+    std.debug.assert(name.len > 0);
+
+    const Detail = struct {
+        hash: []const u8,
+    };
+    var answer: std.Io.Writer.Allocating = .init(arena);
+
+    if (try asker.ask(&.{ "plugin", "get", "--name", name }, &answer.writer) != 0) {
+        return error.Unavailable;
+    }
+
+    const detail = try std.json.parseFromSliceLeaky(Detail, arena, answer.written(), .{
+        .ignore_unknown_fields = true,
+    });
+
+    std.debug.assert(detail.hash.len > 0);
+
+    return detail.hash;
+}
+
+const list_page: u32 = 200;
+/// Plugins on one site at most, built in and installed.
+const plugins_listed_max: u32 = 600;
 
 /// The built plugins a build has: each `--with` package, then the site's.
 fn modules_of(
@@ -147,95 +188,378 @@ fn modules_of(
     return modules.items;
 }
 
-/// The plugin built into `built`, checked, its examples run; false, having said why, when
-/// it does not build. It builds against the published interfaces of the plugins `site`
-/// has, and those of `request.with` over them; its examples run beside the modules of both.
-/// A build to be installed also gets its types beside its views.
-pub fn built_module(
+/// What a build takes beside the compiler, made ready: the recipe's arguments and what the
+/// checks after compiling read.
+pub const Prepared = struct {
+    /// The compiler's arguments after its own executable: Publr's recipe (the SDK's root,
+    /// its modules, the plugin's, its docs, views and published interfaces, the output). What
+    /// is the compiler's own goes after them: its compiler_rt, its wasm flags, its cache.
+    args: []const []const u8,
+    /// The plugin's lowered views (`views.zig` and its modules), when it has any.
+    views: ?[]const u8,
+    /// The plugin's source files, as `check.files_in` reads them.
+    files: []const doc_reader.File,
+};
+
+/// Everything a build of the plugin into `built` needs from Publr, against the SDK in
+/// `sdk`: its source checked, its docs module and lowered views written beside `built`, the
+/// published interfaces of the plugins `site` has (and `request.with`'s over them) written
+/// as modules, and the compiler's arguments. Null, having said why, when it cannot build.
+pub fn prepared(
     init: std.process.Init,
     request: Request,
     built: []const u8,
     site: Site,
-) !bool {
+    sdk: []const u8,
+) !?Prepared {
     std.debug.assert(request.name.len > 0);
     std.debug.assert(built.len > 0);
+    std.debug.assert(sdk.len > 0);
 
-    const tools = toolchain.unpack(init) catch |err| {
-        const message = "publr plugin build: the compiler is not available";
-
-        report.err_reason(@errorName(err), message, .{});
-        return false;
-    };
-    const main_path = try std.fs.path.join(init.arena.allocator(), &.{ request.dir, "main.zig" });
+    const arena = init.arena.allocator();
+    const main_path = try std.fs.path.join(arena, &.{ request.dir, "main.zig" });
 
     std.Io.Dir.cwd().access(init.io, main_path, .{}) catch {
         report.err("publr plugin build: no plugin at {s}", .{main_path});
-        return false;
+        return null;
     };
 
     const check = @import("plugin_build/check.zig");
     const files = try check.files_in(init, request.dir);
-    const read = try doc_reader.source_of(init.arena.allocator(), files);
-
-    const problems = try check.problems_of(init.arena.allocator(), read);
+    const read = try doc_reader.source_of(arena, files);
+    const problems = try check.problems_of(arena, read);
 
     check.reported(request.dir, problems);
 
     if (doc_reader.failing(problems)) {
-        return false;
+        return null;
     }
 
-    const docs_path = try std.fmt.allocPrint(init.arena.allocator(), "{s}.docs.zig", .{built});
+    const docs_path = try std.fmt.allocPrint(arena, "{s}.docs.zig", .{built});
 
     try write_docs(init, docs_path, read.source);
 
-    const views = @import("plugin_build/views.zig").lower(init, tools, request.dir, built) catch {
-        return false;
+    const views = @import("plugin_build/views.zig").lower(init, sdk, request.dir, built) catch {
+        return null;
     };
-
     const interfaces = published_dir.with_packages(init, site.interfaces, request.with) catch {
-        return false;
+        return null;
     };
 
     if (published_dir.missing(files, request.name, interfaces)) |name| {
         report.err("publr plugin build: {s} imports {s}, which this site doesn't have: " ++
             "install {s} first, or pass --with <{s}.wasm>", .{ request.name, name, name, name });
-        return false;
+        return null;
     }
 
     const modules = try published_dir.write(init, built, request.name, interfaces);
-
-    if (try compile(init, tools, request, .{
+    const args = try recipe(init, sdk, request, .{
         .out = built,
         .docs = docs_path,
         .views = views,
         .published = modules,
-    }) != 0) {
-        return false;
-    }
+    });
 
-    const source = try std.json.Stringify.valueAlloc(init.arena.allocator(), files, .{});
-    const stores = if (views) |folder| try stores_of(init, folder) else null;
+    try std.Io.Dir.cwd().createDirPath(init.io, std.fs.path.dirname(built) orelse ".");
+
+    return .{
+        .args = args,
+        .views = views,
+        .files = files,
+    };
+}
+
+pub const Finish = struct {
+    /// The plugin's source files, as `check.files_in` reads them.
+    files: []const doc_reader.File,
+    /// Its lowered views (`views.zig`), when it has any.
+    views: ?[]const u8 = null,
+    /// Its `Example:`s run against an empty site with it, beside the other modules.
+    examples: bool = true,
+    /// Its types written beside its views, in its source folder.
+    types: bool = false,
+};
+
+/// A compiled module made whole and checked: its manifest read by running it and written
+/// into its `publr` section with its source and its views' browser code, what its sandboxed
+/// build left out said, its examples run. False, having said why, when it fails them.
+pub fn finished(
+    init: std.process.Init,
+    request: Request,
+    built: []const u8,
+    site: Site,
+    finish: Finish,
+) !bool {
+    std.debug.assert(request.name.len > 0);
+    std.debug.assert(built.len > 0);
+
+    const source = try std.json.Stringify.valueAlloc(init.arena.allocator(), finish.files, .{});
+    const stores = if (finish.views) |folder| try stores_of(init, folder) else null;
     const manifest = try write_manifest(init, built, source, stores);
 
     try warn_left_out(init, request.name, manifest);
 
-    if (request.out != null) {
-        return true;
+    if (finish.examples) {
+        // Every `Example:` runs against an empty site with the plugin before it reaches this
+        // one.
+        const beside = try modules_of(init, request.with, site);
+
+        if (!try examples.run(init, built, manifest, beside)) {
+            return false;
+        }
     }
 
-    // Every `Example:` runs against an empty site with the plugin before it reaches this one.
-    const beside = try modules_of(init, request.with, site);
-
-    if (!try examples.run(init, built, manifest, beside)) {
-        return false;
+    if (finish.types) {
+        try @import("plugin_build/types.zig").write(init, request.dir, manifest);
     }
-
-    // Only a plugin being installed gets its types beside its views: a build to a file
-    // (the fixtures) leaves the sources as they are.
-    try @import("plugin_build/types.zig").write(init, request.dir, manifest);
 
     return true;
+}
+
+const CheckArgs = struct {
+    file: []const u8,
+    dir: []const u8,
+    views: ?[]const u8 = null,
+    types: bool = false,
+    /// Its examples left unrun: a module built only to a file (Publr's own test plugins).
+    examples: bool = true,
+    with: []const []const u8 = &.{},
+};
+
+/// `--file` and `--dir`, required; `--views`, `--with` (again for each), `--types` and
+/// `--no-examples`.
+fn check_args(arena: std.mem.Allocator, args: []const []const u8) ?CheckArgs {
+    std.debug.assert(args.len < 1 << 16);
+
+    var file: ?[]const u8 = null;
+    var dir: ?[]const u8 = null;
+    var views: ?[]const u8 = null;
+    var types = false;
+    var run_examples = true;
+    var with: std.ArrayList([]const u8) = .empty;
+    var index: usize = 0;
+
+    while (index < args.len) : (index += 1) {
+        const word = args[index];
+
+        if (std.mem.eql(u8, word, "--types")) {
+            types = true;
+            continue;
+        }
+
+        if (std.mem.eql(u8, word, "--no-examples")) {
+            run_examples = false;
+            continue;
+        }
+
+        if (index + 1 == args.len) {
+            return null;
+        }
+
+        index += 1;
+
+        if (std.mem.eql(u8, word, "--file")) {
+            file = args[index];
+        } else if (std.mem.eql(u8, word, "--dir")) {
+            dir = args[index];
+        } else if (std.mem.eql(u8, word, "--views")) {
+            views = args[index];
+        } else if (std.mem.eql(u8, word, "--with")) {
+            with.append(arena, args[index]) catch return null;
+        } else {
+            return null;
+        }
+    }
+
+    return .{
+        .file = file orelse return null,
+        .dir = dir orelse return null,
+        .views = views,
+        .types = types,
+        .examples = run_examples,
+        .with = with.items,
+    };
+}
+
+/// `publr plugin check --file <module.wasm> --dir <source> [--views <folder>] [--with
+/// <x.wasm>]... [--types] [--no-examples]`: a module compiled elsewhere (by the `publr`
+/// command, against this release's SDK from `plugin sdk`) made whole and checked: the source
+/// checks, the manifest written into the module, its examples run
+/// beside the site's plugins (or this binary's, with no site here). It installs nothing:
+/// `plugin add --file` does. Exits 1 when the module fails, 2 for wrong words.
+pub fn check_file(init: std.process.Init, db_path: [:0]const u8, args: []const []const u8) !u8 {
+    std.debug.assert(db_path.len > 0);
+
+    const arena = init.arena.allocator();
+    const asked = check_args(arena, args) orelse {
+        report.err("usage: publr plugin check --file <module.wasm> --dir <source folder> " ++
+            "[--views <folder>] [--with <x.wasm>]... [--types] [--no-examples]", .{});
+        return 2;
+    };
+    const built = asked.file;
+    const source_dir = asked.dir;
+    const views = asked.views;
+    const types = asked.types;
+    const with = asked.with;
+
+    std.Io.Dir.cwd().access(init.io, built, .{}) catch {
+        report.err("publr plugin check: no module at {s}", .{built});
+        return 1;
+    };
+
+    const limit: std.Io.Limit = .limited(module_bytes_max);
+    const module = try std.Io.Dir.cwd().readFileAlloc(init.io, built, arena, limit);
+    const whole = wasm.section.find(module, plugin_manifest.section_name) catch {
+        report.err("publr plugin check: {s} is not a WebAssembly module", .{built});
+        return 1;
+    };
+
+    if (whole != null) {
+        report.err("publr plugin check: {s} carries its manifest already; check the module " ++
+            "as the compiler wrote it", .{built});
+        return 1;
+    }
+
+    const check = @import("plugin_build/check.zig");
+    const files = try check.files_in(init, source_dir);
+    const read = try doc_reader.source_of(arena, files);
+    const problems = try check.problems_of(arena, read);
+
+    check.reported(source_dir, problems);
+
+    if (doc_reader.failing(problems)) {
+        return 1;
+    }
+
+    // With a site here, its examples run beside the site's plugins; else beside this
+    // binary's.
+    const has_site = blk: {
+        std.Io.Dir.cwd().access(init.io, db_path, .{}) catch break :blk false;
+        break :blk true;
+    };
+    const site: Site = if (has_site) try site_of(init, db_path) else .{
+        .interfaces = @import("registry.zig").published_interfaces,
+    };
+    const request: Request = .{
+        .name = std.fs.path.stem(built),
+        .dir = source_dir,
+        .with = with,
+    };
+    const ok = try finished(init, request, built, site, .{
+        .files = files,
+        .views = views,
+        .types = types,
+        .examples = asked.examples,
+    });
+
+    return if (ok) 0 else 1;
+}
+
+/// `publr plugin prepare --name <n> [--dir <folder>] --out <folder> [--with <x.wasm>]...
+/// [--interfaces <file>]`: everything a compiler outside this binary (the `publr` command's)
+/// needs to build the plugin as `plugin build` would, written into a new or empty folder:
+/// this release's SDK (`sdk/`), the plugin's docs module, its lowered views and the published
+/// interfaces it builds against, beside `<name>.wasm`, the module it is to build. It prints
+/// the build as JSON: `args`, the compiler's arguments after its own executable (absolute
+/// paths, the output included), then `module`, `views` (null without views) and `dir`. The
+/// compiler adds what is its own after `args`: its compiler_rt, its wasm flags, its cache.
+/// The interfaces are the site's here, those `--interfaces` holds (a site elsewhere's, as
+/// `plugin interfaces` answers them), or this binary's with neither. Exits 1 when the plugin
+/// cannot build, 2 for wrong words.
+pub fn prepare(
+    init: std.process.Init,
+    out: *std.Io.Writer,
+    db_path: [:0]const u8,
+    args: []const []const u8,
+) !u8 {
+    std.debug.assert(db_path.len > 0);
+
+    const arena = init.arena.allocator();
+    var words: std.ArrayList([]const u8) = .empty;
+    var interfaces_file: ?[]const u8 = null;
+    var index: usize = 0;
+
+    while (index < args.len) : (index += 1) {
+        if (std.mem.eql(u8, args[index], "--interfaces") and index + 1 < args.len) {
+            index += 1;
+            interfaces_file = args[index];
+        } else {
+            try words.append(arena, args[index]);
+        }
+    }
+
+    const asked = parse(arena, words.items) orelse return prepare_usage();
+    const folder_given = asked.out orelse return prepare_usage();
+    const cwd = std.Io.Dir.cwd();
+
+    try cwd.createDirPath(init.io, folder_given);
+
+    var folder_dir = try cwd.openDir(init.io, folder_given, .{
+        .iterate = true,
+    });
+    defer folder_dir.close(init.io);
+    var iterator = folder_dir.iterate();
+
+    if (try iterator.next(init.io) != null) {
+        report.err("publr plugin prepare: {s} is not empty", .{folder_given});
+        return 1;
+    }
+
+    const folder = try cwd.realPathFileAlloc(init.io, folder_given, arena);
+    const dir = cwd.realPathFileAlloc(init.io, asked.dir, arena) catch {
+        report.err("publr plugin prepare: no plugin at {s}", .{asked.dir});
+        return 1;
+    };
+    const sdk = try std.fs.path.join(arena, &.{ folder, "sdk" });
+    var sdk_dir = try cwd.createDirPathOpen(init.io, sdk, .{});
+    defer sdk_dir.close(init.io);
+
+    plugin_sdk.extract_sdk(init.io, sdk_dir) catch |err| {
+        report.err_reason(@errorName(err), "publr plugin prepare: this binary carries no SDK", .{});
+        return 1;
+    };
+
+    const has_site = blk: {
+        cwd.access(init.io, db_path, .{}) catch break :blk false;
+        break :blk true;
+    };
+    const site: Site = if (interfaces_file) |file| .{
+        .interfaces = published_dir.from_file(init, file) catch return 1,
+    } else if (has_site) try site_of(init, db_path) else .{
+        .interfaces = @import("registry.zig").published_interfaces,
+    };
+    const request: Request = .{
+        .name = asked.name,
+        .dir = dir,
+        .with = asked.with,
+    };
+    const module_name = try std.fmt.allocPrint(arena, "{s}.wasm", .{asked.name});
+    const built = try std.fs.path.join(arena, &.{ folder, module_name });
+    const ready = try prepared(init, request, built, site, sdk) orelse return 1;
+    const Answer = struct {
+        args: []const []const u8,
+        module: []const u8,
+        views: ?[]const u8,
+        dir: []const u8,
+    };
+
+    try std.json.Stringify.value(Answer{
+        .args = ready.args,
+        .module = built,
+        .views = ready.views,
+        .dir = dir,
+    }, .{
+        .whitespace = .indent_2,
+    }, out);
+    try out.writeByte('\n');
+
+    return 0;
+}
+
+fn prepare_usage() u8 {
+    report.err("usage: publr plugin prepare --name <name> [--dir <folder>] --out <folder> " ++
+        "[--with <x.wasm>]... [--interfaces <file>]", .{});
+    return 2;
 }
 
 /// `--name <name>`, `--dir <folder>` (default `plugins/<name>`), whose `main.zig`
@@ -282,8 +606,6 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ?Request {
     };
 }
 
-/// Runs the compiler on the plugin, its messages going to this process's stderr as they are;
-/// its exit code.
 /// Where a build goes and what it takes beside the plugin's source.
 const Paths = struct {
     out: []const u8,
@@ -294,45 +616,20 @@ const Paths = struct {
     published: published_dir.Modules,
 };
 
-fn compile(
+/// Publr's recipe: the plugin built for the sandbox against the SDK in `sdk`, its root
+/// (`guest.zig`, the exports), `publr` (the SDK's source) with a stub for each module only
+/// the host has, and the plugin. The compiler's own executable, compiler_rt, wasm flags and
+/// cache are not in it.
+fn recipe(
     init: std.process.Init,
-    tools: toolchain.Toolchain,
-    request: Request,
-    paths: Paths,
-) !u8 {
-    std.debug.assert(paths.out.len > 0);
-    std.debug.assert(request.dir.len > 0);
-
-    const argv = try compile_argv(init, tools, request, paths);
-
-    try std.Io.Dir.cwd().createDirPath(init.io, std.fs.path.dirname(paths.out) orelse ".");
-
-    var child = try std.process.spawn(init.io, .{
-        .argv = argv,
-    });
-
-    return switch (try child.wait(init.io)) {
-        .exited => |code| code,
-        else => |term| {
-            report.err("publr plugin build: the compiler stopped: {any}", .{term});
-            return 1;
-        },
-    };
-}
-
-/// The plugin built for the sandbox against the SDK: its root (`guest.zig`, the exports),
-/// `publr` (the SDK's source) with a stub for each module only the host has, and the plugin.
-fn compile_argv(
-    init: std.process.Init,
-    tools: toolchain.Toolchain,
+    sdk: []const u8,
     request: Request,
     paths: Paths,
 ) ![]const []const u8 {
     const out_path = paths.out;
     const docs_path = paths.docs;
     const arena = init.arena.allocator();
-    const stubs = try stub_names(init, tools.sdk);
-    const cache = try std.fs.path.join(arena, &.{ std.fs.path.dirname(tools.sdk).?, "zig-cache" });
+    const stubs = try stub_names(init, sdk);
     // `bulk_memory`: without it, Zig 0.16's wasm backend lowers `@memmove` to a forward
     // byte loop, wrong when the regions overlap upwards (an `ArrayList.insert`); with it,
     // to `memory.copy`, which is right. The sandbox runs bulk memory.
@@ -346,11 +643,11 @@ fn compile_argv(
 
     std.debug.assert(stubs.len > 0);
 
-    try argv.appendSlice(arena, &.{ tools.compiler, "build-exe", "--stack", "262144" });
+    try argv.appendSlice(arena, &.{ "build-exe", "--stack", "262144" });
     try argv.appendSlice(arena, &target);
     try argv.appendSlice(arena, &.{ "--dep", "publr", "--dep", "plugin", "--dep", "plugin_docs" });
     try argv.appendSlice(arena, &.{ "--dep", "plugin_published" });
-    try argv.append(arena, try std.fmt.allocPrint(arena, "-Mroot={s}/guest.zig", .{tools.sdk}));
+    try argv.append(arena, try std.fmt.allocPrint(arena, "-Mroot={s}/guest.zig", .{sdk}));
     try argv.appendSlice(arena, &target);
 
     for (stubs) |stub| {
@@ -361,12 +658,12 @@ fn compile_argv(
         try argv.appendSlice(arena, &.{ "--dep", "plugin_views" });
     }
 
-    const publr_module = try std.fmt.allocPrint(arena, "-Mpublr={s}/src/publr.zig", .{tools.sdk});
+    const publr_module = try std.fmt.allocPrint(arena, "-Mpublr={s}/src/publr.zig", .{sdk});
 
     try argv.append(arena, publr_module);
 
     if (paths.views) |views| {
-        try views_modules(arena, &argv, &target, tools.sdk, views);
+        try views_modules(arena, &argv, &target, sdk, views);
     }
 
     // The plugin's own `interface.zig`, under its own name, for its own files: another
@@ -406,16 +703,14 @@ fn compile_argv(
 
         const path = try std.fmt.allocPrint(arena, "-M{s}={s}/stubs/{s}.zig", .{
             stub,
-            tools.sdk,
+            sdk,
             stub,
         });
 
         try argv.append(arena, path);
     }
 
-    try argv.appendSlice(arena, &.{ "--name", request.name, "-rdynamic", tools.compiler_rt });
-    try argv.appendSlice(arena, &toolchain.wasm_flags);
-    try argv.appendSlice(arena, &.{ "--cache-dir", cache, "--global-cache-dir", cache });
+    try argv.appendSlice(arena, &.{ "--name", request.name, "-rdynamic" });
     try argv.append(arena, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{out_path}));
 
     return argv.items;
@@ -714,154 +1009,6 @@ fn exported_json(
 
     return try arena.dupe(u8, json);
 }
-
-/// `plugin add` as the local operator, then `plugin enable` for a new plugin or `plugin
-/// update` for its next version, printing what each answered; in the server when one runs
-/// (`operator.zig`), so the new version is live when this returns.
-fn install(init: std.process.Init, db_path: [:0]const u8, name: []const u8, path: []const u8) !u8 {
-    std.debug.assert(name.len > 0);
-    std.debug.assert(path.len > 0);
-
-    var commands: operator.Commands = .{
-        .init = init,
-        .db_path = db_path,
-    };
-    defer commands.deinit();
-
-    if (try unchanged(init, &commands, name, path)) {
-        const line = try std.fmt.allocPrint(init.arena.allocator(), "{s} is up to date\n", .{name});
-
-        try std.Io.File.stdout().writeStreamingAll(init.io, line);
-        return 0;
-    }
-
-    var added: std.Io.Writer.Allocating = .init(init.arena.allocator());
-    const add = [_][]const u8{ "--as-admin", "plugin", "add", "--file", path };
-
-    if (try commands.run(&add, &added.writer) != 0) {
-        return 1;
-    }
-
-    const update = std.mem.indexOf(u8, added.written(), "\"update\": true") != null;
-    const verb: []const u8 = if (update) "update" else "enable";
-    const flag: []const u8 = if (update) "--name" else "--names";
-    const next = [_][]const u8{ "--as-admin", "plugin", verb, flag, name };
-    var stdout_buffer: [16 << 10]u8 = undefined;
-    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
-    defer stdout.interface.flush() catch |err| std.debug.print("stdout: {t}\n", .{err});
-
-    return commands.run(&next, &stdout.interface);
-}
-
-/// Whether the plugin installed as `name` is this very module: its hash is the SHA-256 of
-/// the module's bytes, as `plugin get` answers it.
-fn unchanged(
-    init: std.process.Init,
-    commands: *operator.Commands,
-    name: []const u8,
-    path: []const u8,
-) !bool {
-    std.debug.assert(name.len > 0);
-    std.debug.assert(path.len > 0);
-
-    const arena = init.arena.allocator();
-    const limit: std.Io.Limit = .limited(module_bytes_max);
-    const module = try std.Io.Dir.cwd().readFileAlloc(init.io, path, arena, limit);
-    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
-
-    std.crypto.hash.sha2.Sha256.hash(module, &digest, .{});
-
-    const hex = std.fmt.bytesToHex(digest, .lower);
-    const listed = try std.fmt.allocPrint(arena, "\"name\": \"{s}\"", .{name});
-    const hashed = try std.fmt.allocPrint(arena, "\"hash\": \"{s}\"", .{&hex});
-    var plugins: std.Io.Writer.Allocating = .init(arena);
-    var installed: std.Io.Writer.Allocating = .init(arena);
-    const list = [_][]const u8{ "--as-admin", "plugin", "list" };
-    const get = [_][]const u8{ "--as-admin", "plugin", "get", "--name", name };
-
-    if (try commands.run(&list, &plugins.writer) != 0) {
-        return false;
-    }
-
-    // Asked only once the plugin is there: `plugin get` reports a missing one as an error.
-    if (std.mem.indexOf(u8, plugins.written(), listed) == null) {
-        return false;
-    }
-
-    return try commands.run(&get, &installed.writer) == 0 and
-        std.mem.indexOf(u8, installed.written(), hashed) != null;
-}
-
-/// What `serve` gives the `plugin build` operation: the build started as this binary's own
-/// `publr plugin build`, in a process of its own, its output to `<data>/builds/<name>.log`;
-/// it installs through this server when it is done, as the CLI's does.
-pub const Builder = struct {
-    io: std.Io,
-    db_path: []const u8,
-    executable: []const u8 = "",
-    logs_dir: []const u8 = "",
-
-    pub fn hook(builder: *Builder, arena: std.mem.Allocator) !sdk_context.PluginBuilder {
-        std.debug.assert(builder.db_path.len > 0);
-
-        builder.executable = try std.process.executablePathAlloc(builder.io, arena);
-        builder.logs_dir = try std.fs.path.join(arena, &.{
-            std.fs.path.dirname(builder.db_path) orelse ".",
-            "builds",
-        });
-
-        std.debug.assert(builder.executable.len > 0);
-
-        return .{
-            .context = builder,
-            .plugins_dir = "plugins",
-            .logs_dir = builder.logs_dir,
-            .start = &start,
-        };
-    }
-
-    fn start(context: *anyopaque, name: []const u8) ?[]const u8 {
-        const builder: *Builder = @ptrCast(@alignCast(context));
-
-        std.debug.assert(name.len > 0);
-        std.debug.assert(builder.executable.len > 0);
-
-        builder.spawn(name) catch |err| return @errorName(err);
-
-        return null;
-    }
-
-    fn spawn(builder: *Builder, name: []const u8) !void {
-        std.debug.assert(name.len <= 64);
-
-        var buffer: [512]u8 = undefined;
-        const log_path = try std.fmt.bufPrint(&buffer, "{s}/{s}.log", .{ builder.logs_dir, name });
-        const cwd = std.Io.Dir.cwd();
-
-        try cwd.createDirPath(builder.io, builder.logs_dir);
-
-        var log = try cwd.createFile(builder.io, log_path, .{});
-        defer log.close(builder.io);
-
-        // Not waited for: it outlives this request, and installs through the server itself.
-        _ = try std.process.spawn(builder.io, .{
-            .argv = &.{
-                builder.executable, "--db",  builder.db_path,
-                "plugin",           "build", "--name",
-                name,
-            },
-            .stdin = .ignore,
-            .stdout = .{
-                .file = log,
-            },
-            .stderr = .{
-                .file = log,
-            },
-        });
-    }
-};
-
-const sdk_context = @import("../sdk/context.zig");
 
 /// Every plugin is held to the plugin checks before it compiles; each problem is told with
 /// its file and line.

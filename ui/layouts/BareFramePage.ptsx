@@ -1,0 +1,24 @@
+import { Document } from "./Document.ptsx";
+import { PluginFrame } from "../components/PluginFrame.ptsx";
+
+export type BareFramePageProps = {
+  title: string;
+  /** The frame's document, and what the frame may ask of the admin. */
+  src: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  operations: string[];
+};
+
+/** A plugin's page drawn alone: no chrome, the plugin frame filling the window. What the
+ * plugin draws stays inside the frame. */
+export function BareFramePage({ title, src, plugin, page, csrf, operations }: BareFramePageProps) {
+  return (
+    <Document title={title}>
+      <main class="flex min-h-screen flex-col">
+        <PluginFrame src={src} title={title} plugin={plugin} page={page} csrf={csrf} operations={operations} fill />
+      </main>
+    </Document>
+  );
+}

@@ -16,7 +16,7 @@ pub const namespace: sdk.operation.Namespace = .{
     .area = .people,
     .summary = "Accounts, roles, passwords and signing in",
     .details =
-    \\Everything about who may use Publr. The first admin comes from `publr init`;
+    \\Everything about who may use Publr. The first admin comes from `publr project init`;
     \\after that, create accounts with `user create` (with a password, a generated
     \\one, or a set-password link). An account holds one or more roles, and may call
     \\what any of them grants. Core has `admin` (everything) and `editor` (content,

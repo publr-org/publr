@@ -24,7 +24,7 @@ pub fn expect_native_admin(
 
     const dir = try std.fmt.allocPrint(init.arena.allocator(), "{s}/native-plugins", .{work_dir});
     const setup = [_][]const u8{
-        "init", "--email", email, "--display_name", "Native", "--password", password,
+        "project", "init", "--email", email, "--display_name", "Native", "--password", password,
     };
     const note = [_][]const u8{ "--as", email, "sampler", "note", "--note", "kept" };
 

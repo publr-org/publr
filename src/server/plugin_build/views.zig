@@ -4,14 +4,13 @@
 //! the plugin's own modules are written, with a stand-in for each component the host draws
 //! for it; a plugin without views gets nothing.
 const std = @import("std");
-const toolchain = @import("../toolchain.zig");
 const report = @import("../../lib/report.zig");
 
 /// The folder holding the plugin's lowered views (`views.zig` and its modules), or null when
-/// it has none.
+/// it has none. `sdk` is the SDK it builds against, which carries the lowering.
 pub fn lower(
     init: std.process.Init,
-    tools: toolchain.Toolchain,
+    sdk: []const u8,
     dir: []const u8,
     built: []const u8,
 ) !?[]const u8 {
@@ -26,7 +25,6 @@ pub fn lower(
     }
 
     const out = try std.fmt.allocPrint(arena, "{s}.views", .{built});
-    const sdk = tools.sdk;
 
     try std.Io.Dir.cwd().deleteTree(init.io, out);
 

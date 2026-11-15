@@ -232,6 +232,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .icon = page.icon,
                     .operation = page.operation.?.name,
                     .hidden = page.menu != null,
+                    .bare = page.bare,
                     .parent = page.parent,
                     .action_label = if (page.action) |action| action.label else "",
                     .action_href = if (page.action) |action| action.href else "",

@@ -21,11 +21,11 @@ pub const namespace: sdk.operation.Namespace = .{
     .area = .site,
     .summary = "The installation itself: first-run setup",
     .details =
-    \\What a fresh Publr project needs before it can be used. `publr init` (short for
-    \\`project init`) sets it up: it creates the first admin and marks the project as
+    \\What a fresh Publr project needs before it can be used. `project init` sets it
+    \\up: it creates the first admin and marks the project as
     \\initialised, exactly once. `project impact` says what a change rebuilds in the
     \\apps' builds. `project put` puts anything it stores exactly as another copy of the
-    \\project keeps it, ids kept: what keeps copies (environments, branches) in step.
+    \\project keeps it, ids kept: what keeps copies (environments, branches) in sync.
     ,
 };
 

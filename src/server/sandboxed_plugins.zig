@@ -13,6 +13,7 @@ const invoke_module = @import("sandboxed_plugins/invoke.zig");
 const Loaded = @import("sandboxed_plugins/loaded.zig").Loaded;
 const interface = @import("sandboxed_plugins/interface.zig");
 const translations_module = @import("sandboxed_plugins/translations.zig");
+pub const transient_module = @import("sandboxed_plugins/transient.zig");
 const Languages = @import("languages.zig").Languages;
 
 pub const Files = files_module.Files;
@@ -69,6 +70,9 @@ pub const Host = struct {
     stores: std.ArrayList(Stores) = .empty,
     /// The catalogues they join, told after every load; none in a process without them.
     languages: ?*Languages = null,
+    /// The plugins this server was started with (`serve --plugin`), loaded after the
+    /// installed ones; null without any.
+    transient: ?*transient_module.Transient = null,
 
     pub fn init(host: *Host, gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !void {
         std.debug.assert(dir.len > 0);
@@ -89,6 +93,7 @@ pub const Host = struct {
         host.translations_arena = std.heap.ArenaAllocator.init(gpa);
         host.translations = .empty;
         host.languages = null;
+        host.transient = null;
         host.statuses = null;
         host.kinds = null;
         host.manifests = &.{};
@@ -169,6 +174,15 @@ pub const Host = struct {
 
         try keep.appendSlice(arena_state.allocator(), in_trash);
         host.files.sweep(keep.items);
+
+        if (host.transient) |transient| {
+            for (transient.plugins) |plugin| {
+                host.load_transient(plugin) catch |err| {
+                    std.log.err("plugin {s} did not load: {t}", .{ plugin.row.name, err });
+                };
+            }
+        }
+
         try host.reindex();
 
         if (host.languages) |languages| {
@@ -176,11 +190,33 @@ pub const Host = struct {
         }
     }
 
+    /// A transient plugin, unless an installed one of its name is loaded.
+    fn load_transient(host: *Host, plugin: transient_module.Plugin) !void {
+        std.debug.assert(plugin.bytes.len > 0);
+
+        if (host.find_loaded(plugin.row.name) != null) {
+            std.log.err("plugin {s} is installed here: --plugin {s} left out", .{
+                plugin.row.name,
+                plugin.row.name,
+            });
+            return;
+        }
+
+        try host.load_bytes(plugin.row, try host.gpa.dupe(u8, plugin.bytes));
+        host.loaded.items[host.loaded.items.len - 1].transient = host.transient;
+    }
+
     fn load_one(host: *Host, row: store.sandboxed_plugins.Row) !void {
         std.debug.assert(row.name.len > 0);
         std.debug.assert(files_module.valid_hash(row.hash));
 
-        const bytes = try host.files.read(host.gpa, row.hash);
+        try host.load_bytes(row, try host.files.read(host.gpa, row.hash));
+    }
+
+    fn load_bytes(host: *Host, row: store.sandboxed_plugins.Row, bytes: []u8) !void {
+        std.debug.assert(row.name.len > 0);
+        std.debug.assert(bytes.len > 0);
+
         // Read before loading: the runtime rewrites the bytes it loads.
         const arena = host.translations_arena.allocator();
         const brought = try translations_module.of(arena, row.name, bytes);

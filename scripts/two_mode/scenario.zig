@@ -18,7 +18,7 @@ const lost = "{\"note\":\"Lost\",\"place\":" ++
 
 /// The same in both modes before any step: the first admin and an editor.
 pub const setup = [_][]const []const u8{
-    &.{ "init", "--email", admin, "--display_name", "Admin", "--password", password },
+    &.{ "project", "init", "--email", admin, "--display_name", "Admin", "--password", password },
     &.{
         "--as",           admin,    "user",       "create", "--email", editor,
         "--display_name", "Editor", "--password", password, "--roles", "editor",

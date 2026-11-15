@@ -70,14 +70,99 @@ const Compressor = struct {
     compress: std.compress.flate.Compress,
 };
 
-/// The site written to `out_path` as a bundle; `bundle.zig` says what it holds.
-pub fn pack(
+/// The site written into `folder` (missing or empty) as a bundle's files, unpacked: the
+/// manifest, `data/` with the snapshot, `site/` with the project's items. What `pack` puts in
+/// one archive, for tooling that moves the site in its own way (`site export`). With
+/// `clone`, what a clone leaves stays behind as in `pack_clone`.
+pub fn export_to(
     site: backup.Site,
     arena: std.mem.Allocator,
-    out_path: []const u8,
+    folder: []const u8,
     name: []const u8,
+    clone: ?Clone,
 ) !bundle.Packed {
-    return pack_with(site, arena, out_path, name, null);
+    std.debug.assert(folder.len > 0);
+    std.debug.assert(name.len > 0);
+
+    const io = site.io;
+    const cwd = std.Io.Dir.cwd();
+
+    try cwd.createDirPath(io, folder);
+
+    if (!try empty(io, folder)) {
+        return error.FolderNotEmpty;
+    }
+
+    // Inside the data folder it would be packed into itself.
+    const at = try cwd.realPathFileAlloc(io, folder, arena);
+
+    const inside = std.mem.startsWith(u8, at, site.data_dir) and
+        (at.len == site.data_dir.len or at[site.data_dir.len] == std.fs.path.sep);
+
+    if (inside) {
+        try cwd.deleteDir(io, folder);
+        return error.FolderInsideSite;
+    }
+
+    errdefer cwd.deleteTree(io, folder) catch |err| {
+        std.log.warn("removing the unfinished {s}: {t}", .{ folder, err });
+    };
+
+    const data = try std.fs.path.join(arena, &.{ folder, "data" });
+
+    try cwd.createDirPath(io, data);
+
+    const snapshot = try std.fs.path.joinZ(arena, &.{ data, site.database });
+    const taken = try take_snapshot(site, arena, snapshot, clone);
+    const manifest = manifest_of(site, taken, name, clone);
+    var archive: Archive = .{
+        .site = site,
+        .arena = arena,
+        .clone = clone,
+        .folder = folder,
+        .tar = .{
+            .underlying_writer = undefined,
+        },
+    };
+
+    try archive.add_all(manifest, snapshot);
+
+    return .{
+        .manifest = manifest,
+        .files = archive.files,
+        .bytes = archive.bytes,
+        .parts = archive.parts,
+    };
+}
+
+fn empty(io: std.Io, folder: []const u8) !bool {
+    std.debug.assert(folder.len > 0);
+
+    var dir = try std.Io.Dir.cwd().openDir(io, folder, .{
+        .iterate = true,
+    });
+    defer dir.close(io);
+    var iterator = dir.iterate();
+
+    return (try iterator.next(io)) == null;
+}
+
+fn manifest_of(
+    site: backup.Site,
+    taken: Snapshot,
+    name: []const u8,
+    clone: ?Clone,
+) bundle.Manifest {
+    std.debug.assert(name.len > 0);
+
+    return .{
+        .release = taken.release,
+        .latest_change = taken.latest_change,
+        .name = name,
+        .made_at_ms = @import("../../sdk.zig").context.wall_clock_ms(site.io),
+        .database = site.database,
+        .placeholders = if (clone) |wanted| wanted.placeholders else &.{},
+    };
 }
 
 /// As `pack`, without what stays behind on a clone.
@@ -113,14 +198,7 @@ fn pack_with(
     };
 
     const taken = try take_snapshot(site, arena, snapshot, clone);
-    const manifest: bundle.Manifest = .{
-        .release = taken.release,
-        .latest_change = taken.latest_change,
-        .name = name,
-        .made_at_ms = @import("../../sdk.zig").context.wall_clock_ms(io),
-        .database = site.database,
-        .placeholders = if (clone) |wanted| wanted.placeholders else &.{},
-    };
+    const manifest = manifest_of(site, taken, name, clone);
     var file = try cwd.createFile(io, out_path, .{});
     defer file.close(io);
     errdefer remove_if_there(io, out_path) catch |err| {
@@ -213,6 +291,8 @@ const Archive = struct {
     progress: ?*Progress = null,
     /// Only counts the files and their bytes, writing nothing.
     measuring: bool = false,
+    /// Files copied under this folder instead of into the archive (`export_to`).
+    folder: ?[]const u8 = null,
     tar: std.tar.Writer,
     files: u32 = 0,
     bytes: u64 = 0,
@@ -227,18 +307,34 @@ const Archive = struct {
             .whitespace = .indent_2,
         });
 
-        if (!archive.measuring) {
-            try archive.tar.writeFileBytes(bundle.manifest_name, about, .{});
+        if (archive.folder) |folder| {
+            const io = site.io;
+            const at = try std.fs.path.join(archive.arena, &.{ folder, bundle.manifest_name });
+            const stat = try std.Io.Dir.cwd().statFile(io, snapshot, .{});
+
+            // The snapshot was taken in its place.
+            try std.Io.Dir.cwd().writeFile(io, .{
+                .sub_path = at,
+                .data = about,
+            });
+            archive.files += 1;
+            archive.bytes += stat.size;
+            archive.parts.count("data/publr.db", stat.size);
+        } else {
+            if (!archive.measuring) {
+                try archive.tar.writeFileBytes(bundle.manifest_name, about, .{});
+            }
+
+            try archive.add_file(snapshot, try join(archive.arena, "data", site.database));
         }
 
-        try archive.add_file(snapshot, try join(archive.arena, "data", site.database));
         try archive.add_tree(site.data_dir, "data", .data);
 
         for (bundle.project_items) |item| {
             try archive.add_project_item(item);
         }
 
-        if (!archive.measuring) {
+        if (!archive.measuring and archive.folder == null) {
             try archive.tar.finishPedantically();
         }
     }
@@ -254,13 +350,44 @@ const Archive = struct {
         var reader = file.reader(io, &buffer);
         const size = try reader.getSize();
 
-        if (!archive.measuring) {
+        if (archive.folder) |folder| {
+            try copy_into(io, archive.arena, folder, name, &reader.interface);
+        } else if (!archive.measuring) {
             try archive.stream(name, size, &reader.interface);
         }
 
         archive.files += 1;
         archive.bytes += size;
         archive.parts.count(name, size);
+    }
+
+    /// One file's bytes into `folder/<name>`; the secrets' key its owner's alone, as it was.
+    fn copy_into(
+        io: std.Io,
+        arena: std.mem.Allocator,
+        folder: []const u8,
+        name: []const u8,
+        reader: *std.Io.Reader,
+    ) !void {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(name[0] != '/');
+
+        const cwd = std.Io.Dir.cwd();
+        const target = try std.fs.path.join(arena, &.{ folder, name });
+        const private = std.mem.eql(u8, std.fs.path.basename(target), "secret.key");
+
+        try cwd.createDirPath(io, std.fs.path.dirname(target).?);
+
+        var out = try cwd.createFile(io, target, .{
+            .exclusive = true,
+            .permissions = if (private) .fromMode(0o600) else .default_file,
+        });
+        defer out.close(io);
+        var buffer: [copy_buffer_bytes]u8 = undefined;
+        var writer = out.writer(io, &buffer);
+
+        _ = try reader.streamRemaining(&writer.interface);
+        try writer.interface.flush();
     }
 
     /// One file's bytes into the archive, counted for whoever follows the pack.
