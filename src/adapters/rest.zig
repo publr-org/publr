@@ -359,7 +359,7 @@ test "oversized health echo returns HTTP 422 and subsequent requests still work"
         },
         arena_state.allocator(),
     );
-    const oversized = "GET /api/heartbeat.check?echo=" ++ "x" ** 257 ++
+    const oversized = "GET /api/heartbeat.check?echo=" ++ &@as([257]u8, @splat('x')) ++
         " HTTP/1.1\r\nHost: h\r\n\r\n";
     const refused = try flow.call(oversized, "");
     try std.testing.expectEqual(@as(u16, 422), refused.status.code());

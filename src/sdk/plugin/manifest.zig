@@ -410,16 +410,20 @@ pub fn fields_of(comptime Declared: type, comptime Docs: type) []const Field {
 
         var list: []const Field = &.{};
 
-        for (@typeInfo(Declared.In).@"struct".fields) |field| {
+        for (
+            std.meta.fieldNames(Declared.In),
+            std.meta.fieldTypes(Declared.In),
+            @typeInfo(Declared.In).@"struct".field_attrs,
+        ) |field_name, FieldType, field_attrs| {
             list = list ++ &[_]Field{.{
-                .name = field.name,
-                .shape = shape_of(field.type),
-                .required = field.defaultValue() == null,
-                .doc = sdk_operation.field_doc(Declared, "field_docs", field.name),
-                .label = help.type_label(field.type),
-                .values = values_of(field.type),
-                .words = words_of(field.type, Docs),
-                .fields = item_fields_of(field.type, Docs),
+                .name = field_name,
+                .shape = shape_of(FieldType),
+                .required = field_attrs.defaultValue(FieldType) == null,
+                .doc = sdk_operation.field_doc(Declared, "field_docs", field_name),
+                .label = help.type_label(FieldType),
+                .values = values_of(FieldType),
+                .words = words_of(FieldType, Docs),
+                .fields = item_fields_of(FieldType, Docs),
             }};
         }
 
@@ -446,21 +450,25 @@ fn item_fields_of(comptime Type: type, comptime Docs: type) []const Field {
 
         var list: []const Field = &.{};
 
-        for (@typeInfo(Item).@"struct".fields) |field| {
-            const shape = shape_of(field.type);
+        for (
+            std.meta.fieldNames(Item),
+            std.meta.fieldTypes(Item),
+            @typeInfo(Item).@"struct".field_attrs,
+        ) |field_name, FieldType, field_attrs| {
+            const shape = shape_of(FieldType);
 
             if (shape == .strings or shape == .json) {
                 return &.{};
             }
 
             list = list ++ &[_]Field{.{
-                .name = field.name,
+                .name = field_name,
                 .shape = shape,
-                .required = field.defaultValue() == null,
-                .label = help.type_label(field.type),
-                .values = values_of(field.type),
-                .words = words_of(field.type, Docs),
-                .default = default_text(field),
+                .required = field_attrs.defaultValue(FieldType) == null,
+                .label = help.type_label(FieldType),
+                .values = values_of(FieldType),
+                .words = words_of(FieldType, Docs),
+                .default = default_text(FieldType, field_attrs),
             }};
         }
 
@@ -519,17 +527,20 @@ pub fn docs_of(comptime Plugin: type) type {
 
 /// A field's default as a form writes it (`{symbol}{amount}`, `period`, `true`); empty for
 /// none or one of another shape.
-fn default_text(comptime field: std.builtin.Type.StructField) []const u8 {
+fn default_text(
+    comptime Value: type,
+    comptime attrs: std.builtin.Type.Struct.FieldAttributes,
+) []const u8 {
     comptime {
-        std.debug.assert(field.name.len > 0);
+        std.debug.assert(@typeInfo(Value) != .@"fn");
 
-        const value = field.defaultValue() orelse return "";
+        const value = attrs.defaultValue(Value) orelse return "";
 
-        return switch (@typeInfo(field.type)) {
+        return switch (@typeInfo(Value)) {
             .bool => if (value) "true" else "false",
             .@"enum" => @tagName(value),
             .int, .float => std.fmt.comptimePrint("{d}", .{value}),
-            .pointer => if (field.type == []const u8) value else "",
+            .pointer => if (Value == []const u8) value else "",
             else => "",
         };
     }

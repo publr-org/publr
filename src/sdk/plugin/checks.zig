@@ -47,7 +47,7 @@ pub fn check(
     std.debug.assert(path.len > 0);
     std.debug.assert(text.len < std.math.maxInt(u32));
 
-    var tree = try Ast.parse(arena, text, .zig);
+    var tree = try Ast.parse(arena, text, .{});
 
     // The rest reads the tree: a file that does not parse says so, and nothing else.
     if (tree.errors.len > 0) {
@@ -67,7 +67,7 @@ pub fn check(
     const untrusted_inputs = try untrusted_write_inputs(arena, &tree);
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
 
         if (tree.fullContainerField(node)) |field| {
             try check_field(arena, &tree, node, field, untrusted_inputs, out);
@@ -94,7 +94,7 @@ fn check_bookkeeping(
     std.debug.assert(tree.errors.len == 0);
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         const declaration = tree.fullVarDecl(node) orelse continue;
         const init = declaration.ast.init_node.unwrap() orelse continue;
         var buffer: [1]Ast.Node.Index = undefined;
@@ -139,7 +139,7 @@ fn check_field(
     out: *std.ArrayList(Problem),
 ) !void {
     std.debug.assert(tree.errors.len == 0);
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     const name = tree.tokenSlice(field.ast.main_token);
     const type_node = field.ast.type_expr.unwrap() orelse return;
@@ -191,7 +191,7 @@ fn check_import(
     out: *std.ArrayList(Problem),
 ) !void {
     std.debug.assert(path.len > 0);
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     const builtin = tree.tokenSlice(tree.nodeMainToken(node));
 
@@ -229,7 +229,7 @@ fn untrusted_write_inputs(arena: std.mem.Allocator, tree: *const Ast) ![]const [
     var names: std.ArrayList([]const u8) = .empty;
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         var buffer: [1]Ast.Node.Index = undefined;
         const call = tree.fullCall(&buffer, node) orelse continue;
         const function = node_text(tree, call.ast.fn_expr);
@@ -255,14 +255,14 @@ fn untrusted_write_inputs(arena: std.mem.Allocator, tree: *const Ast) ![]const [
 
 /// The name of the struct a field sits in, when it is declared as `const Name = struct`.
 fn enclosing_container_name(tree: *const Ast, field: Ast.Node.Index) ?[]const u8 {
-    std.debug.assert(@intFromEnum(field) < tree.nodes.len);
+    std.debug.assert(@backingInt(field) < tree.nodes.len);
 
     const field_start = tree.tokenStart(tree.firstToken(field));
     var best: ?[]const u8 = null;
     var best_start: u32 = 0;
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         const declaration = tree.fullVarDecl(node) orelse continue;
         const init = declaration.ast.init_node.unwrap() orelse continue;
         var buffer: [2]Ast.Node.Index = undefined;
@@ -284,7 +284,7 @@ fn enclosing_container_name(tree: *const Ast, field: Ast.Node.Index) ?[]const u8
 
 /// Whether the field's `///` carries a `Why:` line.
 fn has_reason(tree: *const Ast, node: Ast.Node.Index) bool {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     var token = tree.firstToken(node);
 
@@ -405,7 +405,7 @@ pub const Failures = struct {
     ) !void {
         std.debug.assert(path.len > 0);
 
-        var tree = try Ast.parse(arena, text, .zig);
+        var tree = try Ast.parse(arena, text, .{});
 
         // Its `ctx.fail` calls are unknown: the plugin's `Fails:` lines go unchecked.
         if (tree.errors.len > 0) {
@@ -566,7 +566,7 @@ fn add(
 }
 
 fn node_text(tree: *const Ast, node: Ast.Node.Index) []const u8 {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     const start = tree.tokenStart(tree.firstToken(node));
     const last = tree.lastToken(node);

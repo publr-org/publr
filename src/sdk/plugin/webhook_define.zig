@@ -166,13 +166,13 @@ fn union_of(comptime Union: type, comptime given: anytype) Union {
             return given;
         }
 
-        const fields = std.meta.fields(Given);
+        const fields = @typeInfo(Given).@"struct".field_names;
 
-        if (fields.len != 1 or !@hasField(Union, fields[0].name)) {
+        if (fields.len != 1 or !@hasField(Union, fields[0])) {
             @compileError("a webhook's `" ++ @typeName(Union) ++ "` names one kind");
         }
 
-        const tag = fields[0].name;
+        const tag = fields[0];
         const Payload = @FieldType(Union, tag);
         const value = @field(given, tag);
 
@@ -182,12 +182,16 @@ fn union_of(comptime Union: type, comptime given: anytype) Union {
 
         var made: Payload = undefined;
 
-        for (std.meta.fields(Payload)) |field| {
-            @field(made, field.name) = if (@hasField(@TypeOf(value), field.name))
-                @field(value, field.name)
+        for (
+            std.meta.fieldNames(Payload),
+            std.meta.fieldTypes(Payload),
+            @typeInfo(Payload).@"struct".field_attrs,
+        ) |field_name, FieldType, field_attrs| {
+            @field(made, field_name) = if (@hasField(@TypeOf(value), field_name))
+                @field(value, field_name)
             else
-                field.defaultValue() orelse @compileError("a webhook's `." ++ tag ++
-                    "` takes `." ++ field.name ++ "`");
+                field_attrs.defaultValue(FieldType) orelse @compileError("a webhook's `." ++ tag ++
+                    "` takes `." ++ field_name ++ "`");
         }
 
         return @unionInit(Union, tag, made);

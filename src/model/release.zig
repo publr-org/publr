@@ -165,9 +165,10 @@ test "the kind of an update is the part of the version that moved" {
 }
 
 test "a checksum is found by its file's name" {
-    const sums = "abc  publr-linux-x86_64\n" ++ ("d" ** 64) ++ "  publr-macos-aarch64\n";
+    const sum: [64]u8 = @splat('d');
+    const sums = "abc  publr-linux-x86_64\n" ++ &sum ++ "  publr-macos-aarch64\n";
 
-    try std.testing.expectEqualStrings("d" ** 64, sum_of(sums, "publr-macos-aarch64").?);
+    try std.testing.expectEqualStrings(&sum, sum_of(sums, "publr-macos-aarch64").?);
     try std.testing.expect(sum_of(sums, "publr-linux-x86_64") == null);
     try std.testing.expect(sum_of(sums, "install.sh") == null);
 }

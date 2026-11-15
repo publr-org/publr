@@ -1,8 +1,6 @@
 //! A bounded, render-local ECMAScript heap. Only compiler-produced bytecode is loaded.
 const std = @import("std");
-pub const api = @cImport({
-    @cInclude("values.h");
-});
+pub const api = @import("javascript_api");
 pub const Value = api.JSValue;
 pub const Error = error{ OutOfMemory, JavaScript };
 pub const memory_bytes_max: u32 = 32 << 20;
@@ -113,8 +111,8 @@ pub const VM = struct {
 
     pub fn eval(vm: *VM, source: []const u8, filename: []const u8) Error!Value {
         std.debug.assert(filename.len > 0);
-        const text_z = try vm.arena.dupeZ(u8, source);
-        const name_z = try vm.arena.dupeZ(u8, filename);
+        const text_z = try vm.arena.dupeSentinel(u8, source, 0);
+        const name_z = try vm.arena.dupeSentinel(u8, filename, 0);
         return vm.check(api.JS_Eval(
             vm.context,
             text_z,
@@ -136,8 +134,8 @@ pub const VM = struct {
     ) Error![]const u8 {
         std.debug.assert(filename.len > 0);
         api.JS_SetModuleLoaderFunc(vm.runtime, module_name, load_module, vm);
-        const text_z = try vm.arena.dupeZ(u8, source);
-        const name_z = try vm.arena.dupeZ(u8, filename);
+        const text_z = try vm.arena.dupeSentinel(u8, source, 0);
+        const name_z = try vm.arena.dupeSentinel(u8, filename, 0);
         const kind: c_int = if (is_module) api.JS_EVAL_TYPE_MODULE else api.JS_EVAL_TYPE_GLOBAL;
         const flags = kind | api.JS_EVAL_FLAG_COMPILE_ONLY;
         const code = try vm.check(api.JS_Eval(
@@ -244,7 +242,7 @@ pub const VM = struct {
             return null;
         };
         const code = if (vm.module_source) block: {
-            const source_z = vm.arena.dupeZ(u8, bytes) catch return null;
+            const source_z = vm.arena.dupeSentinel(u8, bytes, 0) catch return null;
             break :block api.JS_Eval(
                 ctx,
                 source_z,
@@ -340,13 +338,13 @@ pub const VM = struct {
 
     pub fn get(vm: *VM, object: Value, key: []const u8) Error!Value {
         std.debug.assert(vm.roots.items.len <= 65536);
-        const key_z = try vm.arena.dupeZ(u8, key);
+        const key_z = try vm.arena.dupeSentinel(u8, key, 0);
         return vm.check(api.JS_GetPropertyStr(vm.context, object, key_z));
     }
     /// Consumes value, as QuickJS's property setters do.
     pub fn set(vm: *VM, object: Value, key: []const u8, value: Value) Error!void {
         std.debug.assert(vm.roots.items.len <= 65536);
-        const key_z = vm.arena.dupeZ(u8, key) catch {
+        const key_z = vm.arena.dupeSentinel(u8, key, 0) catch {
             vm.free(value);
             return error.OutOfMemory;
         };

@@ -162,9 +162,7 @@ fn flags_of(
 
     var flags: std.ArrayList(Request.Flag) = .empty;
 
-    inline for (std.meta.fields(permission.Flag)) |field| {
-        const flag: permission.Flag = @enumFromInt(field.value);
-
+    inline for (comptime std.meta.tags(permission.Flag)) |flag| {
         if (asked.flag(flag)) {
             flags.append(arena, .{
                 .name = flag,

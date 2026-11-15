@@ -237,18 +237,18 @@ fn middleware_of(comptime Module: type) ?middleware.Middleware {
 /// The lowered components a template can place by name. The lowering also carries every
 /// design-system part they import (a `Button` with its required children); a template
 /// places only a component whose props all start from a default.
-fn placeable_decls(comptime Interactive: type) []const std.builtin.Type.Declaration {
+fn placeable_decls(comptime Interactive: type) []const []const u8 {
     comptime {
         @setEvalBranchQuota(100_000);
         std.debug.assert(@typeInfo(Interactive) == .@"struct");
 
-        const decls = @typeInfo(Interactive).@"struct".decls;
-        var kept: [decls.len]std.builtin.Type.Declaration = undefined;
+        const decls = @typeInfo(Interactive).@"struct".decl_names;
+        var kept: [decls.len][]const u8 = undefined;
         var count: u32 = 0;
 
-        for (decls) |decl| {
-            if (placeable(@field(Interactive, decl.name))) {
-                kept[count] = decl;
+        for (decls) |decl_name| {
+            if (placeable(@field(Interactive, decl_name))) {
+                kept[count] = decl_name;
                 count += 1;
             }
         }
@@ -266,8 +266,8 @@ fn placeable(comptime Component: type) bool {
         return false;
     }
 
-    for (@typeInfo(Component.Props).@"struct".fields) |field| {
-        if (field.default_value_ptr == null) {
+    for (@typeInfo(Component.Props).@"struct".field_attrs) |field_attrs| {
+        if (field_attrs.default_value_ptr == null) {
             return false;
         }
     }
@@ -286,8 +286,8 @@ fn components_of(comptime Interactive: type) []const engine.PjsxComponent {
         const decls = placeable_decls(Interactive);
         var components: [decls.len]engine.PjsxComponent = undefined;
 
-        for (decls, 0..) |decl, index| {
-            components[index] = component_of(decl.name, @field(Interactive, decl.name));
+        for (decls, 0..) |decl_name, index| {
+            components[index] = component_of(decl_name, @field(Interactive, decl_name));
         }
 
         const final = components;
@@ -301,18 +301,18 @@ fn component_of(comptime name: []const u8, comptime Component: type) engine.Pjsx
         std.debug.assert(name.len > 0);
         std.debug.assert(@hasDecl(Component, "Props"));
 
-        const fields = @typeInfo(Component.Props).@"struct".fields;
-        var props: [fields.len]engine.PjsxProp = undefined;
+        const info = @typeInfo(Component.Props).@"struct";
+        var props: [info.field_names.len]engine.PjsxProp = undefined;
         var count: u32 = 0;
         var takes_children = false;
 
-        for (fields) |field| {
-            if (std.mem.eql(u8, field.name, "children")) {
+        for (info.field_names, info.field_types, info.field_attrs) |field_name, Field, attrs| {
+            if (std.mem.eql(u8, field_name, "children")) {
                 takes_children = true;
-            } else if (is_string_prop(field)) {
+            } else if (is_string_prop(field_name, Field)) {
                 props[count] = .{
-                    .name = field.name,
-                    .has_default = field.default_value_ptr != null,
+                    .name = field_name,
+                    .has_default = attrs.default_value_ptr != null,
                 };
                 count += 1;
             }
@@ -339,8 +339,8 @@ fn renders_of(
         const decls = placeable_decls(Interactive);
         var renders: [decls.len]engine.PjsxRender = undefined;
 
-        for (decls, 0..) |decl, index| {
-            renders[index] = &Thunk(@field(Interactive, decl.name), expressions).render;
+        for (decls, 0..) |decl_name, index| {
+            renders[index] = &Thunk(@field(Interactive, decl_name), expressions).render;
         }
 
         const final = renders;
@@ -349,14 +349,14 @@ fn renders_of(
     }
 }
 
-fn is_string_prop(comptime field: std.builtin.Type.StructField) bool {
-    std.debug.assert(field.name.len > 0);
+fn is_string_prop(comptime name: []const u8, comptime Field: type) bool {
+    std.debug.assert(name.len > 0);
 
-    if (std.mem.startsWith(u8, field.name, "publr_")) {
+    if (std.mem.startsWith(u8, name, "publr_")) {
         return false;
     }
 
-    return field.type == []const u8 or field.type == ?[]const u8;
+    return Field == []const u8 or Field == ?[]const u8;
 }
 
 /// A call site's values over the component's own defaults; a null leaves the default.
@@ -376,12 +376,17 @@ fn Thunk(comptime Component: type, comptime expressions: []const u8) type {
 
             var filled: Component.Props = .{};
 
-            inline for (@typeInfo(Component.Props).@"struct".fields) |field| {
-                if (comptime is_string_prop(field) and !std.mem.eql(u8, field.name, "children")) {
+            inline for (comptime std.meta.fieldNames(Component.Props)) |field_name| {
+                const Field = @FieldType(Component.Props, field_name);
+
+                const placed = comptime is_string_prop(field_name, Field) and
+                    !std.mem.eql(u8, field_name, "children");
+
+                if (placed) {
                     for (props) |prop| {
-                        if (std.mem.eql(u8, prop.name, field.name)) {
+                        if (std.mem.eql(u8, prop.name, field_name)) {
                             if (prop.value) |value| {
-                                @field(filled, field.name) = value;
+                                @field(filled, field_name) = value;
                             }
                         }
                     }

@@ -7,7 +7,7 @@ const red_bold = "\x1b[1;31m";
 const yellow_bold = "\x1b[1;33m";
 const Level = enum { err, warn };
 const reset = "\x1b[0m";
-const fence = "=" ** 72;
+const fence = &@as([72]u8, @splat('='));
 
 /// Keeps a cause alive after the failing operation's arena and resources are released.
 pub const Reason = struct {
@@ -36,7 +36,7 @@ pub fn format_bounded(buffer: []u8, comptime format: []const u8, args: anytype) 
 pub fn info(comptime format: []const u8, args: anytype) void {
     std.debug.assert(format.len > 0);
 
-    const quiet = @intFromEnum(std.log.Level.info) > @intFromEnum(std.testing.log_level);
+    const quiet = @backingInt(std.log.Level.info) > @backingInt(std.testing.log_level);
 
     if (builtin.is_test and quiet) {
         return;
@@ -69,7 +69,7 @@ fn report_reason(
     // purpose lowers `std.testing.log_level` so the run stays quiet.
     const as_log: std.log.Level = if (level == .warn) .warn else .err;
 
-    if (builtin.is_test and @intFromEnum(as_log) > @intFromEnum(std.testing.log_level)) {
+    if (builtin.is_test and @backingInt(as_log) > @backingInt(std.testing.log_level)) {
         return;
     }
 
@@ -126,7 +126,7 @@ fn stderr_is_terminal() bool {
 
 test "diagnostics never expose unwritten bytes when formatting overflows" {
     var buffer: [16]u8 = @splat(0xa5);
-    const message = format_bounded(&buffer, "error: {s}", .{"x" ** 128});
+    const message = format_bounded(&buffer, "error: {s}", .{&@as([128]u8, @splat('x'))});
     try std.testing.expect(std.mem.indexOfScalar(u8, message, 0xa5) == null);
     try std.testing.expect(std.mem.startsWith(u8, message, "error: "));
 }

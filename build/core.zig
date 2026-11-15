@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const limits_module = @import("limits.zig");
 const vendors = @import("vendors.zig");
 const native_plugins = @import("native_plugins.zig");
@@ -30,7 +31,7 @@ pub const Sources = struct {
 /// `-Dpreset=<dir>`: a project's parts kept together, `<dir>/apps`, `<dir>/plugins` and
 /// `<dir>/publr.zon`, for developing against locally. Null without it.
 pub fn preset(builder: *std.Build) ?[]const u8 {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const dir = builder.option(
         []const u8,
@@ -39,7 +40,7 @@ pub fn preset(builder: *std.Build) ?[]const u8 {
     ) orelse return null;
 
     if (dir.len == 0 or std.fs.path.isAbsolute(dir)) {
-        diagnostic.fail("-Dpreset: pass a path relative to {s}", .{builder.build_root.path.?});
+        diagnostic.fail("-Dpreset: pass a path relative to {s}", .{repository.path(builder, ".")});
     }
 
     return dir;
@@ -76,11 +77,11 @@ pub fn sources(builder: *std.Build) Sources {
         .plugins_dir = plugins_dir,
         .native = native_plugins.native_of(builder, plugins_dir),
         .apps_max = apps_max,
-        .public_dir = if (from_preset != null) builder.pathFromRoot(apps_dir) else "apps",
+        .public_dir = if (from_preset != null) repository.path(builder, apps_dir) else "apps",
         .limits = limits_module.from(builder),
         .arena_trace = arena_trace,
     };
-    const root = builder.build_root.path.?;
+    const root = repository.path(builder, ".");
 
     for ([_][]const u8{ chosen.apps_dir, chosen.plugins_dir }) |dir| {
         if (dir.len == 0 or std.fs.path.isAbsolute(dir)) {
@@ -113,33 +114,33 @@ pub fn with_apps(from: Sources, dir: []const u8) Sources {
 pub fn add_module(
     builder: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
     from: Sources,
 ) *std.Build.Module {
     const publr_sqlite = builder.dependency("publr_sqlite", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
     const publr_http = builder.dependency("publr_http", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
         .@"arena-trace" = from.arena_trace,
     });
     const publr_auth = builder.dependency("publr_auth", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
     const publr_groq = builder.dependency("publr_groq", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
     const publr_deps = builder.dependency("publr_deps", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
     const publr_ai = builder.dependency("publr_ai", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
     const publr_text = builder.dependency("publr_text", .{
         .target = target,
@@ -197,7 +198,7 @@ pub fn add_module(
     // WebAssembly in the browser build (`publr_wasm` picks by target).
     const publr_wasm = builder.dependency("publr_wasm", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
 
     module.addImport("publr_wasm", publr_wasm.module("publr_wasm"));
@@ -209,7 +210,7 @@ pub fn add_module(
         });
     }
 
-    vendors.add_include_paths(builder, module);
+    vendors.add_image_api(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
     @import("javascript.zig").add(builder, module);
     native_plugins.add(builder, module, from.plugins_dir, from.native);
@@ -255,7 +256,7 @@ fn add_sdk(
     views: std.Build.LazyPath,
 ) void {
     std.debug.assert(module.root_source_file != null);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const has_sdk = target.result.os.tag != .wasi;
     const options = builder.addOptions();
@@ -289,18 +290,18 @@ fn lowering(
     builder: *std.Build,
     target: std.Build.ResolvedTarget,
 ) std.Build.LazyPath {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const pjsx = builder.dependency("pjsx", .{
         .target = target,
-        .optimize = .ReleaseSafe,
+        .optimize = .safe,
     });
     const tool = builder.addExecutable(.{
         .name = "pjsx_gen",
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/pjsx_gen.zig"),
             .target = target,
-            .optimize = .ReleaseSafe,
+            .optimize = .safe,
             .imports = &.{
                 .{
                     .name = "pjsx",
@@ -328,7 +329,7 @@ fn add_admin_scripts(
     stores: std.Build.LazyPath,
 ) void {
     std.debug.assert(module.root_source_file != null);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     module.addAnonymousImport("admin_stores_js", .{
         .root_source_file = stores,
@@ -350,10 +351,10 @@ fn add_admin_scripts(
 /// Core's own source, fingerprinted: part of what a built site is stamped with, so a Publr
 /// whose rendering changed builds every page again, though no app changed.
 fn engine_stamp(builder: *std.Build) []const u8 {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const io = builder.graph.io;
-    var dir = builder.build_root.handle.openDir(io, "src", .{
+    var dir = repository.dir(builder).openDir(io, "src", .{
         .iterate = true,
     }) catch
         @panic("src/ is missing");
@@ -377,7 +378,7 @@ fn engine_stamp(builder: *std.Build) []const u8 {
     }.less);
 
     var hash = std.hash.Fnv1a_64.init();
-    const javascript_version = builder.build_root.handle.readFileAlloc(
+    const javascript_version = repository.dir(builder).readFileAlloc(
         io,
         "vendor/quickjs/VERSION",
         builder.allocator,
@@ -402,7 +403,7 @@ fn add_apps(
     builder: *std.Build,
     module: *std.Build.Module,
     generated: gen.Generated,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
     from: Sources,
 ) void {
     std.debug.assert(module.root_source_file != null);
@@ -414,7 +415,7 @@ fn add_apps(
     const options = builder.addOptions();
 
     options.addOption(u32, "apps_max", from.apps_max);
-    options.addOption(bool, "minify", optimize != .Debug);
+    options.addOption(bool, "minify", optimize != .debug);
     options.addOption([]const u8, "engine_stamp", engine_stamp(builder));
     options.addOption([]const u8, "public_dir", from.public_dir);
 

@@ -137,7 +137,7 @@ test "a secret is kept sealed, replaced, listed by name and forgotten" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const connection = &fixture.connection;
-    const sealed = [_]u8{7} ** (secrets.sealed_overhead + 4);
+    const sealed: [secrets.sealed_overhead + 4]u8 = @splat(7);
 
     try put(connection, "B_KEY", &sealed, 1);
     try put(connection, "A_KEY", &sealed, 2);

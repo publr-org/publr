@@ -241,9 +241,15 @@ pub fn find_zon(ctx: *Ctx, app: []const u8) Error!Found {
 pub fn parsed(arena: std.mem.Allocator, content: []const u8) Error!model_app.Config {
     std.debug.assert(content.len < 1 << 31);
 
-    const text = arena.dupeZ(u8, content) catch return error.OutOfMemory;
+    const text = arena.dupeSentinel(u8, content, 0) catch return error.OutOfMemory;
 
-    return std.zon.parse.fromSliceAlloc(model_app.Config, arena, text, null, .{}) catch {
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    return std.zon.parse.fromSlice(model_app.Config, .{
+        .gpa = arena,
+        .arena = arena,
+        .source = text,
+        .diagnostics = &diagnostics,
+    }) catch {
         return error.Invalid;
     };
 }

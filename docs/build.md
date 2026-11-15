@@ -1,6 +1,6 @@
 # Build reference
 
-Requires Zig 0.16.0 (`.zigversion`). `build.zig` only wires steps together;
+Requires Zig 0.17.0 (`.zigversion`). `build.zig` only wires steps together;
 each concern lives in `build/<topic>.zig`.
 
 ## Steps
@@ -40,7 +40,7 @@ each concern lives in `build/<topic>.zig`.
 ## Vendors and libraries
 
 stb and libwebp are vendored **as-is** under `vendor/` and compiled once into
-a static library per target (`ReleaseFast`, always). Zig's cache keeps it
+a static library per target (`fast`, always). Zig's cache keeps it
 built between runs. There is no plugin manager: to update, download the
 upstream archive, verify its checksum or signature by hand, place it in
 `.vendor-archives/`, run `zig build vendor-import`, review the diff. Each

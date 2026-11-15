@@ -481,6 +481,6 @@ test "keys name the record and its type; a buffer too small refuses" {
         try internal_key(&buffer, "shop", "stock", null),
     );
 
-    const long = "x" ** key_len_max;
+    const long = &@as([key_len_max]u8, @splat('x'));
     try std.testing.expectError(error.NoSpaceLeft, record_key(&buffer, long));
 }

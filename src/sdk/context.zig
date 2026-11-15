@@ -635,7 +635,7 @@ test "operation ids are unique and increasing within a ctx" {
 test "who must leave what visitors see alone" {
     const token = struct {
         fn of(scope: @import("../model/device.zig").Scope, on_copy: bool) bool {
-            std.debug.assert(@intFromEnum(scope) < 4);
+            std.debug.assert(@backingInt(scope) < 4);
 
             var ctx: Ctx = undefined;
 

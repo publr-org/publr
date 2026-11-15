@@ -23,7 +23,7 @@ pub const missing_max: u32 = 100_000;
 pub fn find(gpa: std.mem.Allocator, source: [:0]const u8) ![]Missing {
     std.debug.assert(source.len < std.math.maxInt(u32));
 
-    var tree = try Ast.parse(gpa, source, .zig);
+    var tree = try Ast.parse(gpa, source, .{});
     defer tree.deinit(gpa);
 
     var found: std.ArrayList(Missing) = .empty;
@@ -34,7 +34,7 @@ pub fn find(gpa: std.mem.Allocator, source: [:0]const u8) ![]Missing {
     }
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         const last = last_field(&tree, node) orelse continue;
         const after = tree.lastToken(last) + 1;
 
@@ -150,7 +150,7 @@ test "struct values and declarations need their last comma, lists and empty valu
 
     try std.testing.expect(std.mem.indexOf(u8, repaired, "{\"x\":1}\n,") != null);
 
-    const repaired_z = try gpa.dupeZ(u8, repaired);
+    const repaired_z = try gpa.dupeSentinel(u8, repaired, 0);
     defer gpa.free(repaired_z);
     const again = try find(gpa, repaired_z);
     defer gpa.free(again);

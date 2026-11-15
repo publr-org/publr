@@ -38,9 +38,11 @@ test "JSON nesting is bounded before parsing recursive structures" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const deep = "[" ** (depth_max + 1) ++ "0" ++ "]" ** (depth_max + 1);
+    const opening: [depth_max + 1]u8 = @splat('[');
+    const closing: [depth_max + 1]u8 = @splat(']');
+    const deep = &opening ++ "0" ++ &closing;
     try std.testing.expectError(error.NestingTooDeep, parse(std.json.Value, arena, deep, .{}));
-    const boundary = "[" ** depth_max ++ "0" ++ "]" ** depth_max;
+    const boundary = &@as([depth_max]u8, @splat('[')) ++ "0" ++ &@as([depth_max]u8, @splat(']'));
     _ = try parse(std.json.Value, arena, boundary, .{});
     const text = try parse([]const u8, arena, "\"[[[{\\\"quoted\\\": true}]]]\"", .{});
     try std.testing.expectEqualStrings("[[[{\"quoted\": true}]]]", text);

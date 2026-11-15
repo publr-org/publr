@@ -92,7 +92,7 @@ fn check_source(ctx: *Ctx, source: []const u8) Error!void {
 
         file.* = .{
             .path = one.path,
-            .text = try ctx.arena.dupeZ(u8, one.text),
+            .text = try ctx.arena.dupeSentinel(u8, one.text, 0),
         };
     }
 

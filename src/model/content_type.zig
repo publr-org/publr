@@ -652,7 +652,7 @@ test "definition validation" {
     const wrong: Def = .{
         .handle = "Post",
         .name = "",
-        .description = "x" ** 501,
+        .description = &@as([501]u8, @splat('x')),
         .title_field = "body",
         .fields = &.{.{
             .name = "body",
@@ -803,20 +803,20 @@ test "malformed definitions are rejected before internal field assumptions" {
         .{
             .handle = "post",
             .name = "Post",
-            .fields = &([_]field.Def{test_post.fields[0]} ** (field.fields_max + 1)),
+            .fields = &(@as([field.fields_max + 1]field.Def, @splat(test_post.fields[0]))),
         },
         .{
             .handle = "post",
             .name = "Post",
             .fields = test_post.fields,
-            .title_field = "x" ** 65,
+            .title_field = &@as([65]u8, @splat('x')),
         },
         .{
             .handle = "post",
             .name = "Post",
             .fields = &.{
                 .{
-                    .name = "x" ** 65,
+                    .name = &@as([65]u8, @splat('x')),
                     .label = "X",
                     .kind = "string",
                 },
@@ -829,7 +829,7 @@ test "malformed definitions are rejected before internal field assumptions" {
                 .{
                     .name = "x",
                     .label = "X",
-                    .kind = "x" ** (kinds.string_len_max + 1),
+                    .kind = &@as([kinds.string_len_max + 1]u8, @splat('x')),
                 },
             },
         },
@@ -842,7 +842,7 @@ test "malformed definitions are rejected before internal field assumptions" {
                     .label = "X",
                     .kind = "number",
                     .options = .{
-                        .choices = &([_][]const u8{"1"} ** (field.choices_max + 1)),
+                        .choices = &@as([field.choices_max + 1][]const u8, @splat("1")),
                     },
                 },
             },

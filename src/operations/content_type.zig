@@ -378,9 +378,9 @@ test "definition input limits are checked before preparation and domain checks" 
     var ctx = harness.ctx(.system);
     const field_text = "{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"}";
     const too_many_fields = "{\"handle\":\"bad\",\"name\":\"Bad\",\"fields\":[" ++
-        (field_text ++ ",") ** 64 ++ field_text ++ "]}";
+        repeated(64, field_text ++ ",") ++ field_text ++ "]}";
     const too_many_statuses = "{\"handle\":\"bad\",\"name\":\"Bad\",\"fields\":[],\"statuses\":[" ++
-        "\"draft\"," ** 64 ++ "\"draft\"]}";
+        repeated(64, "\"draft\",") ++ "\"draft\"]}";
 
     for ([_][]const u8{ too_many_fields, too_many_statuses }) |input_text| {
         try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&ctx, Create, .{
@@ -388,4 +388,10 @@ test "definition input limits are checked before preparation and domain checks" 
         }));
         try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
     }
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

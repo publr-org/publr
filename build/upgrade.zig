@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 
 /// `upgrade`: every release's site in `.zig-cache/upgrade-sites` updated by `exe`
 /// (`-Dupgrade-from=0.3.1` for one, `-Dupgrade-previous=<publr>` to prove a step back). The
@@ -8,7 +9,7 @@ const std = @import("std");
 /// `migration-draft`: `src/lib/db/migrations/unreleased.zig` started from the schema's
 /// changes since the last release. Returns the matrix's step, which `verify-full` runs.
 pub fn add(builder: *std.Build, exe: *std.Build.Step.Compile) *std.Build.Step {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const from = builder.option([]const u8, "upgrade-from", "Only this fixture") orelse "";
     const previous = builder.option(
@@ -26,18 +27,18 @@ pub fn add(builder: *std.Build, exe: *std.Build.Step.Compile) *std.Build.Step {
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/upgrade.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     const version = @import("smoke.zig").version(builder);
-    const sites = builder.pathFromRoot(".zig-cache/upgrade-sites");
+    const sites = repository.path(builder, ".zig-cache/upgrade-sites");
 
     const matrix = builder.addRunArtifact(script);
 
     matrix.addArg("matrix");
     add_binary(matrix, exe, binary);
     matrix.addArgs(&.{ version, sites });
-    matrix.addArgs(&.{ builder.pathFromRoot(".zig-cache/upgrade"), "--from", from });
+    matrix.addArgs(&.{ repository.path(builder, ".zig-cache/upgrade"), "--from", from });
     matrix.addArgs(&.{ "--previous", previous });
     matrix.has_side_effects = true;
     const upgrade = builder.step("upgrade", "Update every release's fixture with this build");
@@ -50,7 +51,7 @@ pub fn add(builder: *std.Build, exe: *std.Build.Step.Compile) *std.Build.Step {
     add_binary(fixture, exe, binary);
 
     fixture.addArgs(&.{ version, sites });
-    fixture.addArg(builder.pathFromRoot(".zig-cache/upgrade-fixture"));
+    fixture.addArg(repository.path(builder, ".zig-cache/upgrade-fixture"));
     fixture.has_side_effects = true;
     builder.step("upgrade-fixture", "Make this version's fixture and carry the lived site")
         .dependOn(&fixture.step);
@@ -60,7 +61,7 @@ pub fn add(builder: *std.Build, exe: *std.Build.Step.Compile) *std.Build.Step {
     draft.addArg("draft");
     draft.addArtifactArg(exe);
     draft.addArgs(&.{ version, sites });
-    draft.addArg(builder.pathFromRoot(".zig-cache/migration-draft"));
+    draft.addArg(repository.path(builder, ".zig-cache/migration-draft"));
     draft.has_side_effects = true;
     builder.step("migration-draft", "Draft the next migration against the last release")
         .dependOn(&draft.step);

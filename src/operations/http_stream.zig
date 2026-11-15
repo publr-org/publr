@@ -136,7 +136,7 @@ pub const Stream = struct {
         if (open.response.head.status != .ok) {
             defer open.close();
 
-            const status: u16 = @intFromEnum(open.response.head.status);
+            const status: u16 = @backingInt(open.response.head.status);
 
             return .{
                 .status = status,
@@ -288,7 +288,7 @@ fn opened(
         @tagName(method),
         guards.host_text(shown.uri),
         guards.path_text(shown.uri),
-        @intFromEnum(open.response.head.status),
+        @backingInt(open.response.head.status),
     }) catch return error.OutOfMemory;
 
     request_log.line(ctx, plugin, line);

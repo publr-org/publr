@@ -260,7 +260,7 @@ test "lines: bounded per call, the rest counted, long ones cut at a character" {
         .root = 1,
         .arena = arena_state.allocator(),
     };
-    const long = "ł" ** line_bytes_max;
+    const long = repeated(line_bytes_max, "ł");
 
     lines.add(.{
         .plugin = "shop",
@@ -282,4 +282,10 @@ test "lines: bounded per call, the rest counted, long ones cut at a character" {
 
     try std.testing.expectEqual(@as(usize, lines_max + 1), kept.len);
     try std.testing.expectEqualStrings("3 more lines left out", kept[lines_max].text);
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

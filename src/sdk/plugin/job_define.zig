@@ -143,8 +143,8 @@ fn every_of(comptime given: anytype) Every {
 fn at_of(comptime given: anytype) At {
     var made: At = .{};
 
-    inline for (std.meta.fields(@TypeOf(given))) |field| {
-        @field(made, field.name) = @field(given, field.name);
+    inline for (comptime std.meta.fieldNames(@TypeOf(given))) |field_name| {
+        @field(made, field_name) = @field(given, field_name);
     }
 
     if (made.hour >= 24 or made.minute >= 60) {

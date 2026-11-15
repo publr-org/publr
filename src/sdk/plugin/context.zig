@@ -258,13 +258,13 @@ pub const HostApi = struct {
         std.debug.assert(text.len > 0);
 
         const memory = self.inner.arena;
-        const fields = std.meta.fields(@TypeOf(values));
+        const fields = @typeInfo(@TypeOf(values)).@"struct".field_names;
         var filled: [fields.len]@import("../context.zig").Message.Value = undefined;
 
-        inline for (fields, &filled) |field, *slot| {
+        inline for (fields, &filled) |field_name, *slot| {
             slot.* = .{
-                .name = field.name,
-                .value = words.shown(memory, @field(values, field.name)) catch "",
+                .name = field_name,
+                .value = words.shown(memory, @field(values, field_name)) catch "",
             };
         }
 
@@ -486,9 +486,9 @@ pub fn takes_plugin_ctx(comptime function: anytype) bool {
         const info = @typeInfo(@TypeOf(function));
 
         std.debug.assert(info == .@"fn");
-        std.debug.assert(info.@"fn".params.len >= 1);
+        std.debug.assert(info.@"fn".param_types.len >= 1);
 
-        return info.@"fn".params[0].type == *PluginCtx;
+        return info.@"fn".param_types[0] == *PluginCtx;
     }
 }
 

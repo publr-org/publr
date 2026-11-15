@@ -99,8 +99,8 @@ fn listed_before(_: void, left: Destination, right: Destination) bool {
     std.debug.assert(left.page.len > 0);
     std.debug.assert(right.page.len > 0);
 
-    const left_group = @intFromEnum(left.group);
-    const right_group = @intFromEnum(right.group);
+    const left_group = @backingInt(left.group);
+    const right_group = @backingInt(right.group);
 
     if (left_group != right_group) {
         return left_group < right_group;

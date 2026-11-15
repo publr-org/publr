@@ -26,12 +26,12 @@ pub fn declared_of(comptime Plugin: type) []const Declared {
                 "fields");
         }
 
-        if (std.meta.fields(Secrets).len > secrets.declared_max) {
+        if (std.meta.fieldNames(Secrets).len > secrets.declared_max) {
             @compileError("plugin " ++ plugin ++ ": more than 32 secrets");
         }
 
-        for (std.meta.fields(Secrets)) |field| {
-            list = list ++ [_]Declared{declared_one(Plugin, Secrets, field)};
+        for (std.meta.fieldNames(Secrets)) |field_name| {
+            list = list ++ [_]Declared{declared_one(Plugin, Secrets, field_name)};
         }
 
         const done = list;
@@ -43,36 +43,37 @@ pub fn declared_of(comptime Plugin: type) []const Declared {
 fn declared_one(
     comptime Plugin: type,
     comptime Secrets: type,
-    comptime field: std.builtin.Type.StructField,
+    comptime name: []const u8,
 ) Declared {
     comptime {
         const plugin = Plugin.manifest.name;
-        const key = @typeName(Secrets) ++ "." ++ field.name;
-        const is_secret = @typeInfo(field.type) == .@"struct" and
-            std.meta.fields(field.type).len == 0 and
-            std.mem.endsWith(u8, @typeName(field.type), "Secret");
+        const Field = @FieldType(Secrets, name);
+        const key = @typeName(Secrets) ++ "." ++ name;
+        const is_secret = @typeInfo(Field) == .@"struct" and
+            std.meta.fieldNames(Field).len == 0 and
+            std.mem.endsWith(u8, @typeName(Field), "Secret");
 
         std.debug.assert(plugin.len > 0);
 
         if (!is_secret) {
-            @compileError("plugin " ++ plugin ++ ": secret " ++ field.name ++ " is a " ++
+            @compileError("plugin " ++ plugin ++ ": secret " ++ name ++ " is a " ++
                 "publr.Secret");
         }
 
-        if (!secrets.valid_name(field.name)) {
-            @compileError("plugin " ++ plugin ++ ": secret " ++ field.name ++ " is named " ++
+        if (!secrets.valid_name(name)) {
+            @compileError("plugin " ++ plugin ++ ": secret " ++ name ++ " is named " ++
                 "like an environment variable: capitals, digits and underscores");
         }
 
         const label = plugin_define.first(Plugin.docs, key) orelse "";
 
         if (label.len == 0) {
-            @compileError("plugin " ++ plugin ++ ": secret " ++ field.name ++ " needs a " ++
+            @compileError("plugin " ++ plugin ++ ": secret " ++ name ++ " needs a " ++
                 "`///` comment: its label, then where to find it");
         }
 
         return .{
-            .name = field.name,
+            .name = name,
             .label = label,
             .help = plugin_define.rest(Plugin.docs, key) orelse "",
         };

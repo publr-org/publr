@@ -80,15 +80,15 @@ pub fn field_option(comptime options: anytype) type {
         for (values) |value| {
             const holds: Holds = options.holds(@field(Takes, value));
 
-            if (seen[@intFromEnum(holds)]) {
+            if (seen[@backingInt(holds)]) {
                 @compileError("field option `" ++ options.name ++ "`: two values hold `." ++
                     @tagName(holds) ++ "`; the field panel could not tell which a field has");
             }
 
-            seen[@intFromEnum(holds)] = true;
+            seen[@backingInt(holds)] = true;
         }
 
-        if (!seen[@intFromEnum(Holds.one)]) {
+        if (!seen[@backingInt(Holds.one)]) {
             @compileError("field option `" ++ options.name ++ "`: one value holds `.one`, " ++
                 "a field that does not vary");
         }
@@ -364,7 +364,7 @@ test "a wrapper as data: the setting, its help, each choice and the picker from 
         pub const Translatable = enum { none, required, optional };
 
         fn holds(translatable: Translatable) Holds {
-            std.debug.assert(@intFromEnum(translatable) < 3);
+            std.debug.assert(@backingInt(translatable) < 3);
 
             return switch (translatable) {
                 .none => .one,

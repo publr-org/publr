@@ -484,7 +484,7 @@ pub fn run_core(ctx: *Ctx, name: []const u8, input: []const u8) []const u8 {
 
     inline for (runs) |each| {
         if (std.mem.eql(u8, name, each[0])) {
-            const In = @typeInfo(@TypeOf(each[1])).@"fn".params[1].type.?;
+            const In = @typeInfo(@TypeOf(each[1])).@"fn".param_types[1].?;
             const given = std.json.parseFromSliceLeaky(In, ctx.arena, input, .{
                 .ignore_unknown_fields = true,
                 .allocate = .alloc_always,

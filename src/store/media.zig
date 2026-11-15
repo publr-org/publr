@@ -321,7 +321,7 @@ test "media rows: insert, read by record, key and hash, flip privacy, gone with 
 
     try list.seed_record(connection, "m1");
 
-    const hash = "a" ** 64;
+    const hash = &@as([64]u8, @splat('a'));
 
     try insert(connection, .{
         .record = "m1",
@@ -386,7 +386,7 @@ test "a Pending file stays pending until its facts are filled in" {
         .size = 4,
         .width = 2,
         .height = 1,
-        .hash = "a" ** 64,
+        .hash = &@as([64]u8, @splat('a')),
     });
 
     const came = (try get(connection, arena, "m1")).?;

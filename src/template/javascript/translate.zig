@@ -70,7 +70,7 @@ fn values_of(vm: *VM, json: []const u8) ![]const runtime.Placeholder {
 }
 
 fn written(arena: std.mem.Allocator, value: std.json.Value) ![]const u8 {
-    std.debug.assert(@intFromEnum(value) <= @intFromEnum(std.json.Value.object));
+    std.debug.assert(@backingInt(value) <= @backingInt(std.json.Value.object));
 
     return switch (value) {
         .string => |text| text,

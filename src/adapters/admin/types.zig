@@ -39,7 +39,7 @@ pub const print = definitions.print;
 
 /// What the admin calls a kind, and what it says a kind holds.
 pub fn kind_text(session: *const Session, kind: Kind) admin.Error!KindText {
-    std.debug.assert(@typeInfo(Kind).@"enum".fields.len == 4);
+    std.debug.assert(@typeInfo(Kind).@"enum".field_names.len == 4);
     std.debug.assert(session.signed_in());
 
     return switch (kind) {

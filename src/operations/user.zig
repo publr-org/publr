@@ -886,7 +886,7 @@ test "user field options are available to editors without account details" {
     const options = try TestSDK.dispatch(&editor, Options, .{});
     try std.testing.expectEqual(@as(usize, 1), options.users.len);
     try std.testing.expectEqualStrings(created.user_id, options.users[0].id);
-    const output_fields = @typeInfo(@TypeOf(options.users[0])).@"struct".fields;
+    const output_fields = @typeInfo(@TypeOf(options.users[0])).@"struct".field_names;
     try std.testing.expectEqual(@as(usize, 2), output_fields.len);
     try std.testing.expectError(error.Denied, TestSDK.dispatch(&anon, Options, .{}));
 }

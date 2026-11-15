@@ -92,7 +92,7 @@ test "quotes and lists deeper than the limit read as text" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const deep = ">" ** (markdown.depth_max + 4) ++ " x";
+    const deep = &@as([markdown.depth_max + 4]u8, @splat('>')) ++ " x";
     const html = try markdown.to_html(arena_state.allocator(), deep, .{});
 
     try std.testing.expectEqual(

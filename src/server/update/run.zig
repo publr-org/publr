@@ -259,7 +259,7 @@ fn copy_database(context: *Run, path: []const u8) !void {
     const arena = context.arena();
     var runtime = try db.Runtime.init(.{});
     defer runtime.deinit();
-    var connection = try db.open(&runtime, try arena.dupeZ(u8, context.db_path));
+    var connection = try db.open(&runtime, try arena.dupeSentinel(u8, context.db_path, 0));
     defer connection.close();
 
     try db.copy_to(&connection, path);

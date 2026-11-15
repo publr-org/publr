@@ -222,8 +222,18 @@ fn statement_end(lines: []const []const u8, start: u32) u32 {
     while (true) {
         const trimmed = std.mem.trimEnd(u8, lines[index], " ");
         const opens_block = std.mem.endsWith(u8, trimmed, "{");
+        const opens_list = std.mem.endsWith(u8, trimmed, "(");
         const ends_statement = std.mem.endsWith(u8, trimmed, ";") or
             std.mem.endsWith(u8, trimmed, ",");
+
+        if (opens_list) {
+            const closed = list_close(lines, index, indent);
+
+            if (closed > index) {
+                index = closed;
+                continue;
+            }
+        }
 
         if (opens_block) {
             index = block_close(lines, index, indent);
@@ -242,6 +252,24 @@ fn statement_end(lines: []const []const u8, start: u32) u32 {
         }
         index += 1;
     }
+}
+
+/// The `)` that closes a header wrapped one argument per line, as `zig fmt` lays it out.
+fn list_close(lines: []const []const u8, open: u32, indent: u32) u32 {
+    std.debug.assert(open < lines.len);
+    std.debug.assert(indent < file_bytes_max_hint);
+
+    var index = open + 1;
+
+    while (index < lines.len) : (index += 1) {
+        const line = lines[index];
+
+        if (indent_of(line) == indent and std.mem.startsWith(u8, line[indent..], ")")) {
+            return index;
+        }
+    }
+
+    return open;
 }
 
 fn block_close(lines: []const []const u8, open: u32, indent: u32) u32 {
@@ -298,6 +326,13 @@ test "spaced control flow passes, cramped control flow is reported" {
         \\        if (index == 1) {
         \\            continue;
         \\        }
+        \\    }
+        \\
+        \\    inline for (
+        \\        names,
+        \\        types,
+        \\    ) |name, Type| {
+        \\        use(name, Type);
         \\    }
         \\}
     ;

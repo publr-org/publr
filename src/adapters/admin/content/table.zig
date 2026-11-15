@@ -415,7 +415,7 @@ fn column(id: []const u8, label: []const u8) Column {
 }
 
 fn tone_of(color: model.status.Color) []const u8 {
-    std.debug.assert(@typeInfo(model.status.Color).@"enum".fields.len == 5);
+    std.debug.assert(@typeInfo(model.status.Color).@"enum".field_names.len == 5);
 
     return switch (color) {
         .neutral => "neutral",

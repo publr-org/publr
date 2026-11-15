@@ -314,7 +314,7 @@ test "an issuer's token signs its account in once; anything else does not" {
     const SDK = @import("../server/registry.zig").SDK;
     const user = @import("user.zig");
     const arena = harness.fixed.allocator();
-    const seed = [_]u8{3} ** 32;
+    const seed: [32]u8 = @splat(3);
     const public_hex = try token_model.public_key_hex(seed);
     var system = harness.ctx(.system);
     var anon = harness.ctx(.anonymous);
@@ -337,7 +337,8 @@ test "an issuer's token signs its account in once; anything else does not" {
     const other_site = try issue(arena, seed, "site-two", "ada@example.com", soon, "j2");
     const expired = try issue(arena, seed, "site-one", "ada@example.com", anon.now_ms - 1, "j3");
     const stranger = try issue(arena, seed, "site-one", "eve@example.com", soon, "j4");
-    const forged = try issue(arena, [_]u8{4} ** 32, "site-one", "ada@example.com", soon, "j5");
+    const other_seed: [32]u8 = @splat(4);
+    const forged = try issue(arena, other_seed, "site-one", "ada@example.com", soon, "j5");
     // The issuer's clock a second ahead of the site's: still good; far ahead: never.
     const ahead_ms = anon.now_ms + token_model.lifetime_ms + std.time.ms_per_s;
     const ahead = try issue(arena, seed, "site-one", "ada@example.com", ahead_ms, "j6");

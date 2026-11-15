@@ -3,13 +3,14 @@
 //! preflight ahead of everything. Embedded into the app as `styles_css` and served
 //! at `/admin/styles.css`. Minified except in Debug builds.
 const std = @import("std");
+const repository = @import("repository.zig");
 
 /// Every `listed("…")` in `src/`, one class per line: what Zig code hands the views.
 fn listed_classes(builder: *std.Build) std.Build.LazyPath {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const io = builder.graph.io;
-    var dir = builder.build_root.handle.openDir(io, "src", .{
+    var dir = repository.dir(builder).openDir(io, "src", .{
         .iterate = true,
     }) catch @panic("src/ is missing");
     defer dir.close(io);
@@ -65,10 +66,10 @@ pub fn add(
     builder: *std.Build,
     module: *std.Build.Module,
     classes: std.Build.LazyPath,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
 ) Book {
     std.debug.assert(module.root_source_file != null);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const jit = builder.dependency("publr_jit", .{
         .target = builder.graph.host,
@@ -84,7 +85,7 @@ pub fn add(
     run.addPrefixedFileArg("--prepend=", jit.path("src/preflight.css"));
     run.addPrefixedFileArg("--prepend=", builder.path("ui/styles/base.css"));
 
-    if (optimize == .Debug) {
+    if (optimize == .debug) {
         run.addArg("--no-minify");
     }
 

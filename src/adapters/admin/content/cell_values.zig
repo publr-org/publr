@@ -98,7 +98,7 @@ pub fn gather(
                 continue;
             }
 
-            const bucket = &wanted[@intFromEnum(sort)];
+            const bucket = &wanted[@backingInt(sort)];
 
             for (try ids_in(arena, value)) |id| {
                 if (bucket.items.len < ids_max) {
@@ -108,10 +108,10 @@ pub fn gather(
         }
     }
 
-    try records_into(page, wanted[@intFromEnum(Sort.record)].items, &lookups);
-    try media_into(page, wanted[@intFromEnum(Sort.media)].items, &lookups);
-    try users_into(page, wanted[@intFromEnum(Sort.user)].items, &lookups);
-    try terms_into(page, wanted[@intFromEnum(Sort.term)].items, &lookups);
+    try records_into(page, wanted[@backingInt(Sort.record)].items, &lookups);
+    try media_into(page, wanted[@backingInt(Sort.media)].items, &lookups);
+    try users_into(page, wanted[@backingInt(Sort.user)].items, &lookups);
+    try terms_into(page, wanted[@backingInt(Sort.term)].items, &lookups);
 
     return lookups;
 }
@@ -416,6 +416,12 @@ test "an excerpt drops markup and keeps the first words" {
         "<p>Black tea</p><p>with  bergamot.</p>",
     ));
     try std.testing.expectEqualStrings("", try excerpt(arena, "<br>"));
-    const long = "a " ** 100;
+    const long = repeated(100, "a ");
     try std.testing.expect(std.mem.endsWith(u8, try excerpt(arena, long), "…"));
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

@@ -60,11 +60,15 @@ fn check(comptime Plugin: type) void {
                 "`pub fn deinit(state: *State) void`");
         }
 
-        if (!@hasDecl(State, "init") and std.meta.fields(State).len > 0) {
-            for (std.meta.fields(State)) |field| {
-                if (field.defaultValue() == null) {
+        if (!@hasDecl(State, "init") and std.meta.fieldNames(State).len > 0) {
+            for (
+                std.meta.fieldNames(State),
+                std.meta.fieldTypes(State),
+                @typeInfo(State).@"struct".field_attrs,
+            ) |field_name, FieldType, field_attrs| {
+                if (field_attrs.defaultValue(FieldType) == null) {
                     @compileError("plugin " ++ name ++ ": `State` has no `init`, so its " ++
-                        "field " ++ field.name ++ " needs a default");
+                        "field " ++ field_name ++ " needs a default");
                 }
             }
         }

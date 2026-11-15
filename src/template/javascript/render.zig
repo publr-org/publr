@@ -57,7 +57,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             var pending: std.ArrayList(u32) = .empty;
             const vm = frame.execution.vm.?;
             try pending.appendSlice(vm.arena, frame.template.javascript_modules);
-            var seen = std.StaticBitSet(512).initEmpty();
+            var seen = std.StaticBitSet(512).empty;
 
             while (pending.pop()) |index| {
                 if (seen.isSet(index)) {

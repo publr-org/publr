@@ -250,7 +250,7 @@ fn EventHook(
 /// An `on` hook is queued work, run from the queue once the write committed: its `run`
 /// takes `*publr.QueueCtx` (with `fetch`).
 fn queued(comptime given: anytype, ctx: *PluginCtx, value: anytype) sdk.Error!void {
-    const First = @typeInfo(@TypeOf(given)).@"fn".params[0].type.?;
+    const First = @typeInfo(@TypeOf(given)).@"fn".param_types[0].?;
 
     if (comptime First != *queue.Queue(PluginCtx)) {
         @compileError("an `on` hook is queued work: its run takes `*publr.QueueCtx`");

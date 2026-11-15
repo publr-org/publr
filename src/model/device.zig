@@ -67,7 +67,7 @@ pub const Scope = enum {
 
     /// Whether `scope` gives no more than `limit`.
     pub fn within(scope: Scope, limit: Scope) bool {
-        const narrower = @intFromEnum(scope) <= @intFromEnum(limit);
+        const narrower = @backingInt(scope) <= @backingInt(limit);
 
         std.debug.assert(narrower or scope != .read);
 
@@ -160,7 +160,7 @@ test "names: printable, bounded" {
     try std.testing.expect(valid_name("An agent on Ada's laptop"));
     try std.testing.expect(!valid_name(""));
     try std.testing.expect(!valid_name("tab\there"));
-    try std.testing.expect(!valid_name("x" ** 81));
+    try std.testing.expect(!valid_name(&@as([81]u8, @splat('x'))));
     try std.testing.expect(!valid_name("\xff"));
 }
 

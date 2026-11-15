@@ -229,16 +229,16 @@ fn hook_target(comptime Middleware: type) []const u8 {
 
 /// The input a `before` or `after` hook takes, from its signature.
 pub fn HookIn(comptime Middleware: type) type {
-    const params = @typeInfo(@TypeOf(Middleware.run)).@"fn".params;
+    const params = @typeInfo(@TypeOf(Middleware.run)).@"fn".param_types;
 
-    return @typeInfo(params[1].type.?).pointer.child;
+    return @typeInfo(params[1].?).pointer.child;
 }
 
 /// The output an `after` hook reads, from its signature.
 pub fn HookOut(comptime Middleware: type) type {
-    const params = @typeInfo(@TypeOf(Middleware.run)).@"fn".params;
+    const params = @typeInfo(@TypeOf(Middleware.run)).@"fn".param_types;
 
-    return @typeInfo(params[2].type.?).pointer.child;
+    return @typeInfo(params[2].?).pointer.child;
 }
 
 /// What a plugin must get right to be built for the sandbox at all: a reason for each

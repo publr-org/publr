@@ -52,7 +52,7 @@ fn run(init: std.process.Init) !u8 {
 
     if (rest.len >= 1 and std.mem.eql(u8, rest[0], "--db")) {
         if (rest.len < 2 or rest[1].len == 0) return error.InvalidArguments;
-        db_path = try init.arena.allocator().dupeZ(u8, rest[1]);
+        db_path = try init.arena.allocator().dupeSentinel(u8, rest[1], 0);
         rest = rest[2..];
     }
 

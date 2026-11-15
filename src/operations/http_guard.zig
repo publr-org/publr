@@ -87,7 +87,7 @@ pub fn connect(
     const protocol = Client.Protocol.fromUri(uri) orelse return error.Unreachable;
     const port = uri.port orelse @as(u16, if (protocol == .tls) 443 else 80);
     var name_buffer: [HostName.max_len]u8 = undefined;
-    const host = uri.getHost(&name_buffer) catch return error.Unreachable;
+    const host = HostName.fromUri(uri, &name_buffer) catch return error.Unreachable;
 
     switch (guard.rule.egress) {
         .direct => {},

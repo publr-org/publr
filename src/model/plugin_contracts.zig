@@ -790,7 +790,7 @@ pub fn describe(finding: Finding, buffer: []u8) []const u8 {
 }
 
 fn holds_text(holds: Holds) []const u8 {
-    std.debug.assert(@intFromEnum(holds) <= @intFromEnum(Holds.any));
+    std.debug.assert(@backingInt(holds) <= @backingInt(Holds.any));
 
     return switch (holds) {
         .text => "text",

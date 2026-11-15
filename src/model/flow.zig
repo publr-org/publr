@@ -115,7 +115,7 @@ pub const Who = struct {
     pub const Kind = enum { signed_in, roles, plugin_calls };
 
     pub fn of(given: caller_answer.Answer) Who {
-        std.debug.assert(@intFromEnum(given) <= @intFromEnum(caller_answer.Answer.plugin_calls));
+        std.debug.assert(@backingInt(given) <= @backingInt(caller_answer.Answer.plugin_calls));
 
         return switch (given) {
             .visitor, .signed_in => .{

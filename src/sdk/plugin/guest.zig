@@ -460,7 +460,7 @@ pub const SandboxApi = struct {
 
         const line = std.fmt.allocPrint(self.arena_allocator, format, args) catch format;
 
-        publr_log_at(@intFromEnum(level), line.ptr, @intCast(line.len));
+        publr_log_at(@backingInt(level), line.ptr, @intCast(line.len));
     }
 };
 

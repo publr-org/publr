@@ -109,11 +109,12 @@ pub fn def_of(
             },
         };
 
-        @setEvalBranchQuota(1000 + std.meta.fields(Taxonomy.Doc).len *
+        @setEvalBranchQuota(1000 + std.meta.fieldNames(Taxonomy.Doc).len *
             record_define.field_branches_max);
 
-        for (std.meta.fields(Taxonomy.Doc)) |field| {
-            fields = fields ++ [_]field_model.Def{record_define.field_of(Taxonomy, Docs, field)};
+        for (std.meta.fieldNames(Taxonomy.Doc)) |field_name| {
+            const made = record_define.field_of(Taxonomy, Docs, field_name);
+            fields = fields ++ [_]field_model.Def{made};
         }
 
         const done = fields;

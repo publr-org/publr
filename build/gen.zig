@@ -5,6 +5,7 @@
 //! render runtime) whose one seam, `class_merge`, is `src/ui/class_merge.zig` over
 //! the JIT.
 const std = @import("std");
+const repository = @import("repository.zig");
 const diagnostic = @import("diagnostic.zig");
 
 const components_dir = "../ui/src/components";
@@ -35,10 +36,10 @@ pub const Generated = struct {
 pub fn add(
     builder: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
     plugin_ui: []const []const u8,
 ) Generated {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const pjsx_host = builder.dependency("pjsx", .{
         .target = builder.graph.host,
@@ -48,7 +49,7 @@ pub fn add(
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/pjsx_gen.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
             .imports = &.{
                 .{
                     .name = "pjsx",
@@ -65,8 +66,8 @@ pub fn add(
         }),
     });
     const run = builder.addRunArtifact(tool);
-    const components = builder.pathFromRoot(components_dir);
-    const icons = builder.pathFromRoot(icons_dir);
+    const components = repository.path(builder, components_dir);
+    const icons = repository.path(builder, icons_dir);
 
     run.addArg("--engine");
     // The binary draws any design-system component for an installed plugin's view.
@@ -78,13 +79,13 @@ pub fn add(
 
     for (plugin_ui) |dir| {
         run.addDirectoryArg(builder.path(dir));
-        declare_inputs(builder, run, builder.build_root.path.?, dir, ".ptsx");
-        declare_inputs(builder, run, builder.build_root.path.?, dir, ".txt");
+        declare_inputs(builder, run, repository.path(builder, "."), dir, ".ptsx");
+        declare_inputs(builder, run, repository.path(builder, "."), dir, ".txt");
     }
 
     // A directory argument is hashed by path: every file that feeds the run is declared
     // so an edit anywhere re-runs it.
-    declare_inputs(builder, run, builder.build_root.path.?, "ui", ".ptsx");
+    declare_inputs(builder, run, repository.path(builder, "."), "ui", ".ptsx");
     run.addFileInput(builder.path("ui/icons.txt"));
     declare_inputs(builder, run, components, "", ".ptsx");
     declare_inputs(builder, run, icons, "", ".svg");
@@ -133,12 +134,12 @@ pub fn add(
 
 /// `expressions.js` compiled to QuickJS bytecode by a host tool.
 pub fn bytecode(builder: *std.Build, source: std.Build.LazyPath) std.Build.LazyPath {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const vm = builder.createModule(.{
         .root_source_file = builder.path("src/template/javascript/vm.zig"),
         .target = builder.graph.host,
-        .optimize = .ReleaseFast,
+        .optimize = .fast,
         .link_libc = true,
     });
 
@@ -149,7 +150,7 @@ pub fn bytecode(builder: *std.Build, source: std.Build.LazyPath) std.Build.LazyP
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/expressions_bytecode.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
             .imports = &.{.{
                 .name = "vm",
                 .module = vm,
@@ -172,9 +173,9 @@ fn add_runtime(
     builder: *std.Build,
     pjsx_host: *std.Build.Dependency,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
 ) Runtime {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const jit = builder.dependency("publr_jit", .{
         .target = target,

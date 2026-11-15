@@ -24,7 +24,7 @@ pub fn requests(
     mode: Mode,
 ) Error![]const Row {
     std.debug.assert(list.len <= 256);
-    std.debug.assert(@intFromEnum(mode) <= 2);
+    std.debug.assert(@backingInt(mode) <= 2);
 
     const arena = session.arena;
 
@@ -216,7 +216,7 @@ fn only(session: *const Session, names: []const []const u8) Error![]const u8 {
 /// What switching a flag on lets the plugin do, in plain words.
 fn flag_label(session: *const Session, key: []const u8, flag: permission.Flag) Error![]const u8 {
     std.debug.assert(key.len > 0);
-    std.debug.assert(@intFromEnum(flag) < 4);
+    std.debug.assert(@backingInt(flag) < 4);
 
     const media = std.mem.startsWith(u8, key, "media.");
     const terms = std.mem.startsWith(u8, key, "terms.");

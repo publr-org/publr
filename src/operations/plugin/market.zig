@@ -419,7 +419,7 @@ fn posted(ctx: *Ctx, source: []const u8, action: []const u8, body: []const u8) E
     };
 
     if (answered.status != .ok) {
-        std.log.warn("plugin find: {d}", .{@intFromEnum(answered.status)});
+        std.log.warn("plugin find: {d}", .{@backingInt(answered.status)});
         return ctx.fail(catalog.unreachable_failure);
     }
 

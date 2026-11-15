@@ -64,7 +64,7 @@ pub const Refusal = enum {
     not_web_port,
 
     pub fn text(refusal: Refusal) []const u8 {
-        std.debug.assert(@intFromEnum(refusal) <= 4);
+        std.debug.assert(@backingInt(refusal) <= 4);
 
         return switch (refusal) {
             .not_listed => "not a domain on its http.fetch grant",
@@ -252,7 +252,7 @@ fn public_ip4(bytes: [4]u8) bool {
 fn public_ip6(bytes: [16]u8) bool {
     std.debug.assert(bytes.len == 16);
 
-    const mapped_prefix = [_]u8{0} ** 10 ++ [_]u8{ 0xff, 0xff };
+    const mapped_prefix = @as([10]u8, @splat(0)) ++ [_]u8{ 0xff, 0xff };
 
     if (std.mem.eql(u8, bytes[0..12], &mapped_prefix)) {
         return public_ip4(bytes[12..16].*);

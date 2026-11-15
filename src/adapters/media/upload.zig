@@ -192,7 +192,7 @@ fn refusal(
     std.debug.assert(@intFromError(err) != 0);
 
     if (ctx.failure) |failure| {
-        const status: http.Status = @enumFromInt(failure.status);
+        const status: http.Status = @fromBackingInt(@intCast(failure.status));
 
         return response.json(status, .{
             .@"error" = failure.name,

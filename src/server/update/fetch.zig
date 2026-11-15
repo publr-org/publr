@@ -153,7 +153,7 @@ fn get(io: std.Io, url: []const u8, out: *std.Io.Writer) !void {
     });
 
     if (result.status != .ok) {
-        std.log.warn("GET {s}: {d}", .{ url, @intFromEnum(result.status) });
+        std.log.warn("GET {s}: {d}", .{ url, @backingInt(result.status) });
         return error.NotFound;
     }
 }

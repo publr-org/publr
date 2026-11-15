@@ -296,7 +296,7 @@ const Flattener = struct {
 
 fn expect_string(value: Value) Error![]const u8 {
     std.debug.assert(value != .null);
-    std.debug.assert(@intFromEnum(value) >= 0);
+    std.debug.assert(@backingInt(value) >= 0);
 
     return switch (value) {
         .string => |text| text,
@@ -317,7 +317,7 @@ fn expect_int(storage: kinds.Storage, value: Value) Error!i64 {
 
 fn expect_real(value: Value) Error!f64 {
     std.debug.assert(value != .null);
-    std.debug.assert(@intFromEnum(value) >= 0);
+    std.debug.assert(@backingInt(value) >= 0);
 
     return switch (value) {
         .integer => |number| @floatFromInt(number),

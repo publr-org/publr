@@ -340,7 +340,7 @@ fn contains_folded(haystack: []const u8, needle: []const u8) bool {
     std.debug.assert(needle.len > 0);
     std.debug.assert(haystack.len < 1 << 24);
 
-    return std.ascii.indexOfIgnoreCase(haystack, needle) != null;
+    return std.ascii.findIgnoreCase(haystack, needle) != null;
 }
 
 fn one_of(choices: []const []const u8, value: []const u8) bool {
@@ -382,8 +382,13 @@ pub fn from_zon(
 ) error{ OutOfMemory, Invalid }!System {
     std.debug.assert(content.len < 1 << 31);
 
-    const source_z = try arena.dupeZ(u8, content);
-    const parsed = std.zon.parse.fromSliceAlloc(System, arena, source_z, null, .{
+    const source_z = try arena.dupeSentinel(u8, content, 0);
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const parsed = std.zon.parse.fromSlice(System, .{
+        .gpa = arena,
+        .arena = arena,
+        .source = source_z,
+        .diagnostics = &diagnostics,
         .ignore_unknown_fields = true,
     }) catch return error.Invalid;
 

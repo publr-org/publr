@@ -162,6 +162,13 @@ test "text a modifier answers: cut on a character, control characters made space
     const arena = arena_state.allocator();
 
     try std.testing.expectEqualStrings("Earl Grey, 50 g", try cleaned(arena, "Earl Grey,\n50 g"));
-    try std.testing.expectEqual(@as(usize, text_bytes_max), (try cleaned(arena, "é" ** 400)).len);
+    const long = try cleaned(arena, repeated(400, "é"));
+    try std.testing.expectEqual(@as(usize, text_bytes_max), long.len);
     try std.testing.expectEqualStrings("", try cleaned(arena, "\xff\xfe"));
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

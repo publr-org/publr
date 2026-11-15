@@ -12,7 +12,7 @@ pub const text_len_max: u32 = 64 << 10;
 
 pub fn matches_preset(preset: Preset, text: []const u8) bool {
     std.debug.assert(text.len <= text_len_max);
-    std.debug.assert(@intFromEnum(preset) <= 7);
+    std.debug.assert(@backingInt(preset) <= 7);
 
     if (preset == .any) {
         return true;

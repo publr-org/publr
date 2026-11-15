@@ -508,7 +508,7 @@ test "valid_name: plain names only" {
     try std.testing.expect(!valid_name("a b"));
     try std.testing.expect(!valid_name("../x"));
     try std.testing.expect(!valid_name("x\"y"));
-    try std.testing.expect(!valid_name("x" ** (name_len_max + 1)));
+    try std.testing.expect(!valid_name(&@as([name_len_max + 1]u8, @splat('x'))));
 }
 
 test "parse_pattern: header, fragment, and files without either" {

@@ -128,20 +128,23 @@ pub const Options = struct {
 
 pub fn write_sparse(comptime Struct: type, value: Struct, writer: anytype) !void {
     comptime std.debug.assert(@typeInfo(Struct) == .@"struct");
-    comptime std.debug.assert(std.meta.fields(Struct).len > 0);
+    comptime std.debug.assert(std.meta.fieldNames(Struct).len > 0);
 
     const base: Struct = .{};
 
     try writer.beginObject();
 
-    inline for (std.meta.fields(Struct)) |info| {
-        const field_value = @field(value, info.name);
+    inline for (
+        comptime std.meta.fieldNames(Struct),
+        comptime std.meta.fieldTypes(Struct),
+    ) |info_name, InfoType| {
+        const field_value = @field(value, info_name);
 
-        if (!std.meta.eql(field_value, @field(base, info.name))) {
-            try writer.objectField(info.name);
+        if (!std.meta.eql(field_value, @field(base, info_name))) {
+            try writer.objectField(info_name);
 
-            if (@typeInfo(info.type) == .@"struct") {
-                try write_sparse(info.type, field_value, writer);
+            if (@typeInfo(InfoType) == .@"struct") {
+                try write_sparse(InfoType, field_value, writer);
             } else {
                 try writer.write(field_value);
             }

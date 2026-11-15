@@ -1194,7 +1194,7 @@ test "the binary is named from the project's folder when it lies inside" {
 }
 
 test "serve flags validate counts and paths before startup" {
-    const many = [_][]const u8{"--static"} ** 64;
+    const many = @as([64][]const u8, @splat("--static"));
     try std.testing.expect(parse_flags(&many).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--out", "" }).refused.len > 0);
     try std.testing.expect(parse_flags(&.{ "--url", "///" }).refused.len > 0);
@@ -1291,7 +1291,7 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     try std.testing.expect(std.mem.indexOf(u8, health.body, "next_due") == null);
     const anonymous = try flow.call("GET /_publr/next_due HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(.forbidden, anonymous.status);
-    const key = "k" ** operator.key_len;
+    const key = &@as([operator.key_len]u8, @splat('k'));
     flow.project.operator_key = key;
     const keyed = "GET /_publr/next_due HTTP/1.1\r\nHost: h\r\nX-Publr-Operator: " ++ key ++
         "\r\n\r\n";

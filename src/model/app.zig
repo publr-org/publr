@@ -276,7 +276,7 @@ test "names are lower-case words" {
     try std.testing.expect(valid_name("www"));
     try std.testing.expect(valid_name("members_2"));
 
-    for ([_][]const u8{ "", "Www", "2www", "w-w", "w.w", "a" ** 33 }) |bad| {
+    for ([_][]const u8{ "", "Www", "2www", "w-w", "w.w", &@as([33]u8, @splat('a')) }) |bad| {
         try std.testing.expect(!valid_name(bad));
     }
 }
@@ -285,7 +285,7 @@ test "labels are one line of text; an app without one goes by its name" {
     try std.testing.expect(valid_label(""));
     try std.testing.expect(valid_label("Website – café"));
     try std.testing.expect(!valid_label("two\nlines"));
-    try std.testing.expect(!valid_label("a" ** 65));
+    try std.testing.expect(!valid_label(&@as([65]u8, @splat('a'))));
     try std.testing.expectEqualStrings("www", label_of("www", ""));
     try std.testing.expectEqualStrings("Website", label_of("www", "Website"));
 }

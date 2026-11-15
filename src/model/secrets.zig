@@ -252,7 +252,7 @@ test "a secret's name is an environment variable's" {
     try std.testing.expect(!valid_name("stocks"));
     try std.testing.expect(!valid_name("1KEY"));
     try std.testing.expect(!valid_name(""));
-    try std.testing.expect(!valid_name("A" ** 65));
+    try std.testing.expect(!valid_name(&@as([65]u8, @splat('A'))));
 }
 
 test "a sealed value opens under its key and name only" {
@@ -260,8 +260,8 @@ test "a sealed value opens under its key and name only" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const key = key_of("00" ** 32).?;
-    const other = key_of("11" ** 32).?;
+    const key = key_of(&@as([64]u8, @splat('0'))).?;
+    const other = key_of(&@as([64]u8, @splat('1'))).?;
     const sealed = try seal(arena, std.testing.io, key, "API_KEY", "sk-123");
 
     try std.testing.expect(std.mem.indexOf(u8, sealed, "sk-123") == null);

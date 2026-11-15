@@ -797,7 +797,7 @@ test "media over http: the library, a file's page and its form, the file served"
         arena,
         "POST /media/upload?filename=crowded.png HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
             "Cookie: other={s}; {s}\r\nX-Csrf-Token: {s}\r\nContent-Length: {d}\r\n\r\n",
-        .{ "x" ** 600, flow.cookie, csrf, png.len },
+        .{ &@as([600]u8, @splat('x')), flow.cookie, csrf, png.len },
     );
 
     try std.testing.expectEqual(.created, (try flow.inner.call(crowded, png)).status);

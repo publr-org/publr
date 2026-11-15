@@ -116,7 +116,7 @@ pub const Namespace = struct {
 
 pub fn Docs(comptime Shape: type) type {
     comptime {
-        const source = @typeInfo(Shape).@"struct".fields;
+        const source = @typeInfo(Shape).@"struct".field_names;
         const empty: []const u8 = "";
         const default_ptr: ?*const anyopaque = @ptrCast(&empty);
 
@@ -363,10 +363,10 @@ pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
                     return;
                 }
 
-                if (structure.fields.len > fields_max) {
+                if (structure.field_names.len > fields_max) {
                     @compileError("too many fields: " ++ @typeName(Type));
                 }
-                for (structure.fields) |field| assert_serialisable(field.type, depth + 1);
+                for (structure.field_types) |Field| assert_serialisable(Field, depth + 1);
             },
             else => @compileError("not serialisable: " ++ @typeName(Type)),
         }

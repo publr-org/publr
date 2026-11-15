@@ -19,7 +19,7 @@ pub fn caught(name: []const u8) bool {
     const words = [_][]const u8{ "password", "token", "secret", "credential" };
 
     for (words) |word| {
-        if (std.ascii.indexOfIgnoreCase(name, word) != null) {
+        if (std.ascii.findIgnoreCase(name, word) != null) {
             return true;
         }
     }
@@ -142,7 +142,8 @@ test "secrets: declared ones, caught ones at any depth, the rest kept" {
     try std.testing.expect(std.mem.indexOf(u8, text, "\"name\":\"x\"") != null);
     try std.testing.expectEqualStrings(mark, try masked(arena, "not json", &.{}));
 
-    const big = try std.fmt.allocPrint(arena, "{{\"data\":\"{s}\"}}", .{"x" ** 5000});
+    const data: [5000]u8 = @splat('x');
+    const big = try std.fmt.allocPrint(arena, "{{\"data\":\"{s}\"}}", .{&data});
     const summed = try masked(arena, big, &.{});
     try std.testing.expectEqualStrings("{\"data\":\"(5000 bytes, not kept)\"}", summed);
 

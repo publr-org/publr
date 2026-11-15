@@ -18,7 +18,7 @@ pub const Limits = struct {
 };
 
 pub fn from(builder: *std.Build) Limits {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const defaults: Limits = .{};
     const chosen: Limits = .{
@@ -91,7 +91,7 @@ pub fn source(builder: *std.Build, limits: Limits) []const u8 {
 }
 
 pub fn module(builder: *std.Build, limits: Limits) *std.Build.Module {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const files = builder.addWriteFiles();
     const file = files.add("limits_options.zig", source(builder, limits));

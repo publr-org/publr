@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const core = @import("core.zig");
 const tests = @import("tests.zig");
 const sandboxed_plugins = @import("sandboxed_plugins.zig");
@@ -19,7 +20,7 @@ pub fn add_check(
     from: core.Sources,
     fixture_plugins: sandboxed_plugins.SandboxedPlugins,
 ) Check {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(fixture_plugins.names.len == fixture_plugins.files.len);
 
     const sandboxed = add_publr(builder, target, optimize, from, "publr-sandboxed", &.{});
@@ -33,7 +34,7 @@ pub fn add_check(
 
     run.addArtifactArg(sandboxed.exe);
     run.addArtifactArg(native.exe);
-    run.addArg(builder.pathFromRoot(".zig-cache/two-mode"));
+    run.addArg(repository.path(builder, ".zig-cache/two-mode"));
 
     for (plugins) |name| {
         run.addFileArg(fixture_plugins.file_of(name));

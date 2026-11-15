@@ -432,14 +432,14 @@ export fn publr_effect_len(index: u32) u32 {
 export fn publr_attach(area: u32, key_ptr: [*]const u8, key_len: u32, ptr: [*]u8, len: u32) i32 {
     const instance = state orelse return 1;
 
-    if (area > @intFromEnum(files.Area.incoming) or !owns(instance, key_ptr, key_len)) {
+    if (area > @backingInt(files.Area.incoming) or !owns(instance, key_ptr, key_len)) {
         return 2;
     }
 
     const bytes = take(instance, ptr, len) orelse return 3;
     const key = key_ptr[0..key_len];
 
-    instance.deferred.attach(@enumFromInt(area), key, bytes) catch {
+    instance.deferred.attach(@fromBackingInt(@intCast(area)), key, bytes) catch {
         instance.gpa.free(bytes);
         return 4;
     };
@@ -634,15 +634,15 @@ fn build_request(parsed: RequestJson) !http.Head {
 }
 
 fn parse_method(text: []const u8) ?http.Method {
-    std.debug.assert(@typeInfo(http.Method).@"enum".fields.len > 0);
+    std.debug.assert(@typeInfo(http.Method).@"enum".field_names.len > 0);
 
     if (text.len == 0 or text.len > 16) {
         return null;
     }
 
-    inline for (@typeInfo(http.Method).@"enum".fields) |field| {
-        if (std.ascii.eqlIgnoreCase(field.name, text)) {
-            return @enumFromInt(field.value);
+    inline for (comptime std.meta.tags(http.Method)) |method| {
+        if (std.ascii.eqlIgnoreCase(@tagName(method), text)) {
+            return method;
         }
     }
 

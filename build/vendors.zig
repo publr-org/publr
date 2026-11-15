@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 
 pub const Pin = struct {
     name: []const u8,
@@ -33,7 +34,7 @@ pub fn add_cache_check_step(builder: *std.Build) void {
 
     const run = builder.addRunArtifact(vendor_tool(builder));
 
-    run.addArgs(&.{ "cache-check", builder.graph.zig_exe, builder.pathFromRoot(".") });
+    run.addArgs(&.{ "cache-check", builder.graph.zig_exe, repository.path(builder, ".") });
     run.has_side_effects = true;
 
     const step = builder.step("vendor-cache-check", "Prove a no-op build recompiles no vendor C");
@@ -59,12 +60,12 @@ pub fn add_import_step(builder: *std.Build) void {
 
     for (pins) |pin| {
         const archive_relative = builder.fmt("{s}/{s}", .{ archives_dir, pin.archive });
-        const archive = builder.pathFromRoot(archive_relative);
+        const archive = repository.path(builder, archive_relative);
         const run = builder.addRunArtifact(importer);
 
         run.addArg("import");
         run.addArg(archive);
-        run.addArg(builder.pathFromRoot(builder.fmt("vendor/{s}", .{pin.name})));
+        run.addArg(repository.path(builder, builder.fmt("vendor/{s}", .{pin.name})));
         run.addArgs(&.{ pin.name, pin.version, pin.upstream });
         run.addArgs(pin.keep);
         run.has_side_effects = true;
@@ -97,7 +98,7 @@ pub fn add_library(builder: *std.Build, target: std.Build.ResolvedTarget) *std.B
         .linkage = .static,
         .root_module = builder.createModule(.{
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
             .link_libc = true,
         }),
     });
@@ -120,14 +121,33 @@ pub fn add_library(builder: *std.Build, target: std.Build.ResolvedTarget) *std.B
     return lib;
 }
 
-pub fn add_include_paths(builder: *std.Build, module: *std.Build.Module) void {
-    module.addIncludePath(builder.path("vendor/stb"));
-    module.addIncludePath(builder.path("vendor/libwebp"));
+pub fn add_image_api(builder: *std.Build, module: *std.Build.Module) void {
+    std.debug.assert(module.resolved_target != null);
+    std.debug.assert(module.root_source_file != null);
+
+    const header = builder.addWriteFiles().add("image_api.h", image_api_h);
+    const api = builder.addTranslateC(.{
+        .root_source_file = header,
+        .target = module.resolved_target.?,
+        .optimize = module.optimize orelse .debug,
+    });
+
+    api.addIncludePath(builder.path("vendor/stb"));
+    api.addIncludePath(builder.path("vendor/libwebp"));
+    module.addImport("image_api", api.createModule());
 }
+
+const image_api_h =
+    \\#include "stb_image.h"
+    \\#include "stb_image_resize2.h"
+    \\#include "stb_image_write.h"
+    \\#include "src/webp/encode.h"
+    \\
+;
 
 fn libwebp_sources(builder: *std.Build) []const []const u8 {
     const io = builder.graph.io;
-    const root = std.Io.Dir.cwd().openDir(io, builder.pathFromRoot("vendor/libwebp"), .{}) catch
+    const root = std.Io.Dir.cwd().openDir(io, repository.path(builder, "vendor/libwebp"), .{}) catch
         @panic("vendor/libwebp missing: run `zig build vendor-import`");
 
     var files = std.ArrayList([]const u8).empty;
@@ -168,7 +188,7 @@ fn string_less_than(_: void, left: []const u8, right: []const u8) bool {
 }
 
 fn vendor_tool(builder: *std.Build) *std.Build.Step.Compile {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(builder.graph.zig_exe.len > 0);
 
     return builder.addExecutable(.{
@@ -176,7 +196,7 @@ fn vendor_tool(builder: *std.Build) *std.Build.Step.Compile {
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/vendor.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
 }

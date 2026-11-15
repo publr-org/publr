@@ -9,14 +9,14 @@ const entries = [_][]const u8{
 
 pub fn add_tests(builder: *std.Build, test_step: *std.Build.Step) void {
     std.debug.assert(entries.len == 4);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     for (entries) |entry| {
         const tests = builder.addTest(.{
             .root_module = builder.createModule(.{
                 .root_source_file = builder.path(entry),
                 .target = builder.graph.host,
-                .optimize = .Debug,
+                .optimize = .debug,
             }),
         });
 

@@ -62,8 +62,8 @@ fn group_of(
     previous: ?destinations.Destination,
 ) admin.Error![]const u8 {
     std.debug.assert(destination.page.len > 0);
-    std.debug.assert(previous == null or @intFromEnum(previous.?.group) <=
-        @intFromEnum(destination.group));
+    std.debug.assert(previous == null or @backingInt(previous.?.group) <=
+        @backingInt(destination.group));
 
     if (previous != null and previous.?.group == destination.group) {
         return "";

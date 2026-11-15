@@ -174,7 +174,7 @@ pub fn validate_fields(defs: anytype, problems: anytype) void {
     // Which field's conditions read which: a row of bits per field, closed transitively, so
     // a field reaching itself is a cycle.
     const Row = std.bit_set.StaticBitSet(fields_max);
-    var edges: [fields_max]Row = @splat(Row.initEmpty());
+    var edges: [fields_max]Row = @splat(Row.empty);
 
     for (defs, 0..) |def, index| {
         if (!valid(def.conditions)) {

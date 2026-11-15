@@ -343,7 +343,7 @@ fn assert_form(comptime plugin: []const u8, comptime form: Form) void {
     comptime {
         const label = "plugin " ++ plugin ++ ": form ";
 
-        if (form.read.kind != .read or @typeInfo(form.read.In).@"struct".fields.len != 0) {
+        if (form.read.kind != .read or @typeInfo(form.read.In).@"struct".field_names.len != 0) {
             @compileError(label ++ form.read.name ++ " is a read with no input");
         }
 
@@ -352,7 +352,7 @@ fn assert_form(comptime plugin: []const u8, comptime form: Form) void {
         }
 
         if (form.suggest) |Suggest| {
-            if (Suggest.kind != .read or @typeInfo(Suggest.In).@"struct".fields.len != 0) {
+            if (Suggest.kind != .read or @typeInfo(Suggest.In).@"struct".field_names.len != 0) {
                 @compileError(label ++ Suggest.name ++ " is a read with no input");
             }
         }

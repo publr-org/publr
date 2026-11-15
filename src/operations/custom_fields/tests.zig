@@ -67,7 +67,7 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
     ;
 
     for ([_][]const u8{
-        "{", "x" ** (store.settings.value_len_max + 1), public_schema, invalid_schema,
+        "{", &@as([store.settings.value_len_max + 1]u8, @splat('x')), public_schema, invalid_schema,
     }) |invalid| {
         try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Update, .{
             .group = "user",

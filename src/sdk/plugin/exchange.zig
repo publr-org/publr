@@ -348,7 +348,7 @@ test "the exchange fetches only to its domains, fills its secret, gives up in ti
     const callback: provider.Callback = .{
         .callback_url = "http://localhost/auth/fake/callback",
         .code = port,
-        .code_verifier = "v" ** 48,
+        .code_verifier = &@as([48]u8, @splat('v')),
     };
     const declared = &testing_provider.declared;
 

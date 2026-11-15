@@ -152,7 +152,7 @@ fn check_literals(
 ) !u32 {
     std.debug.assert(path.len > 0);
 
-    const source = try gpa.dupeZ(u8, text);
+    const source = try gpa.dupeSentinel(u8, text, 0);
     defer gpa.free(source);
 
     const missing = try literals.find(gpa, source);
@@ -173,7 +173,7 @@ fn check_options(
 ) !u32 {
     std.debug.assert(path.len > 0);
 
-    const source = try gpa.dupeZ(u8, text);
+    const source = try gpa.dupeSentinel(u8, text, 0);
     defer gpa.free(source);
 
     const found = try options.find(gpa, source);

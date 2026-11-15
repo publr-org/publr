@@ -27,15 +27,15 @@ const names = [_][]const u8{
 };
 
 comptime {
-    for (@typeInfo(Error).error_set.?) |item| {
+    for (@typeInfo(Error).error_set.error_names.?) |item_name| {
         var listed = false;
 
         for (names) |name| {
-            listed = listed or std.mem.eql(u8, name, item.name);
+            listed = listed or std.mem.eql(u8, name, item_name);
         }
 
         if (!listed) {
-            @compileError("the sandbox's wire does not number error." ++ item.name);
+            @compileError("the sandbox's wire does not number error." ++ item_name);
         }
     }
 }
@@ -91,10 +91,10 @@ pub fn Envelope(comptime In: type, comptime Out: type) type {
 }
 
 test "every error round-trips through its code; unknown codes are Invalid" {
-    const all = @typeInfo(Error).error_set.?;
+    const all = @typeInfo(Error).error_set.error_names.?;
 
-    inline for (all) |item| {
-        const err = @field(Error, item.name);
+    inline for (all) |item_name| {
+        const err = @field(Error, item_name);
 
         try std.testing.expectEqual(err, error_of(code_of(err)));
     }

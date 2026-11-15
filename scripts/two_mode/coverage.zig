@@ -358,9 +358,9 @@ fn placed(comptime Struct: type) void {
     comptime {
         std.debug.assert(@typeInfo(Struct) == .@"struct");
 
-        for (std.meta.fields(Struct)) |field| {
-            if (!listed(&exercised, field.name) and !listed(&sandbox_only, field.name)) {
-                @compileError("two-mode: " ++ @typeName(Struct) ++ "." ++ field.name ++
+        for (std.meta.fieldNames(Struct)) |field_name| {
+            if (!listed(&exercised, field_name) and !listed(&sandbox_only, field_name)) {
+                @compileError("two-mode: " ++ @typeName(Struct) ++ "." ++ field_name ++
                     " is neither exercised by a fixture nor named as the sandbox's own");
             }
         }

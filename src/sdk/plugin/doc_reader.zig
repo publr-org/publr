@@ -170,7 +170,7 @@ pub fn read(
     std.debug.assert(key.len > 0 and key.len <= key_len_max);
     std.debug.assert(text.len < std.math.maxInt(u32));
 
-    var tree = try Ast.parse(arena, text, .zig);
+    var tree = try Ast.parse(arena, text, .{});
 
     if (tree.errors.len > 0) {
         return;
@@ -248,7 +248,7 @@ fn collect_definitions(
     std.debug.assert(tree.nodes.len > 0);
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         const declaration = tree.fullVarDecl(node) orelse continue;
         const init = declaration.ast.init_node.unwrap() orelse continue;
 
@@ -282,7 +282,7 @@ fn collect_definitions(
 
 /// The `///` of the file's function a name stands for; null for anything else.
 fn function_doc(arena: std.mem.Allocator, tree: *const Ast, node: Ast.Node.Index) !?[]const u8 {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     if (tree.nodeTag(node) != .identifier) {
         return null;
@@ -311,7 +311,7 @@ fn collect_hooks(
     std.debug.assert(tree.nodes.len > 0);
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         const hooks = option_of(tree, node, "plugin.define", "hooks") orelse continue;
         const list = declared_value(tree, hooks);
         var buffer: [2]Ast.Node.Index = undefined;
@@ -378,7 +378,7 @@ fn imported_member(
 /// The function a hook names, its last argument: `publr.before(Target, run)`, `after`, `on`,
 /// `publr.modify("name", run)`.
 fn run_of(tree: *const Ast, node: Ast.Node.Index) ?Ast.Node.Index {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     var call_buffer: [1]Ast.Node.Index = undefined;
     const call = tree.fullCall(&call_buffer, node) orelse return null;
@@ -405,7 +405,7 @@ fn option_of(
     comptime callee: []const u8,
     comptime field_name: []const u8,
 ) ?Ast.Node.Index {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     var call_buffer: [1]Ast.Node.Index = undefined;
     const call = tree.fullCall(&call_buffer, node) orelse return null;
@@ -430,7 +430,7 @@ fn option_of(
 
 /// A name's value when it names a constant of the file; the node itself otherwise.
 fn declared_value(tree: *const Ast, node: Ast.Node.Index) Ast.Node.Index {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     if (tree.nodeTag(node) != .identifier) {
         return node;
@@ -446,7 +446,7 @@ fn declared_value(tree: *const Ast, node: Ast.Node.Index) Ast.Node.Index {
 
 /// `&.{ ... }` as its `.{ ... }`.
 fn unwrapped(tree: *const Ast, node: Ast.Node.Index) Ast.Node.Index {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     if (tree.nodeTag(node) == .address_of) {
         return tree.nodeData(node).node;
@@ -471,7 +471,7 @@ fn root_named(tree: *const Ast, name: []const u8) ?Ast.Node.Index {
 }
 
 fn node_source(tree: *const Ast, node: Ast.Node.Index) []const u8 {
-    std.debug.assert(@intFromEnum(node) < tree.nodes.len);
+    std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     const start = tree.tokenStart(tree.firstToken(node));
     const last = tree.lastToken(node);
@@ -520,7 +520,7 @@ fn add(
 /// A declaration's or field's name; null for anything else (tests, `comptime` blocks).
 fn name_of(tree: *const Ast, member: Ast.Node.Index) ?[]const u8 {
     std.debug.assert(tree.nodes.len > 0);
-    std.debug.assert(@intFromEnum(member) < tree.nodes.len);
+    std.debug.assert(@backingInt(member) < tree.nodes.len);
 
     if (tree.fullVarDecl(member)) |declaration| {
         return tree.tokenSlice(declaration.ast.mut_token + 1);
@@ -552,7 +552,7 @@ fn name_of(tree: *const Ast, member: Ast.Node.Index) ?[]const u8 {
 /// field typed `struct { ... }`. Null for anything else.
 fn container_of(tree: *const Ast, member: Ast.Node.Index) ?Ast.Node.Index {
     std.debug.assert(tree.nodes.len > 0);
-    std.debug.assert(@intFromEnum(member) < tree.nodes.len);
+    std.debug.assert(@backingInt(member) < tree.nodes.len);
 
     var buffer: [2]Ast.Node.Index = undefined;
 
@@ -576,7 +576,7 @@ fn container_of(tree: *const Ast, member: Ast.Node.Index) ?Ast.Node.Index {
 /// The `///` lines right above a member, joined; null when there are none.
 fn member_doc(arena: std.mem.Allocator, tree: *const Ast, member: Ast.Node.Index) !?[]const u8 {
     std.debug.assert(tree.nodes.len > 0);
-    std.debug.assert(@intFromEnum(member) < tree.nodes.len);
+    std.debug.assert(@backingInt(member) < tree.nodes.len);
 
     const first = tree.firstToken(member);
     var start = first;

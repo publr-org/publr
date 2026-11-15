@@ -23,8 +23,8 @@ pub fn same(documented: anytype, actual: @TypeOf(documented)) Error!void {
                 return;
             }
 
-            inline for (info.fields) |field| {
-                try same(@field(documented, field.name), @field(actual, field.name));
+            inline for (info.field_names) |field_name| {
+                try same(@field(documented, field_name), @field(actual, field_name));
             }
         },
         .optional => {
@@ -71,7 +71,7 @@ fn same_pointer(
 /// present, null where it is null, lists empty or not together, flags equal. Text, numbers
 /// and list elements are not compared.
 pub fn same_json(documented: std.json.Value, actual: std.json.Value) Error!void {
-    std.debug.assert(@intFromEnum(documented) <= @intFromEnum(std.json.Value.object));
+    std.debug.assert(@backingInt(documented) <= @backingInt(std.json.Value.object));
 
     switch (documented) {
         .object => |fields| {

@@ -11,7 +11,7 @@ pub const Space = enum {
     custom,
 
     pub fn base(space: Space) []const u8 {
-        comptime std.debug.assert(@typeInfo(Space).@"enum".fields.len == 5);
+        comptime std.debug.assert(@typeInfo(Space).@"enum".field_names.len == 5);
         return switch (space) {
             .content => "/admin/types",
             .taxonomies => "/admin/structure/taxonomies",
@@ -22,7 +22,7 @@ pub const Space = enum {
     }
 
     pub fn title(space: Space, session: *const admin.Session) admin.Error![]const u8 {
-        comptime std.debug.assert(@typeInfo(Space).@"enum".fields.len == 5);
+        comptime std.debug.assert(@typeInfo(Space).@"enum".field_names.len == 5);
         return switch (space) {
             .content => session.translated("Content types", .{}),
             .taxonomies => session.translated("Taxonomies", .{}),
@@ -33,7 +33,7 @@ pub const Space = enum {
     }
 
     pub fn kind(space: Space) Kind {
-        comptime std.debug.assert(@typeInfo(Space).@"enum".fields.len == 5);
+        comptime std.debug.assert(@typeInfo(Space).@"enum".field_names.len == 5);
         return switch (space) {
             .content, .taxonomies => .record,
             .settings => .settings,

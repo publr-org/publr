@@ -85,9 +85,9 @@ pub fn field_of(comptime In: type) ?[]const u8 {
     comptime {
         std.debug.assert(@typeInfo(In) == .@"struct");
 
-        for (std.meta.fields(In)) |field| {
-            if (field.type == Dimensions) {
-                return field.name;
+        for (std.meta.fieldNames(In), std.meta.fieldTypes(In)) |field_name, FieldType| {
+            if (FieldType == Dimensions) {
+                return field_name;
             }
         }
 
@@ -155,8 +155,8 @@ pub fn lift(comptime In: type, arena: std.mem.Allocator, text: []const u8) ![]co
 fn own_field(comptime In: type, name: []const u8) bool {
     std.debug.assert(name.len <= 64 << 10);
 
-    inline for (std.meta.fields(In)) |field| {
-        if (std.mem.eql(u8, field.name, name)) {
+    inline for (comptime std.meta.fieldNames(In)) |field_name| {
+        if (std.mem.eql(u8, field_name, name)) {
             return true;
         }
     }

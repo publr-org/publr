@@ -13,7 +13,7 @@ pub fn command(comptime Operation: type, out: *std.Io.Writer) Error!void {
 
     const namespace = comptime operation.namespace(Operation.name);
     const verb = comptime operation.verb(Operation.name);
-    const fields = std.meta.fields(Operation.In);
+    const fields = @typeInfo(Operation.In).@"struct".field_names;
     const signature = if (fields.len == 0) "" else " [--field value ...]";
 
     comptime std.debug.assert(namespace.len > 0);
@@ -99,20 +99,24 @@ fn print_field_docs(
     comptime std.debug.assert(docs_name.len > 0);
     comptime std.debug.assert(@typeInfo(Shape) == .@"struct");
 
-    inline for (std.meta.fields(Shape)) |field| {
-        const doc = comptime operation.field_doc(Operation, docs_name, field.name);
+    inline for (
+        comptime std.meta.fieldNames(Shape),
+        comptime std.meta.fieldTypes(Shape),
+        @typeInfo(Shape).@"struct".field_attrs,
+    ) |field_name, FieldType, field_attrs| {
+        const doc = comptime operation.field_doc(Operation, docs_name, field_name);
         const prefix = if (is_input) "--" else "";
         const presence = if (!is_input)
             ""
-        else if (field.defaultValue() == null)
+        else if (field_attrs.defaultValue(FieldType) == null)
             "  (required)"
         else
             "  (optional)";
 
         out.print("\n  {s}{s}  {s}{s}\n", .{
             prefix,
-            field.name,
-            type_label(field.type),
+            field_name,
+            type_label(FieldType),
             presence,
         }) catch return error.WriteFailed;
 
@@ -145,15 +149,19 @@ fn print_example(comptime Operation: type, out: *std.Io.Writer) Error!void {
     out.print("\nExample:\n\n  $ publr {s}{s} {s}", .{ as, namespace, verb }) catch
         return error.WriteFailed;
 
-    inline for (std.meta.fields(Operation.In)) |field| {
-        const value = @field(Operation.example, field.name);
+    inline for (
+        comptime std.meta.fieldNames(Operation.In),
+        comptime std.meta.fieldTypes(Operation.In),
+        @typeInfo(Operation.In).@"struct".field_attrs,
+    ) |field_name, FieldType, field_attrs| {
+        const value = @field(Operation.example, field_name);
         const is_default = comptime blk: {
-            const default = field.defaultValue() orelse break :blk false;
+            const default = field_attrs.defaultValue(FieldType) orelse break :blk false;
             break :blk std.meta.eql(default, value);
         };
 
         if (!is_default and !is_null(value)) {
-            out.print(" --{s} ", .{field.name}) catch return error.WriteFailed;
+            out.print(" --{s} ", .{field_name}) catch return error.WriteFailed;
             try print_example_value(value, out);
         }
     }
@@ -294,8 +302,8 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
         .@"enum" => |info| blk: {
             var joined: []const u8 = "";
 
-            for (info.fields, 0..) |field, index| {
-                joined = joined ++ (if (index == 0) "" else "|") ++ field.name;
+            for (info.field_names, 0..) |field_name, index| {
+                joined = joined ++ (if (index == 0) "" else "|") ++ field_name;
             }
 
             break :blk joined;
@@ -314,10 +322,10 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
         else blk: {
             var joined: []const u8 = "{ ";
 
-            for (info.fields, 0..) |field, index| {
+            for (info.field_names, info.field_types, 0..) |field_name, FieldType, index| {
                 const separator = if (index == 0) "" else ", ";
-                joined = joined ++ separator ++ field.name ++ ": " ++ type_label_depth(
-                    field.type,
+                joined = joined ++ separator ++ field_name ++ ": " ++ type_label_depth(
+                    FieldType,
                     depth + 1,
                 );
             }

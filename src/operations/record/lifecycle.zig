@@ -848,7 +848,7 @@ test "SDK rejects oversized ids and invalid statuses without leaving a transacti
     try harness.init();
     defer harness.deinit();
     var ctx = harness.ctx(.system);
-    const long = "x" ** 129;
+    const long = &@as([129]u8, @splat('x'));
 
     inline for (.{ Publish, DiscardChanges, Delete, Purge }) |Operation| {
         try std.testing.expectError(
@@ -864,7 +864,7 @@ test "SDK rejects oversized ids and invalid statuses without leaving a transacti
         try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
     }
 
-    for ([_][]const u8{ "", "x" ** 33 }) |status| {
+    for ([_][]const u8{ "", &@as([33]u8, @splat('x')) }) |status| {
         try std.testing.expectError(
             error.Invalid,
             registry.SDK.dispatch(

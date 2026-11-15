@@ -630,11 +630,8 @@ fn recipe(
     const docs_path = paths.docs;
     const arena = init.arena.allocator();
     const stubs = try stub_names(init, sdk);
-    // `bulk_memory`: without it, Zig 0.16's wasm backend lowers `@memmove` to a forward
-    // byte loop, wrong when the regions overlap upwards (an `ArrayList.insert`); with it,
-    // to `memory.copy`, which is right. The sandbox runs bulk memory.
     const target = [_][]const u8{
-        "-OReleaseSmall",
+        "-Osmall",
         "-target",
         "wasm32-freestanding",
         "-mcpu=baseline+bulk_memory",

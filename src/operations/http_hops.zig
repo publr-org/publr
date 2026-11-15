@@ -106,7 +106,7 @@ fn one(job: *timed.Job, client: *Client, guard: Guard, leg: Leg) ?[]const u8 {
     };
 
     job.status = response.head.status;
-    kept.status = @intFromEnum(response.head.status);
+    kept.status = @backingInt(response.head.status);
 
     if (response.head.status.class() == .redirect) {
         const location = response.head.location orelse return body_read(job, &response);

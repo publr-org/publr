@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const doc_reader = @import("../src/sdk/plugin/doc_reader.zig");
 const diagnostic = @import("diagnostic.zig");
 
@@ -8,11 +9,11 @@ const files_max = doc_reader.files_max;
 /// source of its docs module; the build stops on any plugin check's problem.
 pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
     std.debug.assert(dir.len > 0);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const io = builder.graph.io;
     const arena = builder.allocator;
-    var root = builder.build_root.handle.openDir(io, dir, .{
+    var root = repository.dir(builder).openDir(io, dir, .{
         .iterate = true,
     }) catch
         diagnostic.fail("{s}: the plugin's folder is missing", .{dir});

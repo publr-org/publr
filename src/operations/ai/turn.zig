@@ -18,7 +18,7 @@ const steps = store.ai_steps;
 
 pub const operations = [_]type{ Begin, Record, Finish };
 
-const example_token = "56a0794f6b1c67062563204a." ++ "0" ** 64;
+const example_token = "56a0794f6b1c67062563204a." ++ &@as([64]u8, @splat('0'));
 
 pub const Begin = struct {
     pub const name = "ai.begin";

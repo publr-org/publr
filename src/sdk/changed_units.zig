@@ -66,7 +66,7 @@ pub const Units = std.ArrayList(Unit);
 pub fn hooks(comptime kinds: []const Kind, comptime keep: Keep) [writes_of(kinds).len]type {
     comptime {
         // Picking the writes and one hook for each, a few steps per write and kind.
-        @setEvalBranchQuota(writes.len * std.meta.fields(Kind).len * 16 + 1000);
+        @setEvalBranchQuota(writes.len * std.meta.fieldNames(Kind).len * 16 + 1000);
 
         const chosen = writes_of(kinds);
         var list: [chosen.len]type = undefined;
@@ -87,7 +87,7 @@ fn writes_of(comptime kinds: []const Kind) []const type {
         std.debug.assert(kinds.len > 0);
 
         // Each write's kinds against the reader's, a few steps each.
-        @setEvalBranchQuota(writes.len * std.meta.fields(Kind).len * 16 + 1000);
+        @setEvalBranchQuota(writes.len * std.meta.fieldNames(Kind).len * 16 + 1000);
 
         var chosen: []const type = &.{};
 
@@ -108,7 +108,7 @@ fn writes_of(comptime kinds: []const Kind) []const type {
 
 pub fn listed(kinds: []const Kind, kind: Kind) bool {
     std.debug.assert(kinds.len > 0);
-    std.debug.assert(kinds.len <= std.meta.fields(Kind).len);
+    std.debug.assert(kinds.len <= std.meta.fieldNames(Kind).len);
 
     for (kinds) |each| {
         if (each == kind) {

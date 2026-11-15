@@ -90,7 +90,7 @@ fn with_flags(
     const wanted = [_]?bool{ choice.drafts, choice.private, choice.internal, choice.publish };
 
     for (wanted, 0..) |value_or_null, index| {
-        const flag: permission.Flag = @enumFromInt(index);
+        const flag: permission.Flag = @fromBackingInt(@intCast(index));
         const value = value_or_null orelse continue;
 
         if (value and !as_asked.flag(flag)) {
@@ -203,9 +203,7 @@ pub fn problem(manifest: *const sandboxed_plugin.Manifest) ?[]const u8 {
             return "a permission names too many types";
         }
 
-        inline for (std.meta.fields(permission.Flag)) |field| {
-            const flag: permission.Flag = @enumFromInt(field.value);
-
+        inline for (comptime std.meta.tags(permission.Flag)) |flag| {
             const takes = std.mem.indexOfScalar(permission.Flag, entry.flags, flag) != null;
 
             if (held.flag(flag) and !takes) {

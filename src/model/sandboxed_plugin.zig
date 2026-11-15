@@ -801,9 +801,7 @@ pub fn as_set(asked: permission.Held, stored: []const permission.Held) permissio
 
     set.domains = kept.domains;
 
-    inline for (std.meta.fields(permission.Flag)) |field| {
-        const flag: permission.Flag = @enumFromInt(field.value);
-
+    inline for (comptime std.meta.tags(permission.Flag)) |flag| {
         set.set(flag, asked.flag(flag) and kept.flag(flag));
     }
 

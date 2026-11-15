@@ -31,6 +31,7 @@ const Flags = @import("taxonomies/flags.zig");
 const Hello = @import("operations/hello.zig");
 const Hi = @import("operations/hi.zig");
 const Echo = @import("operations/echo.zig");
+const Encode = @import("operations/encode.zig");
 const Note = @import("operations/note.zig");
 const ReadLogs = @import("operations/logs.zig");
 const Page = @import("operations/page.zig");
@@ -172,6 +173,7 @@ const webhooks = [_]type{Ping.webhook};
 const operations = [_]type{
     Hello.operation,
     Echo.operation,
+    Encode.operation,
     Note.operation,
     ReadLogs.operation,
     Page.operation,

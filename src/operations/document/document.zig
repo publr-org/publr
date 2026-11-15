@@ -606,7 +606,7 @@ pub fn copy_problems(ctx: *Ctx, problems: *const model.field.Problems) Error![]c
 pub fn filled(value: ?Value) bool {
     const held = value orelse return false;
 
-    std.debug.assert(@intFromEnum(held) <= @intFromEnum(Value.object));
+    std.debug.assert(@backingInt(held) <= @backingInt(Value.object));
 
     return switch (held) {
         .null => false,

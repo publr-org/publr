@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 
 /// The smoke drives `exe` (with apps to serve) through every entry point, and `bare` (with
 /// none) through what a project without apps answers; `plugin` is the module it installs,
@@ -12,14 +13,14 @@ pub fn add_check(
     native: *std.Build.Step.Compile,
     installable: std.Build.LazyPath,
 ) *std.Build.Step {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const smoke = builder.addExecutable(.{
         .name = "smoke",
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/smoke.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
 
@@ -27,7 +28,7 @@ pub fn add_check(
 
     run.addArtifactArg(exe);
     run.addArtifactArg(bare);
-    run.addArg(builder.pathFromRoot(".zig-cache/smoke"));
+    run.addArg(repository.path(builder, ".zig-cache/smoke"));
     run.addFileArg(sandboxed_plugin);
     run.addDirectoryArg(builder.path(@import("sandboxed_plugins.zig").fixture_dir));
     run.addArtifactArg(native);
@@ -42,21 +43,26 @@ pub fn add_check(
 
 /// The version `build.zig.zon` says, which `--version` and `/api/health` answer.
 pub fn version(builder: *std.Build) []const u8 {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const io = builder.graph.io;
     const gpa = builder.allocator;
     const limit: std.Io.Limit = .limited(1 << 16);
-    const handle = builder.build_root.handle;
+    const handle = repository.dir(builder);
     const text = handle.readFileAllocOptions(io, "build.zig.zon", gpa, limit, .of(u8), 0) catch
         @panic("build.zig.zon is unreadable");
     const Manifest = struct {
         version: []const u8,
     };
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
     const options: std.zon.parse.Options = .{
+        .gpa = gpa,
+        .arena = gpa,
+        .source = text,
+        .diagnostics = &diagnostics,
         .ignore_unknown_fields = true,
     };
-    const manifest = std.zon.parse.fromSliceAlloc(Manifest, gpa, text, null, options) catch
+    const manifest = std.zon.parse.fromSlice(Manifest, options) catch
         @panic("build.zig.zon has no .version");
 
     std.debug.assert(manifest.version.len > 0);

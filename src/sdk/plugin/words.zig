@@ -62,9 +62,9 @@ pub fn filled(arena: std.mem.Allocator, comptime text: []const u8, values: anyty
 
     var out: []const u8 = text;
 
-    inline for (std.meta.fields(@TypeOf(values))) |field| {
-        const hole = "{" ++ field.name ++ "}";
-        const value = try shown(arena, @field(values, field.name));
+    inline for (comptime std.meta.fieldNames(@TypeOf(values))) |field_name| {
+        const hole = "{" ++ field_name ++ "}";
+        const value = try shown(arena, @field(values, field_name));
 
         out = try std.mem.replaceOwned(u8, arena, out, hole, value);
     }

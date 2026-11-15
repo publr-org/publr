@@ -742,11 +742,7 @@ fn run_of(context: Context, def: Def, items: []const Value, start: u32) Error!Ru
     std.debug.assert(end > start);
 
     const values: Value = .{
-        .array = .{
-            .items = @constCast(items[start..end]),
-            .capacity = end - start,
-            .allocator = context.arena,
-        },
+        .array = .fromOwnedSlice(context.arena, @constCast(items[start..end])),
     };
     const more = try print(context.arena, "{d}", .{end - start});
 
@@ -1577,8 +1573,8 @@ fn fill_input(
 
 /// The status registry's colour as the design system's status tone.
 fn tone_of(color: model.status.Color) []const u8 {
-    std.debug.assert(@intFromEnum(color) <= 4);
-    std.debug.assert(@typeInfo(model.status.Color).@"enum".fields.len == 5);
+    std.debug.assert(@backingInt(color) <= 4);
+    std.debug.assert(@typeInfo(model.status.Color).@"enum".field_names.len == 5);
 
     return switch (color) {
         .neutral => "neutral",
@@ -1642,7 +1638,7 @@ fn first_handle_of(types: []const TypeOption) []const u8 {
 
 fn array_items(current: ?Value) []const Value {
     std.debug.assert(items_max > 0);
-    std.debug.assert(current == null or @intFromEnum(current.?) >= 0);
+    std.debug.assert(current == null or @backingInt(current.?) >= 0);
 
     const value = current orelse return &.{};
 
@@ -1756,14 +1752,17 @@ fn convert_all(
         }
 
         // A value in a list has no help line of its own: the field's row shows it once.
-        inline for (std.meta.fields(Instance)) |info| {
-            if (comptime !std.mem.eql(u8, info.name, "options") and @hasField(Item, info.name)) {
-                const Target = @FieldType(Item, info.name);
+        inline for (
+            comptime std.meta.fieldNames(Instance),
+            comptime std.meta.fieldTypes(Instance),
+        ) |info_name, InfoType| {
+            if (comptime !std.mem.eql(u8, info_name, "options") and @hasField(Item, info_name)) {
+                const Target = @FieldType(Item, info_name);
 
-                @field(items[index], info.name) = if (comptime Target == info.type)
-                    @field(instance, info.name)
+                @field(items[index], info_name) = if (comptime Target == InfoType)
+                    @field(instance, info_name)
                 else
-                    try copied(Target, arena, @field(instance, info.name));
+                    try copied(Target, arena, @field(instance, info_name));
             }
         }
 
@@ -1781,11 +1780,14 @@ fn copied(comptime Target: type, arena: std.mem.Allocator, source: anytype) Erro
     std.debug.assert(source.len <= items_max);
 
     for (source, out) |item, *entry| {
-        inline for (std.meta.fields(Element)) |info| {
-            const value = @field(item, info.name);
+        inline for (
+            comptime std.meta.fieldNames(Element),
+            comptime std.meta.fieldTypes(Element),
+        ) |info_name, InfoType| {
+            const value = @field(item, info_name);
 
-            @field(entry, info.name) = if (comptime @typeInfo(info.type) == .@"enum")
-                std.meta.stringToEnum(info.type, @tagName(value)).?
+            @field(entry, info_name) = if (comptime @typeInfo(InfoType) == .@"enum")
+                std.meta.stringToEnum(InfoType, @tagName(value)).?
             else
                 value;
         }

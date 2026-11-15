@@ -106,7 +106,7 @@ fn default_signals() void {
     std.posix.sigaction(.INT, &action, null);
     std.posix.sigprocmask(std.posix.SIG.UNBLOCK, &stopping, null);
 
-    std.debug.assert(@intFromEnum(std.posix.SIG.TERM) != @intFromEnum(std.posix.SIG.INT));
+    std.debug.assert(@backingInt(std.posix.SIG.TERM) != @backingInt(std.posix.SIG.INT));
 }
 
 /// The worker `serve` keeps running beside it.

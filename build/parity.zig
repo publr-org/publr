@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const core = @import("core.zig");
 const sandboxed_plugins = @import("sandboxed_plugins.zig");
 
@@ -11,7 +12,7 @@ pub fn add_check(
     const exe = checks.fixture_exe;
     const library = checks.fixture;
 
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(library.root_source_file != null);
 
     const parity = builder.addExecutable(.{
@@ -22,12 +23,12 @@ pub fn add_check(
     const run = builder.addRunArtifact(parity);
 
     run.addArtifactArg(exe);
-    run.addArg(builder.pathFromRoot(".zig-cache/parity"));
+    run.addArg(repository.path(builder, ".zig-cache/parity"));
     run.has_side_effects = true;
     // The official plugins listed from a fixture, never the plugin server: no network.
     run.setEnvironmentVariable(
         "PUBLR_PLUGIN_CATALOG",
-        builder.pathFromRoot("scripts/parity/catalog"),
+        repository.path(builder, "scripts/parity/catalog"),
     );
 
     std.debug.assert(run.argv.items.len == 3);
@@ -41,7 +42,7 @@ pub fn add_tests(
     test_step: *std.Build.Step,
     fixture_plugins: sandboxed_plugins.SandboxedPlugins,
 ) void {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(library.root_source_file != null);
 
     const tests = builder.addTest(.{

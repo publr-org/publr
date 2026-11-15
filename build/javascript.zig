@@ -10,7 +10,7 @@ pub fn add(builder: *std.Build, module: *std.Build.Module) void {
         .linkage = .static,
         .root_module = builder.createModule(.{
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
             .link_libc = true,
         }),
     });
@@ -23,16 +23,23 @@ pub fn add(builder: *std.Build, module: *std.Build.Module) void {
         .file = builder.path("src/template/javascript/values.c"),
     });
     module.linkLibrary(library);
-    module.addIncludePath(builder.path("vendor/quickjs"));
-    module.addIncludePath(builder.path("src/template/javascript"));
+
+    const api = builder.addTranslateC(.{
+        .root_source_file = builder.path("src/template/javascript/values.h"),
+        .target = target,
+        .optimize = module.optimize orelse .debug,
+    });
+
+    api.addIncludePath(builder.path("vendor/quickjs"));
+    module.addImport("javascript_api", api.createModule());
 }
 
 pub fn tests(
     builder: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
 ) void {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     const module = builder.createModule(.{
         .root_source_file = builder.path("src/template.zig"),
         .target = target,

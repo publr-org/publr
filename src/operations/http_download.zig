@@ -78,7 +78,7 @@ pub fn download(
     };
 
     return .{
-        .status = @intFromEnum(result.status),
+        .status = @backingInt(result.status),
         .bytes = result.body,
         .buffer = result.body,
     };

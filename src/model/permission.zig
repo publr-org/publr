@@ -88,15 +88,15 @@ pub fn tier_of_held(entry: *const Permission, held: *const Held) Tier {
     var tier = entry.tier;
 
     if (entry.wide_tier) |wide| {
-        if (held.names().len == 0 and @intFromEnum(wide) > @intFromEnum(tier)) {
+        if (held.names().len == 0 and @backingInt(wide) > @backingInt(tier)) {
             tier = wide;
         }
     }
 
     for (entry.flags) |which| {
-        const raised = flag_tiers[@intFromEnum(which)];
+        const raised = flag_tiers[@backingInt(which)];
 
-        if (held.flag(which) and @intFromEnum(raised) > @intFromEnum(tier)) {
+        if (held.flag(which) and @backingInt(raised) > @backingInt(tier)) {
             tier = raised;
         }
     }

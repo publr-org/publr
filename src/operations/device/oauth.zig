@@ -21,7 +21,7 @@ pub const example_client_id = "pc_Q3Vyc29yCmh0dHA6Ly9sb2NhbGhvc3Q6ODc4Ny9jYWxsYm
 pub const example_redirect = "http://localhost:8787/callback";
 pub const example_challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 /// The code an approved client was sent back with, in `device exchange`'s example.
-pub const example_code = "7e1a" ** 16;
+pub const example_code = "7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a7e1a";
 
 pub const Authorize = struct {
     pub const name = "device.authorize";

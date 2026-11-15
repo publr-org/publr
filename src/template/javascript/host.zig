@@ -86,7 +86,7 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
 
             if (std.mem.eql(u8, method, "languages")) {
                 const text = try frame.ctx.languages_json();
-                const terminated = try vm.arena.dupeZ(u8, text);
+                const terminated = try vm.arena.dupeSentinel(u8, text, 0);
 
                 const listed = api.JS_ParseJSON(
                     vm.context,
@@ -457,7 +457,7 @@ fn json(vm: *VM, value: std.json.Value) !Value {
     const text = try std.json.Stringify.valueAlloc(vm.arena, value, .{});
     // QuickJS reads to a terminating NUL, not to the length given: without one it reads
     // whatever the arena holds next.
-    const terminated = try vm.arena.dupeZ(u8, text);
+    const terminated = try vm.arena.dupeSentinel(u8, text, 0);
 
     std.debug.assert(terminated.len == text.len);
 
@@ -498,7 +498,7 @@ fn viewed(vm: *VM, frame: anytype, args: Value) !Value {
 fn json_text(vm: *VM, text: []const u8) !Value {
     std.debug.assert(text.len > 0);
 
-    const terminated = try vm.arena.dupeZ(u8, text);
+    const terminated = try vm.arena.dupeSentinel(u8, text, 0);
 
     return vm.check(api.JS_ParseJSON(vm.context, terminated.ptr, terminated.len, "publr:query"));
 }
@@ -602,7 +602,7 @@ fn parsed(vm: *VM, value: Value) !std.json.Value {
 }
 
 fn scalar_text(arena: std.mem.Allocator, value: std.json.Value) ![]const u8 {
-    std.debug.assert(@intFromEnum(value) <= 8);
+    std.debug.assert(@backingInt(value) <= 8);
 
     return switch (value) {
         .string => |text| text,

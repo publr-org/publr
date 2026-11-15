@@ -410,7 +410,7 @@ pub const Commands = struct {
 };
 
 test "a session reads its port, key and build; one written before builds were kept has 0" {
-    const key = "a" ** key_len;
+    const key = &@as([key_len]u8, @splat('a'));
     const addressed = parse("8080 " ++ key ++ " 7 https://publr.local\n").?;
 
     try std.testing.expectEqualStrings("https://publr.local", addressed.url);

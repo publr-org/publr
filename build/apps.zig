@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const diagnostic = @import("diagnostic.zig");
 const embed = @import("apps/embed.zig");
 
@@ -137,7 +138,7 @@ fn middleware(
     std.debug.assert(library.root_source_file != null);
 
     const path = builder.pathJoin(&.{ app_dir, "middleware.zig" });
-    const root = if (builder.build_root.handle.access(builder.graph.io, path, .{})) |_|
+    const root = if (repository.dir(builder).access(builder.graph.io, path, .{})) |_|
         builder.path(path)
     else |_|
         builder.addWriteFiles().add("middleware.zig", builder.fmt(
@@ -169,7 +170,7 @@ fn discover(builder: *std.Build, dir: []const u8, apps_max: u32) []const []const
     std.debug.assert(apps_max > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{
+    var root = repository.dir(builder).openDir(io, dir, .{
         .iterate = true,
     }) catch {
         if (!std.mem.eql(u8, dir, dir_default)) {
@@ -213,7 +214,7 @@ pub fn add_check(
     target: std.Build.ResolvedTarget,
 ) void {
     std.debug.assert(exe.kind == .exe);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     if (!target.query.isNative()) {
         return;

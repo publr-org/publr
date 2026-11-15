@@ -65,7 +65,7 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
 
                 const arena = ctx.arena();
                 // `.{}` is an empty tuple, which JSON writes as `[]`: no parameters are `{}`.
-                const bound = if (comptime std.meta.fields(@TypeOf(params)).len == 0)
+                const bound = if (comptime std.meta.fieldNames(@TypeOf(params)).len == 0)
                     "{}"
                 else
                     std.json.Stringify.valueAlloc(arena, params, .{}) catch {

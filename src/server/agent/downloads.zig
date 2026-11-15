@@ -86,25 +86,25 @@ pub const Downloads = struct {
         downloads.mutex.lockUncancelable(downloads.io);
         defer downloads.mutex.unlock(downloads.io);
 
-        var counts = [_]u32{0} ** 4;
+        var counts: [4]u32 = @splat(0);
         var failures: std.ArrayList(u8) = .empty;
 
         for (downloads.items[0..downloads.count]) |item| {
-            counts[@intFromEnum(item.state)] += 1;
+            counts[@backingInt(item.state)] += 1;
 
             if (item.state == .failed) {
                 try failures.print(arena, "\n- {s}: {s}", .{ item.url, item.why });
             }
         }
 
-        const pending = counts[@intFromEnum(State.waiting)] + counts[@intFromEnum(State.working)];
+        const pending = counts[@backingInt(State.waiting)] + counts[@backingInt(State.working)];
 
         return std.fmt.allocPrint(arena, "{d} files: {d} downloaded, {d} still on the way, " ++
             "{d} failed (into the media folder; `media sync` takes in what has arrived).{s}", .{
             downloads.count,
-            counts[@intFromEnum(State.done)],
+            counts[@backingInt(State.done)],
             pending,
-            counts[@intFromEnum(State.failed)],
+            counts[@backingInt(State.failed)],
             failures.items,
         });
     }

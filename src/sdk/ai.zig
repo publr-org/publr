@@ -214,7 +214,7 @@ pub fn text_of_html(arena: std.mem.Allocator, html: []const u8) ![]const u8 {
         if (starts_tag(tag, "script") or starts_tag(tag, "style")) {
             const close = if (starts_tag(tag, "script")) "</script" else "</style";
 
-            index = std.ascii.indexOfIgnoreCasePos(html, index, close) orelse html.len;
+            index = std.ascii.findIgnoreCasePos(html, index, close) orelse html.len;
         } else if (starts_tag(tag, "a ")) {
             link = attribute(tag, "href");
         } else if (starts_tag(tag, "img ")) {

@@ -678,11 +678,14 @@ test "secrets: every operation with a field the net catches declares it" {
     inline for (registry.SDK.operations) |Operation| {
         const declared = comptime sdk.trail.secret_of(Operation);
 
-        inline for (@typeInfo(Operation.In).@"struct".fields) |field| {
-            const text = field.type == []const u8 or field.type == ?[]const u8;
+        inline for (
+            comptime std.meta.fieldNames(Operation.In),
+            comptime std.meta.fieldTypes(Operation.In),
+        ) |field_name, FieldType| {
+            const text = FieldType == []const u8 or FieldType == ?[]const u8;
 
-            if (text and model.secret.caught(field.name) and !listed(declared, field.name)) {
-                try missing.append(std.testing.allocator, Operation.name ++ "." ++ field.name);
+            if (text and model.secret.caught(field_name) and !listed(declared, field_name)) {
+                try missing.append(std.testing.allocator, Operation.name ++ "." ++ field_name);
             }
         }
     }

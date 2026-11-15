@@ -268,7 +268,7 @@ fn environment_value(arena: std.mem.Allocator, secret_name: []const u8) Error!?[
     std.debug.assert(secret_name.len > 0);
     std.debug.assert(secret_name.len <= environment.name_len_max);
 
-    const terminated = arena.dupeZ(u8, secret_name) catch return error.OutOfMemory;
+    const terminated = arena.dupeSentinel(u8, secret_name, 0) catch return error.OutOfMemory;
 
     return environment.get(terminated);
 }

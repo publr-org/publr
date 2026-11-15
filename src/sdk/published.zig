@@ -38,7 +38,7 @@ pub fn contracts(comptime interface: Interface) type {
 
         var names: [list.len][]const u8 = undefined;
         var types: [list.len]type = undefined;
-        var attributes: [list.len]std.builtin.Type.StructField.Attributes = undefined;
+        var attributes: [list.len]std.builtin.Type.Struct.FieldAttributes = undefined;
 
         for (list, &names, &types, &attributes) |each, *name, *field_type, *attribute| {
             const Published = contract.published(interface.plugin, each);

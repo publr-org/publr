@@ -2658,7 +2658,7 @@ test "the limits refuse an app that is too big, naming what" {
     try testing.expectEqualStrings(named, diagnostic.message);
     testing.allocator.free(diagnostic.message);
 
-    const many = [_]Source{index_page} ** (templates_max + 1);
+    const many: [templates_max + 1]Source = @splat(index_page);
     const too_many = load(testing.allocator, &many, &diagnostic, .{});
     try testing.expectError(error.TooManyTemplates, too_many);
 
@@ -2667,7 +2667,7 @@ test "the limits refuse an app that is too big, naming what" {
     try testing.expectError(error.NoPages, none);
 
     // One element more than the limit allows.
-    const deep = "<div>" ** (nesting_max + 1) ++ "</div>" ** (nesting_max + 1);
+    const deep = repeated(nesting_max + 1, "<div>") ++ repeated(nesting_max + 1, "</div>");
     const message = try refuse(&.{source("content/index.publr", deep)}, .{});
     defer testing.allocator.free(message);
     const nested = "content/index.publr: markup nests deeper than 64 levels";
@@ -2836,7 +2836,7 @@ test "invalid app paths and error-only apps fail loading gracefully" {
         "content/../index.publr",
         "content//index.publr",
         "content/index",
-        "content/" ++ "x" ** 1024 ++ ".publr",
+        "content/" ++ &@as([1024]u8, @splat('x')) ++ ".publr",
     }) |rel| {
         const sources = [_]Source{.{
             .rel = rel,
@@ -2862,7 +2862,7 @@ test "invalid app paths and error-only apps fail loading gracefully" {
 
 test "deep expressions and empty request names fail at app compilation" {
     for ([_][]const u8{
-        "<p>{" ++ "(" ** 100 ++ "'text'" ++ ")" ** 100 ++ "}</p>",
+        "<p>{" ++ &@as([100]u8, @splat('(')) ++ "'text'" ++ &@as([100]u8, @splat(')')) ++ "}</p>",
         "---\nconst header_value = Publr.request.header('');\n---\n<p>Hi</p>",
         "---\nconst cookie_value = Publr.request.cookie('');\n---\n<p>Hi</p>",
     }) |template_text| {
@@ -2939,4 +2939,10 @@ test "Publr.build.managed() picks what a page shows where it runs, and keeps it 
     try testing.expect(std.mem.indexOf(u8, on_own, "Dashboard") == null);
     try testing.expect(std.mem.indexOf(u8, on_cloud, "Dashboard") != null);
     try testing.expect(std.mem.indexOf(u8, on_cloud, "Deploy now") == null);
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

@@ -231,10 +231,15 @@ fn read_config(
     const path = try std.fs.path.join(arena, &.{ app_dir, "app.zon" });
     const limit: std.Io.Limit = .limited(zon_bytes_max);
     const text = try std.Io.Dir.cwd().readFileAllocOptions(io, path, arena, limit, .of(u8), 0);
-    var diagnostics: std.zon.parse.Diagnostics = .{};
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
 
-    return std.zon.parse.fromSliceAlloc(model_app.Config, arena, text, &diagnostics, .{}) catch {
-        reason.set("[{s}] app.zon: {f}", .{ folder, diagnostics });
+    return std.zon.parse.fromSlice(model_app.Config, .{
+        .gpa = arena,
+        .arena = arena,
+        .source = text,
+        .diagnostics = &diagnostics,
+    }) catch {
+        reason.set("[{s}] {f}", .{ folder, diagnostics.fmt("app.zon") });
         return error.InvalidApp;
     };
 }

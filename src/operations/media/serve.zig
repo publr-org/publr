@@ -43,7 +43,7 @@ pub const File = struct {
         .mime_type = "image/jpeg",
         .size = 482_113,
         .private = false,
-        .hash = "9f2c" ** 16,
+        .hash = "9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c",
         .focal_x = 50,
         .focal_y = 40,
     };

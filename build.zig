@@ -12,8 +12,7 @@ pub fn build(builder: *std.Build) void {
     @import("build/javascript.zig").tests(builder, target, optimize);
     const from = core.sources(builder);
 
-    std.debug.assert(builder.build_root.path != null);
-    std.debug.assert(builder.args == null or builder.args.?.len > 0);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const library = core.add_module(builder, target, optimize, from);
     const exe = builder.addExecutable(.{
@@ -24,7 +23,7 @@ pub fn build(builder: *std.Build) void {
     const fixture_plugins = sandboxed_plugins.add(builder, exe, sandboxed_plugins.fixture_dir);
     const checks = tests.add(builder, target, optimize, from, library, fixture_plugins);
     const fmt_check = builder.addFmt(.{
-        .paths = &.{ "build.zig", "build", "src", "scripts" },
+        .paths = builder.pathList(&.{ "build.zig", "build", "src", "scripts" }),
         .check = true,
     });
 
@@ -40,9 +39,7 @@ pub fn build(builder: *std.Build) void {
 
     run_cmd.step.dependOn(builder.getInstallStep());
 
-    if (builder.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     builder.step("run", "Run publr").dependOn(&run_cmd.step);
     verify.add(builder, .{

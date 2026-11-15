@@ -12,7 +12,7 @@ pub fn add_check(builder: *std.Build, from: core.Sources) *std.Build.Step {
 
     const check = builder.addExecutable(.{
         .name = "publr-wasm-check",
-        .root_module = core.add_module(builder, target, .ReleaseSmall, from),
+        .root_module = core.add_module(builder, target, .small, from),
     });
 
     return &check.step;

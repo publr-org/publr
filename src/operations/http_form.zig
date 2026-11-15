@@ -111,7 +111,7 @@ test "a form's text and files are written as multipart, files as their bytes" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const seed = [_]u8{0xab} ** (boundary_len / 2);
+    const seed: [boundary_len / 2]u8 = @splat(0xab);
     const written = try write(arena_state.allocator(), &.{
         .{
             .name = "model",
@@ -140,7 +140,7 @@ test "a form's headers stay on one line, and a file must be base64" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const seed = [_]u8{0} ** (boundary_len / 2);
+    const seed: [boundary_len / 2]u8 = @splat(0);
 
     try std.testing.expectError(error.Invalid, write(arena_state.allocator(), &.{.{
         .name = "a\"b",

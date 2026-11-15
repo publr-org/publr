@@ -281,7 +281,7 @@ fn days_before(year: u32, month: u32) i64 {
     var index: u32 = 1;
 
     while (index < month) : (index += 1) {
-        days += std.time.epoch.getDaysInMonth(@intCast(year), @enumFromInt(index));
+        days += std.time.epoch.getDaysInMonth(@intCast(year), @fromBackingInt(@intCast(index)));
     }
 
     return days;

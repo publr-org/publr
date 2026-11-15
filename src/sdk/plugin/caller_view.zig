@@ -68,7 +68,7 @@ pub const View = struct {
 /// REST. `job` is the queued job running (`<plugin>.<name>`), empty outside one: Publr
 /// calling for it is that plugin calling.
 pub fn from_of(caller: Caller, through_app: bool, over_api: bool, job: []const u8) From {
-    std.debug.assert(@intFromEnum(caller) <= @intFromEnum(Caller.plugin));
+    std.debug.assert(@backingInt(caller) <= @backingInt(Caller.plugin));
     std.debug.assert(job.len == 0 or std.mem.indexOfScalar(u8, job, '.') != null);
 
     if (through_app and caller != .plugin and caller != .system) {

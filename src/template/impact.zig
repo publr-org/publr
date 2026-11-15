@@ -142,7 +142,7 @@ fn reach(
     std.debug.assert(start < program.templates.len);
     std.debug.assert(type_id.len > 0);
 
-    var visited = std.StaticBitSet(templates_max).initEmpty();
+    var visited = std.StaticBitSet(templates_max).empty;
     var queue: [templates_max]u32 = undefined;
     var head: u32 = 0;
     var tail: u32 = 1;
@@ -159,7 +159,7 @@ fn reach(
         const template = &program.templates[index];
         const own = direct(template, type_id);
 
-        if (@intFromEnum(own) > @intFromEnum(found.reads)) {
+        if (@backingInt(own) > @backingInt(found.reads)) {
             found = .{
                 .reads = own,
                 .via = if (index == start) "" else template.rel,
@@ -200,7 +200,7 @@ fn direct(template: *const Template, type_id: []const u8) Reads {
             else => .none,
         };
 
-        if (@intFromEnum(own) > @intFromEnum(reads)) {
+        if (@backingInt(own) > @backingInt(reads)) {
             reads = own;
         }
     }

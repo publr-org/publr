@@ -31,13 +31,13 @@ pub fn FieldHelp(comptime Doc: type) type {
 /// The value a modifier's `run` takes: its second parameter, by pointer.
 pub fn ValueOf(comptime run: anytype) type {
     comptime {
-        const params = @typeInfo(@TypeOf(run)).@"fn".params;
+        const params = @typeInfo(@TypeOf(run)).@"fn".param_types;
 
-        if (params.len != 2 or @typeInfo(params[1].type.?) != .pointer) {
+        if (params.len != 2 or @typeInfo(params[1].?) != .pointer) {
             @compileError("a modifier is `fn (ctx: *publr.Ctx, value: *Value) publr.Error!void`");
         }
 
-        return @typeInfo(params[1].type.?).pointer.child;
+        return @typeInfo(params[1].?).pointer.child;
     }
 }
 

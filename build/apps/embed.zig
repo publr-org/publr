@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("../repository.zig");
 const diagnostic = @import("../diagnostic.zig");
 const client_files = @import("../../src/ui/client_files.zig");
 const imports = @import("../../src/template/imports.zig");
@@ -58,8 +59,8 @@ pub fn interactive(
 
     run.addArg("--engine");
     run.addDirectoryArg(builder.path(dir));
-    run.addArg(builder.pathFromRoot("../ui/src/components"));
-    run.addArg(builder.pathFromRoot("../icons/icons"));
+    run.addArg(repository.path(builder, "../ui/src/components"));
+    run.addArg(repository.path(builder, "../icons/icons"));
 
     const out = run.addOutputDirectoryArg("interactive");
 
@@ -104,7 +105,7 @@ pub fn optional_file(
 
     const path = builder.pathJoin(&.{ app_dir, rel });
 
-    if (builder.build_root.handle.access(builder.graph.io, path, .{})) |_| {
+    if (repository.dir(builder).access(builder.graph.io, path, .{})) |_| {
         return builder.path(path);
     } else |_| {
         return placeholders.add(std.fs.path.basename(rel), fallback);
@@ -191,7 +192,7 @@ fn write_imported(
             const inside = target[imports.outside_prefix.len..];
             const path = builder.pathJoin(&.{ apps_dir, inside });
 
-            builder.build_root.handle.access(io, path, .{}) catch continue;
+            repository.dir(builder).access(io, path, .{}) catch continue;
 
             if (queue.items.len == templates_max) {
                 diagnostic.fail("{s} imports more than {d} templates", .{ app_dir, templates_max });
@@ -213,7 +214,7 @@ fn specs_of(builder: *std.Build, path: []const u8) []const []const u8 {
 
     const io = builder.graph.io;
     const limit: std.Io.Limit = .limited(template_bytes_max);
-    const data = builder.build_root.handle.readFileAlloc(io, path, builder.allocator, limit) catch
+    const data = repository.dir(builder).readFileAlloc(io, path, builder.allocator, limit) catch
         diagnostic.fail("cannot read {s}", .{path});
 
     return imports.specs(@import("pjsx").template_syntax, builder.allocator, data, path) catch
@@ -331,7 +332,7 @@ pub fn files_under(builder: *std.Build, dir: []const u8, extension: []const u8) 
     std.debug.assert(extension.len <= 16);
 
     const io = builder.graph.io;
-    const opened = builder.build_root.handle.openDir(io, dir, .{
+    const opened = repository.dir(builder).openDir(io, dir, .{
         .iterate = true,
     });
     var handle = opened catch |err| return missing_or_fail(dir, err);

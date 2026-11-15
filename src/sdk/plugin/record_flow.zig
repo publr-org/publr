@@ -122,7 +122,7 @@ pub fn TransitionHooks(comptime options: anytype) type {
         names = names ++ [_][]const u8{ "trash", "restore", "destroy" };
 
         var types: [names.len]type = undefined;
-        var attributes: [names.len]std.builtin.Type.StructField.Attributes = undefined;
+        var attributes: [names.len]std.builtin.Type.Struct.FieldAttributes = undefined;
 
         for (names, &types, &attributes) |name, *field_type, *attribute| {
             const Hook = EventPoint(handle ++ "_" ++ name);
@@ -164,9 +164,9 @@ pub fn held_status(
     std.debug.assert(handle.len > 0);
     std.debug.assert(stored.len > 0);
 
-    inline for (std.meta.fields(Status)) |field| {
-        if (std.mem.eql(u8, stored, comptime status_id(handle, field.name))) {
-            return @field(Held(Status), field.name);
+    inline for (comptime std.meta.fieldNames(Status)) |field_name| {
+        if (std.mem.eql(u8, stored, comptime status_id(handle, field_name))) {
+            return @field(Held(Status), field_name);
         }
     }
 

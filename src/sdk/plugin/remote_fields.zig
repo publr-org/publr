@@ -15,16 +15,16 @@ pub fn of(comptime record_name: []const u8, comptime Fields: type) []const UsedF
     comptime {
         const info = @typeInfo(Fields).@"struct";
 
-        if (info.fields.len > plugin_contracts.fields_max) {
+        if (info.field_names.len > plugin_contracts.fields_max) {
             @compileError("remote record " ++ record_name ++ " lists more than 64 fields");
         }
 
-        var list: [info.fields.len]UsedField = undefined;
+        var list: [info.field_names.len]UsedField = undefined;
 
-        for (info.fields, &list) |field, *used| {
+        for (info.field_names, info.field_types, &list) |field_name, FieldType, *used| {
             used.* = .{
-                .name = field.name,
-                .holds = holds_of(record_name, field.name, field.type),
+                .name = field_name,
+                .holds = holds_of(record_name, field_name, FieldType),
             };
         }
 
@@ -106,21 +106,21 @@ pub fn declared_of(
     comptime {
         const info = @typeInfo(Document).@"struct";
 
-        if (info.fields.len > plugin_contracts.fields_max) {
+        if (info.field_names.len > plugin_contracts.fields_max) {
             @compileError("record " ++ record_name ++ " has more than 64 fields");
         }
 
-        var list: [info.fields.len]ProvidedField = undefined;
+        var list: [info.field_names.len]ProvidedField = undefined;
 
-        for (info.fields, &list) |field, *declared| {
-            const Plain = if (@typeInfo(field.type) == .optional)
-                @typeInfo(field.type).optional.child
+        for (info.field_names, info.field_types, &list) |field_name, FieldType, *declared| {
+            const Plain = if (@typeInfo(FieldType) == .optional)
+                @typeInfo(FieldType).optional.child
             else
-                field.type;
+                FieldType;
             const many = is_list(Plain);
 
             declared.* = .{
-                .name = field.name,
+                .name = field_name,
                 .kind = kind_of(if (many) std.meta.Elem(Plain) else Plain) orelse "group",
                 .many = many,
             };

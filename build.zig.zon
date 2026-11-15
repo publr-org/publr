@@ -2,7 +2,7 @@
     .name = .publr,
     .version = "0.7.1",
     .fingerprint = 0x5f016c89bf65ce5c,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         // Sibling checkouts, never URLs: the build fetches nothing.
         .publr_sqlite = .{ .path = "../lib/sqlite" },

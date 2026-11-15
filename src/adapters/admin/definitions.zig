@@ -210,15 +210,19 @@ pub fn keyed(comptime In: type, comptime key: []const u8, value: []const u8, ext
 
     var in: In = undefined;
 
-    inline for (std.meta.fields(In)) |info| {
-        if (comptime std.mem.eql(u8, info.name, key)) {
-            @field(in, info.name) = value;
-        } else if (comptime @hasField(@TypeOf(extra), info.name)) {
-            @field(in, info.name) = @field(extra, info.name);
-        } else if (comptime info.defaultValue()) |fallback| {
-            @field(in, info.name) = fallback;
+    inline for (
+        comptime std.meta.fieldNames(In),
+        comptime std.meta.fieldTypes(In),
+        @typeInfo(In).@"struct".field_attrs,
+    ) |info_name, InfoType, info_attrs| {
+        if (comptime std.mem.eql(u8, info_name, key)) {
+            @field(in, info_name) = value;
+        } else if (comptime @hasField(@TypeOf(extra), info_name)) {
+            @field(in, info_name) = @field(extra, info_name);
+        } else if (comptime info_attrs.defaultValue(InfoType)) |fallback| {
+            @field(in, info_name) = fallback;
         } else {
-            @compileError("no value for " ++ @typeName(In) ++ "." ++ info.name);
+            @compileError("no value for " ++ @typeName(In) ++ "." ++ info_name);
         }
     }
 
@@ -314,7 +318,7 @@ pub fn Pages(comptime domain: Domain) type {
         }
 
         fn kind_label(session: *const Session, kind: Kind) Error![]const u8 {
-            std.debug.assert(@typeInfo(Kind).@"enum".fields.len == 4);
+            std.debug.assert(@typeInfo(Kind).@"enum".field_names.len == 4);
             std.debug.assert(back.len > 0);
 
             return switch (kind) {

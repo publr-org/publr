@@ -46,7 +46,7 @@ pub const oauth = @import("device/oauth.zig");
 pub const operations = [_]type{ Start, Offer } ++ collect.operations ++ people.operations ++
     oauth.operations;
 
-pub const example_device_code = "9f2c" ** 16;
+pub const example_device_code = "9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c";
 
 pub const Start = struct {
     pub const name = "device.start";

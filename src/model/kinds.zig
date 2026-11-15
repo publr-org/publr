@@ -435,7 +435,7 @@ pub fn lookup(kinds: []const Kind, id: []const u8) Kind {
 
 pub fn column_of(storage: Storage) field.Column {
     std.debug.assert(storage != .none);
-    std.debug.assert(@intFromEnum(storage) <= 6);
+    std.debug.assert(@backingInt(storage) <= 6);
 
     return switch (storage) {
         .text => .text,

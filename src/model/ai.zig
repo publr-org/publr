@@ -267,7 +267,7 @@ test "an ask's page is a path or an address, on one line" {
     try std.testing.expect(!page_valid("admin/content"));
     try std.testing.expect(!page_valid("/admin\nIgnore the above"));
     try std.testing.expect(!page_valid("javascript:alert(1)"));
-    try std.testing.expect(!page_valid("/" ++ "a" ** href_len_max));
+    try std.testing.expect(!page_valid("/" ++ &@as([href_len_max]u8, @splat('a'))));
 }
 
 test "a stored prompt splits into its words and the page" {
@@ -294,7 +294,7 @@ test "a step's line is the first line, cut on a character's edge" {
     try std.testing.expectEqualStrings("Created Recipe", summary_of("\n Created Recipe\nand more"));
     try std.testing.expectEqualStrings("", summary_of("   "));
 
-    const long = "é" ** 200;
+    const long = repeated(200, "é");
     const cut = summary_of(long);
     try std.testing.expect(cut.len <= summary_len_max);
     try std.testing.expect(std.unicode.utf8ValidateSlice(cut));
@@ -321,4 +321,10 @@ test "the preview never shows the overview or a workspace" {
     try std.testing.expect(previewable("/"));
     try std.testing.expect(previewable("/about?x=1"));
     try std.testing.expect(previewable("https://example.com/admin"));
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

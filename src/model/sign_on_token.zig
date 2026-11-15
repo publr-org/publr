@@ -115,8 +115,8 @@ test "a token signed by the issuer verifies, any change or other key does not" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const seed = [_]u8{7} ** 32;
-    const other = [_]u8{9} ** 32;
+    const seed: [32]u8 = @splat(7);
+    const other: [32]u8 = @splat(9);
     const claims: Claims = .{
         .aud = "site",
         .sub = "ada@example.com",

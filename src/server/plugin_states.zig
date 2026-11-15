@@ -21,7 +21,7 @@ fn state_types() [stateful.len]type {
 }
 
 pub const States = struct {
-    values: std.meta.Tuple(&state_types()),
+    values: @Tuple(&state_types()),
 
     /// Each state made in plugin order; one that fails unmakes those made before it.
     pub fn init(states: *States, process: state.Process) !void {

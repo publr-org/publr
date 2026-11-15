@@ -35,7 +35,7 @@ pub const snapshot_suffix = ".snapshot";
 /// snapshot's size (SQLite says nothing while it copies); the archive by the bytes put in it,
 /// of what a pass over the files first measured.
 pub const Progress = struct {
-    stage: std.atomic.Value(u8) = .init(@intFromEnum(Stage.copying)),
+    stage: std.atomic.Value(u8) = .init(@backingInt(Stage.copying)),
     done: std.atomic.Value(u64) = .init(0),
     total: std.atomic.Value(u64) = .init(0),
 
@@ -48,9 +48,9 @@ pub const Progress = struct {
     };
 
     pub fn enter(progress: *Progress, stage: Stage) void {
-        std.debug.assert(@intFromEnum(stage) > progress.stage.load(.acquire) or stage == .copying);
+        std.debug.assert(@backingInt(stage) > progress.stage.load(.acquire) or stage == .copying);
 
-        progress.stage.store(@intFromEnum(stage), .release);
+        progress.stage.store(@backingInt(stage), .release);
     }
 };
 

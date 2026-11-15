@@ -15,7 +15,7 @@ pub const Group = enum {
     apps,
 
     pub fn label(group: Group) []const u8 {
-        return groups[@intFromEnum(group)].label;
+        return groups[@backingInt(group)].label;
     }
 };
 

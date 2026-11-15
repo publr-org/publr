@@ -73,7 +73,12 @@ pub fn set_up(io: std.Io, arena: std.mem.Allocator) !bool {
     const Project = struct {
         name: []const u8 = "",
     };
-    const project = std.zon.parse.fromSliceAlloc(Project, arena, text, null, .{
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const project = std.zon.parse.fromSlice(Project, .{
+        .gpa = arena,
+        .arena = arena,
+        .source = text,
+        .diagnostics = &diagnostics,
         .ignore_unknown_fields = true,
     }) catch return false;
 

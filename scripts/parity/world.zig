@@ -24,7 +24,7 @@ pub const shared_password = "correct horse battery";
 
 /// The parity site's issuer. A sign-on token is good for a minute, so no printed one ever
 /// redeems: parity signs a fresh one with this seed when it runs the example.
-const issuer_seed = [_]u8{7} ** 32;
+const issuer_seed: [32]u8 = @splat(7);
 
 const page_definition =
     \\{"handle":"page","name":"Page","public":true,
@@ -279,7 +279,7 @@ fn fill_media(ctx: *Ctx) Error!void {
         .width = 2400,
         .height = 1600,
         .storage_key = item.key,
-        .hash = "9f2c" ** 16,
+        .hash = "9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c",
         .private = false,
         .created_at = ctx.now_ms,
     });
@@ -344,7 +344,7 @@ fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
     const approved_code = "BCDF-GHJK";
 
     _ = try store.device_requests.insert(ctx.db, .{
-        .code_hash = [_]u8{1} ** 32,
+        .code_hash = @as([32]u8, @splat(1)),
         .user_code = people.example_code,
         .name = "An agent on Ada's laptop",
         .scope = "production",

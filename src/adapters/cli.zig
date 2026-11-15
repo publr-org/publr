@@ -627,7 +627,7 @@ fn gathered(
     flag: []const u8,
     value: []const u8,
 ) Error!bool {
-    std.debug.assert(seen.len == std.meta.fields(In).len);
+    std.debug.assert(seen.len == std.meta.fieldNames(In).len);
 
     const found = comptime sdk.dimension_input.field_of(In);
 
@@ -644,8 +644,8 @@ fn gathered(
         return false;
     }
 
-    inline for (std.meta.fields(In), 0..) |field, index| {
-        if (comptime std.mem.eql(u8, field.name, target)) {
+    inline for (comptime std.meta.fieldNames(In), 0..) |field_name, index| {
+        if (comptime std.mem.eql(u8, field_name, target)) {
             const before: []const sdk.dimension_input.Pair = if (seen[index])
                 @field(in.*, target).pairs
             else
@@ -673,14 +673,14 @@ pub fn parse_in(
     problem: *Problem,
     options: ParseOptions,
 ) Error!In {
-    comptime std.debug.assert(std.meta.fields(In).len <= sdk.operation.fields_max);
+    comptime std.debug.assert(std.meta.fieldNames(In).len <= sdk.operation.fields_max);
 
     if (args.len > args_max) {
         return error.Invalid;
     }
 
     var in: In = undefined;
-    var seen: [std.meta.fields(In).len]bool = @splat(false);
+    var seen: [std.meta.fieldNames(In).len]bool = @splat(false);
     var index: u32 = 0;
 
     while (index < args.len) {
@@ -706,22 +706,26 @@ pub fn parse_in(
 
         index += if (alone) 1 else 2;
 
-        inline for (std.meta.fields(In), 0..) |field, field_index| {
-            if (flag_names(flag[2..], field.name)) {
-                const parsed = parse_value(field.type, arena, value) catch {
+        inline for (
+            comptime std.meta.fieldNames(In),
+            comptime std.meta.fieldTypes(In),
+            0..,
+        ) |field_name, FieldType, field_index| {
+            if (flag_names(flag[2..], field_name)) {
+                const parsed = parse_value(FieldType, arena, value) catch {
                     problem.set("invalid value \"{s}\" for --{s} (expected {s})", .{
                         value,
-                        field.name,
-                        help.type_label(field.type),
+                        field_name,
+                        help.type_label(FieldType),
                     });
                     return error.Invalid;
                 };
-                const list = comptime field.type == []const []const u8;
+                const list = comptime FieldType == []const []const u8;
 
                 // A list flag given again adds to the list (`--tags a --tags b`, and a
                 // query's `tags=a&tags=b`), as a comma inside one value does.
-                @field(in, field.name) = if (list and seen[field_index])
-                    std.mem.concat(arena, []const u8, &.{ @field(in, field.name), parsed }) catch {
+                @field(in, field_name) = if (list and seen[field_index])
+                    std.mem.concat(arena, []const u8, &.{ @field(in, field_name), parsed }) catch {
                         return error.OutOfMemory;
                     }
                 else
@@ -737,24 +741,29 @@ pub fn parse_in(
         }
     }
 
-    inline for (std.meta.fields(In), 0..) |field, field_index| {
+    inline for (
+        comptime std.meta.fieldNames(In),
+        comptime std.meta.fieldTypes(In),
+        @typeInfo(In).@"struct".field_attrs,
+        0..,
+    ) |field_name, FieldType, field_attrs, field_index| {
         if (!seen[field_index]) {
-            const is_password = comptime std.mem.eql(u8, field.name, "password");
-            const is_text = field.type == []const u8 or field.type == ?[]const u8;
+            const is_password = comptime std.mem.eql(u8, field_name, "password");
+            const is_text = FieldType == []const u8 or FieldType == ?[]const u8;
             const from_env = is_password and is_text;
             if (from_env and options.password_env != null) {
-                @field(in, field.name) = options.password_env.?;
+                @field(in, field_name) = options.password_env.?;
             } else {
-                const default = field.defaultValue() orelse {
+                const default = field_attrs.defaultValue(FieldType) orelse {
                     problem.set("missing required --{s} ({s}){s}", .{
-                        field.name,
-                        help.type_label(field.type),
+                        field_name,
+                        help.type_label(FieldType),
                         if (from_env) "; or set PUBLR_PASSWORD" else "",
                     });
 
                     return error.Invalid;
                 };
-                @field(in, field.name) = default;
+                @field(in, field_name) = default;
             }
         }
     }
@@ -785,8 +794,11 @@ fn flag_names(flag: []const u8, field: []const u8) bool {
 fn flag_is_bool(comptime In: type, flag: []const u8) bool {
     std.debug.assert(flag.len <= value_len_max);
 
-    inline for (std.meta.fields(In)) |field| {
-        if (field.type == bool and flag_names(flag, field.name)) {
+    inline for (
+        comptime std.meta.fieldNames(In),
+        comptime std.meta.fieldTypes(In),
+    ) |field_name, FieldType| {
+        if (FieldType == bool and flag_names(flag, field_name)) {
             return true;
         }
     }
@@ -1136,7 +1148,7 @@ test "malformed CLI scalars and oversized input are validation errors" {
         );
     }
 
-    const long = "x" ** (value_len_max + 1);
+    const long = &@as([value_len_max + 1]u8, @splat('x'));
     try std.testing.expectError(
         error.Invalid,
         parse_in(
@@ -1150,7 +1162,7 @@ test "malformed CLI scalars and oversized input are validation errors" {
             .{},
         ),
     );
-    const many = [_][]const u8{"--flag"} ** (args_max + 1);
+    const many = @as([args_max + 1][]const u8, @splat("--flag"));
     try std.testing.expectError(error.Invalid, parse_in(In, arena, &many, &problem, .{}));
     const valid = try parse_in(
         In,
@@ -1188,7 +1200,7 @@ test "empty commands, oversized caller names and a full init alias fail graceful
     };
     const empty = try Command.run(connection, io, fixed, &harness.auth, &.{""}, &output, options);
     try std.testing.expectEqual(@as(u8, 2), empty);
-    const long = "x" ** (value_len_max + 1);
+    const long = &@as([value_len_max + 1]u8, @splat('x'));
     const too_long = [_][]const u8{ "--as", long };
     const auth = &harness.auth;
     const long_as = try Command.run(connection, io, fixed, auth, &too_long, &output, options);

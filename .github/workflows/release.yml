@@ -225,7 +225,7 @@ jobs:
       - name: zig build
         working-directory: publr
         run: |
-          zig build -Dtarget=${{ matrix.target }} -Dcpu=baseline -Doptimize=ReleaseSafe \
+          zig build -Dtarget=${{ matrix.target }} -Dcpu=baseline -Doptimize=safe \
             --prefix ../out
           cp ../out/bin/publr ../${{ matrix.file }}
 

@@ -193,18 +193,18 @@ fn json_of(arena: std.mem.Allocator, item: anytype) admin.Error![]const u8 {
     std.debug.assert(item.operation.len > 0);
 
     var shown: std.json.ObjectMap = .empty;
-    const fields = @typeInfo(@TypeOf(item)).@"struct".fields;
+    const fields = @typeInfo(@TypeOf(item)).@"struct".field_names;
 
-    inline for (fields) |field| {
-        const value = @field(item, field.name);
-        const as_json: std.json.Value = if (comptime std.mem.eql(u8, field.name, "input"))
+    inline for (fields) |field_name| {
+        const value = @field(item, field_name);
+        const as_json: std.json.Value = if (comptime std.mem.eql(u8, field_name, "input"))
             std.json.parseFromSliceLeaky(std.json.Value, arena, value, .{}) catch .{
                 .string = value,
             }
         else
             try value_of(arena, value);
 
-        try shown.put(arena, field.name, as_json);
+        try shown.put(arena, field_name, as_json);
     }
 
     return std.json.Stringify.valueAlloc(arena, std.json.Value{

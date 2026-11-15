@@ -1484,7 +1484,8 @@ test "secrets: declared, not granted; refused unset or undeclared; one value, sh
         extern "c" fn unsetenv(name: [*:0]const u8) c_int;
     };
     // The project's key from the environment: the test database has no folder to keep it in.
-    const key_set = Environment.setenv("PUBLR_SECRET_KEY", "11" ** 32, 1);
+    const secret_key = "11111111111111111111111111111111" ++ "11111111111111111111111111111111";
+    const key_set = Environment.setenv("PUBLR_SECRET_KEY", secret_key, 1);
 
     try std.testing.expectEqual(@as(c_int, 0), key_set);
     defer _ = Environment.unsetenv("PUBLR_SECRET_KEY");

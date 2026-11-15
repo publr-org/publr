@@ -12,7 +12,7 @@ pub fn add_step(builder: *std.Build, from: core.Sources) *std.Build.Step {
 
     const debug = builder.option(bool, "browser-debug", "Build the wasm in Debug mode") orelse
         false;
-    const library = core.add_module(builder, target, if (debug) .Debug else .ReleaseSmall, from);
+    const library = core.add_module(builder, target, if (debug) .debug else .small, from);
     const module = core.add_entry(builder, "src/server/wasm.zig", library);
     const wasm = builder.addExecutable(.{
         .name = "publr",

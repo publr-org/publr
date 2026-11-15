@@ -329,7 +329,7 @@ fn cell(id: []const u8, text: []const u8) Cell {
 }
 
 pub fn tone_of(color: model.status.Color) []const u8 {
-    std.debug.assert(@typeInfo(model.status.Color).@"enum".fields.len == 5);
+    std.debug.assert(@typeInfo(model.status.Color).@"enum".field_names.len == 5);
 
     return switch (color) {
         .neutral => "neutral",

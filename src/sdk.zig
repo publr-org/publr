@@ -1186,20 +1186,23 @@ pub fn SDK(comptime registry: Registry) type {
 
             try AnyRef.read_all(&host, input);
 
-            inline for (std.meta.fields(Operation.In)) |field| {
-                const Field = field.type;
+            inline for (
+                comptime std.meta.fieldNames(Operation.In),
+                comptime std.meta.fieldTypes(Operation.In),
+            ) |field_name, FieldType| {
+                const Field = FieldType;
 
                 if (comptime Field == AnyRef or Field == []const AnyRef) {
                     continue;
                 }
 
                 if (comptime is_reference(Field)) {
-                    const id = @field(input, field.name).id;
+                    const id = @field(input, field_name).id;
 
-                    @field(input, field.name).value = try load_reference(ctx, Operation, Field, id);
+                    @field(input, field_name).value = try load_reference(ctx, Operation, Field, id);
                 } else if (comptime is_reference_list(Field)) {
                     const Item = std.meta.Elem(Field);
-                    const list = @field(input, field.name);
+                    const list = @field(input, field_name);
                     const loaded = ctx.arena.alloc(Item, list.len) catch return error.OutOfMemory;
 
                     for (list, loaded) |item, *target| {
@@ -1207,7 +1210,7 @@ pub fn SDK(comptime registry: Registry) type {
                         target.value = try load_reference(ctx, Operation, Item, item.id);
                     }
 
-                    @field(input, field.name) = loaded;
+                    @field(input, field_name) = loaded;
                 }
             }
         }
@@ -1472,9 +1475,9 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         fn Nothing(comptime Middleware: type) type {
-            const parameters = @typeInfo(@TypeOf(Middleware.run)).@"fn".params;
+            const parameters = @typeInfo(@TypeOf(Middleware.run)).@"fn".param_types;
 
-            return std.meta.Child(parameters[2].type.?);
+            return std.meta.Child(parameters[2].?);
         }
 
         fn discard(answer: Error![]const u8) Error!void {
@@ -1962,15 +1965,19 @@ fn convert(comptime To: type, arena: std.mem.Allocator, from: anytype) Error!To 
 
             var to: To = undefined;
 
-            inline for (shape.fields) |field| {
-                if (comptime @hasField(From, field.name)) {
-                    const value = @field(from, field.name);
+            inline for (
+                shape.field_names,
+                shape.field_types,
+                shape.field_attrs,
+            ) |field_name, FieldType, field_attrs| {
+                if (comptime @hasField(From, field_name)) {
+                    const value = @field(from, field_name);
 
-                    @field(to, field.name) = try convert(field.type, arena, value);
-                } else if (comptime field.defaultValue()) |default| {
-                    @field(to, field.name) = default;
+                    @field(to, field_name) = try convert(FieldType, arena, value);
+                } else if (comptime field_attrs.defaultValue(FieldType)) |default| {
+                    @field(to, field_name) = default;
                 } else {
-                    @compileError(@typeName(From) ++ " has no `" ++ field.name ++ "`");
+                    @compileError(@typeName(From) ++ " has no `" ++ field_name ++ "`");
                 }
             }
 

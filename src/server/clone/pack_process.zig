@@ -380,7 +380,8 @@ const Watch = struct {
         std.debug.assert(watch.database_bytes > 0 or watch.snapshot.len > 0);
 
         const progress = watch.progress;
-        const stage: bundle.PackProgress.Stage = @enumFromInt(progress.stage.load(.acquire));
+        const stage_value = progress.stage.load(.acquire);
+        const stage: bundle.PackProgress.Stage = @fromBackingInt(@intCast(stage_value));
 
         return switch (stage) {
             .copying => blk: {

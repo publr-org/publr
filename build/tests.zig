@@ -28,7 +28,7 @@ pub fn add(
     library: *std.Build.Module,
     fixture_plugins: sandboxed_plugins.SandboxedPlugins,
 ) Tests {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(library.root_source_file != null);
 
     var fixture_from = core.with_apps(from, fixture_apps_dir);

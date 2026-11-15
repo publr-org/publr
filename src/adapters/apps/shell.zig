@@ -142,7 +142,7 @@ fn guard_place(body: []const u8) u32 {
     for ([_][]const u8{ "<head", "<html", "<!doctype" }) |opening| {
         var from: usize = 0;
 
-        while (std.ascii.indexOfIgnoreCasePos(body, from, opening)) |start| {
+        while (std.ascii.findIgnoreCasePos(body, from, opening)) |start| {
             const after = start + opening.len;
 
             from = after;
@@ -268,7 +268,7 @@ test "on the admin's host, an administrator's frame gets the page sandboxed, the
     try std.testing.expect(!has(sandbox, "allow-same-origin"));
 
     // The guard comes first in the head, before anything of the page's own.
-    const head_at = std.ascii.indexOfIgnoreCase(framed.body, "<head").?;
+    const head_at = std.ascii.findIgnoreCase(framed.body, "<head").?;
     const first_script = std.mem.indexOfPos(u8, framed.body, head_at, "<script").?;
 
     try std.testing.expect(std.mem.startsWith(u8, framed.body[first_script..], "<script " ++

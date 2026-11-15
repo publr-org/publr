@@ -113,7 +113,7 @@ pub fn route_less_than(_: void, left: Route, right: Route) bool {
     std.debug.assert(right.pattern.len > 0);
 
     if (left.kind != right.kind) {
-        return @intFromEnum(left.kind) < @intFromEnum(right.kind);
+        return @backingInt(left.kind) < @backingInt(right.kind);
     }
 
     return std.mem.lessThan(u8, left.pattern, right.pattern);

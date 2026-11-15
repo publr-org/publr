@@ -46,13 +46,13 @@ pub fn run(
         .next => {},
         .redirect => |redirect| {
             try response.set_header("Cache-Control", "no-store");
-            try response.redirect(@enumFromInt(redirect.status), redirect.to);
+            try response.redirect(@fromBackingInt(@intCast(redirect.status)), redirect.to);
 
             return true;
         },
         .refuse => |status| {
             try response.set_header("Cache-Control", "no-store");
-            try response.text(@enumFromInt(status), "This page is not available.");
+            try response.text(@fromBackingInt(@intCast(status)), "This page is not available.");
 
             return true;
         },

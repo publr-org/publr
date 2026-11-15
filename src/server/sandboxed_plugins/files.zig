@@ -278,7 +278,7 @@ test "hashes are lowercase hex of the content" {
         &hash,
     );
     try std.testing.expect(!valid_hash("ABC"));
-    try std.testing.expect(!valid_hash("../../../../etc/passwd" ++ "x" ** 42));
+    try std.testing.expect(!valid_hash("../../../../etc/passwd" ++ &@as([42]u8, @splat('x'))));
     try std.testing.expect(valid_upload("greeter-0.1.0.wasm"));
     try std.testing.expect(!valid_upload("../greeter.wasm"));
     try std.testing.expect(!valid_upload(".hidden"));

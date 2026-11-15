@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const diagnostic = @import("diagnostic.zig");
 const embed = @import("apps/embed.zig");
 const native_plugins = @import("native_plugins.zig");
@@ -51,7 +52,7 @@ pub fn add_step(
     dir: []const u8,
     native: native_plugins.Native,
 ) void {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(dir.len > 0);
 
     const step = builder.step(
@@ -82,17 +83,17 @@ pub fn add_step(
 /// (`plugin_compile.zig`).
 pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8) SandboxedPlugins {
     std.debug.assert(dir.len > 0);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const names = discover(builder, dir);
     const files = builder.allocator.alloc(std.Build.LazyPath, names.len) catch @panic("OOM");
-    const cache = builder.pathFromRoot(".zig-cache/publr-plugins");
+    const cache = repository.path(builder, ".zig-cache/publr-plugins");
     const compiler = builder.addExecutable(.{
         .name = "plugin_compile",
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("build/plugin_compile.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
 
@@ -141,13 +142,20 @@ fn builds_with(builder: *std.Build, source: []const u8) []const []const u8 {
     const path = builder.pathJoin(&.{ source, "builds_with.zon" });
     const io = builder.graph.io;
     const limit: std.Io.Limit = .limited(1 << 12);
-    const handle = builder.build_root.handle;
+    const handle = repository.dir(builder);
     const text = handle.readFileAllocOptions(io, path, builder.allocator, limit, .of(u8), 0) catch
         return &.{};
 
     const List = []const []const u8;
 
-    return std.zon.parse.fromSliceAlloc(List, builder.allocator, text, null, .{}) catch
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+
+    return std.zon.parse.fromSlice(List, .{
+        .gpa = builder.allocator,
+        .arena = builder.allocator,
+        .source = text,
+        .diagnostics = &diagnostics,
+    }) catch
         diagnostic.fail("{s}: a list of plugin folders, `.{{ \"parcels\" }}`", .{path});
 }
 
@@ -182,7 +190,7 @@ pub fn sdk_archive(
     limits_source: []const u8,
     parts: ViewsParts,
 ) std.Build.LazyPath {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(limits_source.len > 0);
 
     const stubs = stubs_of(builder);
@@ -213,7 +221,7 @@ fn sibling(builder: *std.Build, path: []const u8) std.Build.LazyPath {
     std.debug.assert(std.mem.startsWith(u8, path, "../"));
 
     return .{
-        .cwd_relative = builder.pathFromRoot(path),
+        .cwd_relative = repository.path(builder, path),
     };
 }
 
@@ -227,7 +235,7 @@ pub const ViewsParts = struct {
 
 /// What lowering and building an installed plugin's views takes, into the archive.
 fn add_views_parts(builder: *std.Build, run: *std.Build.Step.Run, parts: ViewsParts) void {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const views = parts.views;
     const pjsx = builder.dependency("pjsx", .{});
@@ -260,7 +268,7 @@ fn add_views_parts(builder: *std.Build, run: *std.Build.Step.Run, parts: ViewsPa
     for (inputs) |input| {
         for (embed.files_under(builder, input[0], input[1])) |path| {
             run.addFileInput(.{
-                .cwd_relative = builder.pathFromRoot(path),
+                .cwd_relative = repository.path(builder, path),
             });
         }
     }
@@ -287,7 +295,7 @@ const class_merge_plain =
 /// What the plugin SDK imports but never reaches from inside the sandbox: an empty module for
 /// each, and the one declaration it does reach (the storage error names, in `sqlite`).
 fn stubs_of(builder: *std.Build) *std.Build.Step.WriteFile {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(stub_imports.len > 0);
 
     const files = builder.addWriteFiles();
@@ -323,7 +331,7 @@ fn discover(builder: *std.Build, dir: []const u8) []const []const u8 {
     std.debug.assert(sandboxed_plugins_max > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{
+    var root = repository.dir(builder).openDir(io, dir, .{
         .iterate = true,
     }) catch {
         const optional = std.mem.eql(u8, dir, dir_default) or std.mem.eql(u8, dir, fixture_dir) or

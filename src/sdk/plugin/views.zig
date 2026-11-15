@@ -89,21 +89,25 @@ fn props_of(
     const Given = @TypeOf(props);
     var full: Props = undefined;
 
-    inline for (@typeInfo(Props).@"struct".fields) |field| {
-        if (comptime std.mem.eql(u8, field.name, "ctx")) {
-            @field(full, field.name) = ctx_of(field.type, looking, arena);
-        } else if (@hasField(Given, field.name)) {
-            @field(full, field.name) = number_or(field.type, @field(props, field.name));
-        } else if (comptime field.defaultValue() != null) {
-            @field(full, field.name) = comptime field.defaultValue().?;
+    inline for (
+        comptime std.meta.fieldNames(Props),
+        comptime std.meta.fieldTypes(Props),
+        @typeInfo(Props).@"struct".field_attrs,
+    ) |field_name, FieldType, field_attrs| {
+        if (comptime std.mem.eql(u8, field_name, "ctx")) {
+            @field(full, field_name) = ctx_of(FieldType, looking, arena);
+        } else if (@hasField(Given, field_name)) {
+            @field(full, field_name) = number_or(FieldType, @field(props, field_name));
+        } else if (comptime field_attrs.defaultValue(FieldType) != null) {
+            @field(full, field_name) = comptime field_attrs.defaultValue(FieldType).?;
         } else {
-            @compileError("the view's prop ." ++ field.name ++ " is not given");
+            @compileError("the view's prop ." ++ field_name ++ " is not given");
         }
     }
 
-    inline for (@typeInfo(Given).@"struct".fields) |field| {
-        if (!@hasField(Props, field.name)) {
-            @compileError("the view has no prop ." ++ field.name);
+    inline for (comptime std.meta.fieldNames(Given)) |field_name| {
+        if (!@hasField(Props, field_name)) {
+            @compileError("the view has no prop ." ++ field_name);
         }
     }
 
@@ -130,22 +134,25 @@ fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
     var out: Ctx = undefined;
     const editor = looking.editor orelse Looking.Editor{};
 
-    inline for (@typeInfo(Ctx).@"struct".fields) |field| {
-        if (comptime std.mem.eql(u8, field.name, "person")) {
-            @field(out, field.name) = part_of(field.type, looking.person);
-        } else if (comptime std.mem.eql(u8, field.name, "page")) {
-            @field(out, field.name) = part_of(field.type, looking.page);
-        } else if (comptime std.mem.eql(u8, field.name, "value")) {
-            @field(out, field.name) = value_of(field.type, editor.value, arena);
-        } else if (comptime std.mem.eql(u8, field.name, "problems")) {
-            @field(out, field.name) = editor.problems;
-        } else if (comptime std.mem.eql(u8, field.name, "options")) {
-            @field(out, field.name) = part_of(field.type, editor.options);
-        } else if (comptime @typeInfo(field.type) == .optional) {
-            @field(out, field.name) = null;
+    inline for (
+        comptime std.meta.fieldNames(Ctx),
+        comptime std.meta.fieldTypes(Ctx),
+    ) |field_name, FieldType| {
+        if (comptime std.mem.eql(u8, field_name, "person")) {
+            @field(out, field_name) = part_of(FieldType, looking.person);
+        } else if (comptime std.mem.eql(u8, field_name, "page")) {
+            @field(out, field_name) = part_of(FieldType, looking.page);
+        } else if (comptime std.mem.eql(u8, field_name, "value")) {
+            @field(out, field_name) = value_of(FieldType, editor.value, arena);
+        } else if (comptime std.mem.eql(u8, field_name, "problems")) {
+            @field(out, field_name) = editor.problems;
+        } else if (comptime std.mem.eql(u8, field_name, "options")) {
+            @field(out, field_name) = part_of(FieldType, editor.options);
+        } else if (comptime @typeInfo(FieldType) == .optional) {
+            @field(out, field_name) = null;
         } else {
             @compileError("a view's ctx has person, page, query, call, navigate and, in an " ++
-                "editor, value, problems, options and change, not ." ++ field.name);
+                "editor, value, problems, options and change, not ." ++ field_name);
         }
     }
 
@@ -189,8 +196,8 @@ fn part_of(comptime Part: type, from: anytype) Part {
 
     comptime std.debug.assert(@typeInfo(Part) == .@"struct");
 
-    inline for (@typeInfo(Part).@"struct".fields) |field| {
-        @field(out, field.name) = @field(from, field.name);
+    inline for (comptime std.meta.fieldNames(Part)) |field_name| {
+        @field(out, field_name) = @field(from, field_name);
     }
 
     return out;

@@ -415,7 +415,7 @@ fn send(
     };
 
     return .{
-        .status = @intFromEnum(answer.status),
+        .status = @backingInt(answer.status),
         .body = try filling.scrub(ctx, answer.body),
     };
 }

@@ -196,7 +196,7 @@ test "a request waits, is decided once, and lapses" {
         .roles = &.{"admin"},
         .now_ms = 0,
     });
-    const hash = [_]u8{7} ** 32;
+    const hash: [32]u8 = @splat(7);
     const new: New = .{
         .code_hash = hash,
         .user_code = "BCDF-GHJK",

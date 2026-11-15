@@ -80,7 +80,7 @@ test "a provider is a plugin-like name, an id is opaque but printable" {
     try std.testing.expect(!valid_provider("GitHub"));
     try std.testing.expect(!valid_provider("2fa"));
     try std.testing.expect(!valid_provider("git-hub"));
-    try std.testing.expect(!valid_provider("a" ** (provider_len_max + 1)));
+    try std.testing.expect(!valid_provider(&@as([provider_len_max + 1]u8, @splat('a'))));
 
     try std.testing.expect(valid_id("12345"));
     try std.testing.expect(valid_id("110248495921712042890"));
@@ -88,7 +88,7 @@ test "a provider is a plugin-like name, an id is opaque but printable" {
     try std.testing.expect(!valid_id("has space"));
     try std.testing.expect(!valid_id("tab\there"));
     try std.testing.expect(!valid_id("é"));
-    try std.testing.expect(!valid_id("x" ** (id_len_max + 1)));
+    try std.testing.expect(!valid_id(&@as([id_len_max + 1]u8, @splat('x'))));
 }
 
 test "an identity is valid when its parts are" {
@@ -115,11 +115,11 @@ test "an identity is valid when its parts are" {
     try std.testing.expect(!valid(.{
         .provider = "github",
         .id = "1",
-        .name = "n" ** 200,
+        .name = &@as([200]u8, @splat('n')),
     }));
     try std.testing.expect(!valid(.{
         .provider = "github",
         .id = "1",
-        .avatar = "a" ** 3000,
+        .avatar = &@as([3000]u8, @splat('a')),
     }));
 }

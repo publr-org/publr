@@ -2,6 +2,7 @@
 //! language's coverage against. `scripts/i18n.zig --lines` over the core's folders (domain
 //! `publr`) and each compiled-in plugin's folder (its own domain).
 const std = @import("std");
+const repository = @import("repository.zig");
 
 /// The folders the core's messages are written in, relative to this repository.
 const core_dirs = [_][]const u8{
@@ -41,7 +42,7 @@ pub fn add(
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/i18n.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     const run = builder.addRunArtifact(tool);
@@ -84,7 +85,7 @@ pub fn add(
 fn declare(builder: *std.Build, run: *std.Build.Step.Run, dir: []const u8) void {
     std.debug.assert(dir.len > 0);
 
-    var handle = builder.build_root.handle.openDir(builder.graph.io, dir, .{
+    var handle = repository.dir(builder).openDir(builder.graph.io, dir, .{
         .iterate = true,
     }) catch return;
     defer handle.close(builder.graph.io);

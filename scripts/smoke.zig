@@ -211,7 +211,7 @@ fn expect_auth(init: std.process.Init, binary: []const u8, work_dir: []const u8)
         "--as", email, "user", "password_link", "--user", "new@example.com",
     };
     const forged = [_][]const u8{
-        "user", "set_password", "--token", "0" ** 64, "--password", password,
+        "user", "set_password", "--token", &@as([64]u8, @splat('0')), "--password", password,
     };
 
     try expect_contains(init, binary, work_dir, &setup, "\"roles\": [\n    \"admin\"");

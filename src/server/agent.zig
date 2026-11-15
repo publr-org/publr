@@ -417,7 +417,7 @@ const Answerers = struct {
         const application = try gpa.create(server.Server);
         errdefer gpa.destroy(application);
 
-        const db_path = try answerers.arena.dupeZ(u8, answerers.db_path);
+        const db_path = try answerers.arena.dupeSentinel(u8, answerers.db_path, 0);
 
         try application.init(answerers.init, db_path);
         answerers.application = application;
@@ -556,7 +556,7 @@ fn failure_text(err: anyerror) []const u8 {
 }
 
 fn state_of(end: ai.End) model_ai.State {
-    std.debug.assert(@intFromEnum(end) <= @intFromEnum(ai.End.paused));
+    std.debug.assert(@backingInt(end) <= @backingInt(ai.End.paused));
 
     return switch (end) {
         .finished, .length, .steps_exhausted => .finished,

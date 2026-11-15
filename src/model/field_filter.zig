@@ -553,7 +553,7 @@ fn months_back(now_ms: i64, months: u32) i64 {
     const epoch_day = day.getEpochDay();
     const year_day = epoch_day.calculateYearDay();
     const month_day = year_day.calculateMonthDay();
-    const total = @as(i64, year_day.year) * 12 + (@intFromEnum(month_day.month) - 1) - months;
+    const total = @as(i64, year_day.year) * 12 + (@backingInt(month_day.month) - 1) - months;
 
     if (total < 1970 * 12) {
         return 0;
@@ -561,7 +561,7 @@ fn months_back(now_ms: i64, months: u32) i64 {
 
     const year: u16 = @intCast(@divFloor(total, 12));
     const month: u4 = @intCast(@mod(total, 12) + 1);
-    const last = std.time.epoch.getDaysInMonth(year, @enumFromInt(month));
+    const last = std.time.epoch.getDaysInMonth(year, @fromBackingInt(@intCast(month)));
     const day_of_month = @min(@as(u32, month_day.day_index) + 1, last);
     var text: [10]u8 = undefined;
     const written = std.fmt.bufPrint(&text, "{d:0>4}-{d:0>2}-{d:0>2}", .{

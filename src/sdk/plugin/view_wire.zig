@@ -44,10 +44,13 @@ pub fn encode(
 
     try json.beginObject();
 
-    inline for (std.meta.fields(Props)) |field| {
-        if (comptime !is_local(field.type)) {
-            try json.objectField(field.name);
-            try write_field(&json, field.type, @field(props, field.name), draw);
+    inline for (
+        comptime std.meta.fieldNames(Props),
+        comptime std.meta.fieldTypes(Props),
+    ) |field_name, FieldType| {
+        if (comptime !is_local(FieldType)) {
+            try json.objectField(field_name);
+            try write_field(&json, FieldType, @field(props, field_name), draw);
         }
     }
 
@@ -96,13 +99,17 @@ pub fn decode(arena: std.mem.Allocator, comptime Props: type, text: []const u8) 
     const object = if (parsed == .object) parsed.object else return error.Invalid;
     var props: Props = undefined;
 
-    inline for (std.meta.fields(Props)) |field| {
-        const given = if (comptime is_local(field.type)) null else object.get(field.name);
+    inline for (
+        comptime std.meta.fieldNames(Props),
+        comptime std.meta.fieldTypes(Props),
+        @typeInfo(Props).@"struct".field_attrs,
+    ) |field_name, FieldType, field_attrs| {
+        const given = if (comptime is_local(FieldType)) null else object.get(field_name);
 
         if (given) |value| {
-            @field(props, field.name) = try read_field(arena, field.type, value);
-        } else if (field.defaultValue()) |default| {
-            @field(props, field.name) = default;
+            @field(props, field_name) = try read_field(arena, FieldType, value);
+        } else if (field_attrs.defaultValue(FieldType)) |default| {
+            @field(props, field_name) = default;
         } else {
             return error.Invalid;
         }

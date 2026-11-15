@@ -1,4 +1,5 @@
 const std = @import("std");
+const repository = @import("repository.zig");
 const diagnostic = @import("diagnostic.zig");
 const plugin_docs = @import("plugin_docs.zig");
 
@@ -22,7 +23,7 @@ pub fn native_of(builder: *std.Build, plugins_dir: []const u8) Native {
     const path = builder.pathJoin(&.{ root, "publr.zon" });
     const io = builder.graph.io;
     const limit: std.Io.Limit = .limited(1 << 16);
-    const handle = builder.build_root.handle;
+    const handle = repository.dir(builder);
     const text = handle.readFileAllocOptions(io, path, builder.allocator, limit, .of(u8), 0) catch {
         return .{
             .names = &.{},
@@ -39,15 +40,21 @@ pub fn native_of(builder: *std.Build, plugins_dir: []const u8) Native {
         },
     };
     // Strict: a misspelt field fails the build rather than compiling nothing in.
-    const options: std.zon.parse.Options = .{};
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const options: std.zon.parse.Options = .{
+        .gpa = builder.allocator,
+        .arena = builder.allocator,
+        .source = text,
+        .diagnostics = &diagnostics,
+    };
 
-    if (std.zon.parse.fromSliceAlloc(Listed, builder.allocator, text, null, options)) |listed| {
+    if (std.zon.parse.fromSlice(Listed, options)) |listed| {
         return .{
             .names = listed.plugins.native,
         };
     } else |_| {}
 
-    _ = std.zon.parse.fromSliceAlloc(Every, builder.allocator, text, null, options) catch {
+    _ = std.zon.parse.fromSlice(Every, options) catch {
         diagnostic.fail("{s}: `.plugins.native` is a list of plugin names, or `.all`", .{path});
     };
 
@@ -57,7 +64,7 @@ pub fn native_of(builder: *std.Build, plugins_dir: []const u8) Native {
 /// The plugins under `dir` that `native` compiles in, as the `native_plugins` module the
 /// library imports. A name `publr.zon` lists that `dir` lacks fails the build.
 pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, native: Native) void {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(library.root_source_file != null);
 
     var names_storage: [plugins_max][]const u8 = undefined;
@@ -186,7 +193,7 @@ fn append_components(
 
     for (names) |name| {
         const folder = builder.pathJoin(&.{ dir, name, "components" });
-        var handle = builder.build_root.handle.openDir(io, folder, .{
+        var handle = repository.dir(builder).openDir(io, folder, .{
             .iterate = true,
         }) catch continue;
         defer handle.close(io);
@@ -245,7 +252,7 @@ fn add_interfaces(
     for (names, 0..) |name, index| {
         const path = builder.fmt("{s}/{s}/interface.zig", .{ dir, name });
 
-        builder.build_root.handle.access(builder.graph.io, path, .{}) catch continue;
+        repository.dir(builder).access(builder.graph.io, path, .{}) catch continue;
 
         const interface = builder.createModule(.{
             .root_source_file = builder.path(path),
@@ -284,7 +291,7 @@ pub fn ui_dirs(builder: *std.Build, dir: []const u8, native: Native) []const []c
 
     for (names) |name| {
         const ui = builder.pathJoin(&.{ dir, name, "ui" });
-        var handle = builder.build_root.handle.openDir(builder.graph.io, ui, .{}) catch continue;
+        var handle = repository.dir(builder).openDir(builder.graph.io, ui, .{}) catch continue;
 
         handle.close(builder.graph.io);
         found.append(builder.allocator, ui) catch @panic("OOM");
@@ -411,7 +418,7 @@ pub fn discover(
     std.debug.assert(dir.len > 0);
 
     const io = builder.graph.io;
-    var root = builder.build_root.handle.openDir(io, dir, .{
+    var root = repository.dir(builder).openDir(io, dir, .{
         .iterate = true,
     }) catch {
         if (!std.mem.eql(u8, dir, dir_default)) {
@@ -486,7 +493,7 @@ pub fn add_check(
     target: std.Build.ResolvedTarget,
 ) void {
     std.debug.assert(exe.kind == .exe);
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     if (!target.query.isNative()) {
         return;

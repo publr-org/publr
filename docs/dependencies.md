@@ -34,7 +34,7 @@ the one in the workspace README: a mechanism whose first example needs no Publr
 noun. The C libraries that stay here (`vendor/stb`, `vendor/libwebp`)
 each carry a `VERSION.zon` with the upstream, the archive name and its
 SHA-256, and the list of files kept. They are compiled once into a static
-library per target (`ReleaseFast`), which Zig's cache keeps between builds;
+library per target (`fast`), which Zig's cache keeps between builds;
 `zig build vendor-cache-check` proves a no-op build recompiles none of it.
 See [Build](build.md) for the import procedure.
 

@@ -131,18 +131,21 @@ pub const AnyRef = struct {
     pub fn read_all(ctx: *PluginCtx, value: anytype) sdk.Error!void {
         std.debug.assert(ctx.now().ms >= 0);
 
-        inline for (std.meta.fields(@TypeOf(value.*))) |field| {
-            if (comptime field.type == AnyRef) {
-                @field(value, field.name) = try read(ctx, @field(value, field.name).id);
-            } else if (comptime field.type == []const AnyRef) {
-                const list = @field(value, field.name);
+        inline for (
+            comptime std.meta.fieldNames(@TypeOf(value.*)),
+            comptime std.meta.fieldTypes(@TypeOf(value.*)),
+        ) |field_name, FieldType| {
+            if (comptime FieldType == AnyRef) {
+                @field(value, field_name) = try read(ctx, @field(value, field_name).id);
+            } else if (comptime FieldType == []const AnyRef) {
+                const list = @field(value, field_name);
                 const loaded = ctx.arena().alloc(AnyRef, list.len) catch return error.OutOfMemory;
 
                 for (list, loaded) |item, *target| {
                     target.* = try read(ctx, item.id);
                 }
 
-                @field(value, field.name) = loaded;
+                @field(value, field_name) = loaded;
             }
         }
     }
@@ -676,7 +679,7 @@ pub fn get_typed(
     var trashed = false;
 
     std.debug.assert(id.len > 0);
-    comptime std.debug.assert(std.meta.fields(Options).len <= read_options_max + 1);
+    comptime std.debug.assert(std.meta.fieldNames(Options).len <= read_options_max + 1);
 
     // `.trashed`, and each other a dimension's read option with the code to read in.
     inline for (comptime std.meta.fieldNames(Options)) |option| {
@@ -709,7 +712,7 @@ const model_dimension = @import("../../model/dimension.zig");
 /// An internal record is bookkeeping, one value per field: `get` takes nothing after the id.
 fn check_internal_get(comptime record: []const u8, comptime Options: type) void {
     comptime {
-        if (std.meta.fields(Options).len > 0) {
+        if (std.meta.fieldNames(Options).len > 0) {
             @compileError("record " ++ record ++ ": an internal record's `get` takes `.{}`; " ++
                 "it has no trash, and no values per dimension");
         }
@@ -809,12 +812,12 @@ pub fn content_type_of(comptime Definition: type, comptime Docs: type) content_t
         var fields: []const field_model.Def = &.{};
 
         // Each field copies its overrides, its options' and its validation's parts, once.
-        @setEvalBranchQuota(1000 + std.meta.fields(Document).len * field_branches_max);
+        @setEvalBranchQuota(1000 + std.meta.fieldNames(Document).len * field_branches_max);
 
         overrides_named(Document, name, options);
 
-        for (std.meta.fields(Document)) |field| {
-            fields = fields ++ [_]field_model.Def{field_of(Definition, Docs, field)};
+        for (std.meta.fieldNames(Document)) |field_name| {
+            fields = fields ++ [_]field_model.Def{field_of(Definition, Docs, field_name)};
         }
 
         return .{
@@ -905,8 +908,8 @@ pub fn field_groups_of(comptime Plugin: type) []const content_type.Def {
                     "`///` comment: the group's name in the admin");
             var fields: []const field_model.Def = &.{};
 
-            for (std.meta.fields(Fields)) |field| {
-                fields = fields ++ [_]field_model.Def{field_of(Pseudo, Plugin.docs, field)};
+            for (std.meta.fieldNames(Fields)) |field_name| {
+                fields = fields ++ [_]field_model.Def{field_of(Pseudo, Plugin.docs, field_name)};
             }
 
             groups = groups ++ [_]content_type.Def{.{
@@ -1001,9 +1004,9 @@ fn expires_of(comptime given: anytype) internal_record.Expires {
 pub fn field_of(
     comptime Definition: type,
     comptime Docs: type,
-    comptime field: std.builtin.Type.StructField,
+    comptime name: []const u8,
 ) field_model.Def {
-    return field_in(Definition, Definition.Doc, Definition.given, Docs, field);
+    return field_in(Definition, Definition.Doc, Definition.given, Docs, name);
 }
 
 /// A field of `Owner` (the document, or a repeater's row) with `given`'s overrides; a list of
@@ -1013,24 +1016,28 @@ fn field_in(
     comptime Owner: type,
     comptime given: anytype,
     comptime Docs: type,
-    comptime field: std.builtin.Type.StructField,
+    comptime name: []const u8,
 ) field_model.Def {
     comptime {
-        const key = @typeName(Owner) ++ "." ++ field.name;
+        const info = @typeInfo(Owner).@"struct";
+        const index = std.meta.fieldIndex(Owner, name).?;
+        const Field = info.field_types[index];
+        const attrs = info.field_attrs[index];
+        const key = @typeName(Owner) ++ "." ++ name;
         _ = plugin_define.words(Docs, key) orelse @compileError("record " ++
-            Definition.type_name ++ ": field `" ++ field.name ++ "` needs a `///` comment");
-        const optional = @typeInfo(field.type) == .optional;
-        const Inner = if (optional) @typeInfo(field.type).optional.child else field.type;
+            Definition.type_name ++ ": field `" ++ name ++ "` needs a `///` comment");
+        const optional = @typeInfo(Field) == .optional;
+        const Inner = if (optional) @typeInfo(Field).optional.child else Field;
         const overrides = if (@hasField(@TypeOf(given), "fields") and
-            @hasField(@TypeOf(given.fields), field.name))
-            @field(given.fields, field.name)
+            @hasField(@TypeOf(given.fields), name))
+            @field(given.fields, name)
         else
             .{};
         const kind_given = @hasField(@TypeOf(overrides), "kind");
         const rows = is_rows(Inner);
         const group = !kind_given and is_group(Inner);
         var def: field_model.Def = .{
-            .name = field.name,
+            .name = name,
             .label = label_of(plugin_define.first(Docs, key).?),
             .help = plugin_define.rest(Docs, key).?,
             .kind = if (kind_given)
@@ -1040,13 +1047,13 @@ fn field_in(
             else if (group)
                 "group"
             else
-                kind_of(Definition.type_name, field.name, Inner),
+                kind_of(Definition.type_name, name, Inner),
             .validation = .{
-                .required = !optional and field.defaultValue() == null,
+                .required = !optional and attrs.defaultValue(Field) == null,
             },
             .locked = true,
             .many = is_list(Inner) and !rows,
-            .default = default_of(field),
+            .default = default_of(Field, attrs),
         };
 
         if (rows or group) {
@@ -1055,8 +1062,8 @@ fn field_in(
 
             overrides_named(Row, Definition.type_name, overrides);
 
-            for (std.meta.fields(Row)) |row_field| {
-                const made = field_in(Definition, Row, overrides, Docs, row_field);
+            for (std.meta.fieldNames(Row)) |row_field_name| {
+                const made = field_in(Definition, Row, overrides, Docs, row_field_name);
 
                 sub = sub ++ [_]field_model.Def{made};
             }
@@ -1203,11 +1210,14 @@ fn is_group(comptime Type: type) bool {
 
 /// A field's default as the form starts it, written as text: `Placed`, `true`, `20`, `pl`;
 /// empty for none, or a default no form field takes (a list, a struct).
-fn default_of(comptime field: std.builtin.Type.StructField) []const u8 {
+fn default_of(
+    comptime Field: type,
+    comptime attrs: std.builtin.Type.Struct.FieldAttributes,
+) []const u8 {
     comptime {
-        std.debug.assert(field.name.len > 0);
+        std.debug.assert(@typeInfo(Field) != .@"fn");
 
-        const given = field.defaultValue() orelse return "";
+        const given = attrs.defaultValue(Field) orelse return "";
         const Value = @TypeOf(given);
         const value = if (@typeInfo(Value) == .optional) given orelse return "" else given;
 
@@ -1351,9 +1361,9 @@ fn indexed_of(comptime options: anytype) []const []const u8 {
 /// The first text field: what a record is listed by when the type names none.
 fn title_of(comptime Document: type) []const u8 {
     comptime {
-        for (std.meta.fields(Document)) |field| {
-            if (field.type == []const u8) {
-                return field.name;
+        for (std.meta.fieldNames(Document), std.meta.fieldTypes(Document)) |field_name, FieldType| {
+            if (FieldType == []const u8) {
+                return field_name;
             }
         }
 

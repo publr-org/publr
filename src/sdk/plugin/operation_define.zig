@@ -174,8 +174,8 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
 /// Whether the ready answer lets this caller through. Administrators pass every answer,
 /// except through an app's address, where they are signed-in people like any other.
 pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool) bool {
-    std.debug.assert(@intFromEnum(caller) <= @intFromEnum(sdk.Caller.plugin));
-    std.debug.assert(@intFromEnum(answer) <= @intFromEnum(Answer.plugin_calls));
+    std.debug.assert(@backingInt(caller) <= @backingInt(sdk.Caller.plugin));
+    std.debug.assert(@backingInt(answer) <= @backingInt(Answer.plugin_calls));
 
     if (!through_app and (caller == .system or caller.holds("admin"))) {
         return true;
@@ -364,19 +364,19 @@ fn field_words(
     comptime {
         var docs: sdk.operation.Docs(Shape) = .{};
 
-        for (std.meta.fields(Shape)) |field| {
+        for (std.meta.fieldNames(Shape)) |field_name| {
             // A shape the SDK hands over (`publr.ai.Completion.In`) carries its own words.
             if (@hasDecl(Shape, "field_docs")) {
-                @field(docs, field.name) = @field(Shape.field_docs, field.name);
+                @field(docs, field_name) = @field(Shape.field_docs, field_name);
                 continue;
             }
 
-            const key = @typeName(Shape) ++ "." ++ field.name;
+            const key = @typeName(Shape) ++ "." ++ field_name;
             const text = plugin_define.words(Docs, key) orelse
-                @compileError("operation " ++ full_name ++ ": field `" ++ field.name ++
+                @compileError("operation " ++ full_name ++ ": field `" ++ field_name ++
                     "` of " ++ @typeName(Shape) ++ " needs a `///` comment");
 
-            @field(docs, field.name) = text;
+            @field(docs, field_name) = text;
         }
 
         const done = docs;

@@ -258,7 +258,7 @@ pub fn native_providers(
 
     inline for (plugins, list, 0..) |Plugin, *provider, at| {
         const operations = comptime operations: {
-            const options = std.meta.fields(@TypeOf(Plugin.options)).len;
+            const options = std.meta.fieldNames(@TypeOf(Plugin.options)).len;
 
             // Each of its options' names against the option and seam names, a byte at a time.
             @setEvalBranchQuota(1000 + options * 64 * 64);

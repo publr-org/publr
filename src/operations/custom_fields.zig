@@ -12,7 +12,7 @@ pub const Destination = enum {
     media,
 
     pub fn key(destination: Destination) []const u8 {
-        comptime std.debug.assert(@typeInfo(Destination).@"enum".fields.len == 2);
+        comptime std.debug.assert(@typeInfo(Destination).@"enum".field_names.len == 2);
         return switch (destination) {
             .user => "custom_fields.user",
             .media => "custom_fields.media",
@@ -20,7 +20,7 @@ pub const Destination = enum {
     }
 
     pub fn definition(destination: Destination) model.content_type.Def {
-        comptime std.debug.assert(@typeInfo(Destination).@"enum".fields.len == 2);
+        comptime std.debug.assert(@typeInfo(Destination).@"enum".field_names.len == 2);
         return .{
             .handle = @tagName(destination),
             .name = if (destination == .user) "User fields" else "Media fields",

@@ -74,7 +74,7 @@ const Reader = struct {
         reader.expect('{');
 
         var result: Target = undefined;
-        var seen = [_]bool{false} ** @typeInfo(Target).@"struct".fields.len;
+        var seen: [@typeInfo(Target).@"struct".field_names.len]bool = @splat(false);
 
         reader.skip_space();
 
@@ -87,9 +87,13 @@ const Reader = struct {
                 const index = field_index(Target, key) orelse @compileError("example: " ++
                     @typeName(Target) ++ " has no field `" ++ key ++ "`");
 
-                inline for (@typeInfo(Target).@"struct".fields, 0..) |field, position| {
+                inline for (
+                    comptime std.meta.fieldNames(Target),
+                    comptime std.meta.fieldTypes(Target),
+                    0..,
+                ) |field_name, FieldType, position| {
                     if (position == index) {
-                        @field(result, field.name) = reader.value(field.type, depth + 1);
+                        @field(result, field_name) = reader.value(FieldType, depth + 1);
                     }
                 }
 
@@ -104,12 +108,18 @@ const Reader = struct {
             }
         }
 
-        inline for (@typeInfo(Target).@"struct".fields, 0..) |field, position| {
+        inline for (
+            comptime std.meta.fieldNames(Target),
+            comptime std.meta.fieldTypes(Target),
+            @typeInfo(Target).@"struct".field_attrs,
+            0..,
+        ) |field_name, FieldType, field_attrs, position| {
             if (!seen[position]) {
-                const default = field.defaultValue() orelse @compileError("example: " ++
-                    @typeName(Target) ++ " needs `" ++ field.name ++ "`");
+                const missing = "example: " ++ @typeName(Target) ++ " needs `" ++ field_name ++ "`";
 
-                @field(result, field.name) = default;
+                const default = field_attrs.defaultValue(FieldType) orelse @compileError(missing);
+
+                @field(result, field_name) = default;
             }
         }
 
@@ -301,10 +311,10 @@ fn is_raw(comptime Target: type) bool {
             return false;
         }
 
-        const fields = @typeInfo(Target).@"struct".fields;
-        const raw = fields.len == 1 and std.mem.eql(u8, fields[0].name, "text");
+        const info = @typeInfo(Target).@"struct";
+        const raw = info.field_names.len == 1 and std.mem.eql(u8, info.field_names[0], "text");
 
-        std.debug.assert(!raw or fields[0].type == []const u8);
+        std.debug.assert(!raw or info.field_types[0] == []const u8);
 
         return raw;
     }
@@ -313,8 +323,8 @@ fn is_raw(comptime Target: type) bool {
 fn field_index(comptime Target: type, comptime key: []const u8) ?u32 {
     comptime std.debug.assert(key.len > 0);
 
-    inline for (@typeInfo(Target).@"struct".fields, 0..) |field, index| {
-        if (comptime std.mem.eql(u8, field.name, key)) {
+    inline for (comptime std.meta.fieldNames(Target), 0..) |field_name, index| {
+        if (comptime std.mem.eql(u8, field_name, key)) {
             return index;
         }
     }

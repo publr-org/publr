@@ -90,6 +90,8 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "sampler", "echo", "--nope", "x" },
     &.{ "--as", admin, "sampler", "note" },
     &.{ "sampler", "echo", "--help" },
+    // Zig's base64 encoder inside the plugin: an installed build must carry it whole.
+    &.{ "--as", admin, "sampler", "encode", "--text", "hello, wasm" },
     &.{ "--as", editor, "sampler", "note", "--note", "not mine" },
     &.{ "--as", admin, "sampler", "note", "--note", "quiet words" },
     &.{ "--as", admin, "sampler", "note", "--note", "more" },

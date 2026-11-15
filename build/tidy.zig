@@ -1,14 +1,14 @@
 const std = @import("std");
 
 pub fn add_check(builder: *std.Build) *std.Build.Step {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
 
     const tidy = builder.addExecutable(.{
         .name = "tidy",
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/tidy.zig"),
             .target = builder.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
 

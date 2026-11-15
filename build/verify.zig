@@ -26,7 +26,7 @@ pub const Parts = struct {
 /// `verify-full`: every gate check, each of which builds Publr its own way, before a commit.
 /// CI runs the same checks one named step at a time, so the first failure ends the run.
 pub fn add(builder: *std.Build, parts: Parts) void {
-    std.debug.assert(builder.build_root.path != null);
+    std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(parts.fixture_plugins.names.len > 0);
 
     const tidy_check = tidy.add_check(builder);

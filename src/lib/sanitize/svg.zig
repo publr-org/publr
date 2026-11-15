@@ -107,7 +107,7 @@ pub fn attribute(
         return address(arena, tag, value);
     }
 
-    if (std.ascii.indexOfIgnoreCase(value, "url(") != null) {
+    if (std.ascii.findIgnoreCase(value, "url(") != null) {
         return local_urls(arena, value);
     }
 
@@ -144,7 +144,7 @@ fn local_urls(arena: std.mem.Allocator, value: []const u8) !?[]const u8 {
     var out: std.ArrayList(u8) = .empty;
     var at: u32 = 0;
 
-    while (std.ascii.indexOfIgnoreCasePos(value, at, "url(")) |start| {
+    while (std.ascii.findIgnoreCasePos(value, at, "url(")) |start| {
         const inner_start: u32 = @intCast(start + 4);
         const end = std.mem.indexOfScalarPos(u8, value, inner_start, ')') orelse return null;
         const inner = std.mem.trim(u8, value[inner_start..end], " \t'\"");
@@ -171,7 +171,7 @@ fn animated_safely(value: []const u8) bool {
     const banned = [_][]const u8{ "href", "src", "style", "action", "data" };
 
     for (banned) |word| {
-        if (std.ascii.indexOfIgnoreCase(value, word) != null) {
+        if (std.ascii.findIgnoreCase(value, word) != null) {
             return false;
         }
     }

@@ -129,15 +129,20 @@ fn children_of(comptime Type: type) []const Child {
             // A reference, or an object whose keys come with the data (`json_object`).
             .@"struct" => |info| if (@hasDecl(Type, "reference") or
                 @hasDecl(Type, "json_object")) &.{} else fields: {
-                var children: [info.fields.len]Child = undefined;
+                var children: [info.field_names.len]Child = undefined;
 
-                for (info.fields, &children) |field, *child| {
-                    const optional = @typeInfo(field.type) == .optional;
+                for (
+                    info.field_names,
+                    info.field_types,
+                    info.field_attrs,
+                    &children,
+                ) |field_name, FieldType, field_attrs, *child| {
+                    const optional = @typeInfo(FieldType) == .optional;
 
                     child.* = .{
-                        .type = field.type,
-                        .name = field.name,
-                        .required = field.default_value_ptr == null and !optional,
+                        .type = FieldType,
+                        .name = field_name,
+                        .required = field_attrs.default_value_ptr == null and !optional,
                     };
                 }
 
@@ -169,10 +174,10 @@ fn values_of(comptime Type: type) []const []const u8 {
             .@"enum" => |info| info,
             else => return &.{},
         };
-        var names: [info.fields.len][]const u8 = undefined;
+        var names: [info.field_names.len][]const u8 = undefined;
 
-        for (info.fields, &names) |field, *name| {
-            name.* = field.name;
+        for (info.field_names, &names) |field_name, *name| {
+            name.* = field_name;
         }
 
         const fixed = names;
@@ -412,7 +417,7 @@ pub fn path_of(nodes: []const Node, index: u32, buffer: []u8) []const u8 {
 }
 
 pub fn reason_text(reason: Reason) []const u8 {
-    std.debug.assert(@intFromEnum(reason) <= @intFromEnum(Reason.value));
+    std.debug.assert(@backingInt(reason) <= @backingInt(Reason.value));
 
     return switch (reason) {
         .missing => "is not there",

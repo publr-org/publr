@@ -183,7 +183,7 @@ test "a declaration names a valid provider, label and icon" {
     try std.testing.expect(problem(bad_label) != null);
 
     var bad_icon = testing.trusting;
-    bad_icon.icon = "i" ** (icon_len_max + 1);
+    bad_icon.icon = &@as([icon_len_max + 1]u8, @splat('i'));
     try std.testing.expect(problem(bad_icon) != null);
 
     const both = [_]SignInProvider{ testing.trusting, testing.missing };

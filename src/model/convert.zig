@@ -87,7 +87,7 @@ fn convert_scalar(
 
 fn coerce(arena: std.mem.Allocator, storage: kinds.Storage, value: Value) Error!Value {
     std.debug.assert(value != .null);
-    std.debug.assert(@intFromEnum(storage) <= 6);
+    std.debug.assert(@backingInt(storage) <= 6);
 
     if (value == .float and !std.math.isFinite(value.float)) {
         return error.DataDoesNotFit;

@@ -515,7 +515,7 @@ const Verb = enum { create, update, delete };
 /// form's fault.
 fn reason(session: *const Session, err: anyerror, verb: Verb) Error!?[]const u8 {
     std.debug.assert(@errorName(err).len > 0);
-    std.debug.assert(@typeInfo(Verb).@"enum".fields.len == 3);
+    std.debug.assert(@typeInfo(Verb).@"enum".field_names.len == 3);
 
     return switch (err) {
         error.Invalid => switch (verb) {

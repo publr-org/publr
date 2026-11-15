@@ -52,13 +52,17 @@ fn line(comptime Operation: type, out: *std.Io.Writer) Error!void {
 
     out.print("{s} {s}", .{ namespace, verb }) catch return error.WriteFailed;
 
-    inline for (std.meta.fields(Operation.In)) |field| {
-        const label = comptime help.type_label(field.type);
+    inline for (
+        comptime std.meta.fieldNames(Operation.In),
+        comptime std.meta.fieldTypes(Operation.In),
+        @typeInfo(Operation.In).@"struct".field_attrs,
+    ) |field_name, FieldType, field_attrs| {
+        const label = comptime help.type_label(FieldType);
 
-        if (field.default_value_ptr == null) {
-            out.print(" --{s} <{s}>", .{ field.name, label }) catch return error.WriteFailed;
+        if (field_attrs.default_value_ptr == null) {
+            out.print(" --{s} <{s}>", .{ field_name, label }) catch return error.WriteFailed;
         } else {
-            out.print(" [--{s} <{s}>]", .{ field.name, label }) catch return error.WriteFailed;
+            out.print(" [--{s} <{s}>]", .{ field_name, label }) catch return error.WriteFailed;
         }
     }
 

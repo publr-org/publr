@@ -380,7 +380,7 @@ fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
             var fields: u32 = 0;
 
             for (Plugin.options.records) |Record| {
-                fields += std.meta.fields(Record.Doc).len;
+                fields += std.meta.fieldNames(Record.Doc).len;
             }
 
             // Each record's fields read once, as `record.define` reads them.

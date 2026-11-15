@@ -32,7 +32,7 @@ pub const found_max: u32 = 100_000;
 pub fn find(gpa: std.mem.Allocator, source: [:0]const u8) ![]Found {
     std.debug.assert(source.len < std.math.maxInt(u32));
 
-    var tree = try Ast.parse(gpa, source, .zig);
+    var tree = try Ast.parse(gpa, source, .{});
     defer tree.deinit(gpa);
 
     var found: std.ArrayList(Found) = .empty;
@@ -43,7 +43,7 @@ pub fn find(gpa: std.mem.Allocator, source: [:0]const u8) ![]Found {
     }
 
     for (0..tree.nodes.len) |index| {
-        const node: Ast.Node.Index = @enumFromInt(index);
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         var buffer: [1]Ast.Node.Index = undefined;
 
         // A declaration's prototype is a node of its own, so the declaration is skipped.
