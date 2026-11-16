@@ -2,6 +2,10 @@
 //! `PUBLR_PLUGIN_CATALOG` names. It holds `catalog.json` and the built modules it lists.
 //! From the web, it is read in queued work only: pages answer the copy the `ai_catalog` job
 //! keeps, looked at again when it is an hour old.
+//!
+//! From the web, a module is installed only when it is the one its version's manifest names
+//! (its SHA-256 and size), and that manifest carries the signature of the plugins
+//! repository's Publish workflow. A folder is the administrator's own and is read as it is.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -18,6 +22,11 @@ const Error = sdk.Error;
 pub const variable = "PUBLR_PLUGIN_CATALOG";
 pub const address_default = "https://plugins.publr.app";
 const catalog_bytes_max: u32 = 64 << 10;
+const manifest_bytes_max: u32 = 4 << 10;
+const signature_len = std.crypto.sign.Ed25519.Signature.encoded_length;
+/// The public half of the key the plugins repository's Publish workflow signs each version's
+/// manifest with (`PLUGINS_SIGNING_KEY`).
+pub const signing_key_hex = "c06a33babbbf9b8bd472a9479867f3b5184f33afdb13366d48c5780b4cf4a487";
 /// How old a kept catalog may be before it is looked at again; one not reached, a minute.
 const fresh_ms: i64 = 60 * 60 * 1000;
 const retry_ms: i64 = 60 * 1000;
@@ -33,6 +42,20 @@ pub const Entry = struct {
     module: []const u8 = "",
     /// The plugins it needs installed first, by name.
     requires: []const []const u8 = &.{},
+    /// This version's signed manifest, relative to the catalog (`Signed`); its signature is
+    /// beside it, in the same name and `.sig`.
+    manifest: []const u8 = "",
+};
+
+/// What the Publish workflow wrote for one version of a plugin, never rewritten: the module
+/// it built, by SHA-256 and size.
+pub const Signed = struct {
+    name: []const u8,
+    version: []const u8,
+    module: []const u8,
+    /// Hex, lowercase.
+    sha256: []const u8,
+    size: u32,
 };
 
 pub const File = struct {
@@ -49,6 +72,12 @@ const no_module: sdk.operation.Failure = .{
     .name = "NoModule",
     .status = 409,
     .message = "The catalog names no built module for it",
+};
+
+const not_signed: sdk.operation.Failure = .{
+    .name = "NotSigned",
+    .status = 502,
+    .message = "The plugin's module is not the one Publr's plugin server signed",
 };
 
 /// The folder or address the catalog is read from.
@@ -160,7 +189,7 @@ pub fn read(ctx: *Ctx) Error!File {
         return error.OutOfMemory;
     };
     const text = if (on_the_web(from))
-        try fetched_text(ctx, path)
+        try fetched_text(ctx, path, catalog_bytes_max)
     else
         std.Io.Dir.cwd().readFileAlloc(ctx.io, path, ctx.arena, .limited(catalog_bytes_max)) catch {
             return ctx.fail(unreachable_failure);
@@ -172,15 +201,12 @@ pub fn read(ctx: *Ctx) Error!File {
     }) catch ctx.fail(unreachable_failure);
 }
 
-/// The entry's module, checked and staged as an upload is.
+/// The entry's module, checked and staged as an upload is. From the web, only the module its
+/// version's signed manifest names.
 pub fn stage(ctx: *Ctx, entry: Entry) Error!lifecycle.Checked {
     std.debug.assert(entry.name.len > 0);
 
-    const inside = entry.module.len > 0 and entry.module.len <= 256 and
-        !std.fs.path.isAbsolute(entry.module) and
-        std.mem.indexOf(u8, entry.module, "..") == null;
-
-    if (!inside) {
+    if (!inside(entry.module)) {
         return ctx.fail(no_module);
     }
 
@@ -193,9 +219,33 @@ pub fn stage(ctx: *Ctx, entry: Entry) Error!lifecycle.Checked {
         return lifecycle.stage(ctx, path, true);
     }
 
+    if (!inside(entry.manifest)) {
+        return ctx.fail(not_signed);
+    }
+
+    const manifest_url = std.fs.path.join(ctx.arena, &.{ from, entry.manifest }) catch {
+        return error.OutOfMemory;
+    };
+    const signature_url = std.fmt.allocPrint(ctx.arena, "{s}.sig", .{manifest_url}) catch {
+        return error.OutOfMemory;
+    };
+    const manifest = try fetched_text(ctx, manifest_url, manifest_bytes_max);
+    const signature = try fetched_text(ctx, signature_url, signature_len);
     const allocator = std.heap.page_allocator;
     const downloaded = try fetched(ctx, allocator, path, model.sandboxed_plugin.bytes_max);
     defer allocator.free(downloaded.buffer);
+
+    const proven = verified(ctx.arena, .{
+        .entry = entry,
+        .manifest = manifest,
+        .signature = signature,
+        .key_hex = signing_key_hex,
+        .module = downloaded.bytes,
+    }) catch return error.OutOfMemory;
+
+    if (!proven) {
+        return ctx.fail(not_signed);
+    }
 
     const file = std.fmt.allocPrint(ctx.arena, "catalog-{s}.wasm", .{entry.name}) catch {
         return error.OutOfMemory;
@@ -208,12 +258,58 @@ pub fn stage(ctx: *Ctx, entry: Entry) Error!lifecycle.Checked {
     return lifecycle.stage(ctx, file, false);
 }
 
-fn fetched_text(ctx: *Ctx, url: []const u8) Error![]const u8 {
+/// A path in the catalog: relative, and never above it.
+fn inside(path: []const u8) bool {
+    return path.len > 0 and path.len <= 256 and !std.fs.path.isAbsolute(path) and
+        std.mem.indexOf(u8, path, "..") == null;
+}
+
+pub const Proof = struct {
+    entry: Entry,
+    /// The manifest's bytes, as signed.
+    manifest: []const u8,
+    signature: []const u8,
+    key_hex: []const u8,
+    module: []const u8,
+};
+
+/// Whether `signature` is the key's over the manifest, the manifest is the entry's version,
+/// and `module` is the one it names, byte for byte.
+pub fn verified(arena: std.mem.Allocator, proof: Proof) error{OutOfMemory}!bool {
+    std.debug.assert(proof.key_hex.len == 64);
+    std.debug.assert(proof.entry.name.len > 0);
+
+    if (!model.release.signed(proof.manifest, proof.signature, proof.key_hex)) {
+        return false;
+    }
+
+    const signed = std.json.parseFromSliceLeaky(Signed, arena, proof.manifest, .{
+        .ignore_unknown_fields = true,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return false,
+    };
+    const named = std.mem.eql(u8, signed.name, proof.entry.name) and
+        std.mem.eql(u8, signed.version, proof.entry.version) and
+        std.mem.eql(u8, signed.module, proof.entry.module);
+
+    if (!named or signed.size != proof.module.len) {
+        return false;
+    }
+
+    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(proof.module, &digest, .{});
+    const hex = std.fmt.bytesToHex(digest, .lower);
+
+    return std.mem.eql(u8, &hex, signed.sha256);
+}
+
+fn fetched_text(ctx: *Ctx, url: []const u8, bytes_max: u32) Error![]const u8 {
     std.debug.assert(url.len > 0);
-    std.debug.assert(catalog_bytes_max > 0);
+    std.debug.assert(bytes_max > 0);
 
     const allocator = std.heap.page_allocator;
-    const downloaded = try fetched(ctx, allocator, url, catalog_bytes_max);
+    const downloaded = try fetched(ctx, allocator, url, bytes_max);
     defer allocator.free(downloaded.buffer);
 
     return ctx.arena.dupe(u8, downloaded.bytes) catch error.OutOfMemory;
@@ -250,4 +346,58 @@ test "the catalog defaults to Publr's plugin server" {
     try std.testing.expect(on_the_web(address_default));
     try std.testing.expect(!on_the_web("/srv/plugins"));
     try std.testing.expect(!on_the_web("plugins"));
+}
+
+test "a module from the web installs only as its signed manifest names it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+    const Ed25519 = std.crypto.sign.Ed25519;
+    const keys = try Ed25519.KeyPair.generateDeterministic(@splat(7));
+    const other = try Ed25519.KeyPair.generateDeterministic(@splat(8));
+    const key_hex = std.fmt.bytesToHex(keys.public_key.toBytes(), .lower);
+    const module = "\x00asm\x01\x00\x00\x00";
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(module, &digest, .{});
+    const manifest = try std.fmt.allocPrint(
+        arena,
+        "{{\"name\":\"blog\",\"version\":\"0.2.1\",\"module\":\"dist/blog/0.2.1.wasm\"," ++
+            "\"sha256\":\"{s}\",\"size\":{d}}}",
+        .{ &std.fmt.bytesToHex(digest, .lower), module.len },
+    );
+    const signature = (try keys.sign(manifest, null)).toBytes();
+    const entry: Entry = .{
+        .name = "blog",
+        .label = "Blog",
+        .version = "0.2.1",
+        .module = "dist/blog/0.2.1.wasm",
+        .manifest = "dist/blog/0.2.1.json",
+    };
+    const proof: Proof = .{
+        .entry = entry,
+        .manifest = manifest,
+        .signature = &signature,
+        .key_hex = &key_hex,
+        .module = module,
+    };
+
+    try std.testing.expect(try verified(arena, proof));
+
+    var changed = proof;
+    changed.module = "\x00asm\x01\x00\x00\x01";
+    try std.testing.expect(!try verified(arena, changed));
+
+    const forged = (try other.sign(manifest, null)).toBytes();
+    changed = proof;
+    changed.signature = &forged;
+    try std.testing.expect(!try verified(arena, changed));
+
+    changed = proof;
+    changed.manifest = try std.mem.replaceOwned(u8, arena, manifest, "\"size\":8", "\"size\":9");
+    try std.testing.expect(!try verified(arena, changed));
+
+    changed = proof;
+    changed.entry.version = "0.2.0";
+    try std.testing.expect(!try verified(arena, changed));
 }

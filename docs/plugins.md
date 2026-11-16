@@ -258,7 +258,10 @@ do there, how it starts), and `complete`, whose run hands its `request` to
 the contract that is on under Settings › AI, and has a conversation's agent
 call the one chosen, in the agent's own process. Publr's official providers are published at
 `https://plugins.publr.app` (a `catalog.json` and the built modules it lists;
-`PUBLR_PLUGIN_CATALOG` names another folder or address). The Overview and Settings › AI
+`PUBLR_PLUGIN_CATALOG` names another folder or address). From the web, a module is
+installed only when its version's manifest carries the signature of Publr's plugins key and
+names the module's SHA-256 and size; any other is refused (`NotSigned`). A folder is read as
+it is. The Overview and Settings › AI
 install the ones ticked: each module is added, as uploading it does, enabled, and granted
 its requests out, its key and its raised limits, so the key pasted next is all it needs.
 
