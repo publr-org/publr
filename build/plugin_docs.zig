@@ -26,10 +26,20 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
 
     const walk_failed = "{s}: walking the plugin failed";
 
+    // Read while configuring, which Zig caches: a changed, added or removed file must run
+    // it again, or the docs keep what the files said before.
+    depend_on(builder, dir, .directory);
+
     while (walker.next(io) catch diagnostic.fail(walk_failed, .{dir})) |entry| {
+        if (entry.kind == .directory) {
+            depend_on(builder, builder.fmt("{s}/{s}", .{ dir, entry.path }), .directory);
+        }
+
         if (entry.kind != .file or !doc_reader.read_file(entry.path)) {
             continue;
         }
+
+        depend_on(builder, builder.fmt("{s}/{s}", .{ dir, entry.path }), .file);
 
         if (files.items.len == files_max) {
             diagnostic.fail("{s}: more than {d} Zig and GROQ files", .{ dir, files_max });
@@ -60,6 +70,20 @@ pub fn source_of(builder: *std.Build, dir: []const u8) []const u8 {
 }
 
 /// Stops the build when a check found problems, each printed where it is.
+fn depend_on(builder: *std.Build, sub: []const u8, kind: enum { file, directory }) void {
+    std.debug.assert(sub.len > 0);
+    std.debug.assert(!std.fs.path.isAbsolute(sub));
+
+    const lazy: std.Build.LazyPath = .{
+        .cwd_relative = repository.path(builder, sub),
+    };
+
+    switch (kind) {
+        .file => builder.dependOnFileContents(lazy),
+        .directory => builder.dependOnDirectoryContents(lazy),
+    }
+}
+
 fn fail_on(dir: []const u8, problems: []const doc_reader.Placed) void {
     std.debug.assert(dir.len > 0);
     std.debug.assert(problems.len <= 1 << 16);
