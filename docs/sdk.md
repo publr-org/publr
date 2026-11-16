@@ -225,22 +225,20 @@ six kinds:
 
 | Hook | When | Can |
 |---|---|---|
-| **pre** | before authorization, for every call | veto (rate limits, abuse protection) |
+| **pre** (built-in only) | before authorization, for every call | veto (rate limits, abuse protection) |
 | **before** | after authorization, on a named operation | see and change the input, or veto |
 | **after** | on a named operation or event, inside the write | observe input and output, or veto (rolls back) |
 | **on** | on a named operation or event, from the queue once the write committed | react to its answer or payload; the only one that may call out |
-| **policy** | during authorization | narrow the grant |
-| **filter** | when the admin shows a value of a named type | change how it reads, as text |
+| **policy** (built-in only) | during authorization | narrow the grant |
+| **modify** | wherever the owner of a named value applies it | change the value |
 
-A filter changes how a value is shown, never what is stored or what an operation answers.
-The first point is a record's title: the admin's lists, its reference picker and its
-reference cards run the filters once per page, per type. A filter is written for one item
-(the record, typed, and what is shown for it) and Publr runs it over the batch in passes,
-reading what the items ask for together between them (products names a variant
-`Earl Grey, 50 g`, reading every variant's product in one list). It reads through the SDK,
-as granted, and may not write or call out. What it answers is text: cut to 512 bytes,
-control characters made spaces, escaped where it is shown. A filter that fails leaves the
-item as it was.
+A modifier changes a value its owner applies under a name, never what is stored. The first
+is a record's title, `<type>.title`: the admin's lists, its reference picker and its
+reference cards apply it a page at a time. A modifier is written for one value (products
+names a variant `Earl Grey, 50 g` from the record, typed) and Publr runs it over the batch
+in passes, reading what the values ask for together between them (every variant's product
+in one list). It reads through the SDK, as granted, and may not write or call out. A
+modifier that fails leaves the value as it was.
 No hook can put markup or a script on a page; printed markup is always sanitized
 (`set:html`), and a script reaches a page only as an island or an approved plugin script.
 
