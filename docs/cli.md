@@ -155,7 +155,7 @@ runs it goes with every call.
 ## The publr command
 
 The `publr` command (`brew install publr-org/tap/publr`, `curl -fsSL
-https://publr.dev/install.sh | sh`, or inside Publr Studio) works around Publr from
+https://publr.dev/install.sh | sh`, or inside Publr Desktop) works around Publr from
 outside: `new` and `init` make sites, `start`, `stop`, `open` and `logs` run them,
 `login`, `logout`, `whoami` and `--site` reach a Publr elsewhere as a device, `clone`,
 `pull` and `push` keep a folder's copy of a site and send its work up as a branch, `pack`

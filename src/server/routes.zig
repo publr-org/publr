@@ -131,7 +131,7 @@ pub fn private_by_default(
     std.debug.assert(response.header("Cache-Control") != null);
 }
 
-/// An address an app may answer itself, as the Cloud dashboard signs Studio and the CLI in
+/// An address an app may answer itself, as the Cloud dashboard signs Publr Desktop and the CLI in
 /// to an account: the app's own page there, else its middleware, else core's answer.
 fn app_first(comptime handler: anytype) http.Router.Handler {
     return &struct {
