@@ -22,7 +22,7 @@ pub const Module = struct {
 };
 
 /// Whether every example passed; each that did not is reported. `modules` are the built
-/// plugins the plugin's own may need beside it.
+/// plugins installed beside it first, in their order: those required before those requiring.
 pub fn run(
     init: std.process.Init,
     built: []const u8,
@@ -57,19 +57,15 @@ pub fn run(
         return true;
     }
 
-    const needed = [_][]const []const u8{ manifest.depends_on, manifest.compatible_with };
-
-    for (needed) |names| {
-        for (names) |name| {
-            const module = found(name, modules) orelse continue;
-
-            if (!try added(&commands, module.path, module.name)) {
-                report.err("{s}: its examples did not run: {s} did not install beside it", .{
-                    manifest.name,
-                    name,
-                });
-                return false;
-            }
+    // Every module given goes in, in the order given: a plugin's own requirements before it,
+    // so one it depends on that requires another installs.
+    for (modules) |module| {
+        if (!try added(&commands, module.path, module.name)) {
+            report.err("{s}: its examples did not run: {s} did not install beside it", .{
+                manifest.name,
+                module.name,
+            });
+            return false;
         }
     }
 
@@ -144,8 +140,10 @@ fn absent(depends_on: []const []const u8, modules: []const Module) ?[]const u8 {
 fn built_in(name: []const u8) bool {
     std.debug.assert(name.len > 0);
 
+    const plugin = plugin_of(name);
+
     inline for (registry.native_plugins.all) |Plugin| {
-        if (std.mem.eql(u8, Plugin.manifest.name, name)) {
+        if (std.mem.eql(u8, Plugin.manifest.name, plugin)) {
             return true;
         }
     }
@@ -153,11 +151,20 @@ fn built_in(name: []const u8) bool {
     return false;
 }
 
+/// The plugin `name` names without the versions it takes: `cart` for `cart@^0.1`.
+fn plugin_of(name: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+
+    return name[0 .. std.mem.indexOfScalar(u8, name, '@') orelse name.len];
+}
+
 fn found(name: []const u8, modules: []const Module) ?Module {
     std.debug.assert(name.len > 0);
 
+    const plugin = plugin_of(name);
+
     for (modules) |module| {
-        if (std.mem.eql(u8, module.name, name)) {
+        if (std.mem.eql(u8, module.name, plugin)) {
             return module;
         }
     }
@@ -192,4 +199,16 @@ fn passes(ctx: *sdk.Ctx, name: []const u8, example: []const u8, documented: []co
     };
 
     return true;
+}
+
+test "a plugin depended on is found by its name, whatever versions it takes" {
+    const modules = [_]Module{.{
+        .name = "products",
+        .path = "products.wasm",
+    }};
+
+    try std.testing.expectEqualStrings("cart", plugin_of("cart@^0.1"));
+    try std.testing.expectEqualStrings("cart", plugin_of("cart"));
+    try std.testing.expect(found("products@^0.1", &modules) != null);
+    try std.testing.expect(found("prices@^0.1", &modules) == null);
 }
