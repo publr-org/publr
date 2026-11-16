@@ -835,13 +835,12 @@ every plugin under `plugins/` that is not compiled in the same way into
 [Build](contributing/build.md#the-plugins).
 
 **Every plugin builds for the sandbox.** What cannot run there is left out of that build,
-never a reason to refuse it: `.extend` and all it registers (it needs
-the host), an operation or hook that takes the host's context (`*sdk.Ctx`) rather than
-`*publr.Ctx`, and, until the sandbox runs them, policies, pre hooks, field kinds,
-statuses, transitions, filters, delivery gates, routes, `State`, operator
-commands and the other process hooks. The build names each (`publr plugin
-build` prints them; the manifest's `left_out` keeps them, and `plugin get` shows them;
-the admin's plugin page does not yet).
+never a reason to refuse it: `.extend` and all it registers (it needs the host: routes,
+tables, `State`, operator commands, process hooks, policies, pre hooks, delivery gates,
+sign-in providers), an operation or hook that takes the host's context (`*sdk.Ctx`) rather
+than `*publr.Ctx`, a hook with no `reason`, and an event hook that does not name its
+event. The build names each (`publr plugin build` prints them; the manifest's `left_out`
+keeps them, and `plugin get` shows them; the admin's plugin page does not).
 Calling an operation left out answers `unavailable`; a hook left out never runs.
 
 What a plugin calls is checked as it compiles: a `ctx.call` of an operation that none of
@@ -851,9 +850,11 @@ operations and record operations pass: a record operation may reach its own type
 need nothing, and one that names another type without a permission is refused when it
 runs, as `Denied`.
 
-In the sandbox, operations, before, after and on hooks, filters, records, field groups and
-roles run, and pages, menu items, panels and top bar entries show in the admin; a role from
-a plugin grants only its own operations.
+In the sandbox, operations, before, after, on and modify hooks, jobs and webhooks, records
+with their statuses (and statuses added to other plugins' flows), field kinds, field
+groups, location rules, dimensions and roles run, and pages, menu items, panels, row
+actions and top bar entries show in the admin; a role from a plugin grants only its own
+operations.
 
 ## Which one to pick
 
@@ -875,16 +876,14 @@ a plugin grants only its own operations.
 
 A built-in plugin is written as above and listed in `publr.zon`'s `.plugins.native`. It
 imports one thing, `publr`, and everything it brings goes in `define`: records,
-operations, hooks, events, roles (see below), policies, delivery gates (who sees the
-apps, see [Apps](apps.md#delivery-gates)), filters (`model.filter.Definition`: a key, a
-label, operators, and how a clause constrains the list; the admin's content list grows a
-pill for each) and a sign-in provider (see below). `zig build` finds it, compiles it in and
-wires it up; nothing is registered anywhere else. Its operations appear in the CLI and
-every other adapter, documented from its words. A plugin cannot take a core namespace's
-name, or `app`. What only a built-in plugin may add (routes,
-state, process hooks, tables, the app picker segment) goes through `.extend`, `fn (host:
-*publr.Host) publr.Error!void`, one `host.<name>` call each; settings pages and tabs and
-row actions are still options of `define`.
+operations, hooks, events, roles (see below), pages and row actions, as any plugin. `zig
+build` finds it, compiles it in and wires it up; nothing is registered anywhere else. Its
+operations appear in the CLI and every other adapter, documented from its words. A plugin
+cannot take a core namespace's name, or `app`. What only a built-in plugin may add goes
+through `.extend`, `fn (host: *publr.Host) publr.Error!void`, one `host.<name>` call each:
+routes, tables, state, process hooks, operator commands, pre hooks, policies, delivery
+gates (who sees the apps, see [Apps](apps.md#delivery-gates)), a sign-in provider (see
+below), the app picker segment and the admin's brand.
 
 Storage is records and snapshots. A plugin that needs to keep things declares a record
 (`publr.record.define`, usually private) and works with it through its handle. The type is
@@ -896,9 +895,9 @@ and the admin for free. History goes into
 snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
 `pending`. A plugin that truly needs its own table registers it with `host.table` in `.extend` and
-reads and writes it with `ctx.database()`; it runs only when the plugin is compiled in. Once a release of the plugin has shipped, a change to those
-tables is a migration of its own, the `.migrations` option (`publr.db.migration.Migration`s),
-named by the release that ships it and run by the gate like core's ([Updates](updates.md)).
+reads and writes it with `ctx.database()`; it runs only when the plugin is compiled in.
+Publr makes the table when the database opens and runs no migrations on it: a change to
+its shape is the plugin's own to make.
 
 A plugin that keeps files declares a **media type**: a type of `.kind = .media` with a
 `title` field and, optionally, the file families it takes (`.families = &.{"image"}`).
@@ -1122,15 +1121,6 @@ without a restart. An installed plugin's file is never `.official`: it translate
 it disagrees with another the administrator chooses. Site Health shows where translations
 disagree and what each language still misses. See
 [Admin](contributing/admin.md#the-admins-language).
-
-### The Overview's "Your agent" tab
-
-The Overview offers two ways to build: the person's own keys, and their own agent, whose tab
-shows the commands that set an agent to work on this site. A plugin may show its own words
-there instead (`.agents_tab = "<p>...</p>"`): HTML through the admin's sanitizer
-profile, in a box named after the plugin. One plugin at a time; compiled in
-only, for now. A demo running in a browser tab, which no agent can sign in to, says how to
-build with an agent on the visitor's own machine.
 
 ### Copies of a site
 
