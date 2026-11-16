@@ -93,12 +93,19 @@ fn declare(builder: *std.Build, run: *std.Build.Step.Run, dir: []const u8) void 
     var walker = handle.walk(builder.allocator) catch @panic("OOM");
     defer walker.deinit();
 
+    // Listed while configuring: a file added or removed must list them again.
+    repository.read_under(builder, dir, .folder);
+
     while (walker.next(builder.graph.io) catch null) |entry| {
         const kind = std.mem.endsWith(u8, entry.path, ".ptsx") or
             std.mem.endsWith(u8, entry.path, ".ts") or std.mem.endsWith(u8, entry.path, ".zig");
         const skipped = std.mem.indexOf(u8, entry.path, "zig-cache") != null or
             std.mem.indexOf(u8, entry.path, "node_modules") != null or
             std.mem.indexOf(u8, entry.path, "zig-out") != null;
+
+        if (entry.kind == .directory and !skipped and entry.basename[0] != '.') {
+            repository.read_under(builder, builder.pathJoin(&.{ dir, entry.path }), .folder);
+        }
 
         if (entry.kind == .file and kind and !skipped) {
             run.addFileInput(builder.path(builder.pathJoin(&.{ dir, entry.path })));

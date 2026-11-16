@@ -29,3 +29,30 @@ pub fn dir(builder: *std.Build) std.Io.Dir {
 
     return builder.root.root_dir.handle;
 }
+
+pub const Read = enum { file, folder };
+
+/// A file or folder `build.zig` reads while configuring, which Zig caches: a change to the
+/// file, or a file added to or removed from the folder, configures again. `path` is
+/// absolute or relative to the working directory (`path(builder, sub)` gives one).
+pub fn read_while_configuring(builder: *std.Build, at: []const u8, read: Read) void {
+    std.debug.assert(at.len > 0);
+    std.debug.assert(!std.mem.endsWith(u8, at, "/"));
+
+    const lazy: std.Build.LazyPath = .{
+        .cwd_relative = at,
+    };
+
+    switch (read) {
+        .file => builder.dependOnFileContents(lazy),
+        .folder => builder.dependOnDirectoryContents(lazy),
+    }
+}
+
+/// `read_while_configuring` for `sub` under the repository's folder.
+pub fn read_under(builder: *std.Build, sub: []const u8, read: Read) void {
+    std.debug.assert(sub.len > 0);
+    std.debug.assert(!std.fs.path.isAbsolute(sub));
+
+    read_while_configuring(builder, path(builder, sub), read);
+}

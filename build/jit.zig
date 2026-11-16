@@ -21,10 +21,18 @@ fn listed_classes(builder: *std.Build) std.Build.LazyPath {
     var out: std.ArrayList(u8) = .empty;
     const call = "listed(\"";
 
+    repository.read_under(builder, "src", .folder);
+
     while (walker.next(io) catch @panic("cannot walk src/")) |entry| {
+        if (entry.kind == .directory) {
+            repository.read_under(builder, builder.pathJoin(&.{ "src", entry.path }), .folder);
+        }
+
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".zig")) {
             continue;
         }
+
+        repository.read_under(builder, builder.pathJoin(&.{ "src", entry.path }), .file);
 
         const text = dir.readFileAlloc(io, entry.path, builder.allocator, .limited(4 << 20)) catch
             @panic("cannot read src/");

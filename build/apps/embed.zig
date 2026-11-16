@@ -342,7 +342,14 @@ pub fn files_under(builder: *std.Build, dir: []const u8, extension: []const u8) 
     defer walker.deinit();
     var found: std.ArrayList([]const u8) = .empty;
 
+    // Listed while configuring: a file added or removed must list them again.
+    repository.read_under(builder, dir, .folder);
+
     while (walker.next(io) catch diagnostic.fail("cannot walk {s}", .{dir})) |entry| {
+        if (entry.kind == .directory) {
+            repository.read_under(builder, builder.pathJoin(&.{ dir, entry.path }), .folder);
+        }
+
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, extension)) {
             continue;
         }

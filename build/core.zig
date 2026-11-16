@@ -365,8 +365,15 @@ fn engine_stamp(builder: *std.Build) []const u8 {
 
     var paths: std.ArrayList([]const u8) = .empty;
 
+    repository.read_under(builder, "src", .folder);
+
     while (walker.next(io) catch @panic("walking src/")) |entry| {
+        if (entry.kind == .directory) {
+            repository.read_under(builder, builder.pathJoin(&.{ "src", entry.path }), .folder);
+        }
+
         if (entry.kind == .file) {
+            repository.read_under(builder, builder.pathJoin(&.{ "src", entry.path }), .file);
             paths.append(builder.allocator, builder.dupe(entry.path)) catch @panic("OOM");
         }
     }
@@ -378,6 +385,9 @@ fn engine_stamp(builder: *std.Build) []const u8 {
     }.less);
 
     var hash = std.hash.Fnv1a_64.init();
+
+    repository.read_under(builder, "vendor/quickjs/VERSION", .file);
+
     const javascript_version = repository.dir(builder).readFileAlloc(
         io,
         "vendor/quickjs/VERSION",

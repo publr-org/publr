@@ -237,7 +237,16 @@ fn declare_inputs(
     );
     defer walker.deinit();
 
+    // Listed while configuring: a file added or removed must list them again.
+    repository.read_while_configuring(builder, base, .folder);
+
     while (walker.next(io) catch diagnostic.fail("cannot walk the build inputs", .{})) |entry| {
+        if (entry.kind == .directory) {
+            const folder = builder.pathJoin(&.{ base, entry.path });
+
+            repository.read_while_configuring(builder, folder, .folder);
+        }
+
         if (entry.kind == .file and std.mem.endsWith(u8, entry.basename, extension)) {
             const path = builder.pathJoin(&.{ base, builder.dupe(entry.path) });
 
