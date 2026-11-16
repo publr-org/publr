@@ -1,4 +1,4 @@
-//! `verify-full`'s local hook (`docs/build.md`).
+//! `verify-full`'s local hook (`docs/contributing/build.md`).
 //!
 //!   verify_hook <publr binary> <browser dir> <work dir>
 //!       Runs `$PUBLR_VERIFY_HOOK` with these arguments and exits as it does; exits 0 when the

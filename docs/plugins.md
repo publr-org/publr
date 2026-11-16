@@ -63,7 +63,7 @@ Two things follow from being inside the binary:
 A plugin that uses only the public SDK can be shipped both ways: compiled in,
 or as an installed plugin. Whatever it does installed, it does the same compiled in, and
 `zig build verify-full` proves it for every test plugin (see
-[Build: Two-mode check](build.md#two-mode-check)).
+[Build: Two-mode check](contributing/build.md#two-mode-check)).
 
 ## Installed plugins (DLP)
 
@@ -825,7 +825,7 @@ kept to roll back to). What it asks for is granted by tier; high requests wait f
 administrator. Built again unchanged, it is up to date. `zig build sandboxed-plugins` builds
 every plugin under `plugins/` that is not compiled in the same way into
 `zig-out/sandboxed-plugins/<name>.wasm`, as the tests build theirs; see
-[Build](build.md#the-plugins).
+[Build](contributing/build.md#the-plugins).
 
 **Every plugin builds for the sandbox.** What cannot run there is left out of that build,
 never a reason to refuse it: `.extend` and all it registers (it needs
@@ -1114,7 +1114,7 @@ catalogues as it loads, leave them when it is disabled or removed, and take effe
 without a restart. An installed plugin's file is never `.official`: it translates, and where
 it disagrees with another the administrator chooses. Site Health shows where translations
 disagree and what each language still misses. See
-[Admin](admin.md#the-admins-language).
+[Admin](contributing/admin.md#the-admins-language).
 
 ### The Overview's "Your agent" tab
 

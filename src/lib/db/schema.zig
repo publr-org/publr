@@ -287,10 +287,11 @@ test "apply creates every table and is idempotent" {
     try std.testing.expect(!try has_table(&fixture.connection, "nope"));
 }
 
-test "every table in schema.sql is documented in docs/schema.md" {
+test "every table in schema.sql is documented in the schema doc" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
-    const docs = try std.Io.Dir.cwd().readFileAlloc(io, "docs/schema.md", gpa, .limited(1 << 20));
+    const path = "docs/contributing/schema.md";
+    const docs = try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
     defer std.testing.allocator.free(docs);
 
     var statements = std.mem.splitSequence(u8, sql, "CREATE ");
@@ -306,7 +307,7 @@ test "every table in schema.sql is documented in docs/schema.md" {
         defer std.testing.allocator.free(heading);
 
         if (std.mem.indexOf(u8, docs, heading) == null) {
-            std.debug.print("table {s} is not documented in docs/schema.md\n", .{table});
+            std.debug.print("table {s} is not documented in {s}\n", .{ table, path });
             return error.UndocumentedTable;
         }
 

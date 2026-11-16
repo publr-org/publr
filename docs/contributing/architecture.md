@@ -75,19 +75,19 @@ Every call is judged by a chain of policies that produces a grant. Policies
 only ever narrow a grant, and any deny wins. Who gets what:
 
 - **Anonymous visitors** can only read live records of public types, and sign
-  in (see [Authentication](auth.md)). Nothing else: no types, no statuses, no
+  in (see [Authentication](../auth.md)). Nothing else: no types, no statuses, no
   private records. When in doubt, Publr does not allow.
 - **Signed-in users** can do what their roles grant. A role is data: a name
   and grants, each naming an operation or a namespace (`record.*`). Two roles
   ship with the core, `admin` (everything) and `editor` (all content, no
   structure, user or settings management); plugins declare their own, such as
   an app's visitors, whose grants reach only that app's operations
-  (`app.<feature>.*`) and so never the admin. See [Auth](auth.md#roles).
+  (`app.<feature>.*`) and so never the admin. See [Auth](../auth.md#roles).
 - **API tokens** come in two kinds. A user token acts as the user it belongs
   to, within that user's roles. A machine token belongs to no user and carries
   its own policy (what it may read and write); that policy becomes its grant.
 - **Plugins** can do what their permission scopes allow. A plugin compiled
-  into the binary is trusted and has full access. See [Plugins](plugins.md).
+  into the binary is trusted and has full access. See [Plugins](../plugins.md).
 - **The CLI** has complete control. Run with `--as <user>` it has exactly what
   that user's roles allow, nothing more.
 
@@ -99,7 +99,7 @@ own drafts".
 Content types are data, records are records of a type in a status, and every
 field value is its own row. Everything with fields is a record in the same
 two tables, plugins included; statuses are a registry. See
-[Content](content.md).
+[Content](../content.md).
 
 ## The apps
 
@@ -112,7 +112,7 @@ made for one request, so a page only ever shows what its visitor may see. Every 
 writes down what it read; when a record changes, the pages that read it are
 the ones rewritten. A project holds any number of apps, each mounted at a
 path or a subdomain of its one domain, all over the same plugins. See
-[Apps](apps.md).
+[Apps](../apps.md).
 
 ```mermaid
 flowchart LR
@@ -127,8 +127,8 @@ A plugin can add operations, policies, hooks, statuses, field kinds and content
 types, and
 its operations appear in the CLI and the REST API automatically. It
 cannot reach around the pipeline: whatever it does, it does through the same
-operations, judged by the same policies. See [SDK](sdk.md) and
-[Plugins](plugins.md).
+operations, judged by the same policies. See [SDK](../sdk.md) and
+[Plugins](../plugins.md).
 
 ## Native or in the browser
 

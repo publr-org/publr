@@ -237,7 +237,7 @@ Only an admin grants roles (`user create`, `user update`).
 
 Signing in, signing out, redeeming a set-password link and the one-time setup are open
 to everyone. Finer rules (per-type access, owning records) are plugin policies, see
-[Architecture: Permissions](architecture.md#permissions).
+[Architecture: Permissions](contributing/architecture.md#permissions).
 
 ## Setup, exactly once
 

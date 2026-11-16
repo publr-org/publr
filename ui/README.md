@@ -2,7 +2,7 @@
 
 ## Layouts
 
-Every page returns one layout from `layouts/` and fills its slots; `docs/admin.md` lists
+Every page returns one layout from `layouts/` and fills its slots; `docs/contributing/admin.md` lists
 them. `Chrome` (rail, sidebar, crumbs, top bar) and `Document` (the HTML document) are
 drawn only by the layouts, from `Publr.request`, which the admin fills from the session
 (`ui/request.zig` is its shape). Their parts live in `components/`: `IndexHeader` (the

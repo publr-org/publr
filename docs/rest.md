@@ -107,7 +107,7 @@ redirects, and the paths its cookies are kept for.
 |---|---|
 | `GET /api/health` | `{ "version", "echo", "caller", "sync" }`; `caller` is who you are (`anonymous`, or a user id); `sync` is where to clone, pull and push this site (`serve --sync-url`), empty for its own address |
 
-A deprecated operation ([Updates](updates.md#changing-publr)) still answers, with
+A deprecated operation ([Changing Publr safely for updates](contributing/updates.md)) still answers, with
 `Deprecation: true` and `X-Publr-Deprecated` saying since when and what to call instead.
 
 ## The CLI next to the server

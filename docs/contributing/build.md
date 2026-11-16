@@ -16,7 +16,7 @@ each concern lives in `build/<topic>.zig`.
 | `zig build wasm` | Compile the core for wasm32-wasi; part of `verify-full`. |
 | `zig build smoke` | Run the built binary through every entry point from a fresh folder; part of `verify-full`. |
 | `zig build parity` | Run the example every `--help` prints and check its answer. |
-| `zig build upgrade` | Update every release's upgrade site in `.zig-cache/upgrade-sites/` (the releases' assets, fetched there by CI) with this build and check it (`-Dupgrade-from=<release>` for one, `-Dupgrade-previous=<publr>` to prove the release before still runs on the result, `-Dupgrade-binary=<publr>` to test that binary instead); part of `verify-full`. See [Updates](updates.md). |
+| `zig build upgrade` | Update every release's upgrade site in `.zig-cache/upgrade-sites/` (the releases' assets, fetched there by CI) with this build and check it (`-Dupgrade-from=<release>` for one, `-Dupgrade-previous=<publr>` to prove the release before still runs on the result, `-Dupgrade-binary=<publr>` to test that binary instead); part of `verify-full`. See [Updates](../updates.md). |
 | `zig build upgrade-fixture` | Make this version's upgrade site and carry the lived site on to it, in `.zig-cache/upgrade-sites/`, with this build or `-Dupgrade-binary`; the Release workflow runs it with the release binary and attaches both to the release. |
 | `zig build migration-draft` | Draft `src/lib/db/migrations/unreleased.zig` from what `schema.sql` adds to the last release's. |
 | `zig build two-mode` | Run every test plugin installed and compiled in, and compare the answers. |
@@ -87,7 +87,7 @@ build's). The `publr`
 module is the core's own source, packed into the binary with the build (`sdk_archive`);
 what the sandbox never reaches (SQLite, the HTTP server, the apps) is an empty module in
 its place, so a plugin that reaches for them fails to compile. The manifest (see
-[Plugins](plugins.md#installed-plugins-dlp)) is read by running `publr_manifest` in the
+[Plugins](../plugins.md#installed-plugins-dlp)) is read by running `publr_manifest` in the
 sandbox and written into the module's `publr` custom section. The WebAssembly runtime
 itself is `../lib/wasm` (WAMR's fast interpreter, vendored), a path dependency like
 SQLite. Each folder the build packs lists its files as inputs, so a change to `src/`

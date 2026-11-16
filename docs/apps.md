@@ -813,4 +813,4 @@ another `--url`, is built whole, and so is every app when the queue is too wide 
 keys a change raises and every artifact that recorded one of them. The admin
 shows the same, with what the apps' templates say about the type, in the
 record editor's "What depends on this" dialog under `serve --dev`; see
-[Admin](admin.md).
+[Admin](contributing/admin.md).

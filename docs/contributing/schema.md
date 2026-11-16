@@ -4,7 +4,7 @@ Publr keeps everything in one SQLite file (`data/publr.db` by default), in
 strict tables created by `src/lib/db/schema.sql` when the database opens. `schema.sql` is
 the shape of a new database; a database made by any earlier release since 0.3.0 reaches
 it through the chain of migrations (`src/lib/db/migrations/`, recorded in `migrations`),
-run by the gate every open goes through ([Updates](updates.md)). A database from before
+run by the gate every open goes through ([Updates](../updates.md)). A database from before
 0.3.0 is brought to the shape once: missing tables made, columns added since a table first
 shipped added in place (`added_columns` in `src/lib/db/schema.zig`), drifted tables
 rebuilt, rows kept. Ids are 24 hex
@@ -143,7 +143,7 @@ and by plugins under their own dotted prefix (`seo.default_image`).
 
 Publr keeps two of its own here. `publr.release` is the release that last opened the
 database; when another one opens it, the whole site is backed up first. The gate writes it
-([updates.md](updates.md)).
+([updates.md](../updates.md)).
 
 ## `migrations`
 
@@ -638,7 +638,7 @@ be applied, and the version the last update replaced, kept to roll back to. Each
 is a file on the data drive named by its hash (`plugins/<hash>.wasm` beside the
 database), swept once no row names it; the manifests are kept here as the modules
 carried them, so listing plugins never reads a module. Reloading, updating or waking a
-project reads this table again. See [Plugins](plugins.md#installed-plugins-dlp).
+project reads this table again. See [Plugins](../plugins.md#installed-plugins-dlp).
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -844,7 +844,7 @@ The schemas of terms, exactly as `content_types` are the schemas of records:
 same columns, same JSON definition (a content type definition with
 `hierarchical` set when terms may have a parent), same derived id. A
 taxonomy is enabled on a content type by giving the type a field of kind
-`terms` that names the taxonomy; see [Content](content.md).
+`terms` that names the taxonomy; see [Content](../content.md).
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -972,11 +972,11 @@ CDN in front purges (both logs keep their last 10,000 revisions); `deps_meta (na
 value)` the batch counter, both logs' revisions and floors, and the time of the last
 change. Keys are `record:<id>`, `type:<handle>`, `records`,
 `template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
-(`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](apps.md).
+(`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](../apps.md).
 
 ## `job_queue`
 
-The jobs plugins queued (see [Plugin API](plugin-api.md)): the `plugin` and the job's
+The jobs plugins queued (see [Plugin API](../plugin-api.md)): the `plugin` and the job's
 `name`, its `input` as JSON, and `due_at`, when it may run. A write queues them in its own
 transaction, so a write rolled back queues nothing. The server's worker process runs a job
 once `due_at` has come and removes it when it is done. A job that fails waits again: `attempts` counts the

@@ -14,7 +14,7 @@ content_type create --help` spells out every key and field kind). Signed-in
 users may read types; changing them needs an admin. Anonymous callers never see type definitions, only the live records
 of public types. Back to the
 [CLI reference](../cli.md); how content is modelled is in
-[Architecture](../architecture.md#content).
+[Architecture](../contributing/architecture.md#content).
 
 | Command | What |
 |---|---|

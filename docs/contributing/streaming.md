@@ -3,7 +3,7 @@
 A design for delivering islands in the page's own response, with no second
 round trip, and for running that delivery on Publr's servers or on someone
 else's. Status: proposal. Nothing here is built yet. How islands work today
-is in [Apps](apps.md); what a publish rebuilds is there too.
+is in [Apps](../apps.md); what a publish rebuilds is there too.
 
 ## The problem
 

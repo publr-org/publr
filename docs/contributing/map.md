@@ -257,7 +257,7 @@ The fourth door faces the other way: `adapters/apps/` is what readers get, each 
 templates rendered through `record` operations (anonymous when shared, as the
 signed-in visitor per request), built to files and rebuilt from the dependency index
 (`lib/deps/`) when a `record.*` event raises a key (`operations/project/changes.zig`).
-A request goes to the app mounted where it asked. See [Apps](apps.md).
+A request goes to the app mounted where it asked. See [Apps](../apps.md).
 
 ### Beside the layers
 

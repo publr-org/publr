@@ -246,7 +246,7 @@ transaction and records what happened.
 
 So nothing is AI-only and nothing is UI-only. A feature added once is there for every
 door, documented. An agent can do exactly what its person may do, no more, and there is
-no back door for anyone. [Architecture](docs/architecture.md)
+no back door for anyone. [Architecture](docs/contributing/architecture.md)
 
 ## Sandboxed plugins
 
@@ -431,7 +431,7 @@ fix is in this repository, not on someone else's roadmap.
 The core stays small enough to read in an afternoon. Workflows, environments,
 languages and integrations are plugins on the same SDK any third party uses, so the
 plugin API stays honest: Publr is its heaviest user.
-[Philosophy](docs/philosophy.md) · [Dependencies](docs/dependencies.md)
+[Philosophy](docs/contributing/philosophy.md) · [Dependencies](docs/contributing/dependencies.md)
 
 ## Status
 
@@ -442,12 +442,12 @@ releases. [Updates](docs/updates.md)
 
 | Running a site | Building on it | How it works |
 |---|---|---|
-| [Content](docs/content.md) | [Agents](docs/agents.md) | [Philosophy](docs/philosophy.md) |
-| [Admin](docs/admin.md) | [Apps](docs/apps.md) | [Architecture](docs/architecture.md) |
+| [Content](docs/content.md) | [Agents](docs/agents.md) | [Philosophy](docs/contributing/philosophy.md) |
+| [Admin](docs/contributing/admin.md) | [Apps](docs/apps.md) | [Architecture](docs/contributing/architecture.md) |
 | [Authentication](docs/auth.md) | [Plugins](docs/plugins.md) | [SDK](docs/sdk.md) |
-| [Queries](docs/queries.md) | [Plugin API](docs/plugin-api.md) | [Database schema](docs/schema.md) |
-| [CLI](docs/cli.md) | [REST API](docs/rest.md) | [Publr in the browser](docs/browser.md) |
-| [Updates](docs/updates.md) | [Streaming islands](docs/streaming.md) | [Build reference](docs/build.md) |
+| [Queries](docs/queries.md) | [Plugin API](docs/plugin-api.md) | [Database schema](docs/contributing/schema.md) |
+| [CLI](docs/cli.md) | [REST API](docs/rest.md) | [Publr in the browser](docs/contributing/browser.md) |
+| [Updates](docs/updates.md) | [Streaming islands](docs/contributing/streaming.md) | [Build reference](docs/contributing/build.md) |
 
 ## License
 

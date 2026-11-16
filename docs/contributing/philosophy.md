@@ -56,7 +56,7 @@ a name, an input, an output, one function. The admin UI, the CLI, the REST
 API and plugins are adapters over that one table; permissions, transactions,
 events and audit happen in one place, once. This is what keeps the core tiny:
 adding a feature means adding an operation, and every surface gets it for
-free, documented (see [Architecture](architecture.md), [SDK](sdk.md)).
+free, documented (see [Architecture](architecture.md), [SDK](../sdk.md)).
 
 ## Data, not code
 

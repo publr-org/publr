@@ -1,7 +1,7 @@
 # CLI: `design`
 
 An app's design system and its moodboard. The admin's Design area draws both
-([Admin](../admin.md)); agents read and write them here. Back to the
+([Admin](../contributing/admin.md)); agents read and write them here. Back to the
 [CLI reference](../cli.md).
 
 ## `save_system`
