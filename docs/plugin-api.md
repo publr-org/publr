@@ -73,7 +73,7 @@ A missing one fails the build and says where it goes.
 | `translations` | `&.{ .{ .locale, .label, .po } }` | both |
 | `dimensions` | `&.{ ... }` of `publr.dimension.define`, see [Dimensions](#dimensions) | both |
 | `extend` | `fn (host: *publr.Host) publr.Error!void`, see [Built-in only](#built-in-only) | built-in |
-| `row_actions` | see [Built-in only](#built-in-only) | built-in |
+| `row_actions` | see [Panels and row actions](#panels-and-row-actions) | both |
 
 Any other option is a build error.
 
@@ -755,7 +755,8 @@ list at a time; a modifier is still written for one, and Publr runs it over them
 passes: the first only notes what each reads, then every noted `get` is read in one list and
 anything else once per distinct input, and the next pass answers from them, at most 4
 rounds. A modifier is pure: no writes, no outside calls; one that fails leaves the value as
-it was. `publr mod list` shows every modifier, whose it is and why. A `pre` hook (built-in) is a `.middleware` struct.
+it was. `publr mod list` shows every modifier, whose it is and why. A `pre` hook is
+built-in only, registered with `host.middleware` (see [The server](#the-server)).
 
 ```zig
 /// A greeting was recorded.
@@ -1342,7 +1343,11 @@ before a page shows it; core writes the `<symbol>` around it.
 
 A panel is a read taking `record` and `base`, answering `html` drawn by its view on the
 `PanelPage` layout (`publr.views.render`), shown in the plugin frame on every record of the
-type; with `.field`, under that field as its help (see [Field help](#field-help)). Row actions are built-in only. What the plugin's page in the
+type; with `.field`, under that field as its help (see [Field help](#field-help)). A row
+action is a menu item on the rows of another plugin's list (`.slot`, `.kind` for one kind of
+row), shown to whoever may call its operation, `{name}` in its path filled with the row's
+name. An installed plugin's actions lead only into the admin (`/admin/...`) through its own
+operations. What the plugin's page in the
 admin says about it is its `//!` past the first line, through the admin's sanitizer.
 
 ### Admin views in PTSX
@@ -1441,9 +1446,8 @@ handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key onl
 
 `host.app_picker_segment` (`fn (*const publr.admin.Session, bool,
 ?publr.admin.render.Node) publr.admin.Error!?publr.admin.render.Node`), `host.sign_in_at`
-(`fn (*const publr.admin.Session) anyerror!?[]const u8`), `host.admin_brand`,
-`host.work_start` (the operation `publr work
-start` calls). Still an option of `define`: `.row_actions`.
+(`fn (*const publr.admin.Session) anyerror!?[]const u8`), `host.admin_brand` (whose admin
+it is: its name and mark), `host.copies` (see [Plugins](plugins.md#copies-of-a-site)).
 
 ### The server
 
@@ -1476,5 +1480,5 @@ publr notes --help
 Built-in: list it in `publr.zon` and run `zig build`. Worked examples:
 `publr/plugins/hello` (records with a flow, an operation, hooks, an event), the
 `plugin scaffold` templates (a list page, a settings form), `plugins/products` (records,
-references, money, a filter, its own icons, menu items) and `site/plugins/waitlist` (an operation untrusted
+references, money, a title modifier, its own icons, menu items) and `site/plugins/waitlist` (an operation untrusted
 callers reach).
