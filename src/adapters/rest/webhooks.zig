@@ -152,7 +152,7 @@ fn take(target: Target, request: *Request, response: *Response, ctx: *Context) a
             owner,
             webhook.name,
         });
-        _ = try store.webhook_deliveries.add(system.db, delivery);
+        try store.webhook_deliveries.add_refused(system.db, delivery);
 
         return response.text(.unauthorized, "Signature not verified");
     }
@@ -308,6 +308,10 @@ test "a signed delivery runs as queued work, a repeat is dropped, a forged one r
     // The secret's value from the environment, as a site may give it.
     try std.testing.expectEqual(0, Environment.setenv("SHOP_WEBHOOK_KEY", "t0ken", 1));
     defer _ = Environment.unsetenv("SHOP_WEBHOOK_KEY");
+    const from_environment = "PUBLR_SECRETS_FROM_ENVIRONMENT";
+
+    try std.testing.expectEqual(0, Environment.setenv(from_environment, "SHOP_WEBHOOK_KEY", 1));
+    defer _ = Environment.unsetenv(from_environment);
 
     var system = harness.ctx(.system);
     try registry.SDK.bootstrap(&system);

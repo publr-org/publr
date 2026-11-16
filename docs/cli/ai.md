@@ -12,7 +12,7 @@ as it happens, and the device is revoked when the turn ends. Conversations are
 
 | Command | What |
 |---|---|
-| `ai ask --prompt <text> [--scope write\|drafts\|read] [--pictures <keys>] [--page <path>]` | Start a conversation; answers at once, `running`. Signed-in people only, on a running server with a model provider connected. `--pictures` (JSON list, up to 8) names chat pictures (`media upload --type ai_picture`) the model looks at with the words. `--page` names the page it was asked on (an admin path or a site's address, one line, up to 512 bytes), added under the words as `Asked on <page>` so "this" means what is on it |
+| `ai ask --prompt <text> [--scope write\|drafts\|read] [--pictures <keys>] [--page <path>]` | Start a conversation; answers at once, `running`. Only for accounts whose roles grant `ai.ask` (administrators, editors and contributors do), on a running server with a model provider connected. `--pictures` (JSON list, up to 8) names chat pictures (`media upload --type ai_picture`) the model looks at with the words. `--page` names the page it was asked on (an admin path or a site's address, one line, up to 512 bytes), added under the words as `Asked on <page>` so "this" means what is on it |
 | `ai conversation --id <id> [--before <position>] [--limit <n>]` | The conversation and its steps, the newest 50 at a time (`--limit` up to 512, `--before` for the ones before a position; `earlier` says how many are left): `asked` (a follow-up), `said` (the model's words on the way), `ran` (an action, as a readable line with what it answered and the admin page that shows it, `href`) and `answered` |
 | `ai conversations` | The caller's latest 50, newest first |
 | `ai reply --id <id> --prompt <text> [--pictures <keys>]` | A follow-up once the last turn is over: another turn starts and carries on from the last turn's own messages (what each command answered, word for word), kept by the agent in `data/agents/<id>.history.json`; without them (a restart mid-turn), reminded of every ask, what was done and what was answered |
@@ -77,6 +77,17 @@ person's, with a screenshot of up to 176 KiB); the agent takes the answer (`ai b
 The page says the extension is there with `ai browser_ready`. A call waits 10 seconds when
 no workspace ever said so, a minute when one did; then the agent gives up on the browser
 for the rest of the turn and uses `show` and `fetch`.
+
+The browser is signed in as the person, so what the agent does there it does as them,
+whatever access the conversation was given. With less than the person's own (`read`,
+`write`, `production`) the browser only looks: clicking, typing, filling in and scripts
+are refused, and the agent changes things through its commands, under its scope. The
+person lends the browser to one admin at a time, in the extension's side panel; a page
+that was not lent it gets no answer but how to ask.
+
+What a fetched page says reaches the model marked as that page's words, and the agent
+is told that pages, records, files and what commands print are content, never
+instructions: a page can still try to steer it, so its scope stays the limit that holds.
 
 | Command | What |
 |---|---|

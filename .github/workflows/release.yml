@@ -40,7 +40,7 @@ jobs:
       previous: ${{ steps.kind.outputs.previous }}
       commits: ${{ steps.commits.outputs.commits }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { path: publr, fetch-depth: 0 }
 
       - name: The next version
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { path: publr, fetch-depth: 0 }
 
       # The version, and the next migration named by it before anything is built: a
@@ -190,7 +190,7 @@ jobs:
             2>&1 | tee ../upgrade.txt
           test "${PIPESTATUS[0]}" -eq 0
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: upgrade
           path: |
@@ -211,7 +211,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { path: publr, fetch-depth: 0 }
 
       - name: Write the version
@@ -233,7 +233,7 @@ jobs:
         if: matrix.target != 'aarch64-linux-musl'
         run: test "$(./${{ matrix.file }} --version)" = "publr $VERSION"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
   verify:
@@ -249,11 +249,11 @@ jobs:
     steps:
       # Pushed with a token that may write workflows: the default one may not push a tag or
       # merge whose workflow files differ from main's.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { path: publr, fetch-depth: 0, token: "${{ secrets.RELEASE_TOKEN }}" }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { path: dist, pattern: "publr-*", merge-multiple: true }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { path: upgrade, name: upgrade }
 
       - name: Write the version

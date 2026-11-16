@@ -104,9 +104,10 @@ Output: `{ "user_id", "sessions_revoked" }`.
 
 ## `user set_password`
 
-Redeem a set-password link: sets the password, activates the account and
-signs out every existing session. Anyone holding the token may call it; a
-wrong, used or expired token answers `not found`.
+Redeem a set-password link: sets the password, activates the account,
+signs out every existing session and stops the account's devices (the CLI and
+agent tools sign in again). Anyone holding the token may call it; a wrong,
+used or expired token answers `not found`.
 
 | Field | Type | Default |
 |---|---|---|

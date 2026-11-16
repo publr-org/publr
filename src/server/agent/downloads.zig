@@ -6,6 +6,10 @@
 const std = @import("std");
 const timed = @import("../../operations/http_timed.zig");
 const http_operations = @import("../../operations/http.zig");
+const outside = @import("../../model/outside.zig");
+const egress = @import("../../model/egress.zig");
+const environment = @import("../../lib/environment.zig");
+const interfaces = @import("../interfaces.zig");
 
 /// Files one turn may download, at most.
 pub const files_max: u32 = 400;
@@ -31,6 +35,8 @@ pub const Downloads = struct {
     io: std.Io,
     /// The media folder beside the database.
     root: []const u8,
+    /// Where a download may go (`rule_of`).
+    rule: outside.Rule,
     mutex: std.Io.Mutex = .init,
     items: [files_max]Item = undefined,
     count: u32 = 0,
@@ -144,7 +150,7 @@ pub const Downloads = struct {
         while (taken < files_max) : (taken += 1) {
             const item = downloads.take() orelse break;
 
-            downloads.settle(item, fetch_into(downloads.io, downloads.root, item.url, item.path));
+            downloads.settle(item, fetch_into(downloads, item.url, item.path));
         }
 
         downloads.mutex.lockUncancelable(downloads.io);
@@ -153,22 +159,64 @@ pub const Downloads = struct {
     }
 };
 
+/// Where the agent's own requests may go: public addresses over https, on a laptop too. A
+/// page the model was pointed at never leads the server into its own network, whatever its
+/// name resolves to and wherever it redirects.
+pub fn rule_of(arena: std.mem.Allocator) error{OutOfMemory}!outside.Rule {
+    const own = try interfaces.public(arena);
+
+    std.debug.assert(own.len <= outside.own_addresses_max);
+
+    return .{
+        .production = true,
+        .own_addresses = own,
+        .egress = egress.parse(environment.get(egress.variable)),
+    };
+}
+
+/// `url` answered under `rule`: every address its name resolves to checked, and every
+/// redirect again.
+pub fn fetch(
+    io: std.Io,
+    arena: std.mem.Allocator,
+    rule: outside.Rule,
+    url: []const u8,
+    body_max: u32,
+    limit_ms: u32,
+) timed.Error!timed.Answer {
+    std.debug.assert(url.len > 0);
+    std.debug.assert(rule.production);
+
+    var trace: timed.Trace = .{
+        .arena = arena,
+    };
+
+    return timed.fetch_traced(io, arena, .{
+        .url = url,
+        .body_max = body_max,
+        .guard = .{
+            .domains = null,
+            .rule = rule,
+        },
+    }, limit_ms, &trace);
+}
+
 /// Downloads `url` to `<root>/<path>`; why it could not, or null.
-fn fetch_into(io: std.Io, root: []const u8, url: []const u8, path: []const u8) ?[]const u8 {
+fn fetch_into(downloads: *const Downloads, url: []const u8, path: []const u8) ?[]const u8 {
     std.debug.assert(url.len > 0);
     std.debug.assert(path.len > 0);
 
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
 
+    const io = downloads.io;
+    const root = downloads.root;
     const arena = arena_state.allocator();
-    const result = timed.fetch(io, arena, .{
-        .url = url,
-        .body_max = bytes_max,
-    }, file_timeout_ms) catch |err| {
+    const result = fetch(io, arena, downloads.rule, url, bytes_max, file_timeout_ms) catch |err| {
         return switch (err) {
             error.TimedOut => "not done within 2 minutes",
             error.TooBig => "larger than 32 MiB",
+            error.Refused => "not a public https address",
             else => "did not answer",
         };
     };

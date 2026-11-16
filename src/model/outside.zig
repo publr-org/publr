@@ -245,8 +245,11 @@ fn public_ip4(bytes: [4]u8) bool {
     const local = first == 0 or first == 10 or first == 127 or first >= 224 or
         (first == 169 and second == 254) or (first == 172 and second >= 16 and second <= 31) or
         (first == 192 and second == 168) or (first == 100 and second >= 64 and second <= 127);
+    // Protocol assignments 192.0.0.0/24 and the benchmarking networks 198.18.0.0/15.
+    const reserved = (first == 192 and second == 0 and bytes[2] == 0) or
+        (first == 198 and (second == 18 or second == 19));
 
-    return !local;
+    return !(local or reserved);
 }
 
 fn public_ip6(bytes: [16]u8) bool {
@@ -258,17 +261,24 @@ fn public_ip6(bytes: [16]u8) bool {
         return public_ip4(bytes[12..16].*);
     }
 
-    const zero_prefix = std.mem.allEqual(u8, bytes[0..15], 0);
+    // An IPv4 address carried inside an IPv6 one is judged as itself: `::a.b.c.d` (`::`
+    // and `::1` among them), NAT64's 64:ff9b::/96 and 6to4's 2002::/16.
+    const nat64_prefix = [_]u8{ 0, 0x64, 0xff, 0x9b } ++ @as([8]u8, @splat(0));
 
-    // `::` and `::1`, unique-local fc00::/7, link-local fe80::/10, multicast ff00::/8.
-    if (zero_prefix and bytes[15] <= 1) {
-        return false;
+    if (std.mem.allEqual(u8, bytes[0..12], 0) or std.mem.eql(u8, bytes[0..12], &nat64_prefix)) {
+        return public_ip4(bytes[12..16].*);
     }
 
-    const unique_local = bytes[0] & 0xfe == 0xfc;
-    const link_local = bytes[0] == 0xfe and bytes[1] & 0xc0 == 0x80;
+    if (bytes[0] == 0x20 and bytes[1] == 0x02) {
+        return public_ip4(bytes[2..6].*);
+    }
 
-    return !(unique_local or link_local or bytes[0] == 0xff);
+    // Unique-local fc00::/7, link-local fe80::/10 and the old site-local fec0::/10,
+    // multicast ff00::/8.
+    const unique_local = bytes[0] & 0xfe == 0xfc;
+    const link_or_site_local = bytes[0] == 0xfe and bytes[1] & 0x80 == 0x80;
+
+    return !(unique_local or link_or_site_local or bytes[0] == 0xff);
 }
 
 test "a domain is exact, a subdomain wildcard or a star; subdomains are never implied" {
@@ -400,4 +410,23 @@ test "the server's own public addresses are refused in production, whatever the 
     try std.testing.expect(!address_allowed(production, try IpAddress.parse("2001:db8::9", 443)));
     try std.testing.expect(address_allowed(production, try IpAddress.parse("203.0.113.10", 443)));
     try std.testing.expect(address_allowed(development, try IpAddress.parse("203.0.113.9", 443)));
+}
+
+test "public: an IPv4 address inside an IPv6 one is judged as itself; reserved networks are not" {
+    const nat64 = [_]u8{ 0, 0x64, 0xff, 0x9b } ++ @as([8]u8, @splat(0));
+    const nat64_local = nat64 ++ [_]u8{ 10, 0, 0, 1 };
+    const nat64_public = nat64 ++ [_]u8{ 1, 1, 1, 1 };
+    const six_to_four = [_]u8{ 0x20, 0x02, 169, 254, 169, 254 } ++ @as([10]u8, @splat(0));
+    const compatible = @as([12]u8, @splat(0)) ++ [_]u8{ 127, 0, 0, 1 };
+    const site_local = [_]u8{ 0xfe, 0xc0 } ++ @as([14]u8, @splat(0));
+
+    try std.testing.expect(!public_ip6(nat64_local));
+    try std.testing.expect(public_ip6(nat64_public));
+    try std.testing.expect(!public_ip6(six_to_four));
+    try std.testing.expect(!public_ip6(compatible));
+    try std.testing.expect(!public_ip6(site_local));
+    try std.testing.expect(!public_ip6(@splat(0)));
+    try std.testing.expect(!public_ip4(.{ 192, 0, 0, 8 }));
+    try std.testing.expect(!public_ip4(.{ 198, 19, 0, 1 }));
+    try std.testing.expect(public_ip4(.{ 198, 20, 0, 1 }));
 }

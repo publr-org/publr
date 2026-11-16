@@ -126,6 +126,74 @@ pub fn settle(
     try update.exec();
 }
 
+/// How many deliveries that never verified a webhook keeps: enough to see who is knocking.
+pub const unverified_kept: u32 = 200;
+
+/// A delivery whose signature did not verify, kept; the webhook's older ones forgotten.
+pub fn add_refused(connection: *db.Db, delivery: Received) db.Error!void {
+    std.debug.assert(!delivery.verified);
+    std.debug.assert(delivery.plugin.len > 0 and delivery.name.len > 0);
+
+    _ = try add(connection, delivery);
+    try trim_unverified(connection, delivery.plugin, delivery.name);
+}
+
+/// Forgets the webhook's unverified deliveries but the newest `unverified_kept`: anyone can
+/// send those, so they never grow the database without end.
+pub fn trim_unverified(connection: *db.Db, plugin: []const u8, name: []const u8) db.Error!void {
+    std.debug.assert(plugin.len > 0 and name.len > 0);
+    std.debug.assert(unverified_kept > 0);
+
+    var remove = try connection.prepare(
+        "DELETE FROM webhook_deliveries WHERE plugin = ?1 AND name = ?2 AND verified = 0 " ++
+            "AND id NOT IN (SELECT id FROM webhook_deliveries WHERE plugin = ?1 AND " ++
+            "name = ?2 AND verified = 0 ORDER BY id DESC LIMIT ?3)",
+    );
+    defer remove.finalize();
+
+    try remove.bind_text(1, plugin);
+    try remove.bind_text(2, name);
+    try remove.bind_int(3, unverified_kept);
+    try remove.exec();
+}
+
+test "unverified deliveries are kept to the newest few; verified ones stay" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const connection = &fixture.connection;
+    var received: Received = .{
+        .plugin = "shop",
+        .name = "paid",
+        .delivery_id = "evt_1",
+        .received_at = 100,
+        .sender = "203.0.113.9",
+        .verified = true,
+        .body = "{}",
+        .headers = "",
+        .result = "waiting",
+    };
+
+    _ = try add(connection, received);
+    received.verified = false;
+    received.result = "refused";
+
+    for (0..unverified_kept + 5) |_| {
+        _ = try add(connection, received);
+    }
+
+    try trim_unverified(connection, "shop", "paid");
+
+    const listed = try list(connection, arena_state.allocator(), "shop", 512);
+
+    try std.testing.expectEqual(unverified_kept + 1, listed.len);
+    try std.testing.expect(try seen(connection, "shop", "paid", "evt_1"));
+}
+
 /// A delivery as its plugin's page lists it, in the column order of `list`.
 pub const Listed = struct {
     id: i64,

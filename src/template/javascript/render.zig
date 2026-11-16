@@ -464,8 +464,14 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             try writer.print(" {s}=\"", .{name});
 
-            if (address.url_attribute(name) and address.needs_base(named.base, text)) {
-                try writer.writeAll(named.base);
+            if (address.url_attribute(name)) {
+                if (address.runs_script(text)) {
+                    return writer.writeAll(address.inert ++ "\"");
+                }
+
+                if (address.needs_base(named.base, text)) {
+                    try writer.writeAll(named.base);
+                }
             }
 
             try escape(writer, text);

@@ -4,7 +4,9 @@ Secrets plugins name but never hold: API keys and the like. A plugin declares th
 uses in `.secrets` (not a permission) and writes `{secret:NAME}` where the value goes in a
 request it sends with `http.fetch`; the value is filled in as the request leaves. Names are
 site-wide: plugins declaring the same one share its value. A
-value comes from the environment variable of the same name when one is set, else from what
+value comes from the environment variable of the same name when a built-in plugin declares
+it or `PUBLR_SECRETS_FROM_ENVIRONMENT` lists it (names separated by spaces or commas), else
+from what
 an administrator set here, sealed with the project's key: `PUBLR_SECRET_KEY` (64 hex
 digits), else `secret.key` beside the database (mode 0600, made when the first secret is
 set). Back the key up with the database: without it, what was set cannot be read again. A

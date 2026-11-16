@@ -169,7 +169,7 @@ fn administrator(project: *const Project, arena: std.mem.Allocator, request: *co
         return false;
     }
 
-    const identity = identity_module.identify(request, arena, project);
+    const identity = identity_module.identify_on_site(request, arena, project);
 
     if (identity.caller.user_id() == null) {
         return false;

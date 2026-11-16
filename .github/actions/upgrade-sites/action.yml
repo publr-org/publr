@@ -14,7 +14,7 @@ runs:
       working-directory: publr
       run: echo "tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: publr/.zig-cache/upgrade-sites
         key: upgrade-sites-${{ steps.latest.outputs.tag }}

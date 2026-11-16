@@ -35,8 +35,9 @@ pub fn apply(arena: std.mem.Allocator, app: *const App, html: []const u8) ![]con
         else => return html,
     };
 
-    // The output is always a utilities layer; a rule inside it is a second brace.
-    if (std.mem.count(u8, css, "{") < 2) {
+    // The output is always a utilities layer; a rule inside it is a second brace. It is
+    // written inside a `<style>`: nothing in it may end the element.
+    if (std.mem.count(u8, css, "{") < 2 or std.mem.indexOf(u8, css, "</") != null) {
         return html;
     }
 
@@ -68,8 +69,16 @@ fn collect(arena: std.mem.Allocator, body: []const u8) ![]const []const u8 {
                 break;
             }
 
-            if (written.len <= class_bytes_max) {
-                try seen.put(arena, try unescaped(arena, written), {});
+            if (written.len > class_bytes_max) {
+                continue;
+            }
+
+            const class = try unescaped(arena, written);
+
+            // A class is its author's text and its rule lands inside a `<style>`: one that
+            // could end the element goes unstyled.
+            if (std.mem.indexOfScalar(u8, class, '<') == null) {
+                try seen.put(arena, class, {});
             }
         }
 
@@ -134,4 +143,20 @@ test "a class only a record names gets its rule; a short name does not" {
 
     try std.testing.expect(std.mem.indexOf(u8, css, ".text-7xl") != null);
     try std.testing.expect(std.mem.indexOf(u8, css, ".bH") == null);
+}
+
+test "a class that could end the style element gets no rule" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const found = try collect(arena, "</head><body><p class=\"p-4 " ++
+        "[--x:&lt;/style&gt;&lt;script&gt;alert(1)&lt;/script&gt;]\"></p></body>");
+
+    try std.testing.expectEqual(@as(usize, 1), found.len);
+    try std.testing.expectEqualStrings("p-4", found[0]);
+
+    const css = try jit.compile(arena, jit.default_theme, found, .{});
+
+    try std.testing.expect(std.mem.indexOfScalar(u8, css, '<') == null);
 }

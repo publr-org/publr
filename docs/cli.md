@@ -198,7 +198,8 @@ removes it and runs here.
 
 `publr db check` says what this release would find opening the database (the release that
 last opened it, migrations to run, every way its shape differs) and exits 1 when it would
-refuse it. `publr db tables` counts every table's rows. `publr backups` lists the backups
+refuse it. `publr db verify` reads the whole file and exits 1 when it is damaged.
+`publr db tables` counts every table's rows. `publr backups` lists the backups
 taken before each update and `publr restore <name>` puts one back, once `serve` is stopped.
 They open the database without the gate. See [Updates](updates.md) and [`update`](cli/update.md).
 

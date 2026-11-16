@@ -38,7 +38,6 @@ pub const Transcribe = struct {
         \\into text.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
     pub const example_signed_in = true;
     pub const In = struct {
         audio: []const u8,

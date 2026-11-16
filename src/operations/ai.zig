@@ -111,11 +111,11 @@ pub const Ask = struct {
         \\Starts a conversation and its turn: an agent works on the project beside the server,
         \\as a device of the caller with `scope` (`publish`, the default: what the caller may do;
         \\`production`, writing but not publishing; `write`, on copies only; or `read`),
-        \\and the steps land in the conversation as they happen. Signed-in people only, on a
-        \\server (`publr serve`) with a model provider connected. Answers at once, `running`.
+        \\and the steps land in the conversation as they happen. Only for accounts whose roles
+        \\grant `ai.ask` (administrators, editors and contributors do), on a server (`publr
+        \\serve`) with a model provider connected. Answers at once, `running`.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
     pub const example_signed_in = true;
     pub const In = struct {
         prompt: []const u8,
@@ -195,7 +195,6 @@ pub const Reply = struct {
         \\before, under the conversation's scope. The caller's own conversations only.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
     pub const example_signed_in = true;
     pub const In = struct {
         id: []const u8,

@@ -65,19 +65,41 @@ pub const Crawl = struct {
 
         while (index < crawl.pages.items.len and index < pages_max) : (index += 1) {
             const page = crawl.pages.items[index];
-            const html = get(crawl.io, arena, page) orelse continue;
+            const html = crawl.get(arena, page) orelse continue;
 
             crawl.collect(arena, page, html);
             _ = crawl.read.fetchAdd(1, .monotonic);
         }
 
         for (crawl.sheets.items[0..@min(crawl.sheets.items.len, sheets_max)]) |sheet| {
-            const css = get(crawl.io, arena, sheet) orelse continue;
+            const css = crawl.get(arena, sheet) orelse continue;
 
             crawl.collect_css(arena, sheet, css);
         }
 
         crawl.done.store(true, .release);
+    }
+
+    /// A page's or stylesheet's text, read where the downloads may go; null when it does
+    /// not answer.
+    fn get(crawl: *Crawl, arena: std.mem.Allocator, url: []const u8) ?[]const u8 {
+        std.debug.assert(url.len > 0);
+
+        const rule = crawl.downloads.rule;
+        const result = downloads_module.fetch(
+            crawl.io,
+            arena,
+            rule,
+            url,
+            text_bytes_max,
+            timed.timeout_ms,
+        ) catch return null;
+
+        if (result.status != .ok) {
+            return null;
+        }
+
+        return result.body;
     }
 
     /// Every file and page a page names, sorted into downloads, stylesheets and pages.
@@ -215,22 +237,6 @@ fn add_once(
     }
 
     list.append(arena, bare) catch return;
-}
-
-/// A page's or stylesheet's text; null when it does not answer.
-fn get(io: std.Io, arena: std.mem.Allocator, url: []const u8) ?[]const u8 {
-    std.debug.assert(url.len > 0);
-
-    const result = timed.fetch(io, arena, .{
-        .url = url,
-        .body_max = text_bytes_max,
-    }, timed.timeout_ms) catch return null;
-
-    if (result.status != .ok) {
-        return null;
-    }
-
-    return result.body;
 }
 
 /// The value of an attribute, quoted with `"` or `'`, starting at `at`.

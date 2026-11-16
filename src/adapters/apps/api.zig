@@ -29,6 +29,9 @@ const Form = http.Form;
 /// the address so core knows it before reading a byte of the body.
 pub const actions_prefix = "/_actions/";
 pub const body_bytes_max: u32 = 1 << 20;
+const word_bytes_max: u32 = 64;
+/// `app.`, a plugin and a verb with a dot between: the longest name an address carries.
+const action_bytes_max: u32 = "app.".len + word_bytes_max + 1 + word_bytes_max;
 /// The header a fetch from the app's own pages sends: a page on another site cannot send
 /// it without the browser asking first.
 pub const request_header = "publr-request";
@@ -150,19 +153,11 @@ const Action = struct {
 /// `app.cart.add`: the operation `cart.add` when cart makes it with `publr.operation.define`;
 /// null for anything else.
 fn action_of(project: *const Project, rest: []const u8) ?Action {
-    std.debug.assert(rest.len <= 4096);
     std.debug.assert(actions_prefix.len > 0);
 
-    if (!std.mem.startsWith(u8, rest, "app.")) {
-        return null;
-    }
+    const own = operation_named(rest) orelse return null;
 
-    const own = rest["app.".len..];
-    const dot = std.mem.indexOfScalar(u8, own, '.') orelse return null;
-
-    if (!word(own[0..dot]) or !word(own[dot + 1 ..])) {
-        return null;
-    }
+    std.debug.assert(own.len < rest.len);
 
     inline for (registry.SDK.operations) |Operation| {
         const defined = comptime @hasDecl(Operation, "untrusted_callers");
@@ -210,10 +205,30 @@ fn preflight(response: *Response, public: bool) anyerror!void {
     return response.text(.no_content, "");
 }
 
-fn word(text: []const u8) bool {
-    std.debug.assert(text.len <= 4096);
+/// The `<plugin>.<verb>` of `app.<plugin>.<verb>`, each a word; null for anything else. The
+/// address is the visitor's: any length and any bytes arrive here.
+fn operation_named(rest: []const u8) ?[]const u8 {
+    if (rest.len > action_bytes_max or !std.mem.startsWith(u8, rest, "app.")) {
+        return null;
+    }
 
-    if (text.len == 0 or text.len > 64) {
+    const own = rest["app.".len..];
+    const dot = std.mem.indexOfScalar(u8, own, '.') orelse return null;
+
+    if (!word(own[0..dot]) or !word(own[dot + 1 ..])) {
+        return null;
+    }
+
+    std.debug.assert(own.len >= 3);
+    std.debug.assert(own.len <= action_bytes_max);
+
+    return own;
+}
+
+fn word(text: []const u8) bool {
+    std.debug.assert(text.len <= action_bytes_max);
+
+    if (text.len == 0 or text.len > word_bytes_max) {
         return false;
     }
 
@@ -364,6 +379,12 @@ test "addresses: a plugin and a verb, each a word; a redirect only to the site" 
     try std.testing.expect(!word("Cart"));
     try std.testing.expect(!word(".."));
     try std.testing.expect(!word(""));
+    try std.testing.expectEqualStrings("cart.add", operation_named("app.cart.add").?);
+    try std.testing.expect(operation_named("cart.add") == null);
+    try std.testing.expect(operation_named("app.cart") == null);
+    try std.testing.expect(operation_named("app.cart.add.more") == null);
+    try std.testing.expect(operation_named("app.cart." ++ &@as([65]u8, @splat('a'))) == null);
+    try std.testing.expect(operation_named("app.cart." ++ &@as([8000]u8, @splat('a'))) == null);
     try std.testing.expect(local("/shop/cart"));
     try std.testing.expect(!local("//evil.example"));
     try std.testing.expect(!local("https://evil.example/"));

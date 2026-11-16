@@ -20,6 +20,7 @@ pub fn expect_updates(init: std.process.Init, binary: []const u8, work_dir: []co
     try smoke.expect_contains(init, binary, dir, &setup, "\"roles\": [");
     try smoke.expect_contains(init, binary, dir, &.{ "db", "check" }, "would open it");
     try smoke.expect_contains(init, binary, dir, &.{ "db", "tables" }, "users 1 core");
+    try smoke.expect_contains(init, binary, dir, &.{ "db", "verify" }, "whole");
     try smoke.expect_contains(init, binary, dir, &.{"backups"}, "No backups yet");
     try smoke.expect_failure(init, binary, dir, &.{ "restore", "nope" }, "no backup named");
 

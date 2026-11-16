@@ -39,6 +39,33 @@ pub fn split(
     next: http.Router.Next,
 ) anyerror!void {
     std.debug.assert(ctx.user_data != null);
+    std.debug.assert(request.path().len > 0);
+
+    try routed(request, response, ctx, next);
+
+    const policy = "Content-Security-Policy";
+
+    if (never_framed(request.path()) and response.header(policy) == null) {
+        try response.set_header(policy, own_frames_only);
+    }
+
+    // Reached over HTTPS (the proxy in front says so): the browser never asks this host
+    // over plain HTTP again, where the session cookie would travel in the clear.
+    if (identity_module.secure_suffix(request).len > 0) {
+        try response.set_header("Strict-Transport-Security", https_only);
+    }
+}
+
+/// A year, this host alone: a project's other hosts answer for themselves.
+const https_only = "max-age=31536000";
+
+fn routed(
+    request: *Request,
+    response: *Response,
+    ctx: *Context,
+    next: http.Router.Next,
+) anyerror!void {
+    std.debug.assert(ctx.user_data != null);
 
     const project = Project.of(ctx);
     const path = request.path();
@@ -69,6 +96,19 @@ pub fn split(
     }
 
     return next.run(request, response, ctx);
+}
+
+/// What the admin's pages and the pages that approve a tool answer with: only a page of
+/// their own origin frames them, so no page of a site, on a sibling host or another port,
+/// lays one under a click. A page that sets a policy of its own (a plugin's frame, a
+/// preview) replaces this one.
+const own_frames_only = "frame-ancestors 'self'";
+
+fn never_framed(path: []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    return std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/") or
+        std.mem.startsWith(u8, path, "/oauth/");
 }
 
 fn admin_side(path: []const u8) bool {
@@ -310,6 +350,14 @@ test "the site's host sends the admin to the admin's; the admin's sends pages to
     const login = try get(&harness, admin_host, "/admin/login", "Sec-Fetch-Dest: document\r\n");
 
     try std.testing.expectEqual(http.Status.ok, login.status);
+    try std.testing.expectEqualStrings(own_frames_only, login.header("Content-Security-Policy").?);
+    try std.testing.expect(login.header("Strict-Transport-Security") == null);
+
+    // Behind a proxy that took the request over HTTPS, the host is HTTPS only from then on.
+    const secure_lines = "Sec-Fetch-Dest: document\r\nX-Forwarded-Proto: https\r\n";
+    const secure = try get(&harness, admin_host, "/admin/login", secure_lines);
+
+    try std.testing.expectEqualStrings(https_only, secure.header("Strict-Transport-Security").?);
 }
 
 test "an administrator reaches the site with a pass that shows the toolbar and nothing else" {
@@ -373,6 +421,14 @@ test "an administrator reaches the site with a pass that shows the toolbar and n
 
     try std.testing.expect(!has(page.body, "data-publr-shell"));
     try std.testing.expect(page.header("Content-Security-Policy") == null);
+
+    // Nor core's API: on the site's host the admin's session is nobody's, on its own it is
+    // the administrator's.
+    const on_site = try get(&harness, site_host, "/api/auth/session", cookie_line);
+    const on_admin = try get(&harness, admin_host, "/api/auth/session", cookie_line);
+
+    try std.testing.expect(has(on_site.body, "\"authenticated\":false"));
+    try std.testing.expect(has(on_admin.body, "\"authenticated\":true"));
 }
 
 test "a forged pass keeps nothing" {

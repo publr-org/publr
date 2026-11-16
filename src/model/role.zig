@@ -50,7 +50,8 @@ const editor_grants = [_][]const u8{
     "user.options",          "project.status",
     "project.impact",        "identity.list",
     "identity.unlink",       "design.moodboard",
-    "design.save_moodboard",
+    "design.save_moodboard", "ai.ask",
+    "ai.reply",              "ai.transcribe",
 };
 
 pub const contributor = "contributor";

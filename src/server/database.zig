@@ -11,6 +11,8 @@ pub const help =
     \\                          release that last opened it, migrations to run, and every
     \\                          way its shape differs; exits 1 when the gate would refuse it
     \\  db tables               Every table, its rows, and whether it is core's
+    \\  db verify               Whether the database file is whole: every page and index
+    \\                          read, every reference followed; exits 1 when it is damaged
     \\  db draft <schema.sql>   The next migration, drafted from what this build's schema
     \\                          adds to that one (the last release's)
     \\  backups                 The backups taken before each update, newest first
@@ -39,6 +41,10 @@ pub fn run(
 
     if (std.mem.eql(u8, command, "db") and args.len == 2 and std.mem.eql(u8, args[1], "tables")) {
         return tables(init, out, db_path);
+    }
+
+    if (std.mem.eql(u8, command, "db") and args.len == 2 and std.mem.eql(u8, args[1], "verify")) {
+        return verify(init, out, db_path);
     }
 
     if (std.mem.eql(u8, command, "db") and args.len == 3 and std.mem.eql(u8, args[1], "draft")) {
@@ -140,6 +146,56 @@ fn tables(init: std.process.Init, out: *std.Io.Writer, db_path: [:0]const u8) !u
         _ = try count.step();
         try out.print("{s} {d} {s}\n", .{ table.name, count.read_int(), owner_of(table.name) });
     }
+
+    return 0;
+}
+
+/// `publr db verify`: the file read whole, as a copy of it must be before it counts as a
+/// backup. A page that does not read, an index that disagrees with its table or a row that
+/// refers to a missing one is named, and the answer is 1.
+fn verify(init: std.process.Init, out: *std.Io.Writer, db_path: [:0]const u8) !u8 {
+    std.debug.assert(db_path.len > 0);
+    std.debug.assert(db_path.len <= std.fs.max_path_bytes);
+
+    const arena = init.arena.allocator();
+    var runtime = try db.Runtime.init(.{});
+    defer runtime.deinit();
+    var connection = try db.open(&runtime, db_path);
+    defer connection.close();
+
+    const Verdict = struct {
+        text: []const u8,
+    };
+    var whole = try connection.prepare("PRAGMA integrity_check");
+    defer whole.finalize();
+
+    if (try whole.step()) {
+        const verdict = try whole.read(Verdict, arena);
+
+        if (!std.mem.eql(u8, verdict.text, "ok")) {
+            try out.print("damaged: {s}\n", .{verdict.text});
+
+            return 1;
+        }
+    }
+
+    var references = try connection.prepare("PRAGMA foreign_key_check");
+    defer references.finalize();
+
+    if (try references.step()) {
+        try out.writeAll("damaged: a row refers to a missing one\n");
+
+        return 1;
+    }
+
+    // A file with nothing in it reads without complaint, and holds no site.
+    if ((try db.shape.read(&connection, arena)).tables.len == 0) {
+        try out.writeAll("damaged: it holds no tables\n");
+
+        return 1;
+    }
+
+    try out.writeAll("whole\n");
 
     return 0;
 }

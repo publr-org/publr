@@ -59,6 +59,53 @@ const not_connected = "The person's browser is not connected (the Publr extensio
 const no_action = "`action` must be one of: tabs, navigate, screenshot, read_page, find, " ++
     "page_text, click, type, key, scroll, hover, form_input, console, network, javascript";
 
+const only_looks = "This conversation's access is less than the person's own, and their " ++
+    "browser is signed in as them: there you only look (tabs, navigate, screenshot, " ++
+    "read_page, find, page_text, scroll, console, network). Change things with `run`.";
+
+/// The actions that do something on a page as the person signed in to it.
+const acting = [_][]const u8{ "click", "type", "key", "hover", "form_input", "javascript" };
+
+fn acts(action: []const u8) bool {
+    std.debug.assert(action.len > 0);
+    std.debug.assert(acting.len < actions.len);
+
+    for (acting) |name| {
+        if (std.mem.eql(u8, name, action)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether a conversation's access is the person's own, whole: only then may the browser,
+/// signed in as them, act as well as look.
+pub fn whole_access(scope: []const u8) bool {
+    std.debug.assert(scope.len <= 64);
+
+    return std.mem.eql(u8, scope, "publish");
+}
+
+test "with less than the person's own access the browser only looks" {
+    try std.testing.expect(whole_access("publish"));
+    try std.testing.expect(!whole_access("read"));
+    try std.testing.expect(!whole_access("production"));
+    try std.testing.expect(acts("javascript"));
+    try std.testing.expect(acts("click"));
+    try std.testing.expect(!acts("screenshot"));
+
+    for (acting) |name| {
+        const known = for (actions) |action| {
+            if (std.mem.eql(u8, action, name)) {
+                break true;
+            }
+        } else false;
+
+        try std.testing.expect(known);
+    }
+}
+
 pub const Browser = struct {
     channel: *Channel,
     io: std.Io,
@@ -66,6 +113,9 @@ pub const Browser = struct {
     id: []const u8,
     /// The browser went away during this turn: later calls answer at once.
     gone: bool = false,
+    /// The conversation's access is less than the person's own (`read`, `write`,
+    /// `production`): the browser carries the person's sign-in, so it only looks.
+    looks_only: bool = false,
 
     pub fn run(browser: *Browser, arena: std.mem.Allocator, input: ?std.json.Value) !ai.Answer {
         std.debug.assert(browser.id.len > 0);
@@ -74,6 +124,13 @@ pub const Browser = struct {
         if (action_of(input) == null) {
             return .{
                 .output = no_action,
+                .failed = true,
+            };
+        }
+
+        if (browser.looks_only and acts(action_of(input).?)) {
+            return .{
+                .output = only_looks,
                 .failed = true,
             };
         }

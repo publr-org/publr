@@ -22,9 +22,12 @@ pub const namespace: sdk.operation.Namespace = .{
     \\`{secret:NAME}` where the value goes in a request it sends out; the value is filled in
     \\as the request leaves, so the plugin never sees it. Names are site-wide: plugins
     \\naming the same one share its value. A value comes from the environment variable of
-    \\the same name when one is set, else from what an administrator set here, kept sealed
+    \\the same name when a built-in plugin declares it or `PUBLR_SECRETS_FROM_ENVIRONMENT`
+    \\lists it (names separated by spaces or commas), else from what an administrator set
+    \\here, kept sealed
     \\with the project's key: `PUBLR_SECRET_KEY`, else `secret.key` beside the database.
-    \\A value is never answered back. Administrators only.
+    \\A value is never answered back. `PUBLR_SECRET_KEY` and
+    \\`PUBLR_SECRETS_FROM_ENVIRONMENT` are never a secret's name. Administrators only.
     ,
 };
 
@@ -264,13 +267,63 @@ pub fn value_of(ctx: *Ctx, secret_name: []const u8) Error!?[]const u8 {
     return secrets.open(ctx.arena, key, secret_name, row.sealed.bytes) catch error.OutOfMemory;
 }
 
+/// The secrets the environment may answer besides those a built-in plugin declares, their
+/// names separated by spaces or commas. An installed plugin names its own secrets: without
+/// this list one could name any variable the server was started with and have it filled
+/// into a request to its own domain. A built-in plugin was compiled in by whoever runs the
+/// server, and reads what they set.
+pub const environment_names_variable = "PUBLR_SECRETS_FROM_ENVIRONMENT";
+
 fn environment_value(arena: std.mem.Allocator, secret_name: []const u8) Error!?[]const u8 {
     std.debug.assert(secret_name.len > 0);
     std.debug.assert(secret_name.len <= environment.name_len_max);
 
+    if (!built_in_declares(secret_name)) {
+        const listed = environment.get(environment_names_variable) orelse return null;
+
+        if (!named_in(listed, secret_name)) {
+            return null;
+        }
+    }
+
     const terminated = arena.dupeSentinel(u8, secret_name, 0) catch return error.OutOfMemory;
 
     return environment.get(terminated);
+}
+
+fn built_in_declares(secret_name: []const u8) bool {
+    std.debug.assert(secret_name.len > 0);
+    std.debug.assert(secret_name.len <= environment.name_len_max);
+
+    for (registry.SDK.compiled_grants()) |compiled| {
+        if (secrets.declared_find(compiled.access.secrets, secret_name) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn named_in(listed: []const u8, secret_name: []const u8) bool {
+    std.debug.assert(secret_name.len > 0);
+    std.debug.assert(listed.len <= 64 << 10);
+
+    var names = std.mem.tokenizeAny(u8, listed, " ,");
+
+    while (names.next()) |name| {
+        if (std.mem.eql(u8, name, secret_name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+test "the environment answers only the secrets it lists" {
+    try std.testing.expect(named_in("STOCKS_API_KEY", "STOCKS_API_KEY"));
+    try std.testing.expect(named_in("A_KEY, STOCKS_API_KEY B_KEY", "STOCKS_API_KEY"));
+    try std.testing.expect(!named_in("STOCKS_API_KEY_OLD", "STOCKS_API_KEY"));
+    try std.testing.expect(!named_in("", "PATH"));
 }
 
 const Want = enum { read, make };

@@ -279,7 +279,9 @@ resulting HTML/SVG, so serving them adds no JavaScript execution or client scrip
 JavaScript computation has an interpreter cost during rebuilding or live rendering.
 
 Zig writes the output: interpolated text and attributes are escaped, arrays flatten,
-and computed `null`, `undefined`, and boolean children emit nothing. `set:html` prints
+and computed `null`, `undefined`, and boolean children emit nothing. An address computed
+into `href`, `src`, `action`, `formaction` or `poster` is often content: one that would run
+as a script (`javascript:`, `vbscript:`) is written as `#`, on the server and in the browser. `set:html` prints
 markup, always sanitized: headings, lists, links, images, tables and inline SVG drawings
 are kept; scripts, styles, frames, embeds, `on…` attributes and `javascript:` or `data:`
 addresses are removed. In an SVG, references point only at its own parts (`#id`,

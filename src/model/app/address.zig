@@ -245,6 +245,55 @@ pub fn url_attribute(name: []const u8) bool {
     return false;
 }
 
+/// Whether following `value` would run it as a script (`javascript:`, `vbscript:`): what a
+/// URL attribute never carries from an expression, since its value is often content. Read
+/// as a browser reads it: leading spaces and control characters skipped, tabs and line
+/// breaks inside the scheme ignored, any case.
+pub fn runs_script(value: []const u8) bool {
+    std.debug.assert(value.len <= 1 << 30);
+
+    const schemes = [_][]const u8{ "javascript:", "vbscript:" };
+
+    for (schemes) |scheme| {
+        var matched: u32 = 0;
+
+        for (value) |char| {
+            if (char == '\t' or char == '\n' or char == '\r') {
+                continue;
+            }
+
+            if (matched == 0 and char <= ' ') {
+                continue;
+            }
+
+            if (std.ascii.toLower(char) != scheme[matched]) {
+                break;
+            }
+
+            matched += 1;
+
+            if (matched == scheme.len) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// What a URL attribute carries in place of an address that would run as a script.
+pub const inert = "#";
+
+test "runs_script: the schemes a browser would run, however they are spelled" {
+    try std.testing.expect(runs_script("javascript:alert(1)"));
+    try std.testing.expect(runs_script(" \x01JaVa\tScr\nipt:alert(1)"));
+    try std.testing.expect(runs_script("vbscript:x"));
+    try std.testing.expect(!runs_script("/javascript:alert(1)"));
+    try std.testing.expect(!runs_script("https://example.com/?next=javascript:1"));
+    try std.testing.expect(!runs_script("javascript"));
+    try std.testing.expect(!runs_script(""));
+}
+
 /// Whether a root path lacks the base the project is served under: never another host
 /// (`//…`), a full address, a fragment, or a path already at or under it. The same rule as
 /// the admin's renders (`rt.needs_base`) and the browser's (`Publr.url`).

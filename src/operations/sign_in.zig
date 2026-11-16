@@ -26,7 +26,9 @@ pub const SignIn = struct {
         \\A wrong password and an unknown email give the same answer, `wrong email or
         \\password`. After a few failures the account waits before it may try again
         \\(one minute, then five, fifteen, sixty), never permanently: `too many failed
-        \\attempts`. Inactive accounts (link not redeemed yet) cannot sign in.
+        \\attempts`. The wait is for the address the failures came from, so the account's
+        \\owner still signs in from elsewhere. Inactive accounts (link not redeemed yet)
+        \\cannot sign in.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -72,7 +74,13 @@ pub const SignIn = struct {
             error.InvalidEmail => return error.BadCredentials,
             else => |other| return other,
         };
-        const key = ctx.auth.throttle.key_for(email);
+        // Counted for the account and the address together where the address is known, so
+        // someone guessing from elsewhere cannot keep the account's owner locked out.
+        const guesser = if (ctx.address.len == 0)
+            email
+        else
+            try std.mem.concat(ctx.arena, u8, &.{ email, "\n", ctx.address });
+        const key = ctx.auth.throttle.key_for(guesser);
 
         if (ctx.auth.throttle.wait_ms(key, ctx.now_ms) > 0) {
             ctx.keep(publr_auth.SignInThrottled, .{
@@ -241,4 +249,34 @@ test "throttle: five failures lock the account for a minute, success clears it" 
     _ = try TestSDK.dispatch(&later, SignIn, SignIn.example);
     try std.testing.expectError(error.BadCredentials, TestSDK.dispatch(&later, SignIn, wrong));
     _ = try TestSDK.dispatch(&later, SignIn, SignIn.example);
+}
+
+test "throttle: failures from one address do not lock the account's owner out elsewhere" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try @import("user.zig").seed_editor(&system);
+
+    var guesser = harness.ctx(.anonymous);
+    var wrong = SignIn.example;
+
+    guesser.address = "203.0.113.7";
+    wrong.password = "wrong horse battery";
+
+    for (0..auth.Throttle.failures_free + 1) |_| {
+        const refused = TestSDK.dispatch(&guesser, SignIn, wrong);
+
+        try std.testing.expectError(error.BadCredentials, refused);
+    }
+
+    const locked = TestSDK.dispatch(&guesser, SignIn, SignIn.example);
+
+    try std.testing.expectError(error.Throttled, locked);
+
+    var owner = harness.ctx(.anonymous);
+
+    owner.address = "203.0.113.8";
+    _ = try TestSDK.dispatch(&owner, SignIn, SignIn.example);
 }

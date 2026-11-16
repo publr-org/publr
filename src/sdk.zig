@@ -581,7 +581,8 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// The general limit, once a context, then the operation's own, for a caller from
-        /// outside: their account, else their visitor id, else their address. A context no
+        /// outside: their account, else their address, else their visitor id (the visitor
+        /// chooses that id, so it counts only where no address is known). A context no
         /// request made has none of them and is not counted. The operation's own limit (and
         /// the site's override of it) counts untrusted callers only: a site's page scripts,
         /// and anyone calling without credentials.
@@ -590,7 +591,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(per_minute == null or per_minute.? > 0);
 
             const table = ctx.limits orelse return;
-            const anonymous = if (ctx.visitor.len > 0) ctx.visitor else ctx.address;
+            const anonymous = if (ctx.address.len > 0) ctx.address else ctx.visitor;
             const subject = ctx.caller.user_id() orelse anonymous;
 
             if (subject.len == 0) {

@@ -16,14 +16,24 @@ pub const sealed_overhead: u32 = Aead.nonce_length + Aead.tag_length;
 
 pub const Key = [key_bytes]u8;
 
+/// Never a secret's name: the key every kept secret is sealed with, and the list of what
+/// the environment may answer. No plugin has either filled into a request it sends.
+pub const reserved_names = [_][]const u8{ "PUBLR_SECRET_KEY", "PUBLR_SECRETS_FROM_ENVIRONMENT" };
+
 /// `STOCKS_API_KEY`: capitals, digits and underscores, starting with a letter, as an
-/// environment variable of the same name would be.
+/// environment variable of the same name would be; never a reserved one.
 pub fn valid_name(name: []const u8) bool {
     std.debug.assert(name_len_max > 0);
     std.debug.assert(name.len <= 64 << 10);
 
     if (name.len == 0 or name.len > name_len_max or !std.ascii.isUpper(name[0])) {
         return false;
+    }
+
+    for (reserved_names) |reserved| {
+        if (std.mem.eql(u8, name, reserved)) {
+            return false;
+        }
     }
 
     for (name) |byte| {
@@ -253,6 +263,9 @@ test "a secret's name is an environment variable's" {
     try std.testing.expect(!valid_name("1KEY"));
     try std.testing.expect(!valid_name(""));
     try std.testing.expect(!valid_name(&@as([65]u8, @splat('A'))));
+    try std.testing.expect(!valid_name("PUBLR_SECRET_KEY"));
+    try std.testing.expect(!valid_name("PUBLR_SECRETS_FROM_ENVIRONMENT"));
+    try std.testing.expect(valid_name("PUBLR_AUTH_GITHUB_CLIENT_SECRET"));
 }
 
 test "a sealed value opens under its key and name only" {

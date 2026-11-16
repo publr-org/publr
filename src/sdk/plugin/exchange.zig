@@ -320,6 +320,10 @@ test "the exchange fetches only to its domains, fills its secret, gives up in ti
 
     try std.testing.expectEqual(@as(c_int, 0), set);
     defer _ = Environment.unsetenv(name);
+    const from_environment = "PUBLR_SECRETS_FROM_ENVIRONMENT";
+
+    try std.testing.expectEqual(@as(c_int, 0), Environment.setenv(from_environment, name, 1));
+    defer _ = Environment.unsetenv(from_environment);
 
     var harness: sdk.testing.Harness = undefined;
     try harness.init();

@@ -22,25 +22,25 @@ runs:
           echo "${folder//-/_}=$commit" >> "$GITHUB_OUTPUT"
         done
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: publr-org/lib, path: lib, ref: "${{ steps.refs.outputs.lib }}" }
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: publr-org/pjsx, path: pjsx, ref: "${{ steps.refs.outputs.pjsx }}" }
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: publr-org/jit, path: jit, ref: "${{ steps.refs.outputs.jit }}" }
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: publr-org/ui, path: ui, ref: "${{ steps.refs.outputs.ui }}" }
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: publr-org/icons, path: icons, ref: "${{ steps.refs.outputs.icons }}" }
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         repository: publr-org/publrjs
         path: publr-js
         ref: "${{ steps.refs.outputs.publr_js }}"
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: publr-org/editor, path: editor, ref: "${{ steps.refs.outputs.editor }}" }
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 24
         cache: npm
@@ -52,7 +52,7 @@ runs:
 
     # Its own cache saves Zig's cache folders on every run (hundreds of MB each), more than
     # the repository's 10 GB keeps well.
-    - uses: mlugg/setup-zig@v2
+    - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
       with: { version: 0.17.0, use-cache: false }
 
     - name: Record what was built

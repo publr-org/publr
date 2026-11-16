@@ -927,7 +927,8 @@ pub const PaidHook = publr.webhook.define(Paid, .{
   credential.
 - The plugin's Webhooks tab in the admin shows the address to give the sender and every
   delivery: when it came, whether it verified, how its run ended and its log lines, with
-  Run again.
+  Run again. Of the deliveries whose signature did not verify, a webhook keeps the newest
+  200: anyone can send those.
 - Installed plugins declare webhooks the same way; their manifest lists them.
 
 ### Testing on your machine

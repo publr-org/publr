@@ -58,7 +58,7 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     const identity = if (project.split() and !project.on_admin_host(request))
         split.member_identity(project, ctx.arena, request)
     else
-        identity_module.identify(request, ctx.arena, project);
+        identity_module.identify_on_site(request, ctx.arena, project);
 
     if (identity.caller.user_id() == null) {
         return response.json(.ok, Answer{

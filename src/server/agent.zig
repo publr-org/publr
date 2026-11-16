@@ -246,6 +246,7 @@ fn take_turn(
         .channel = reporter.channel,
         .io = init.io,
         .id = reporter.id,
+        .looks_only = !browser_module.whole_access(begun.scope),
     };
     const downloads = try downloads_of(init.io, arena, db_path);
     const crawl = try crawl_of(init.io, arena, downloads, begun.prompt);
@@ -320,6 +321,7 @@ fn downloads_of(
     downloads.* = .{
         .io = io,
         .root = root,
+        .rule = try downloads_module.rule_of(arena),
     };
 
     return downloads;

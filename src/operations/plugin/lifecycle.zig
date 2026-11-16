@@ -221,10 +221,47 @@ pub fn before_unrefusable(manifest: *const sandboxed_plugin.Manifest) bool {
     return false;
 }
 
+/// The operations that take or answer a credential: a password, a token, a secret's value,
+/// a device's or a tool's access. A hook is handed an operation's whole input and answer,
+/// so an installed plugin's hook is never on one, at any stage. People signing in are heard
+/// through the `auth.*` events, which carry no credential.
+const credential_namespaces = [_][]const u8{ "secret.", "device.", "sign_on.", "oauth." };
+const credential_operations = [_][]const u8{
+    "user.sign_in",
+    "user.sign_out",
+    "user.create",
+    "user.set_password",
+    "user.password_link",
+    "project.init",
+};
+
+pub fn keeps_credentials(target: []const u8) bool {
+    std.debug.assert(target.len > 0);
+    std.debug.assert(credential_operations.len > 0);
+
+    for (credential_namespaces) |prefix| {
+        if (std.mem.startsWith(u8, target, prefix)) {
+            return true;
+        }
+    }
+
+    for (credential_operations) |name| {
+        if (std.mem.eql(u8, target, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// Whether a hook of `stage` may never be on `target`.
 pub fn hook_refused(hook_stage: sandboxed_plugin.Hook.Stage, target: []const u8) bool {
     std.debug.assert(target.len > 0);
     std.debug.assert(auth_events.unrefusable.len > 0);
+
+    if (keeps_credentials(target)) {
+        return true;
+    }
 
     if (hook_stage == .before and auth_events.before_refused(target)) {
         return true;
@@ -664,6 +701,21 @@ test "a before hook on signing out is refused at install; on signing in it is ta
     try std.testing.expect(hook_refused(.after, "errors.failed"));
     try std.testing.expect(hook_refused(.before, "auth.sign_in_failed"));
     try std.testing.expect(!hook_refused(.event, "errors.failed"));
+}
+
+test "no installed hook is on an operation that takes or answers a credential" {
+    try std.testing.expect(hook_refused(.after, "user.sign_in"));
+    try std.testing.expect(hook_refused(.before, "secret.set"));
+    try std.testing.expect(hook_refused(.event, "device.redeem"));
+    try std.testing.expect(!hook_refused(.after, "record.create"));
+    try std.testing.expect(!hook_refused(.event, "auth.signed_in"));
+
+    // An operation that declares a secret field is one of them, whenever it is added.
+    inline for (registry.SDK.operations) |Operation| {
+        if (@hasDecl(Operation, "secret")) {
+            try std.testing.expect(keeps_credentials(Operation.name));
+        }
+    }
 }
 
 test "a prepared query that does not read refuses its plugin, named with the query and why" {

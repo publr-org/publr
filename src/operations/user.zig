@@ -210,13 +210,14 @@ pub const SetPassword = struct {
     /// Never written to the logs.
     pub const secret = .{ "token", "password" };
     pub const description = "Redeem a set-password link: sets the password, activates the " ++
-        "account, signs out every session";
+        "account, signs out every session and device";
     pub const details =
         \\Anyone holding a valid token may call it (no `--as` needed); this is what
         \\`POST /api/auth/set-password` does for a browser. The token is the `token=` part
         \\of a link from `users create --password_link true` or `user password_link`.
         \\It works once, within an hour of being issued; a wrong, used or expired token
-        \\answers `not found`. Existing sessions of the account are signed out.
+        \\answers `not found`. Existing sessions of the account are signed out and its
+        \\devices (the CLI, agent tools) stop working: each signs in again.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -253,6 +254,7 @@ pub const SetPassword = struct {
 
         try store.users.set_password(ctx.db, credentials.user.id, password_hash, ctx.now_ms);
         _ = try store.sessions.destroy_all(ctx.db, credentials.user.id);
+        _ = try store.devices.revoke_all(ctx.db, credentials.user.id, ctx.now_ms);
 
         return .{
             .user_id = credentials.user.id,

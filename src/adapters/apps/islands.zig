@@ -153,7 +153,7 @@ fn dynamic_island(
     });
     try response.set_header("Vary", "Cookie");
 
-    const identity = identity_module.identify(request, ctx.arena, project);
+    const identity = identity_module.identify_on_site(request, ctx.arena, project);
     const now_ms = sdk.context.wall_clock_ms(project.io);
 
     identity_module.repair_hint(project, request, response, ctx.arena, &identity, now_ms);

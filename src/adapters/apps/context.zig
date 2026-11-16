@@ -1278,7 +1278,7 @@ pub fn identify(
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(app.spec.roles.len <= @import("../../model/app.zig").roles_max);
 
-    const identity = identity_module.identify(request, arena, project);
+    const identity = identity_module.identify_on_site(request, arena, project);
 
     if (app.spec.roles.len == 0 or identity.caller != .user) {
         return identity;

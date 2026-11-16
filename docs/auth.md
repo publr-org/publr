@@ -38,8 +38,9 @@ account.
 Wrong passwords cost the same time as right ones and give the same answer for
 unknown accounts, so nothing about who exists leaks. After a handful of
 failures an account waits before it may try again, for longer each time (one
-minute, then five, fifteen, sixty), and never permanently, so a stranger cannot
-lock a real user out. Every attempt is announced as an event
+minute, then five, fifteen, sixty), and never permanently. The wait is counted for
+the account and the address the failures came from together, so a stranger guessing
+from elsewhere cannot lock a real user out. Every attempt is announced as an event
 (`auth.sign_in_succeeded`; `auth.sign_in_failed`, `auth.sign_in_throttled`,
 `auth.sign_in_locked`, kept though the refused sign-in's write rolls back and heard
 by `on` hooks) that plugins can act on: alerts, CAPTCHA, IP rules, second factors, all
@@ -55,7 +56,11 @@ set for the project's whole domain, so one sign-in holds everywhere. Two separat
 of accounts are two projects.
 
 With `serve --admin-url`, the admin signs in on its own host and the session cookie stays
-there: host-only, never set for a domain, so the site's host never receives it.
+there: host-only, never set for a domain, so the site's host never receives it. Where it
+does arrive (the admin and the site on two ports of one name share cookies), the site's host
+treats it as nobody's for everything of core's: the API, uploads and the session answer. An
+app's own pages still see the person signed in. The admin's pages, and the pages where a
+tool is approved (`/oauth/`), are framed only by a page of their own origin.
 
 ## Signing in with a provider
 
@@ -249,7 +254,8 @@ right away.
 
 ## What is deliberately not in the core
 
-IP-based limits (the address is whatever a proxy says), CAPTCHA, second
+IP-based rules beyond the rate limits and the sign-in wait (the address is whatever the
+proxy in front says: it must put the visitor's own last in `X-Forwarded-For`), CAPTCHA, second
 factors, passkeys, SSO, breached-password checks, password expiry, permanent
 lockouts, audit persistence, and the providers themselves. Every sign-in raises
 an event, so all of these are plugins on `users.sign_in`, not core features; a

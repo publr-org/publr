@@ -67,7 +67,7 @@ fn visitor_of(
 ) sdk.Caller {
     std.debug.assert(request.path().len > 0);
 
-    const signed_in = identity_module.identify(request, arena, project).caller;
+    const signed_in = identity_module.identify_on_site(request, arena, project).caller;
 
     if (signed_in.user_id() != null or !project.split() or project.on_admin_host(request)) {
         return signed_in;

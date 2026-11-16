@@ -21,7 +21,8 @@ one.
 - An operation's tighter limit counts only untrusted callers: a site's pages and anyone
   without credentials.
 - Every caller has a general rate limit: 600 calls a minute, counted per account (a
-  device's account too), else per visitor, else per address; one request counts once.
+  device's account too), else per address, else per visitor (the visitor's id is the
+  browser's to choose, so it counts only where no address is known); one request counts once.
   An operation may have a tighter limit of its own, for untrusted callers. Answers carry `RateLimit-Limit`,
   `RateLimit-Remaining` and `RateLimit-Reset` (seconds until the minute starts again);
   over a limit: `429` with `Retry-After`. Behind a proxy on the same machine, the caller's

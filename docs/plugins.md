@@ -240,9 +240,13 @@ made at run time is refused (`SecretNotDeclared`). A plugin with secrets asks fo
 `http.fetch` request with its label and where to find it: optional, filled later on the
 plugin's page, which says what is still missing; once set it shows "Set" (or "Set, shared
 with" the other plugins naming it) and Replace, never the value. Names are site-wide:
-plugins naming `OPENAI_API_KEY` share one value. The value is filled in as the request
+plugins naming `OPENAI_API_KEY` share one value. `PUBLR_SECRET_KEY` and
+`PUBLR_SECRETS_FROM_ENVIRONMENT` are never a secret's name. The value is filled in as the request
 leaves, and put back as `{secret:NAME}` wherever the answer echoes it. It comes from the
-environment variable of the same name, else from what an administrator set (on the
+environment variable of the same name when a built-in plugin declares it or the server
+lists it in `PUBLR_SECRETS_FROM_ENVIRONMENT` (names separated by spaces or commas; an
+installed plugin names its own secrets, so for one a variable not listed is never read),
+else from what an administrator set (on the
 plugin's page or under Settings › Secrets, [`secret`](cli/secret.md)). With no value the
 request is refused in words: "Supplier API key isn't set" (`SecretMissing`).
 

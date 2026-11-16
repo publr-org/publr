@@ -329,8 +329,11 @@ fn caller_of(ctx: *sdk.Ctx) wire.Caller {
     };
 }
 
-pub fn invocation_of(env: *wasm.Env) *Invocation {
-    const data = env.user_data() orelse unreachable;
+/// The call a host function is answering; null when the guest reaches the host outside one
+/// (from its allocator, while the server writes into its memory): the host function then
+/// answers its failure, never the server's own.
+pub fn invocation_of(env: *wasm.Env) ?*Invocation {
+    const data = env.user_data() orelse return null;
 
     return @ptrCast(@alignCast(data));
 }
@@ -343,7 +346,9 @@ fn publr_call(
     input_len: u32,
     result_ptr: u32,
 ) callconv(.c) u32 {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse {
+        return wire.code_of(error.Unavailable);
+    };
     const ctx = invocation.ctx;
 
     std.debug.assert(invocation.loaded.name().len > 0);
@@ -445,7 +450,9 @@ pub fn copy_guest(env: *wasm.Env, ctx: *sdk.Ctx, ptr: u32, len: u32) ?[]const u8
 /// `ctx.enqueue` in an installed plugin: one of its own jobs, never a repeating one, queued
 /// in the caller's write.
 fn publr_enqueue(env: *wasm.Env, ptr: u32, len: u32) callconv(.c) u32 {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse {
+        return wire.code_of(error.Unavailable);
+    };
     const ctx = invocation.ctx;
     const loaded = invocation.loaded;
     const text = copy_guest(env, ctx, ptr, len) orelse return wire.code_of(error.Invalid);
@@ -504,7 +511,7 @@ fn publr_emit(
     payload_ptr: u32,
     payload_len: u32,
 ) callconv(.c) void {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return;
     const ctx = invocation.ctx;
     const name = copy_guest(env, ctx, name_ptr, name_len) orelse return;
     const payload = if (payload_len == 0)
@@ -540,7 +547,7 @@ fn publr_emit(
 }
 
 fn publr_log(env: *wasm.Env, line_ptr: u32, line_len: u32) callconv(.c) void {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return;
     var buffer: [1024]u8 = undefined;
     const line = buffer[0..@min(line_len, buffer.len)];
 
@@ -578,7 +585,7 @@ fn log_line(invocation: *Invocation, level: sdk.trail.Level, line: []const u8) v
 /// Whether the plugin holds a permission key, and its flags as granted now, as bits
 /// (`Grant.bits`): what `ctx.grant` reads.
 fn publr_granted(env: *wasm.Env, key_ptr: u32, key_len: u32) callconv(.c) u32 {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return 0;
     var buffer: [64]u8 = undefined;
     const key = buffer[0..@min(key_len, buffer.len)];
 
@@ -615,7 +622,9 @@ fn publr_grant_domains(
     key_len: u32,
     result_ptr: u32,
 ) callconv(.c) u32 {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse {
+        return wire.code_of(error.Unavailable);
+    };
     var buffer: [64]u8 = undefined;
     const key = buffer[0..@min(key_len, buffer.len)];
 
@@ -660,7 +669,7 @@ fn granted_domains(caller: sdk.Caller, key: []const u8) []const []const u8 {
 
 /// A line with its level: `ctx.log(.warn, ...)`.
 fn publr_log_at(env: *wasm.Env, level: u32, line_ptr: u32, line_len: u32) callconv(.c) void {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return;
     var buffer: [1024]u8 = undefined;
     const line = buffer[0..@min(line_len, buffer.len)];
 
@@ -685,7 +694,7 @@ fn publr_refuse(
     message_len: u32,
     status: u32,
 ) callconv(.c) void {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return;
     const kept_status: u16 = if (status >= 400 and status <= 499 and status != 401 and
         status != 429) @intCast(status) else 409;
 
@@ -706,7 +715,7 @@ fn publr_problem(
     message_ptr: u32,
     message_len: u32,
 ) callconv(.c) void {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return;
     const ctx = invocation.ctx;
     const held = ctx.problems;
 
@@ -740,7 +749,7 @@ fn publr_fail(
     message_ptr: u32,
     message_len: u32,
 ) callconv(.c) void {
-    const invocation = invocation_of(env);
+    const invocation = invocation_of(env) orelse return;
     const ctx = invocation.ctx;
     const name = copy_guest(env, ctx, name_ptr, @min(name_len, 64)) orelse return;
     const message = if (message_len == 0)

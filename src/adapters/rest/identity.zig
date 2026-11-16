@@ -11,6 +11,7 @@ const csrf = @import("../../lib/auth.zig").csrf;
 const preview_token = @import("../../model/preview_token.zig");
 const http = @import("../../lib/http.zig");
 const Project = @import("../../server/project.zig").Project;
+const registry = @import("../../server/registry.zig");
 
 const Error = http.Error;
 const Caller = sdk.Caller;
@@ -76,7 +77,34 @@ pub const Identity = struct {
     }
 };
 
+/// Who core's own doors answer (the API, uploads, the admin): on the site's host of a
+/// project whose admin has a host of its own, a session of an account that may use the
+/// admin is nobody's. The site's scripts share that origin, and two ports on one name
+/// share cookies, so there the admin's session opens nothing of core's.
 pub fn identify(
+    request: *const http.Request,
+    arena: std.mem.Allocator,
+    project: *const Project,
+) Identity {
+    std.debug.assert(project.connection.transaction_depth == 0);
+
+    const identity = identify_on_site(request, arena, project);
+
+    if (identity.caller != .user or !project.split() or project.on_admin_host(request)) {
+        return identity;
+    }
+
+    var door = context(project, arena, identity.caller);
+
+    std.debug.assert(door.caller == .user);
+
+    return if (registry.SDK.reaches_admin(&door)) .{} else identity;
+}
+
+/// Who the site's own pages see (an app's pages, islands and `_actions`, the toolbar): the
+/// session's account whatever its roles, an administrator being just a signed-in person
+/// to an app.
+pub fn identify_on_site(
     request: *const http.Request,
     arena: std.mem.Allocator,
     project: *const Project,

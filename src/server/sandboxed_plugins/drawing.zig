@@ -16,7 +16,9 @@ pub const name_len_max: u32 = 64;
 /// after it read the frame's request. Answers who is looking and the page, as JSON, for the
 /// view's `ctx`.
 pub fn publr_frame(env: *wasm.Env, base_ptr: u32, base_len: u32, result_ptr: u32) callconv(.c) u32 {
-    const invocation = invoke.invocation_of(env);
+    const invocation = invoke.invocation_of(env) orelse {
+        return wire.code_of(error.Unavailable);
+    };
     const ctx = invocation.ctx;
 
     std.debug.assert(invocation.loaded.name().len > 0);
@@ -68,7 +70,9 @@ pub fn publr_render(
     props_len: u32,
     result_ptr: u32,
 ) callconv(.c) u32 {
-    const invocation = invoke.invocation_of(env);
+    const invocation = invoke.invocation_of(env) orelse {
+        return wire.code_of(error.Unavailable);
+    };
     const ctx = invocation.ctx;
     const drawing = invocation.drawing orelse return wire.code_of(error.Invalid);
 

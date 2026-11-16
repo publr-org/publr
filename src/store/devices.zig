@@ -333,6 +333,24 @@ pub fn revoke(connection: *db.Db, id: []const u8, now_ms: i64) db.Error!bool {
     return connection.changes() == 1;
 }
 
+/// Stops every device of an account working: what a changed password means for the tools
+/// signed in with the old one. How many it stopped.
+pub fn revoke_all(connection: *db.Db, user_id: []const u8, now_ms: i64) db.Error!u32 {
+    std.debug.assert(user_id.len > 0);
+    std.debug.assert(now_ms >= 0);
+
+    var statement = try connection.prepare(
+        "UPDATE devices SET revoked_at = ?1 WHERE user_id = ?2 AND revoked_at IS NULL",
+    );
+    defer statement.finalize();
+
+    try statement.bind_int(1, now_ms);
+    try statement.bind_text(2, user_id);
+    try statement.exec();
+
+    return connection.changes();
+}
+
 fn seed_user(fixture: *db.testing.Fixture, arena: std.mem.Allocator) ![]const u8 {
     std.debug.assert(fixture.connection.transaction_depth == 0);
 
@@ -386,4 +404,14 @@ test "create, validate, touch to the minute, revoke" {
     const kept = (try find(&fixture.connection, arena, created.device.id)).?;
     try std.testing.expectEqualStrings("laptop", kept.name);
     try std.testing.expectEqual(@as(?i64, 4_000), kept.revoked_at);
+
+    // A changed password stops every device the account still has, and only those.
+    const second = try create(&fixture.connection, std.testing.io, arena, new, 7_000);
+
+    try std.testing.expectEqual(@as(u32, 1), try revoke_all(&fixture.connection, user_id, 8_000));
+    try std.testing.expectEqual(@as(u32, 0), try revoke_all(&fixture.connection, user_id, 9_000));
+
+    const stopped = validate(&fixture.connection, arena, second.token_text(), 9_000);
+
+    try std.testing.expectError(error.DeviceNotFound, stopped);
 }

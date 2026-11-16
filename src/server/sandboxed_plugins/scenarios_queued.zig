@@ -87,6 +87,10 @@ test "an installed plugin's webhook: a signed delivery runs in its sandbox, once
 
     try std.testing.expectEqual(0, Environment.setenv("SAMPLER_KEY", "s4mpler", 1));
     defer _ = Environment.unsetenv("SAMPLER_KEY");
+    const from_environment = "PUBLR_SECRETS_FROM_ENVIRONMENT";
+
+    try std.testing.expectEqual(0, Environment.setenv(from_environment, "SAMPLER_KEY", 1));
+    defer _ = Environment.unsetenv(from_environment);
 
     var scenario: Scenario = undefined;
     try scenario.init();
