@@ -181,8 +181,7 @@ jobs:
           # This release's site and the lived site carried on to it become release assets.
           mkdir -p ../upgrade-sites
           if [ -f fixtures/upgrade/START ]; then
-            zig build upgrade-fixture -Dupgrade-binary="$binary" \
-             
+            zig build upgrade-fixture -Dupgrade-binary="$binary"
             cp ".zig-cache/upgrade-sites/$VERSION.tar.gz" "../upgrade-sites/upgrade-$VERSION.tar.gz"
             cp .zig-cache/upgrade-sites/lived.tar.gz ../upgrade-sites/upgrade-lived.tar.gz
           fi
@@ -293,7 +292,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/lib/db/migrations src/lib/db/migrations.zig
+          # The folder, not src/lib/db/migrations: it is not there until the first migration.
+          git add -A src/lib/db
           git commit -qam "Release $TAG"
           git tag "$TAG"
           git push origin "$TAG"
@@ -312,7 +312,7 @@ jobs:
           ## Updating
 
           A running Publr updates from Settings › Updates, or \`publr update\`. Every update
-          backs the whole site up first. Every earlier release since 0.3.0 was updated to
+          backs the whole site up first. Every release since 0.7.5 was updated to
           this one before it shipped:
 
           \`\`\`

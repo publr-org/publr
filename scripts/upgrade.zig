@@ -21,12 +21,9 @@ const smoke = @import("smoke.zig");
 const lived_name = "lived";
 const port: u16 = 8093;
 const fixtures_max: u32 = 4096;
-/// Readers are tolerant from here on: a release before it cannot run on a newer database.
-const step_back_baseline: std.SemanticVersion = .{
-    .major = 0,
-    .minor = 3,
-    .patch = 0,
-};
+/// The release update testing starts at: from it on readers are tolerant, so a release
+/// before it is never asked to run on a newer database.
+const start_path = "fixtures/upgrade/START";
 
 const Arguments = struct {
     command: []const u8,
@@ -148,8 +145,8 @@ fn matrix(init: std.process.Init, given: Arguments) !u8 {
     return if (failed == 0) 0 else 1;
 }
 
-/// The release to step back to, unless it predates tolerant readers: a step back is promised
-/// from the baseline on.
+/// The release to step back to, unless it predates the start release: a step back is
+/// promised from it on.
 fn stepping_back(init: std.process.Init, args: Arguments) !?[]const u8 {
     std.debug.assert(args.work.len > 0);
     std.debug.assert(args.version.len > 0);
@@ -162,15 +159,55 @@ fn stepping_back(init: std.process.Init, args: Arguments) !?[]const u8 {
         std.debug.print("upgrade: {s} reports no version: {s}\n", .{ previous, printed });
         return error.UnknownPrevious;
     };
-
-    if (version.order(step_back_baseline) == .lt) {
-        std.debug.print("upgrade: no step back to {s}: readers are tolerant from 0.3.0\n", .{
+    const start = try start_release(init, args.fixtures) orelse {
+        std.debug.print("upgrade: no step back to {s}: update testing has not started\n", .{
             name,
+        });
+        return null;
+    };
+
+    if (version.order(start.version) == .lt) {
+        std.debug.print("upgrade: no step back to {s}: update testing starts at {s}\n", .{
+            name,
+            start.name,
         });
         return null;
     }
 
     return previous;
+}
+
+const Start = struct {
+    name: []const u8,
+    version: std.SemanticVersion,
+};
+
+/// The release `fixtures/upgrade/START` names in the repository around `fixtures`; null
+/// when there is none.
+fn start_release(init: std.process.Init, fixtures: []const u8) !?Start {
+    std.debug.assert(fixtures.len > 0);
+    std.debug.assert(start_path.len > 0);
+
+    const arena = init.arena.allocator();
+    const fixtures_real = try absolute(init, fixtures);
+    const repo = std.fs.path.dirname(std.fs.path.dirname(fixtures_real) orelse ".") orelse ".";
+    const path = try std.fs.path.join(arena, &.{ repo, start_path });
+    const text = std.Io.Dir.cwd().readFileAlloc(init.io, path, arena, .limited(64)) catch |err| {
+        return switch (err) {
+            error.FileNotFound => null,
+            else => err,
+        };
+    };
+    const name = std.mem.trim(u8, text, " \n");
+    const version = std.SemanticVersion.parse(name) catch {
+        std.debug.print("upgrade: {s} names no release: {s}\n", .{ path, text });
+        return error.UnknownStart;
+    };
+
+    return .{
+        .name = name,
+        .version = version,
+    };
 }
 
 /// One fixture unpacked and checked, its line printed; whether it passed.
