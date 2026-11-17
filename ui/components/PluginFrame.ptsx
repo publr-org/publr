@@ -17,6 +17,8 @@ const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
 const admin_address = /^\/admin(\/[^\s#]*)?$/;
 
 export function go(to: string, plugin: string, current: string) {
+  // The frame's links were written under the page's base (`/branches/x/admin/…`).
+  to = Publr.path(to);
   if (admin_address.test(to)) {
     window.location.href = Publr.url(to);
     return;
