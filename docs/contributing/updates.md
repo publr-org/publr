@@ -35,16 +35,17 @@ without a migration is allowed and flagged.
 
 ## Upgrade tests
 
-Upgrade tests have not started yet: until `fixtures/upgrade/START` names the release they
-start from, no release has an upgrade site, `zig build upgrade` checks nothing, and a release
-may change stored data freely. From that release on, every release attaches its upgrade site
-to its GitHub release (`upgrade-<version>.tar.gz`): a site its own binary seeded through the
-CLI, every table filled, with `facts.json` saying what it made. It also attaches
+Upgrade tests start at the release `fixtures/upgrade/START` names: 0.7.5, whose
+`schema.sql` is the baseline of core's migrations (`baseline` in
+`src/lib/db/migrations.zig`). From it on, every release attaches its upgrade site to its
+GitHub release (`upgrade-<version>.tar.gz`): a site its own binary seeded through the CLI,
+every table filled, with `facts.json` saying what it made. It also attaches
 `upgrade-lived.tar.gz`, one site every release has opened and seeded on. The sites are release
 assets, never files in the repository; CI fetches them into `.zig-cache/upgrade-sites/`.
 `zig build upgrade` (part of `verify-full` and CI) updates every one with the current build
 and checks the shape, every fact, the site served, a write, and that the gate's backup puts
-it back; `-Dupgrade-previous=<publr>` also checks the release before runs on the result.
+it back; `-Dupgrade-previous=<publr>` also checks the release before runs on the result, when that
+release is the start release or later.
 Released migrations are compared with their tags and may never change. The Release workflow
 makes the new site with the release binary and puts the table of results in the release
 notes.

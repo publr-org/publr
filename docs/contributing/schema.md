@@ -2,12 +2,9 @@
 
 Publr keeps everything in one SQLite file (`data/publr.db` by default), in
 strict tables created by `src/lib/db/schema.sql` when the database opens. `schema.sql` is
-the shape of a new database; a database made by any earlier release since 0.3.0 reaches
+the shape of a new database; a database made by any earlier release since 0.7.5 reaches
 it through the chain of migrations (`src/lib/db/migrations/`, recorded in `migrations`),
-run by the gate every open goes through ([Updates](../updates.md)). A database from before
-0.3.0 is brought to the shape once: missing tables made, columns added since a table first
-shipped added in place (`added_columns` in `src/lib/db/schema.zig`), drifted tables
-rebuilt, rows kept. Ids are 24 hex
+run by the gate every open goes through ([Updates](../updates.md)). Ids are 24 hex
 characters, times are Unix milliseconds, booleans are `0`/`1`. A record's, term's, user's,
 internal record's or saved view's id is time-ordered: the millisecond it was made (12
 characters), a counter within that millisecond (4), random (8). Sorted by id, rows are in
@@ -150,11 +147,14 @@ database; when another one opens it, the whole site is backed up first. The gate
 Every migration this database has been through, core's and each compiled-in plugin's. A
 fresh database records every migration its release knows, since `schema.sql` already has
 their result. A row the opening release does not know means a newer release migrated it.
+Core's chain starts at 0.7.5, whose `schema.sql` is its baseline: the rows `publr 0.3.0`
+and `publr 0.4.0`, which releases before it recorded, stay for those releases and are
+neither run nor unknown to later ones.
 
 | Column | Type | Meaning |
 |---|---|---|
 | `source` | text | `publr`, or the plugin the migration belongs to |
-| `name` | text | The release it reaches (`0.4.0`), or `unreleased` during development |
+| `name` | text | The release it reaches (`0.8.0`), or `unreleased` during development |
 | `sha256` | text | The migration file's SHA-256 when it ran; an unreleased one runs again when it changes |
 | `one_way` | integer 0/1 | It dropped, renamed or rewrote: the release before cannot run on the result |
 | `applied_ms` | integer | When it ran |

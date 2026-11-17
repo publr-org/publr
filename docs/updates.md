@@ -1,7 +1,8 @@
 # Updates
 
-A site made by any Publr release since 0.3.0 updates to any later one, skipping as many
-releases as it likes. Every update backs the whole site up first. This page says what an
+A site made by Publr 0.7.5 or any later release updates to any later one, skipping as many
+releases as it likes. Sites made by 0.7.3 and 0.7.4 have 0.7.5's database and update the
+same way. Every update backs the whole site up first. This page says what an
 update does and how to run one; what a change to Publr must do to keep that true is in
 [Changing Publr safely for updates](contributing/updates.md).
 
@@ -9,8 +10,8 @@ update does and how to run one; what a change to Publr must do to keep that true
 
 | Kind | Example | What it does to a site |
 |---|---|---|
-| Patch | 0.4.2 → 0.4.3 | Nothing to the data: the database's shape is 0.4.0's. Updating swaps the binary; going back swaps it again. |
-| Minor | 0.4.x → 0.5.0 | Runs one migration that only adds (tables, columns that may be empty or have a default, indexes, data filled in). The release before still runs on the result, so going back is a swap too. |
+| Patch | 0.8.2 → 0.8.3 | Nothing to the data: the database's shape is 0.8.0's. Updating swaps the binary; going back swaps it again. |
+| Minor | 0.8.x → 0.9.0 | Runs one migration that only adds (tables, columns that may be empty or have a default, indexes, data filled in). The release before still runs on the result, so going back is a swap too. |
 | Major | 0.x → 1.0 | Something plugins, apps or scripts rely on was removed after six months deprecated, or the database changed in a way that cannot be undone by swapping the binary (a drop, a rename, data rewritten). Going back after one puts the backup back. |
 
 ## Opening a site
@@ -29,8 +30,6 @@ Every command and `serve` open the database through one gate before anything rea
   recorded and `publr.updated` goes into the activity log.
 - **A newer release migrated it**: this one runs on it if that was one minor's migration
   that only added. Otherwise it refuses, naming the release and the backup to put back.
-- **Made before 0.3.0**, when releases did not record themselves: tables that drifted from
-  `schema.sql` are rebuilt to it, their rows kept, once.
 
 `publr db check` says what the gate would find without opening it: the release that last
 opened the database, the migrations to run, and every way the shape differs, each one
