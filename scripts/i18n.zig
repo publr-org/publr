@@ -353,6 +353,12 @@ fn one_string_at(arena: std.mem.Allocator, text: []const u8, cursor: *u32) ![]co
 
         if (char == '\\' and cursor.* + 1 < text.len) {
             cursor.* += 1;
+
+            if (text[cursor.*] == 'u') {
+                try unicode_escape(arena, text, cursor, &out);
+                continue;
+            }
+
             char = switch (text[cursor.*]) {
                 'n' => '\n',
                 't' => '\t',
@@ -371,6 +377,37 @@ fn one_string_at(arena: std.mem.Allocator, text: []const u8, cursor: *u32) ![]co
     cursor.* += 1;
 
     return out.items;
+}
+
+/// `\u{2026}` (Zig) or `\u2026` (JavaScript) at `cursor`, on its `u`, written as UTF-8;
+/// the cursor left on the escape's last character.
+fn unicode_escape(
+    arena: std.mem.Allocator,
+    text: []const u8,
+    cursor: *u32,
+    out: *std.ArrayList(u8),
+) !void {
+    std.debug.assert(text[cursor.*] == 'u');
+
+    const braced = cursor.* + 1 < text.len and text[cursor.* + 1] == '{';
+    const start = cursor.* + 1 + @intFromBool(braced);
+    const end: u32 = if (braced)
+        @intCast(std.mem.indexOfScalarPos(u8, text, start, '}') orelse return error.NotLiteral)
+    else
+        start + 4;
+
+    if (end > text.len or end == start) {
+        return error.NotLiteral;
+    }
+
+    const code = std.fmt.parseInt(u21, text[start..end], 16) catch return error.NotLiteral;
+    var encoded: [4]u8 = undefined;
+    const length = std.unicode.utf8Encode(code, &encoded) catch return error.NotLiteral;
+
+    try out.appendSlice(arena, encoded[0..length]);
+    cursor.* = if (braced) end else end - 1;
+
+    std.debug.assert(cursor.* < text.len);
 }
 
 fn add(
