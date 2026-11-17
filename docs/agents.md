@@ -576,10 +576,11 @@ When you are done, always end with the `merge` address that making it answered: 
 review the branch there and merge it. A self-hosted Publr usually has no copies: your
 changes go to the site itself.
 
-With a terminal, a project can also be brought down to this computer: `publr clone <address>`
-makes a folder you work in as any local site, and `publr push` sends it up as a branch for
-your person to review and merge. A folder with `.publr/clone.json` is such a copy: it never
-writes to the live site.
+Only when your person asks, a project is brought down to this computer: `publr clone
+<address>` makes a folder you work in as any local site, and `publr push` sends it up as a
+branch for your person to review and merge. A folder with `.publr/clone.json` is such a
+copy: it never writes to the live site, and an agent opened in it works on the project
+itself.
 
 The person chooses what you may do: read only; read and write (on copies, where there are
 any); write on production, where your changes wait as drafts; and publish. Never ask them for a password or a token, and never paste a token anywhere: the

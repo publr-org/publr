@@ -250,7 +250,7 @@ fn setup_of(
     const on_copies = device.scope == .write and registry.copies_list != null;
 
     if (!here) {
-        return setup_elsewhere(project, request, arena, device.scope, on_copies);
+        return setup_elsewhere(device.scope, on_copies);
     }
 
     const site = if (project.site_origin.len > 0)
@@ -325,14 +325,9 @@ fn setup_of(
     }) catch error.OutOfMemory;
 }
 
-/// A site elsewhere: `run`, and where it keeps copies, a clone for an agent with a terminal.
-fn setup_elsewhere(
-    project: *const Project,
-    request: *const Request,
-    arena: std.mem.Allocator,
-    scope: @import("../model/device.zig").Scope,
-    on_copies: bool,
-) http.Error![]const u8 {
+/// A site elsewhere: everything through `run`, on a copy where the device works on copies.
+/// Never a clone: an agent works where its person sees the work.
+fn setup_elsewhere(scope: @import("../model/device.zig").Scope, on_copies: bool) []const u8 {
     std.debug.assert(!on_copies or scope == .write);
 
     if (scope == .read) {
@@ -340,42 +335,18 @@ fn setup_elsewhere(
             "publr commands with the `run` tool; change nothing.";
     }
 
-    const by_run: []const u8 = if (on_copies)
-        "This site runs on another computer, and this device works on copies of it. " ++
+    if (on_copies) {
+        return "This site runs on another computer, and this device works on copies of it. " ++
             "With the `run` tool: make one for each task, [\"environments\", \"create\", " ++
             "\"--kind\", \"branch\", \"--name\", \"<the task>\"], then put \"--env\" " ++
             "and its name first in every command: [\"--env\", \"<name>\", \"record\", " ++
             "\"list\"]. Always end your reply with the `merge` address making it answered: " ++
-            "your person reviews it there and merges it."
-    else
-        "This site runs on another computer. Run every publr command with the `run` tool. " ++
-            "Where the site has environments or branches, put \"--env\" and a name first to " ++
-            "run a command in one.";
-
-    if (registry.copies_list == null) {
-        return by_run;
+            "your person reviews it there and merges it.";
     }
 
-    const base = try oauth.base_of(project, request, arena);
-
-    return std.fmt.allocPrint(arena,
-        \\If you can run commands on this computer, work on a local copy of the site instead. It is
-        \\brought down once for the folder:
-        \\
-        \\1. Install the publr command: `curl -fsSL https://publr.dev/install.sh | sh`
-        \\   (or `brew install publr-org/tap/publr`).
-        \\2. `publr clone {s}` in your person's terminal or in the background. It opens their
-        \\   browser on the site to approve it once, brings the site down into a folder of its
-        \\   own on the release the site runs, starts it, and opens its admin, signed in. Give
-        \\   them the address it prints.
-        \\3. Build in that folder as in any codebase, with your own file tools and
-        \\   `publr --as-admin <command>` there; preview on that address, never make another
-        \\   site.
-        \\4. `publr push` in the folder sends it up as a branch. Give your person the links it
-        \\   prints: they review it and merge it. Nothing you do there touches the live site.
-        \\
-        \\Otherwise: {s}
-    , .{ base, by_run }) catch error.OutOfMemory;
+    return "This site runs on another computer. Run every publr command with the `run` tool. " ++
+        "Where the site has environments or branches, put \"--env\" and a name first to " ++
+        "run a command in one.";
 }
 
 fn args_of(arena: std.mem.Allocator, params: Value) error{OutOfMemory}!?[]const []const u8 {
