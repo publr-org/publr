@@ -60,7 +60,10 @@ pub fn setup_page(request: *Request, response: *Response, ctx: *Context) Error!v
         return response.redirect(.see_other, "/admin/login");
     }
 
-    const asked = admin.query_param(&session, "language") orelse "";
+    // A language chosen for the site before it was set up (`publr new --language`): its
+    // first account is asked in it, with no language step.
+    const chosen = language_operations.site_speaks(&session.ctx) catch return error.OutOfMemory;
+    const asked = admin.query_param(&session, "language") orelse chosen;
 
     try render_setup(&session, response, asked, null);
 }
