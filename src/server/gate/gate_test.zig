@@ -118,31 +118,35 @@ test "another release opening it backs the site up first and records itself" {
     try std.testing.expectEqualStrings("{\"from\":\"0.3.0\",\"to\":\"0.3.1\"}", row.input);
 }
 
-test "a database from before releases recorded themselves is rebuilt to this shape" {
+test "core's migrations from before the baseline are neither run nor unknown, and kept" {
     var site: Site = undefined;
     try site.init();
     defer site.deinit();
 
-    _ = try site.open("0.3.0");
+    _ = try site.open("0.7.4");
 
-    // The dashboard on 2026-10-06: `users.role` left NOT NULL after the code stopped
-    // writing it, and no release recorded.
-    try site.connection.exec("DELETE FROM settings WHERE key = 'publr.release'");
-    try site.connection.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'x'");
-    try site.connection.exec("CREATE TABLE users_new AS SELECT * FROM users");
-    try site.connection.exec("PRAGMA foreign_keys = OFF");
-    try site.connection.exec("DROP TABLE users");
+    // What the releases before the baseline recorded on a database they made.
     try site.connection.exec(
-        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, " ++
-            "display_name TEXT NOT NULL, password_hash TEXT, password_token_hash BLOB, " ++
-            "password_token_expires_at INTEGER, created_at INTEGER NOT NULL, " ++
-            "updated_at INTEGER NOT NULL, role TEXT NOT NULL) STRICT",
+        "INSERT INTO migrations VALUES ('publr', '0.3.0', 'a', 0, 1), " ++
+            "('publr', '0.4.0', 'b', 0, 1)",
     );
-    try site.connection.exec("PRAGMA foreign_keys = ON");
 
-    try std.testing.expectEqual(gate.Outcome.adopted, try site.open("0.3.0"));
-    try std.testing.expect(!try db.schema.has_column(&site.connection, "users", "role"));
-    try std.testing.expectEqual(gate.Outcome.unchanged, try site.open("0.3.0"));
+    const arena = site.arena_state.allocator();
+    const found = try gate.status(&site.connection, &site.runtime, arena);
+
+    try std.testing.expect(!found.plan.changes());
+    try std.testing.expect(!found.refused());
+    try std.testing.expectEqual(gate.Outcome.updated, try site.open(db.migrations.baseline));
+    try std.testing.expectEqual(gate.Outcome.unchanged, try site.open(db.migrations.baseline));
+
+    const Row = struct {
+        count: i64,
+    };
+    var kept = try site.connection.prepare("SELECT count(*) AS count FROM migrations");
+    defer kept.finalize();
+
+    try std.testing.expect(try kept.step());
+    try std.testing.expectEqual(@as(i64, 2), (try kept.read(Row, arena)).count);
 }
 
 test "a column this release needs and no migration made is refused, nothing changed" {

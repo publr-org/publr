@@ -41,8 +41,6 @@ pub const Outcome = enum {
     unchanged,
     /// Another release opened it last, or migrations ran: backed up, brought up to date.
     updated,
-    /// Made before releases recorded themselves (0.3.0): rebuilt to this release's shape.
-    adopted,
 };
 
 pub const Error = error{DatabaseRefused};
@@ -92,10 +90,7 @@ fn pass(connection: *db.Db, opening: Opening) !Outcome {
     }
 
     const before = try settings.get(connection, arena, release_key);
-    const recorded = if (try db.schema.has_table(connection, "migrations"))
-        try db.migration.applied(connection, arena)
-    else
-        &.{};
+    const recorded = try recorded_migrations(connection, arena);
     const plan = try db.migration.plan_of(arena, registry.SDK.migrations, recorded);
 
     if (plan.unknown.len > 0 and !plan.newer_compatible()) {
@@ -120,12 +115,27 @@ fn pass(connection: *db.Db, opening: Opening) !Outcome {
 
     try update(connection, &expected, arena, opening, .{
         .plan = plan,
-        .adopt = before == null,
         .record_release = !same_release,
         .before = before orelse "",
     });
 
-    return if (before == null) .adopted else .updated;
+    return .updated;
+}
+
+/// The migrations the database records that this release's chain reads: none before the
+/// table exists, and none of core's from before its baseline.
+fn recorded_migrations(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+) ![]const db.migration.Applied {
+    std.debug.assert(connection.transaction_depth == 0);
+    std.debug.assert(db.migrations.baseline.len > 0);
+
+    if (!try db.schema.has_table(connection, "migrations")) {
+        return &.{};
+    }
+
+    return db.migrations.since_baseline(arena, try db.migration.applied(connection, arena));
 }
 
 fn back_up(
@@ -174,10 +184,8 @@ fn lacks_schema(connection: *db.Db, expected: *db.Db, arena: std.mem.Allocator) 
 
 const Steps = struct {
     plan: db.migration.Plan,
-    /// Rebuild tables that drifted from `schema.sql`: only for a database from before 0.3.0.
-    adopt: bool,
     record_release: bool,
-    /// The release that opened it last; empty before releases recorded themselves.
+    /// The release that opened it last; empty when none is recorded.
     before: []const u8,
 };
 
@@ -191,7 +199,8 @@ fn update(
     std.debug.assert(connection.transaction_depth == 0);
     std.debug.assert(opening.now_ms > 0);
 
-    // A table rebuild drops and renames: references are checked once, before commit.
+    // A migration may rebuild a table (drop, rename): references are checked once, before
+    // commit.
     try connection.exec("PRAGMA foreign_keys = OFF");
     defer connection.exec("PRAGMA foreign_keys = ON") catch |err| {
         std.log.err("turning foreign keys back on: {t}", .{err});
@@ -202,11 +211,6 @@ fn update(
 
     try db.migration.run(connection, steps.plan, opening.now_ms);
     try apply_schema(connection);
-
-    if (steps.adopt) {
-        try adopt(connection, expected, arena);
-    }
-
     try check_shape(connection, expected, arena);
     try check_integrity(connection, arena);
     try check_probes(connection, arena, opening);
@@ -272,7 +276,7 @@ fn apply_schema(connection: *db.Db) !void {
 
 /// What opening the database would find, without changing it: for `publr db check`.
 pub const Status = struct {
-    /// The release that last opened it; null before releases recorded themselves.
+    /// The release that last opened it; null when none is recorded.
     release: ?[]const u8,
     plan: db.migration.Plan,
     differences: []const db.shape.Difference,
@@ -297,8 +301,7 @@ pub fn status(connection: *db.Db, runtime: *db.Runtime, arena: std.mem.Allocator
     var expected = try expected_database(runtime);
     defer expected.close();
 
-    const versioned = try db.schema.has_table(connection, "migrations");
-    const recorded = if (versioned) try db.migration.applied(connection, arena) else &.{};
+    const recorded = try recorded_migrations(connection, arena);
     const has_settings = try db.schema.has_table(connection, "settings");
 
     return .{
@@ -322,46 +325,6 @@ fn expected_database(runtime: *db.Runtime) !db.Db {
     try apply_schema(&expected);
 
     return expected;
-}
-
-fn adopt(connection: *db.Db, expected: *db.Db, arena: std.mem.Allocator) !void {
-    std.debug.assert(connection.transaction_depth == 1);
-    std.debug.assert(connection != expected);
-
-    const differences = try db.shape.compare(
-        arena,
-        try db.shape.read(expected, arena),
-        try db.shape.read(connection, arena),
-    );
-    var rebuilt: std.ArrayList([]const u8) = .empty;
-
-    for (differences) |difference| {
-        if (difference.compatible) {
-            continue;
-        }
-
-        const end = std.mem.indexOfAny(u8, difference.subject, ". ") orelse
-            difference.subject.len;
-        const table = difference.subject[0..end];
-        const plain = try db.schema.has_table(connection, table);
-
-        if (!plain or contains(rebuilt.items, table)) {
-            continue;
-        }
-
-        db.rebuild.rebuild(connection, expected, arena, table) catch |err| {
-            refusal("publr: could not bring table {s} to this release's shape: {t}: {s}", .{
-                table,
-                err,
-                connection.message(),
-            });
-            return error.DatabaseRefused;
-        };
-        try rebuilt.append(arena, table);
-        report.info("publr: rebuilt table {s} to this release's shape, its rows kept\n", .{
-            table,
-        });
-    }
 }
 
 fn check_shape(connection: *db.Db, expected: *db.Db, arena: std.mem.Allocator) !void {
@@ -476,18 +439,6 @@ fn refusal(comptime format: []const u8, args: anytype) void {
     }
 
     report.err(format, args);
-}
-
-fn contains(list: []const []const u8, wanted: []const u8) bool {
-    std.debug.assert(wanted.len > 0);
-
-    for (list) |item| {
-        if (std.mem.eql(u8, item, wanted)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 test {

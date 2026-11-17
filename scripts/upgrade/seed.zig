@@ -359,9 +359,7 @@ fn taxonomy(seed: *Seed) !Filed {
 
     _ = try seed.publr(&.{ "--as-admin", "taxonomy", "create", "--definition", definition });
     const created = try seed.publr(&.{
-        "--as-admin", "term",       "create", "--taxonomy",
-        handle,       "--document", document, "--status",
-        "published",
+        "--as-admin", "term", "create", "--taxonomy", handle, "--document", document,
     });
     const Created = struct {
         id: []const u8,
@@ -369,6 +367,8 @@ fn taxonomy(seed: *Seed) !Filed {
     const term = try std.json.parseFromSliceLeaky(Created, arena, created, .{
         .ignore_unknown_fields = true,
     });
+
+    _ = try seed.publr(&.{ "--as-admin", "term", "publish", "--id", term.id });
 
     try seed.made.terms.append(arena, .{
         .taxonomy = handle,

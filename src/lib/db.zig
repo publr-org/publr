@@ -9,7 +9,6 @@ pub const schema = @import("db/schema.zig");
 pub const shape = @import("db/shape.zig");
 pub const migration = @import("db/migration.zig");
 pub const migrations = @import("db/migrations.zig");
-pub const rebuild = @import("db/rebuild.zig");
 
 pub const Runtime = sqlite.Runtime;
 pub const Db = sqlite.Database;
