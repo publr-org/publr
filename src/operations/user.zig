@@ -315,6 +315,8 @@ pub const SetPassword = struct {
     };
     pub const Out = struct {
         user_id: []const u8,
+        /// The account's email, so the page can sign in with the new password at once.
+        email: []const u8,
     };
     pub const example: In = .{
         .token = "0000000000000000000000000000000000000000000000000000000000000000",
@@ -322,6 +324,7 @@ pub const SetPassword = struct {
     };
     pub const example_out: Out = .{
         .user_id = "9b1e7c3d5a2f4e6b8d0c1a3f",
+        .email = "hanna@example.com",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .token = "The 64-character token from the link",
@@ -329,6 +332,7 @@ pub const SetPassword = struct {
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .user_id = "The account that was activated",
+        .email = "Its email",
     };
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
@@ -347,6 +351,7 @@ pub const SetPassword = struct {
 
         return .{
             .user_id = credentials.user.id,
+            .email = credentials.user.email,
         };
     }
 };

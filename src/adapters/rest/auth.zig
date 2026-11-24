@@ -151,8 +151,41 @@ pub fn set_password(request: *Request, response: *Response, ctx: *Context) Error
         return respond_error(response, err, &sdk_ctx);
     };
 
+    // The person who just chose the password is signed in with it, as the page promises:
+    // nobody types their email a second time. A sign-in refused leaves them to sign in.
+    var signing = request_context(project, request, ctx.arena, .anonymous);
+
+    signing.visitor = visitor_module.of(project, request) orelse "";
+
+    const session = registry.SDK.dispatch(&signing, sign_in_operations.SignIn, .{
+        .email = out.email,
+        .password = in.password,
+    }) catch {
+        return response.json(.ok, .{
+            .user_id = out.user_id,
+            .email = out.email,
+            .signed_in = false,
+        });
+    };
+
+    try set_session_cookie(
+        project,
+        request,
+        response,
+        ctx.arena,
+        session.token,
+        session.expires_at,
+        signing.now_ms,
+    );
+
+    var csrf_buffer: [csrf.token_len]u8 = undefined;
+    const session_id = session.token[0..sign_in_operations.session_id_len];
+
     try response.json(.ok, .{
         .user_id = out.user_id,
+        .email = out.email,
+        .signed_in = true,
+        .csrf = csrf.token(project.auth.secret, session_id, &csrf_buffer),
     });
 }
 
