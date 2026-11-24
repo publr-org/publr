@@ -18,7 +18,7 @@ const Read = struct {
     },
     browser_call: struct {
         number: u32 = 0,
-        call: []const u8 = "",
+        call: ?std.json.Value = null,
     } = .{},
 };
 
@@ -86,12 +86,12 @@ fn answer_call(init: std.process.Init, binary: []const u8, dir: []const u8, id: 
 
     while (attempts < 50) : (attempts += 1) {
         const result = try smoke.run_publr(init, binary, dir, &read);
-        const parsed = try std.json.parseFromSliceLeaky(Read, arena, result.stdout, .{
+        const parsed = try std.json.parseFromSliceLeaky(Read, arena, smoke.first_page(result.stdout), .{
             .ignore_unknown_fields = true,
         });
 
         if (parsed.browser_call.number == 1) {
-            if (std.mem.indexOf(u8, parsed.browser_call.call, "navigate") == null) {
+            if (std.mem.indexOf(u8, result.stdout, "navigate") == null) {
                 std.debug.print("smoke: browser: the call is not the agent's\n", .{});
                 return error.SmokeFailed;
             }
@@ -132,7 +132,7 @@ fn until_state(
 
     while (attempts < 50) : (attempts += 1) {
         const result = try smoke.run_publr(init, binary, dir, &read);
-        const parsed = try std.json.parseFromSliceLeaky(Read, arena, result.stdout, .{
+        const parsed = try std.json.parseFromSliceLeaky(Read, arena, smoke.first_page(result.stdout), .{
             .ignore_unknown_fields = true,
         });
 

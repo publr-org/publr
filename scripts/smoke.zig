@@ -1009,3 +1009,15 @@ fn http_exchange(init: std.process.Init, port: u16, request: []const u8) ![]cons
 
     return response[0..len];
 }
+
+/// The first object a command printed: one answering a page at a time prints each page it
+/// walked as its own.
+pub fn first_page(text: []const u8) []const u8 {
+    std.debug.assert(text.len <= output_bytes_max);
+
+    const end = std.mem.indexOf(u8, text, "\n}\n{") orelse return text;
+
+    std.debug.assert(end + 2 <= text.len);
+
+    return text[0 .. end + 2];
+}
