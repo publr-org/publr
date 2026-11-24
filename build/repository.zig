@@ -39,6 +39,10 @@ pub fn read_while_configuring(builder: *std.Build, at: []const u8, read: Read) v
     std.debug.assert(at.len > 0);
     std.debug.assert(!std.mem.endsWith(u8, at, "/"));
 
+    // Nothing there (a checkout with no `publr.zon`) is nothing to follow: Zig fails the
+    // configuration on a missing file it is asked to watch.
+    std.Io.Dir.cwd().access(builder.graph.io, at, .{}) catch return;
+
     const lazy: std.Build.LazyPath = .{
         .cwd_relative = at,
     };
