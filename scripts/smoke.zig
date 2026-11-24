@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const output_bytes_max: u32 = 64 << 10;
+/// The most a command prints that smoke reads: the agents guide, the longest, with room.
+const output_bytes_max: u32 = 256 << 10;
 /// An admin page, sprite included.
 const page_bytes_max: u32 = 1 << 20;
 const startup_attempts_max: u32 = 50;

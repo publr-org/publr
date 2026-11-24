@@ -62,7 +62,7 @@ pub const Clock = struct {
     pub const example: In = .{};
     pub const example_out: Out = .{
         .now_ms = 1799625600000,
-        .moved = true,
+        .moved = false,
         .test_site = true,
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{

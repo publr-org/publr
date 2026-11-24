@@ -429,9 +429,7 @@ fn token_end(text: []const u8, start: u32) u32 {
 
     var end = start;
 
-    while (end < text.len and (std.ascii.isAlphanumeric(text[end]) or text[end] == '-' or
-        text[end] == ':'))
-    {
+    while (end < text.len and name_char(text[end])) {
         end += 1;
     }
 
@@ -483,11 +481,15 @@ test "svg_case: an uploaded drawing keeps SVG's own spelling, its text as it is"
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
 
-    const spelled = try svg_case(arena.allocator(), "<svg viewbox=\"0 0 1 1\"><lineargradient id=\"svg-g\" " ++
-        "gradientunits=\"userSpaceOnUse\"/></lineargradient><text>viewbox lineargradient</text></svg>");
+    const given = "<svg viewbox=\"0 0 1 1\"><lineargradient id=\"svg-g\" " ++
+        "gradientunits=\"userSpaceOnUse\"/></lineargradient>" ++
+        "<text>viewbox lineargradient</text></svg>";
+    const wanted = "<svg viewBox=\"0 0 1 1\"><linearGradient id=\"svg-g\" " ++
+        "gradientUnits=\"userSpaceOnUse\"/></linearGradient>" ++
+        "<text>viewbox lineargradient</text></svg>";
+    const spelled = try svg_case(arena.allocator(), given);
 
-    try std.testing.expectEqualStrings("<svg viewBox=\"0 0 1 1\"><linearGradient id=\"svg-g\" " ++
-        "gradientUnits=\"userSpaceOnUse\"/></linearGradient><text>viewbox lineargradient</text></svg>", spelled);
+    try std.testing.expectEqualStrings(wanted, spelled);
 }
 
 fn hash_of(bytes: []const u8) [64]u8 {
@@ -542,4 +544,9 @@ test "valid_token: lowercase letters and digits, 8 to 40" {
 test "title_of: the name without its extension" {
     try std.testing.expectEqualStrings("Harbour at dawn", title_of("Harbour at dawn.jpg"));
     try std.testing.expectEqualStrings(".jpg", title_of(".jpg"));
+}
+
+/// A character of an SVG name: a letter, a digit, a dash or a colon.
+fn name_char(char: u8) bool {
+    return std.ascii.isAlphanumeric(char) or char == '-' or char == ':';
 }

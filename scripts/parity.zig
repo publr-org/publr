@@ -30,6 +30,7 @@ pub fn main(init: std.process.Init) !u8 {
     try std.Io.Dir.cwd().createDirPath(init.io, work_dir);
 
     var checked: u32 = 0;
+    var failed: u32 = 0;
 
     // Each operation's name is compared with each skip at comptime, a byte at a time.
     @setEvalBranchQuota(SDK.operations.len * (skips.len + 2) * 64 * 2);
@@ -40,14 +41,30 @@ pub fn main(init: std.process.Init) !u8 {
         const builds = comptime std.mem.startsWith(u8, Operation.name, "plugin.build");
 
         const asks = comptime skipped(Operation.name);
+        // A plugin's code alone calls it: no command runs it.
+        const plugins_only = comptime @hasDecl(Operation, "plugins_only") and Operation.plugins_only;
 
-        if ((builds and !publr.toolchain.carried) or asks) {
+        if ((builds and !publr.toolchain.carried) or asks or plugins_only) {
             continue;
         }
 
-        try check(init, binary, work_dir, Operation);
+        // Every operation is checked, so one run names every example that does not hold.
+        const held = if (check(init, binary, work_dir, Operation)) |_| true else |err| switch (err) {
+            error.ParityFailed => false,
+            else => return err,
+        };
 
-        checked += 1;
+        if (held) {
+            checked += 1;
+        } else {
+            failed += 1;
+        }
+    }
+
+    if (failed > 0) {
+        std.debug.print("parity: {d} examples did not hold\n", .{failed});
+
+        return error.ParityFailed;
     }
 
     std.debug.print("parity: ok ({d} operations)\n", .{checked});
@@ -74,7 +91,11 @@ pub fn main(init: std.process.Init) !u8 {
 /// group, which the seeded project has none of; holding back a combination names a dimension's
 /// value (`language=pl`), and the fixture compiles in no plugin declaring a dimension; the
 /// published interfaces listed are those of plugins owning a contract or a dimension, and the
-/// fixture compiles in none.
+/// fixture compiles in none; signing up and asking for a new password work on the app a visitor
+/// is on, and a command comes through no app; a user type is a plugin's, and the fixture
+/// compiles in none registering one; a file made in parts is a plugin's code's to make; the
+/// events listed are plugins', and the fixture compiles in none declaring one; a contract's
+/// providers are plugins too, and so are the currencies an amount is read in.
 const skips = [_][]const u8{
     "ai.ask",
     "ai.reply",
@@ -119,6 +140,21 @@ const skips = [_][]const u8{
     "mod.changed",
     "record.hold_back",
     "plugin.interfaces",
+    "user.sign_up",
+    "user.request_reset",
+    "user.add_type",
+    "user.remove_type",
+    "user_type.set",
+    "user_type.list",
+    "identity.configure",
+    "media.write_part",
+    "media.make",
+    "media.made",
+    "event.list",
+    "event.get",
+    "provider.answers",
+    "provider.answer",
+    "money.read",
 };
 
 fn skipped(comptime name: []const u8) bool {
@@ -157,7 +193,11 @@ fn check(
 
     var storage: [command.args_max][]const u8 = undefined;
     const printed = try command.parse(help, &storage);
-    const answer = try run_example(init, binary, dir, printed, Operation);
+    const printed_answer = try run_example(init, binary, dir, printed, Operation);
+    // An operation answering a page at a time prints each page the command walked as its
+    // own object: the first is compared.
+    const page_end = std.mem.indexOf(u8, printed_answer, "\n}\n{");
+    const answer = if (page_end) |end| printed_answer[0 .. end + 2] else printed_answer;
 
     const parsed = std.json.parseFromSliceLeaky(Operation.Out, arena, answer, .{}) catch {
         return fail(Operation, "answer is not the documented output shape", answer);

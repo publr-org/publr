@@ -251,11 +251,24 @@ fn print_example_value(value: anytype, out: *std.Io.Writer) Error!void {
     }
 }
 
+/// JSON on one line inside single quotes: a value whose text holds line breaks (a JSON field
+/// handed over as written) is printed without them, so the line can be pasted.
 fn print_example_json(value: anytype, out: *std.Io.Writer) Error!void {
     std.debug.assert(out.buffer.len > 0 or out.end == 0);
 
+    var buffer: [text_len_max]u8 = undefined;
+    var json: std.Io.Writer = .fixed(&buffer);
+
+    std.json.Stringify.value(value, .{}, &json) catch return error.WriteFailed;
+
+    var lines = std.mem.splitScalar(u8, json.buffered(), '\n');
+
     out.writeAll("'") catch return error.WriteFailed;
-    std.json.Stringify.value(value, .{}, out) catch return error.WriteFailed;
+
+    while (lines.next()) |line| {
+        out.writeAll(line) catch return error.WriteFailed;
+    }
+
     out.writeAll("'") catch return error.WriteFailed;
 }
 

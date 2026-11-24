@@ -236,7 +236,9 @@ fn fill_taxonomies(ctx: *Ctx) Error!void {
     });
     _ = try SDK.dispatch(ctx, terms.Save, .{
         .id = terms.example_changed_id,
-        .document = "{\"name\":\"Product design\"}",
+        .document = .{
+            .text = "{\"name\":\"Product design\"}",
+        },
     });
     try term_with_id(ctx, terms.example_draft_id, "Drafted", null);
 }
@@ -251,7 +253,9 @@ fn term_with_id(ctx: *Ctx, id: []const u8, name: []const u8, parent: ?[]const u8
     };
     const created = try SDK.dispatch(ctx, terms.Create, .{
         .taxonomy = "topics",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
         .parent = parent,
     });
 
@@ -508,6 +512,7 @@ fn fill_users(ctx: *Ctx) Error!void {
         .email = "editor@example.com",
         .display_name = "Editor",
         .password = shared_password,
+        .roles = &.{"editor"},
     });
 
     const invited = try SDK.dispatch(ctx, users.Create, .{
@@ -594,7 +599,9 @@ fn fill_records(ctx: *Ctx) Error!void {
     });
     _ = try SDK.dispatch(ctx, records.Save, .{
         .id = records.example_scheduled_id,
-        .document = edited_document,
+        .document = .{
+            .text = edited_document,
+        },
     });
 
     const scheduled = try SDK.dispatch(ctx, records.TransitionAt, .{
@@ -606,12 +613,16 @@ fn fill_records(ctx: *Ctx) Error!void {
     _ = try SDK.dispatch(ctx, records.SaveVersion, .{
         .id = records.example_scheduled_id,
         .version = scheduled.entry,
-        .document = scheduled_draft,
+        .document = .{
+            .text = scheduled_draft,
+        },
     });
 
     const referring = try SDK.dispatch(ctx, records.Create, .{
         .type = "post",
-        .document = referring_document,
+        .document = .{
+            .text = referring_document,
+        },
     });
 
     _ = try SDK.dispatch(ctx, records.Publish, .{

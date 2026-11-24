@@ -136,6 +136,7 @@ pub const List = struct {
             .summary = namespace.summary,
             .area = "system",
         }},
+        .next = "provider.answers",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .public = "Only those published for outside developers (`.public_api`)",
