@@ -96,7 +96,8 @@ fn waiting_list(init: std.process.Init, binary: []const u8, dir: []const u8) ![]
             id: []const u8,
         },
     };
-    const listed = try std.json.parseFromSliceLeaky(Lists, arena, smoke.first_page(result.stdout), .{
+    const page = smoke.first_page(result.stdout);
+    const listed = try std.json.parseFromSliceLeaky(Lists, arena, page, .{
         .ignore_unknown_fields = true,
     });
 
@@ -119,7 +120,8 @@ fn finished(init: std.process.Init, binary: []const u8, dir: []const u8) ![]cons
 
     while (attempts < 50) : (attempts += 1) {
         const result = try smoke.run_publr(init, binary, dir, &list);
-        const listed = try std.json.parseFromSliceLeaky(Listed, arena, smoke.first_page(result.stdout), .{
+        const page = smoke.first_page(result.stdout);
+        const listed = try std.json.parseFromSliceLeaky(Listed, arena, page, .{
             .ignore_unknown_fields = true,
         });
 

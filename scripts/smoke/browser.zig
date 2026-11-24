@@ -86,7 +86,8 @@ fn answer_call(init: std.process.Init, binary: []const u8, dir: []const u8, id: 
 
     while (attempts < 50) : (attempts += 1) {
         const result = try smoke.run_publr(init, binary, dir, &read);
-        const parsed = try std.json.parseFromSliceLeaky(Read, arena, smoke.first_page(result.stdout), .{
+        const page = smoke.first_page(result.stdout);
+        const parsed = try std.json.parseFromSliceLeaky(Read, arena, page, .{
             .ignore_unknown_fields = true,
         });
 
@@ -132,7 +133,8 @@ fn until_state(
 
     while (attempts < 50) : (attempts += 1) {
         const result = try smoke.run_publr(init, binary, dir, &read);
-        const parsed = try std.json.parseFromSliceLeaky(Read, arena, smoke.first_page(result.stdout), .{
+        const page = smoke.first_page(result.stdout);
+        const parsed = try std.json.parseFromSliceLeaky(Read, arena, page, .{
             .ignore_unknown_fields = true,
         });
 
