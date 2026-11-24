@@ -78,7 +78,7 @@ fn aside_of(
     const row: ?fields.Record = if (shape.loaded) |full| full.row else null;
     const terms_node = try terms_of(session, def, document);
     const impact = try impact_dialog.node_of(session, def, row);
-    const panels = if (row) |found| try panels_of(session, def, found.id) else null;
+    const panels = if (row) |found| try panels_of(session, def, found.id, document) else null;
 
     if (panels == null and terms_node == null and impact == null) {
         return null;
@@ -92,7 +92,12 @@ fn aside_of(
 }
 
 /// The boxes plugins add to this type's form, each in the plugin frame, told the record.
-fn panels_of(session: *Session, def: Def, id: []const u8) Error!?admin.render.Node {
+fn panels_of(
+    session: *Session,
+    def: Def,
+    id: []const u8,
+    document: ?Value,
+) Error!?admin.render.Node {
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(id.len > 0);
 
@@ -102,7 +107,7 @@ fn panels_of(session: *Session, def: Def, id: []const u8) Error!?admin.render.No
 
     // A field's help is drawn under the field, not beside the form.
     for (try frame_panels.for_type(session, def.handle)) |panel| {
-        if (panel.field.len == 0) {
+        if (panel.field.len == 0 and frame_panels.shows(panel, document)) {
             try found.append(session.arena, panel);
         }
     }
@@ -120,6 +125,7 @@ fn panels_of(session: *Session, def: Def, id: []const u8) Error!?admin.render.No
         item.* = .{
             .label = panel.label,
             .plugin = panel.plugin,
+            .from = try frame_panels.from_of(session, panel.plugin),
             .src = try print(session.arena, "/admin/plugin/{s}/panels/{s}/frame?record={s}", .{
                 panel.plugin,
                 panel.operation,
@@ -400,7 +406,7 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     const html = try admin.render.html(arena, views.RecordPick, .{
         .type = handle,
-        .type_name = got.definition.name,
+        .type_name = try @import("../nouns.zig").label_of(&session, got.definition),
         .field = field,
         .search = search orelse "",
         .live = live_only,

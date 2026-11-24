@@ -4,7 +4,7 @@
 const std = @import("std");
 
 /// Who sees the page, beyond being signed in.
-pub const Who = enum { everyone, secrets, providers, structure, update };
+pub const Who = enum { everyone, secrets, providers, user_types, structure, update, ledger };
 
 /// The groups Settings lists its pages under, in order.
 pub const Group = enum {
@@ -84,6 +84,13 @@ pub const all = [_]Page{
         .group = .general,
     },
     .{
+        .page = "settings/user-types",
+        .label = "User types",
+        .icon = "users",
+        .who = .user_types,
+        .group = .general,
+    },
+    .{
         .page = "settings/secrets",
         .label = "Secrets",
         .icon = "lock",
@@ -116,6 +123,13 @@ pub const all = [_]Page{
         .label = "Plugins",
         .icon = "package",
         .group = .plugins,
+    },
+    .{
+        .page = "settings/ledger",
+        .label = "Ledger",
+        .icon = "chart",
+        .who = .ledger,
+        .group = .data,
     },
     .{
         .page = "trash",

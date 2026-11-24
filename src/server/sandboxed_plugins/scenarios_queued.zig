@@ -57,7 +57,7 @@ test "an installed plugin's .due job is queued by its record's write and runs at
     const input = try std.fmt.allocPrint(
         arena,
         "{{\"type\":\"sampler.sample_note\",\"document\":" ++
-            "\"{{\\\"note\\\":\\\"Call Ada\\\",\\\"remind_at\\\":{d}}}\"}}",
+            "{{\"note\":\"Call Ada\",\"remind_at\":{d}}}}}",
         .{now + 2 * hour_ms},
     );
 

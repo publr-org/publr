@@ -58,9 +58,7 @@ fn read(ctx: *publr.Ctx, in: ReadIn) publr.Error!ReadOut {
     const queried = try ctx.call(record.Query, .{
         .query = "*[_type in [\"post\", \"note\"]] | order(title asc) { title }",
     });
-    const rows = std.json.parseFromSliceLeaky([]const Titled, arena, queried.result.text, .{
-        .ignore_unknown_fields = true,
-    }) catch return error.Invalid;
+    const rows = queried.result.as([]const Titled, arena) catch return error.Invalid;
     // With terms.read switched off the digest goes out without terms.
     const terms = ctx.call(term.List, .{
         .order = .title_asc,

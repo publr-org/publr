@@ -33,6 +33,8 @@ pub const Reach = struct {
     pub const Out = struct {
         reason: ?Reason,
         type: []const u8,
+        /// It is a plugin's internal record: there, its type said, read through `internal.*`.
+        internal: bool = false,
     };
     pub const example: In = .{
         .id = "a1b2c3d4e5f60718293a4b5c",
@@ -47,6 +49,7 @@ pub const Reach = struct {
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .reason = "`access`, `not_shared` or `deleted`; null when nothing stands in the way",
         .type = "The record's type, by handle; empty when it is gone",
+        .internal = "A plugin's internal record, read through `internal.*`",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -71,7 +74,7 @@ pub fn explain(ctx: *Ctx, granted: *const Grant, id: []const u8) Error!Reach.Out
         .type = "",
     };
     const row = store.records.get(ctx.db, ctx.arena, id) catch return error.Failed;
-    const found = row orelse return gone;
+    const found = row orelse return internal_reach(ctx, id);
     const type_row = store.content_types.get_by_id(ctx.db, ctx.arena, found.type_id) catch {
         return error.Failed;
     };
@@ -80,6 +83,25 @@ pub fn explain(ctx: *Ctx, granted: *const Grant, id: []const u8) Error!Reach.Out
     return .{
         .reason = try reason_of(ctx, granted, def, found),
         .type = def.handle,
+    };
+}
+
+/// A plugin's internal record a reference names: that it is there and its type
+/// (`shipping.slot`), for whoever holds the reference; what it holds is read through
+/// `internal.*`, as its plugin's grant allows. Gone when there is none.
+fn internal_reach(ctx: *Ctx, id: []const u8) Error!Reach.Out {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const owner = try store.internal_records.owner_of(ctx.db, ctx.arena, id) orelse return .{
+        .reason = .deleted,
+        .type = "",
+    };
+
+    return .{
+        .reason = null,
+        .type = try std.mem.concat(ctx.arena, u8, &.{ owner.plugin, ".", owner.kind }),
+        .internal = true,
     };
 }
 
@@ -165,20 +187,26 @@ test "an app reaches its own types, the ones shared with it and Global ones" {
 
     for ([_]model.content_type.Def{ stock, supplier }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = try model.content_type.encode(system.arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(system.arena, def),
+            },
         });
     }
 
     const document = "{\"title\":\"Item\"}";
     const kept = try SDK.dispatch(&system, record_operations.Create, .{
         .type = "supplier",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     for ([_][]const u8{ "post", "stock" }) |handle| {
         _ = try SDK.dispatch(&system, record_operations.Create, .{
             .type = handle,
-            .document = document,
+            .document = .{
+                .text = document,
+            },
         });
     }
 
@@ -196,7 +224,9 @@ test "an app reaches its own types, the ones shared with it and Global ones" {
     }));
     try std.testing.expectError(error.NotFound, SDK.dispatch(&site, record_operations.Create, .{
         .type = "supplier",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     }));
 
     for ((try SDK.dispatch(&site, types.List, .{})).types) |summary| {
@@ -231,17 +261,23 @@ test "an app's plugins: a type another plugin owns is out of reach, the project'
     order.owner = "shop";
     const types = @import("../content_type.zig");
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = try model.content_type.encode(system.arena, order),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, order),
+        },
     });
 
     const document = "{\"title\":\"Mine\"}";
     const bought = try SDK.dispatch(&system, record_operations.Create, .{
         .type = "order",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
     _ = try SDK.dispatch(&system, record_operations.Create, .{
         .type = "post",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     var site = harness.ctx(.{
@@ -304,7 +340,9 @@ test "reach: why a reference stands restricted, and when nothing stands in the w
 
     for ([_]model.content_type.Def{ stock, supplier, assessment }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = try model.content_type.encode(system.arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(system.arena, def),
+            },
         });
     }
 
@@ -314,7 +352,9 @@ test "reach: why a reference stands restricted, and when nothing stands in the w
     for ([_][]const u8{ "stock", "supplier", "assessment", "post" }, 0..) |handle, index| {
         ids[index] = (try SDK.dispatch(&system, record_operations.Create, .{
             .type = handle,
-            .document = document,
+            .document = .{
+                .text = document,
+            },
         })).id;
         _ = try SDK.dispatch(&system, record_operations.Publish, .{
             .id = ids[index],
@@ -323,7 +363,9 @@ test "reach: why a reference stands restricted, and when nothing stands in the w
 
     ids[4] = (try SDK.dispatch(&system, record_operations.Create, .{
         .type = "post",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     })).id;
     _ = try SDK.dispatch(&system, record_operations.Delete, .{
         .id = ids[3],
@@ -383,4 +425,27 @@ test "reach: why a reference stands restricted, and when nothing stands in the w
         .id = ids[2],
     });
     try std.testing.expect(signed_in.reason == null);
+}
+
+test "reach: another plugin's internal record a reference names is there, with its type" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    const slots: store.internal_records.Scope = .{
+        .plugin = "shipping",
+        .app = "",
+        .kind = "slot",
+    };
+
+    try store.internal_records.insert_as(ctx.db, slots, "slot0000000000000000001", "{}", 1);
+
+    const found = try explain(&ctx, &Grant.allow_all, "slot0000000000000000001");
+    const missing = try explain(&ctx, &Grant.allow_all, "slot0000000000000000002");
+
+    try std.testing.expect(found.reason == null);
+    try std.testing.expectEqualStrings("shipping.slot", found.type);
+    try std.testing.expect(found.internal);
+    try std.testing.expectEqual(Reason.deleted, missing.reason.?);
 }

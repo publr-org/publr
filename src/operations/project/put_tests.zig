@@ -29,7 +29,9 @@ fn put_one(ctx: *sdk.Ctx, kind: stored_rows.Kind, id: []const u8, rows: []const 
         .units = &.{.{
             .kind = @tagName(kind),
             .id = id,
-            .rows = rows,
+            .rows = .{
+                .text = rows,
+            },
         }},
     });
 
@@ -122,7 +124,9 @@ test "project.put puts a record as kept elsewhere: a person's change, plugins an
     });
     const created = try SDK.dispatch(&admin, record.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Hello\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Hello\",\"body\":\"x\"}",
+        },
     });
     _ = try SDK.dispatch(&admin, record.Publish, .{
         .id = created.id,
@@ -131,7 +135,9 @@ test "project.put puts a record as kept elsewhere: a person's change, plugins an
 
     _ = try SDK.dispatch(&admin, record.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Hi\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Hi\",\"body\":\"x\"}",
+        },
     });
     _ = try SDK.dispatch(&admin, record.Publish, .{
         .id = created.id,
@@ -157,7 +163,9 @@ test "project.put puts a record as kept elsewhere: a person's change, plugins an
         .units = &.{.{
             .kind = "media",
             .id = created.id,
-            .rows = "{}",
+            .rows = .{
+                .text = "{}",
+            },
         }},
     }));
 
@@ -186,23 +194,31 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
         },
     });
     const note = try SDK.dispatch(&admin, content_type.Create, .{
-        .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[{\"name\":" ++
-            "\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+        .definition = .{
+            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[{\"name\":" ++
+                "\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+        },
     });
     const topics = try SDK.dispatch(&admin, taxonomy.Create, .{
-        .definition = "{\"handle\":\"topic\",\"name\":\"Topic\",\"title_field\":\"name\"," ++
-            "\"fields\":[{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"}]}",
+        .definition = .{
+            .text = "{\"handle\":\"topic\",\"name\":\"Topic\",\"title_field\":\"name\"," ++
+                "\"fields\":[{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"}]}",
+        },
     });
     const filed = try SDK.dispatch(&admin, term.Create, .{
         .taxonomy = "topic",
-        .document = "{\"name\":\"Zig\"}",
+        .document = .{
+            .text = "{\"name\":\"Zig\"}",
+        },
     });
 
     _ = try SDK.dispatch(&admin, custom_fields.Update, .{
         .group = "user",
-        .definition = "{\"handle\":\"user\",\"name\":\"User fields\",\"kind\":\"component\"," ++
-            "\"title_field\":\"\",\"fields\":[{\"name\":\"bio\",\"label\":\"Bio\"," ++
-            "\"kind\":\"text\"}]}",
+        .definition = .{
+            .text = "{\"handle\":\"user\",\"name\":\"User fields\",\"kind\":\"component\"," ++
+                "\"title_field\":\"\",\"fields\":[{\"name\":\"bio\",\"label\":\"Bio\"," ++
+                "\"kind\":\"text\"}]}",
+        },
     });
     _ = try SDK.dispatch(&admin, role.Create, .{
         .name = "reviewer",
@@ -212,6 +228,7 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
     const person = try SDK.dispatch(&admin, user.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
 
     try round_trip(&admin, .term, filed.id);

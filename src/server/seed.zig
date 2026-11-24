@@ -1,5 +1,5 @@
 //! `publr seed --type <type> --file <path> [--publish]`: a file of documents made into records,
-//! in calls of `record create_many` (250 at a time, fewer when they are large). The file is
+//! in calls of `record create_many` (200 at a time, fewer when they are large). The file is
 //! a JSON array of objects, or one object a line.
 const std = @import("std");
 const create_many = @import("../operations/record/create_many.zig");
@@ -12,7 +12,7 @@ const usage =
     \\usage: publr seed --type <type> --file <path> [--publish]
     \\
     \\Makes a record of the type from every document in the file: a JSON array of objects, or
-    \\one object a line. Sent in batches of up to 250 (`record create_many`); each batch is all
+    \\one object a line. Sent in batches of up to 200 (`record create_many`); each batch is all
     \\or nothing, and a refused one stops the seed, saying which document.
     \\
 ;
@@ -206,7 +206,7 @@ fn send(
     return 0;
 }
 
-/// Where a batch from `start` ends: 250 documents, or fewer when they pass `batch_bytes_max`,
+/// Where a batch from `start` ends: 200 documents, or fewer when they pass `batch_bytes_max`,
 /// never none.
 fn batch_end(documents: []const []const u8, start: u32) u32 {
     std.debug.assert(start < documents.len);
@@ -241,7 +241,7 @@ test "a seed file is an array, or one object a line, and goes in batches" {
     const many = try arena.alloc([]const u8, 600);
 
     @memset(many, "{\"title\":\"x\"}");
-    try std.testing.expectEqual(@as(u32, 250), batch_end(many, 0));
+    try std.testing.expectEqual(@as(u32, 200), batch_end(many, 0));
     try std.testing.expectEqual(@as(u32, 600), batch_end(many, 500));
     try std.testing.expect(parse(&.{ "--type", "post" }) == null);
     const publishing = [_][]const u8{ "--type", "post", "--file", "a.json", "--publish" };

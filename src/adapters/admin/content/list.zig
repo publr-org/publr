@@ -105,7 +105,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
     const view_id = admin.query_param(&session, "view");
     const saved = try saved_of(&session, view_id) orelse if (view_id != null) return else null;
     const base: Filters = if (saved) |found|
-        model.view.decode(arena, found.query) catch Filters{}
+        model.view.decode(arena, found.query.text) catch Filters{}
     else
         address;
     const typed = try view_offer.of(&session, base);
@@ -130,7 +130,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
         .saved = saved,
         .effective = effective,
         .changed = !(try filters.same(arena, effective, resting)),
-        .types = listed_types.types,
+        .types = try @import("../nouns.zig").summaries(&session, types.Summary, listed_types.types),
         .statuses = statuses.known(&session.ctx) catch |err| return admin.fail(&session, err, back),
         .offer = offer,
         .resting = resting,
@@ -514,15 +514,37 @@ fn fill_header(props: *views.ContentList.Props, page: *const Page) Error!void {
         props.new_label = try session.translated(
             "New {type}",
             .{
-                .values = &.{.{
-                    .name = "type",
-                    .value = targets.items[0].label,
-                }},
+                .values = try new_values(session, page.effective.types, targets.items[0].label),
             },
         );
     } else {
         props.new_targets = targets.items;
     }
+}
+
+/// What names the one type a new record would be of: its forms in the person's language
+/// when the list is that type's, else its name.
+fn new_values(
+    session: *Session,
+    handles: []const []const u8,
+    label: []const u8,
+) Error![]const admin.Placeholder {
+    std.debug.assert(label.len > 0);
+
+    const named: []const admin.Placeholder = try session.arena.dupe(admin.Placeholder, &.{.{
+        .name = "type",
+        .value = label,
+    }});
+
+    if (handles.len != 1) {
+        return named;
+    }
+
+    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+        .type = handles[0],
+    }) catch return named;
+
+    return @import("../nouns.zig").values(session, got.definition);
 }
 
 pub fn contains(handles: []const []const u8, item: []const u8) bool {

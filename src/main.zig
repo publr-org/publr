@@ -142,6 +142,7 @@ fn run_command(
                 .password_env = init.environ_map.get("PUBLR_PASSWORD"),
                 .sandboxed_plugins = application.sandboxed(),
                 .files = application.files_of(),
+                .translations = application.languages.view(),
             },
         );
     }
@@ -316,7 +317,7 @@ fn check_plugins() u8 {
 fn check_apps(init: std.process.Init, out: *std.Io.Writer) !u8 {
     std.debug.assert(args_max > 0);
 
-    const problem = try publr.apps.check_apps(init.gpa, init.arena.allocator());
+    const problem = try publr.apps.check_apps(init.gpa, init.arena.allocator(), init.io);
 
     if (problem) |reason| {
         report.err("{s}", .{reason});

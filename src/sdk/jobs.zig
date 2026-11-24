@@ -10,7 +10,10 @@ const hook_runs = @import("hook_runs.zig");
 const plugin_context = @import("plugin/context.zig");
 const store_settings = @import("../store/settings.zig");
 const zone = @import("../lib/zone.zig");
+const calendar = @import("../model/calendar.zig");
 const language = @import("../operations/user/language.zig");
+const JobWrite = @import("job_write.zig").JobWrite;
+const plugin_memory = @import("plugin_memory.zig");
 
 const Ctx = sdk.Ctx;
 const PluginCtx = plugin_context.HostApi;
@@ -138,12 +141,11 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
 
                 // An `on` hook's run (`on:<event>`) logs as its event's.
                 const hook = hook_runs.target_of(job.name);
-                const problem = if (hook != null)
-                    SDK.events.run_hook(ctx, job.plugin, job.name, job.input)
-                else
-                    run_one(ctx, job);
+                const problem = try run_written(ctx, job, hook != null);
 
                 try settle(ctx, job, problem);
+                try follow_next_year(ctx, job, problem);
+                try settle_delivery(ctx, job, problem);
 
                 if (hook) |target| {
                     try SDK.events.keep_lines(ctx, target.event, &lines);
@@ -319,8 +321,11 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(plugin.len > 0 and name.len > 0);
             std.debug.assert(due.field.len > 0);
 
-            const moment = try job_queue.moment_of(ctx.db, record, due.type, due.field) orelse
-                return;
+            const held = if (due.internal)
+                try job_queue.internal_moment_of(ctx.db, record, due.type, due.field) orelse return
+            else
+                try job_queue.moment_of(ctx.db, record, due.type, due.field) orelse return;
+            const moment = try followed(ctx, due, held);
 
             try job_queue.follow(ctx.db, ctx.arena, .{
                 .plugin = plugin,
@@ -330,10 +335,129 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .offset_ms = due.offset_ms,
                 .now_ms = ctx.now_ms,
                 .language = ctx.language_queued(),
+                .internal = due.internal,
             });
         }
 
+        /// The moment a `.due` job follows for a field holding `held`: the field's own, or for a
+        /// yearly one its next return on the site's clock.
+        fn followed(ctx: *Ctx, due: job_define.Due, held: ?i64) job_queue.Error!?i64 {
+            std.debug.assert(due.field.len > 0);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const value = held orelse return null;
+
+            if (!due.yearly) {
+                return value;
+            }
+
+            return calendar.next_yearly(try zone_rule(ctx), value, due.offset_ms, ctx.now_ms);
+        }
+
+        /// A yearly `.due` job that will not run again (it ran, or failed for good) follows its
+        /// record's next return.
+        fn follow_next_year(
+            ctx: *Ctx,
+            job: job_queue.Claimed,
+            problem: []const u8,
+        ) job_queue.Error!void {
+            std.debug.assert(job.id > 0);
+            std.debug.assert(ctx.db.transaction_depth == 0);
+
+            const finished = problem.len == 0 or ends_after(@intCast(job.attempts), problem);
+            const due = due_of(ctx, job.plugin, job.name) orelse return;
+
+            if (!finished or !due.yearly) {
+                return;
+            }
+
+            const input = std.json.parseFromSliceLeaky(job_define.DueInput, ctx.arena, job.input, .{
+                .ignore_unknown_fields = true,
+            }) catch return;
+
+            try follow_one(ctx, job.plugin, job.name, due, input.record);
+        }
+
+        /// What a `.due` job follows, compiled in or installed; null for any other job.
+        fn due_of(ctx: *Ctx, plugin: []const u8, name: []const u8) ?job_define.Due {
+            std.debug.assert(plugin.len > 0);
+            std.debug.assert(name.len > 0);
+
+            inline for (registry.jobs, registry.job_owners) |Job, owner| {
+                if (comptime Job.due_on) |due| {
+                    if (std.mem.eql(u8, plugin, owner) and std.mem.eql(u8, name, Job.verb)) {
+                        return due;
+                    }
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return null;
+            const declared = sandboxed.job_of(plugin, name) orelse return null;
+
+            return declared.due;
+        }
+
         /// The job's own words for why it failed; empty when it ran.
+        /// A job's run in a write of its own, as an operation is: what it changes and the
+        /// events it emits kept together when it ends well, undone together when it fails.
+        fn run_written(ctx: *Ctx, job: job_queue.Claimed, hook: bool) job_queue.Error![]const u8 {
+            std.debug.assert(ctx.db.transaction_depth == 0);
+            std.debug.assert(job.id > 0);
+
+            // An `on` hook hears what committed: each call it makes is a write of its own.
+            if (hook) {
+                return SDK.events.run_hook(ctx, job.plugin, job.name, job.input);
+            }
+
+            var write = JobWrite.open(ctx, &SDK.emit_event) catch |err| return @errorName(err);
+
+            ctx.job_write = &write;
+            defer ctx.job_write = null;
+
+            const ran = run_one(ctx, job);
+            const refused = write.close(ctx, ran.len == 0);
+
+            std.debug.assert(ctx.db.transaction_depth == 0);
+
+            if (ran.len == 0) {
+                if (refused) |err| {
+                    return @errorName(err);
+                }
+            }
+
+            return ran;
+        }
+
+        /// An installed plugin's webhook run that failed: its delivery says so, outside the
+        /// run's write, which was undone.
+        fn settle_delivery(
+            ctx: *Ctx,
+            job: job_queue.Claimed,
+            problem: []const u8,
+        ) job_queue.Error!void {
+            std.debug.assert(job.id > 0);
+            std.debug.assert(ctx.db.transaction_depth == 0);
+
+            if (problem.len == 0 or !std.mem.startsWith(u8, job.name, "webhook_")) {
+                return;
+            }
+
+            const queued = std.json.parseFromSliceLeaky(
+                webhook_define.Queued,
+                ctx.arena,
+                job.input,
+                .{
+                    .ignore_unknown_fields = true,
+                },
+            ) catch return;
+            const last = job.attempts + 1 >= job_define.attempts_max;
+            const result = if (last) "failed" else "waiting";
+
+            webhook_define.settled(ctx, queued.delivery, result, problem) catch |err| {
+                std.log.warn("webhook delivery {d} not settled: {t}", .{ queued.delivery, err });
+            };
+        }
+
         fn run_one(ctx: *Ctx, job: job_queue.Claimed) []const u8 {
             std.debug.assert(job.id > 0);
             std.debug.assert(job.plugin.len > 0);
@@ -392,17 +516,6 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             sandboxed.job(ctx, job.plugin, job.name, input, last) catch |err| {
                 const said = if (ctx.failure) |failure| failure.message else "";
                 const problem = if (said.len > 0) said else @errorName(err);
-
-                if (delivery) |kept| {
-                    const result = if (last) "failed" else "waiting";
-
-                    webhook_define.settled(ctx, kept.id, result, problem) catch |unsettled| {
-                        std.log.warn("webhook delivery {d} not settled: {t}", .{
-                            kept.id,
-                            unsettled,
-                        });
-                    };
-                }
 
                 return if (err == error.Conflict) conflicted(ctx, problem) else problem;
             };
@@ -538,15 +651,31 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
 
             ctx.failure = null;
 
+            // The run works in memory of its own; its words for a failure are kept.
+            var work: plugin_memory.Work = undefined;
+
+            work.begin(ctx);
+
             const ran = if (comptime Job.Input == void)
                 Job.run(&queued)
             else
                 Job.run(&queued, input);
 
+            work.leave();
+            defer work.end();
+
             ran catch |err| {
                 const said = if (ctx.failure) |failure| failure.message else "";
-                const problem = if (said.len > 0) said else @errorName(err);
+                const words = if (said.len > 0) said else @errorName(err);
+                const problem = if (work.own()) ctx.arena.dupe(u8, words) catch "" else words;
                 const last = attempts + 1 >= job_define.attempts_max;
+                const heard = err == error.Conflict or last;
+
+                // What the run wrote is undone; what `.on_conflict` or `.on_failure` writes
+                // is kept.
+                if (heard and ctx.job_write != null) {
+                    ctx.job_write.?.undo(ctx) catch |undone| return @errorName(undone);
+                }
 
                 if (err == error.Conflict) {
                     if (comptime @TypeOf(Job.on_conflict) != @TypeOf(null)) {
@@ -712,6 +841,64 @@ test "a failing job runs again later, then is kept as failed and its on_failure 
     try std.testing.expectEqual(0, try Runner.drain(&ctx, 8));
 }
 
+test "a job's run is one write: kept with its events when it ends well, undone when it fails" {
+    const Probe = struct {
+        const In = struct {
+            key: []const u8,
+            fail: bool = false,
+        };
+
+        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+            const inner = ctx.base.inner;
+
+            std.debug.assert(in.key.len > 0);
+            std.debug.assert(inner.parent != null);
+
+            try store_settings.set(inner.db, in.key, "written", inner.now_ms);
+            inner.emit_json("probe.written", "{}", false);
+
+            if (in.fail) {
+                return error.Conflict;
+            }
+        }
+    };
+    const Writing = job_define.define(Probe.In, .{
+        .name = "probe",
+        .run = Probe.run,
+    });
+    const Runner = sdk.SDK(.{
+        .operations = &.{},
+        .jobs = &.{Writing},
+        .job_owners = &.{"probe"},
+    }).jobs;
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    const inputs = [_][]const u8{
+        "{\"key\":\"probe.kept\"}",
+        "{\"key\":\"probe.undone\",\"fail\":true}",
+    };
+
+    for (inputs) |input| {
+        try job_queue.push(ctx.db, .{
+            .plugin = "probe",
+            .name = "probe",
+            .input = input,
+            .due_at_ms = ctx.now_ms,
+            .now_ms = ctx.now_ms,
+        });
+    }
+
+    try std.testing.expectEqual(2, try Runner.drain(&ctx, 8));
+    try std.testing.expectEqual(0, ctx.db.transaction_depth);
+    try std.testing.expect(try store_settings.get(ctx.db, ctx.arena, "probe.kept") != null);
+    try std.testing.expect(try store_settings.get(ctx.db, ctx.arena, "probe.undone") == null);
+    try std.testing.expect(ctx.parent == null and ctx.job_write == null);
+}
+
 test "a repeating job is queued once, runs at its moment, and is queued again for the next" {
     const Tidy = struct {
         fn run(ctx: *QueueCtx) sdk.Error!void {
@@ -849,7 +1036,7 @@ test "queued work applies a mod and calls an operation by name, as a request's c
     const greeting: []const u8 = "Hello";
 
     try std.testing.expectEqualStrings("Hello", try queued.mod("probe.greeting", greeting));
-    try std.testing.expectError(error.NotFound, queued.call_json("probe.nothing", "{}"));
+    try std.testing.expectError(error.NotFound, queued.call_named(struct {}, "probe.nothing", .{}));
 }
 
 test "a .due job runs once per moment of its record's field, moved by edits, given the record" {
@@ -873,11 +1060,14 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
     });
     const Probe = struct {
         var heard: []const u8 = "";
+        // What the run hears outlives it here: the run's own memory goes as it ends.
+        var heard_buffer: [32]u8 = undefined;
 
         fn run(ctx: *QueueCtx, event: Events.Held) sdk.Error!void {
             std.debug.assert(event.id.len > 0);
+            std.debug.assert(ctx.base.inner.now_ms >= 0);
 
-            heard = try ctx.base.inner.arena.dupe(u8, event.value.title);
+            heard = std.fmt.bufPrint(&heard_buffer, "{s}", .{event.value.title}) catch "";
         }
     };
     const Remind = job_define.define(Events, .{
@@ -908,14 +1098,18 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
     const declared = comptime record_define.content_type_of(Events, Docs);
 
     _ = try registry.SDK.dispatch(&ctx, types.Create, .{
-        .definition = try model.content_type.encode(ctx.arena, declared),
+        .definition = .{
+            .text = try model.content_type.encode(ctx.arena, declared),
+        },
     });
 
     const launch = "{{\"title\":\"Launch\",\"starts_at\":{d}}}";
     const document = try std.fmt.allocPrint(ctx.arena, launch, .{start + 3 * hour_ms});
     const created = try registry.SDK.dispatch(&ctx, records.Create, .{
         .type = "probe.event",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     try Runner.follow(&ctx, created.id);
@@ -924,7 +1118,9 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
     // Another field's edit leaves the job as it was.
     _ = try registry.SDK.dispatch(&ctx, records.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Launch day\"}",
+        .document = .{
+            .text = "{\"title\":\"Launch day\"}",
+        },
     });
     try Runner.follow(&ctx, created.id);
     try std.testing.expectEqual(1, (try job_queue.list(ctx.db, ctx.arena, 8)).len);
@@ -936,7 +1132,9 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
 
     _ = try registry.SDK.dispatch(&ctx, records.Save, .{
         .id = created.id,
-        .document = sooner,
+        .document = .{
+            .text = sooner,
+        },
     });
     try Runner.follow(&ctx, created.id);
     try std.testing.expectEqual(1, (try job_queue.list(ctx.db, ctx.arena, 8)).len);
@@ -947,6 +1145,95 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
     // The value it ran for queues nothing again.
     try Runner.follow(&ctx, created.id);
     try std.testing.expectEqual(null, try job_queue.next_due(ctx.db));
+}
+
+test "a yearly .due job runs on each return of its date, then follows the next one" {
+    const registry = @import("../server/registry.zig");
+    const model = @import("../model.zig");
+    const record_define = @import("plugin/record_define.zig");
+    const words = @import("plugin/words.zig");
+    const records = @import("../operations/record.zig");
+    const types = @import("../operations/content_type.zig");
+    const Person = struct {
+        name: []const u8,
+        born_at: ?words.Time = null,
+    };
+    const Docs = @import("plugin/define.zig").Words(.{
+        .{ @typeName(Person), "Person" },
+        .{ @typeName(Person) ++ ".name", "Name" },
+        .{ @typeName(Person) ++ ".born_at", "Born" },
+    });
+    const People = record_define.define(Person, .{
+        .name = "probe.person",
+    });
+    const Probe = struct {
+        fn run(ctx: *QueueCtx, person: People.Held) sdk.Error!void {
+            std.debug.assert(person.id.len > 0);
+            std.debug.assert(ctx.base.inner.now_ms >= 0);
+        }
+    };
+    const Greet = job_define.define(People, .{
+        .name = "greet",
+        .run = Probe.run,
+        .due = .{
+            .field = .born_at,
+            .yearly = true,
+            .before = .{
+                .days = 1,
+            },
+        },
+    });
+    const Runner = sdk.SDK(.{
+        .operations = &.{},
+        .jobs = &.{Greet},
+        .job_owners = &.{"probe"},
+    }).jobs;
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    const day_ms: i64 = 24 * 60 * 60 * 1000;
+
+    ctx.now_ms = calendar.days_of(.{
+        .year = 2026,
+        .month = 6,
+        .day = 1,
+    }) * day_ms;
+
+    try registry.SDK.bootstrap(&ctx);
+    const declared = comptime record_define.content_type_of(People, Docs);
+
+    _ = try registry.SDK.dispatch(&ctx, types.Create, .{
+        .definition = .{
+            .text = try model.content_type.encode(ctx.arena, declared),
+        },
+    });
+
+    // Born thirty years and ten days from now: greeted the day before it comes back.
+    const born = calendar.add_months("UTC0", ctx.now_ms + 10 * day_ms, -30 * 12);
+    const this_year = calendar.add_months("UTC0", born, 30 * 12);
+    const document = try std.fmt.allocPrint(ctx.arena, "{{\"name\":\"Ada\",\"born_at\":{d}}}", .{
+        born,
+    });
+    const created = try registry.SDK.dispatch(&ctx, records.Create, .{
+        .type = "probe.person",
+        .document = .{
+            .text = document,
+        },
+    });
+
+    try Runner.follow(&ctx, created.id);
+    try std.testing.expectEqual(this_year - day_ms, (try job_queue.next_due(ctx.db)).?);
+
+    // Its day comes: it runs, and next year's is queued.
+    ctx.now_ms = this_year - day_ms;
+    try std.testing.expectEqual(1, try Runner.drain(&ctx, 8));
+
+    const next_year = calendar.add_months("UTC0", born, 31 * 12);
+
+    try std.testing.expectEqual(next_year - day_ms, (try job_queue.next_due(ctx.db)).?);
 }
 
 test "a repeating job runs at its time on the site's clock; moved or paused by the administrator" {

@@ -1,7 +1,8 @@
 //! The sign-in provider contract: what a plugin declares to put a "Continue with X" button
 //! on the login pages. The core makes the state and the PKCE pair, keeps the callback, runs
 //! the provider's `exchange` as a fixed step of it, and decides whose account it is; the
-//! plugin only knows how to talk to its provider.
+//! plugin only knows how to talk to its provider. A provider of the other kind reads who
+//! someone is from a header a proxy in front puts on every request (`from_request`).
 
 const std = @import("std");
 const operation = @import("operation.zig");
@@ -9,6 +10,7 @@ const model = @import("../model/identity.zig");
 const exchange_module = @import("plugin/exchange.zig");
 
 pub const ExchangeCtx = exchange_module.ExchangeCtx;
+pub const Ctx = @import("context.zig").Ctx;
 pub const Error = operation.Error;
 pub const providers_max: u32 = 16;
 pub const label_len_max: u32 = 32;
@@ -58,16 +60,39 @@ pub const SignInProvider = struct {
     /// Whether the provider can be offered now: its client id is in the environment. Core
     /// also waits for every secret the plugin declares to be set.
     available: *const fn () bool,
-    /// Where to send the browser to sign in with the provider.
-    authorize_url: *const fn (arena: std.mem.Allocator, request: Authorize) Error![]const u8,
+    /// Where to send the browser to sign in with the provider. Set together with
+    /// `exchange`, or neither when the provider reads `from_request`.
+    authorize_url: ?*const fn (arena: std.mem.Allocator, request: Authorize) Error![]const u8 =
+        null,
     /// Swaps the callback's code for who the person is: the one step of a sign-in that waits
     /// on another server. Its ctx sends only to the plugin's own `http.fetch` domains, its
     /// secrets filled as they leave, within `exchange_ms_max`. `BadCredentials` when the
     /// provider refused the code; any error fails the sign-in ("Try again").
-    exchange: *const fn (ctx: *ExchangeCtx, callback: Callback) Error!Claims,
+    exchange: ?*const fn (ctx: *ExchangeCtx, callback: Callback) Error!Claims = null,
+    /// Who the person is, read from a header a proxy in front of the site puts on every
+    /// request (an identity-aware proxy), in place of a redirect and an exchange.
+    from_request: ?FromRequest = null,
     /// The plugin that declares it: set by core.
     plugin: []const u8 = "",
 };
+
+/// A provider that a proxy in front of the site answers for: every request carries who the
+/// person is, signed. While one is available the admin signs in through it alone and checks
+/// it on every request.
+pub const FromRequest = struct {
+    /// The request header it reads, lower case: `x-goog-iap-jwt-assertion`.
+    header: []const u8,
+    /// The person the header's value names, when it checks out; null when it does not. A
+    /// deciding step: no outside calls, only the plugin's own stored data.
+    read: *const fn (ctx: *Ctx, value: []const u8) Error!?Claims,
+    /// What someone the proxy let through gets when no account holds them: the roles for a
+    /// new account (empty: an account with none, waiting for an administrator), or null for
+    /// none, as today. What an administrator chose for new members; a deciding step like
+    /// `read`. Left out: accounts are only ever made by an administrator.
+    new_member: ?*const fn (ctx: *Ctx, claims: Claims) Error!?[]const []const u8 = null,
+};
+
+pub const header_len_max: u32 = 64;
 
 /// The declaration is well-formed; the message names what is not.
 pub fn problem(provider: SignInProvider) ?[]const u8 {
@@ -84,6 +109,51 @@ pub fn problem(provider: SignInProvider) ?[]const u8 {
 
     if (provider.icon.len == 0 or provider.icon.len > icon_len_max) {
         return "`icon` is a path of 1 to 4096 characters";
+    }
+
+    const redirects = provider.authorize_url != null and provider.exchange != null;
+    const half = (provider.authorize_url == null) != (provider.exchange == null);
+
+    if (half or redirects == (provider.from_request != null)) {
+        return "a provider has `authorize_url` and `exchange`, or `from_request`, not both";
+    }
+
+    if (provider.from_request) |reading| {
+        if (!valid_header(reading.header)) {
+            return "`from_request.header` is a lower-case header name, at most 64 characters";
+        }
+    }
+
+    return null;
+}
+
+fn valid_header(header: []const u8) bool {
+    std.debug.assert(header_len_max > 0);
+
+    if (header.len == 0 or header.len > header_len_max) {
+        return false;
+    }
+
+    for (header) |char| {
+        const allowed = std.ascii.isLower(char) or std.ascii.isDigit(char) or char == '-';
+
+        if (!allowed) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// The provider read from the request that is declared, when there is one: at most one may
+/// be (`plugin.zig` refuses a second).
+pub fn from_request_of(providers: []const SignInProvider) ?*const SignInProvider {
+    std.debug.assert(providers.len <= providers_max);
+
+    for (providers) |*provider| {
+        if (provider.from_request != null) {
+            return provider;
+        }
     }
 
     return null;
@@ -125,12 +195,43 @@ pub const testing = struct {
         .exchange = &exchange,
     };
 
+    /// A proxy in front that trusts whatever `x-test-identity` says: `<id>:<email>`,
+    /// vouched; anything without a colon names nobody.
+    pub const forwarded: SignInProvider = .{
+        .name = "forwarded",
+        .label = "Forwarded",
+        .icon = "M2 12h20",
+        .available = &always,
+        .from_request = .{
+            .header = "x-test-identity",
+            .read = &read_forwarded,
+        },
+    };
+
     fn always() bool {
         return true;
     }
 
     fn never() bool {
         return false;
+    }
+
+    fn read_forwarded(ctx: *Ctx, value: []const u8) Error!?Claims {
+        std.debug.assert(ctx.now_ms >= 0);
+        std.debug.assert(value.len <= 64 << 10);
+
+        const colon = std.mem.indexOfScalar(u8, value, ':') orelse return null;
+
+        if (colon == 0 or colon + 1 == value.len) {
+            return null;
+        }
+
+        return .{
+            .provider = forwarded.name,
+            .subject = value[0..colon],
+            .email = value[colon + 1 ..],
+            .verified = true,
+        };
     }
 
     fn authorize_url(arena: std.mem.Allocator, request: Authorize) Error![]const u8 {
@@ -189,4 +290,30 @@ test "a declaration names a valid provider, label and icon" {
     const both = [_]SignInProvider{ testing.trusting, testing.missing };
     try std.testing.expectEqualStrings("Missing", find(&both, "missing").?.label);
     try std.testing.expect(find(&both, "github") == null);
+    try std.testing.expect(from_request_of(&both) == null);
+}
+
+test "a provider redirects or reads the request, never both nor half of one" {
+    try std.testing.expect(problem(testing.forwarded) == null);
+
+    var both = testing.forwarded;
+    both.authorize_url = testing.trusting.authorize_url;
+    both.exchange = testing.trusting.exchange;
+    try std.testing.expect(problem(both) != null);
+
+    var half = testing.trusting;
+    half.exchange = null;
+    try std.testing.expect(problem(half) != null);
+
+    var neither = testing.trusting;
+    neither.authorize_url = null;
+    neither.exchange = null;
+    try std.testing.expect(problem(neither) != null);
+
+    var shouting = testing.forwarded;
+    shouting.from_request.?.header = "X-Test-Identity";
+    try std.testing.expect(problem(shouting) != null);
+
+    const declared = [_]SignInProvider{ testing.trusting, testing.forwarded };
+    try std.testing.expectEqualStrings("forwarded", from_request_of(&declared).?.name);
 }

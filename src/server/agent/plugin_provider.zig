@@ -140,7 +140,9 @@ pub const PluginProvider = struct {
 
         const request_text = ai.request_json(arena, request) catch return error.OutOfMemory;
         const in: sdk_ai.Completion.In = .{
-            .request = request_text,
+            .request = .{
+                .text = request_text,
+            },
         };
         const input = std.json.Stringify.valueAlloc(arena, in, .{}) catch return error.OutOfMemory;
         const operation = (plugin_provider.part(&ctx, "complete") catch |err| {
@@ -154,7 +156,7 @@ pub const PluginProvider = struct {
             .allocate = .alloc_always,
         }) catch return error.InvalidResponse;
 
-        return ai.response_of(arena, out.response) catch error.InvalidResponse;
+        return ai.response_of(arena, out.response.text) catch error.InvalidResponse;
     }
 };
 

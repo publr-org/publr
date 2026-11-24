@@ -42,12 +42,40 @@ const Reader = struct {
             };
         }
 
+        // A value that reads an example its own way (`operation.Json` in a plugin's module).
+        if (comptime @typeInfo(Target) == .@"struct" and @hasDecl(Target, "example_of")) {
+            return Target.example_of(reader.raw());
+        }
+
+        // A list of pairs written as an object keyed by each pair's first field (money).
+        if (comptime is_keyed(Target)) {
+            return reader.keyed(Target, depth);
+        }
+
         // A reference written as its id, as callers send it.
         if (comptime @typeInfo(Target) == .@"struct" and @hasDecl(Target, "reference")) {
             if (reader.at < reader.text.len and reader.text[reader.at] == '"') {
                 return .{
                     .id = reader.string(),
                 };
+            }
+        }
+
+        // A value written as text it reads itself from (`publr.Decimal` as `"1.25"`).
+        if (comptime is_text_value(Target)) {
+            return Target.parse(reader.string()) catch
+                @compileError("example: not a " ++ @typeName(Target));
+        }
+
+        // A value of one field written as that field alone (`publr.Time` as its ms).
+        if (comptime is_wrapped(Target)) {
+            if (reader.at < reader.text.len and reader.text[reader.at] != '{') {
+                const info = @typeInfo(Target).@"struct";
+                var result: Target = undefined;
+
+                @field(result, info.field_names[0]) = reader.value(info.field_types[0], depth + 1);
+
+                return result;
             }
         }
 
@@ -68,6 +96,43 @@ const Reader = struct {
             .@"struct" => reader.object(Target, depth),
             else => @compileError("example: " ++ @typeName(Target) ++ " is not plain data"),
         };
+    }
+
+    fn keyed(comptime reader: *Reader, comptime Target: type, comptime depth: u32) Target {
+        const name = @typeInfo(Target).@"struct".field_names[0];
+        const Pair = @typeInfo(@typeInfo(Target).@"struct".field_types[0]).pointer.child;
+        const names = @typeInfo(Pair).@"struct".field_names;
+        var pairs: []const Pair = &.{};
+
+        std.debug.assert(names.len == 2);
+
+        reader.expect('{');
+        reader.skip_space();
+
+        if (!reader.take('}')) {
+            while (true) {
+                var pair: Pair = undefined;
+
+                @field(pair, names[0]) = reader.string();
+                reader.expect(':');
+                @field(pair, names[1]) = reader.value(@FieldType(Pair, names[1]), depth + 1);
+                pairs = pairs ++ &[_]Pair{pair};
+                reader.skip_space();
+
+                if (reader.take('}')) {
+                    break;
+                }
+
+                reader.expect(',');
+                reader.skip_space();
+            }
+        }
+
+        var result: Target = undefined;
+
+        @field(result, name) = pairs;
+
+        return result;
     }
 
     fn object(comptime reader: *Reader, comptime Target: type, comptime depth: u32) Target {
@@ -305,6 +370,19 @@ const Reader = struct {
     }
 };
 
+/// A struct whose one field, a list of pairs, is written as an object (`publr_form = .keyed`).
+fn is_keyed(comptime Target: type) bool {
+    comptime {
+        if (@typeInfo(Target) != .@"struct" or !@hasDecl(Target, "publr_form")) {
+            return false;
+        }
+
+        std.debug.assert(@typeInfo(Target).@"struct".field_names.len > 0);
+
+        return std.mem.eql(u8, @tagName(Target.publr_form), "keyed");
+    }
+}
+
 fn is_raw(comptime Target: type) bool {
     comptime {
         if (@typeInfo(Target) != .@"struct" or !@hasDecl(Target, "jsonStringify")) {
@@ -317,6 +395,42 @@ fn is_raw(comptime Target: type) bool {
         std.debug.assert(!raw or info.field_types[0] == []const u8);
 
         return raw;
+    }
+}
+
+/// A value written as text it parses itself (`publr.Decimal`).
+fn is_text_value(comptime Target: type) bool {
+    comptime {
+        if (@typeInfo(Target) != .@"struct" or !@hasDecl(Target, "json_scalar")) {
+            return false;
+        }
+
+        std.debug.assert(@hasDecl(Target, "jsonStringify"));
+
+        return @hasDecl(Target, "parse") and Target.json_scalar == .string;
+    }
+}
+
+/// A struct of one plain field reading and writing itself as that field's value.
+fn is_wrapped(comptime Target: type) bool {
+    comptime {
+        const reads_itself = @typeInfo(Target) == .@"struct" and
+            @hasDecl(Target, "jsonParse") and @hasDecl(Target, "jsonStringify");
+
+        if (!reads_itself or @hasDecl(Target, "parse")) {
+            return false;
+        }
+
+        const info = @typeInfo(Target).@"struct";
+
+        std.debug.assert(info.field_names.len > 0);
+
+        return info.field_names.len == 1 and switch (@typeInfo(info.field_types[0])) {
+            .int, .float, .bool => true,
+            // A reference kept as its id (`publr.ledger.Account`): written as the text.
+            .pointer => |pointer| pointer.child == u8 and pointer.size == .slice,
+            else => false,
+        };
     }
 }
 
@@ -382,4 +496,34 @@ test "a reference in an example is its id, as callers send it" {
 
     try std.testing.expectEqualStrings("a1b2", value.item.id);
     try std.testing.expectEqualStrings("post", value.other.type);
+}
+
+test "a time in an example is its milliseconds, as callers send it" {
+    // Shaped as `publr.Time`.
+    const Time = struct {
+        ms: i64,
+
+        pub fn jsonStringify(time: @This(), writer: anytype) !void {
+            try writer.write(time.ms);
+        }
+
+        pub fn jsonParse(
+            allocator: std.mem.Allocator,
+            source: anytype,
+            options: std.json.ParseOptions,
+        ) !@This() {
+            return .{
+                .ms = try std.json.innerParse(i64, allocator, source, options),
+            };
+        }
+    };
+    const value = comptime parse(struct {
+        at: Time,
+        until: ?Time = null,
+    },
+        \\{ "at": 1806192000000, "until": 1806192060000 }
+    );
+
+    try std.testing.expectEqual(@as(i64, 1806192000000), value.at.ms);
+    try std.testing.expectEqual(@as(i64, 1806192060000), value.until.?.ms);
 }

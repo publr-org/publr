@@ -237,7 +237,9 @@ pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!libr
     );
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
         .type = media.type_handle,
-        .document = try document_of(ctx, filename, folder),
+        .document = .{
+            .text = try document_of(ctx, filename, folder),
+        },
     });
 
     _ = try registry.SDK.dispatch(ctx, record.Publish, .{
@@ -327,7 +329,9 @@ pub fn added(ctx: *Ctx, kept: Kept) Error!library.Item {
     const hash = hash_of(kept.bytes);
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
         .type = kept.type,
-        .document = try document_of(ctx, kept.filename, kept.folder),
+        .document = .{
+            .text = try document_of(ctx, kept.filename, kept.folder),
+        },
     });
 
     _ = try registry.SDK.dispatch(ctx, record.Publish, .{
@@ -364,7 +368,126 @@ fn clean_svg(ctx: *Ctx, bytes: []const u8) Error![]const u8 {
     const cleaned = sanitize.sanitize(ctx.arena, bytes, .content) catch return error.Invalid;
     const start = std.mem.indexOf(u8, cleaned, "<svg") orelse return ctx.fail(not_what_it_says);
 
-    return cleaned[start..];
+    return svg_case(ctx.arena, cleaned[start..]) catch error.OutOfMemory;
+}
+
+/// SVG's names that are not all lower case, as the HTML parser restores them (WHATWG HTML,
+/// "adjust SVG attributes" and the SVG tag name table). The sanitizer writes names in lower
+/// case, which a page's HTML reads back; a file served on its own is XML, where
+/// `lineargradient` and `viewbox` mean nothing.
+const svg_names = [_][]const u8{
+    "altGlyph",           "altGlyphDef",         "altGlyphItem",        "animateColor",
+    "animateMotion",      "animateTransform",    "clipPath",            "feBlend",
+    "feColorMatrix",      "feComponentTransfer", "feComposite",         "feConvolveMatrix",
+    "feDiffuseLighting",  "feDisplacementMap",   "feDistantLight",      "feDropShadow",
+    "feFlood",            "feFuncA",             "feFuncB",             "feFuncG",
+    "feFuncR",            "feGaussianBlur",      "feImage",             "feMerge",
+    "feMergeNode",        "feMorphology",        "feOffset",            "fePointLight",
+    "feSpecularLighting", "feSpotLight",         "feTile",              "feTurbulence",
+    "foreignObject",      "glyphRef",            "linearGradient",      "radialGradient",
+    "textPath",           "attributeName",       "attributeType",       "baseFrequency",
+    "baseProfile",        "calcMode",            "clipPathUnits",       "diffuseConstant",
+    "edgeMode",           "filterUnits",         "gradientTransform",   "gradientUnits",
+    "kernelMatrix",       "kernelUnitLength",    "keyPoints",           "keySplines",
+    "keyTimes",           "lengthAdjust",        "limitingConeAngle",   "markerHeight",
+    "markerUnits",        "markerWidth",         "maskContentUnits",    "maskUnits",
+    "numOctaves",         "pathLength",          "patternContentUnits", "patternTransform",
+    "patternUnits",       "pointsAtX",           "pointsAtY",           "pointsAtZ",
+    "preserveAlpha",      "preserveAspectRatio", "primitiveUnits",      "refX",
+    "refY",               "repeatCount",         "repeatDur",           "requiredExtensions",
+    "requiredFeatures",   "specularConstant",    "specularExponent",    "spreadMethod",
+    "startOffset",        "stdDeviation",        "stitchTiles",         "surfaceScale",
+    "systemLanguage",     "tableValues",         "targetX",             "targetY",
+    "textLength",         "viewBox",             "viewTarget",          "xChannelSelector",
+    "yChannelSelector",   "zoomAndPan",
+};
+
+/// The name as SVG spells it; itself when it is all lower case there.
+fn svg_name(name: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+
+    for (svg_names) |known| {
+        if (std.ascii.eqlIgnoreCase(known, name)) {
+            return known;
+        }
+    }
+
+    return name;
+}
+
+/// Where the name or quoted value starting at `start` inside a tag ends.
+fn token_end(text: []const u8, start: u32) u32 {
+    std.debug.assert(start < text.len);
+
+    const first = text[start];
+
+    if (first == '"' or first == '\'') {
+        const close = std.mem.indexOfScalarPos(u8, text, start + 1, first) orelse text.len - 1;
+
+        return @intCast(close + 1);
+    }
+
+    var end = start;
+
+    while (end < text.len and (std.ascii.isAlphanumeric(text[end]) or text[end] == '-' or
+        text[end] == ':'))
+    {
+        end += 1;
+    }
+
+    std.debug.assert(end > start);
+
+    return end;
+}
+
+/// The sanitizer's SVG as a file of its own: each element's and attribute's name inside a
+/// tag spelled as SVG spells it; text and quoted values as they are.
+fn svg_case(arena: std.mem.Allocator, text: []const u8) error{OutOfMemory}![]const u8 {
+    std.debug.assert(text.len <= svg_bytes_max);
+
+    var out: std.ArrayList(u8) = .empty;
+    var at: u32 = 0;
+    var in_tag = false;
+    var tag_name = false;
+
+    try out.ensureTotalCapacity(arena, text.len);
+
+    while (at < text.len) {
+        const byte = text[at];
+        const word = in_tag and (std.ascii.isAlphabetic(byte) or byte == '"' or byte == '\'');
+
+        if (!word) {
+            in_tag = if (byte == '<') true else if (byte == '>') false else in_tag;
+            tag_name = byte == '<' or (tag_name and byte == '/');
+            out.appendAssumeCapacity(byte);
+            at += 1;
+            continue;
+        }
+
+        const end = token_end(text, at);
+        const token = text[at..end];
+        const named = std.ascii.isAlphabetic(byte) and
+            (tag_name or (end < text.len and text[end] == '='));
+
+        out.appendSliceAssumeCapacity(if (named) svg_name(token) else token);
+        at = end;
+        tag_name = false;
+    }
+
+    std.debug.assert(out.items.len == text.len);
+
+    return out.items;
+}
+
+test "svg_case: an uploaded drawing keeps SVG's own spelling, its text as it is" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+
+    const spelled = try svg_case(arena.allocator(), "<svg viewbox=\"0 0 1 1\"><lineargradient id=\"svg-g\" " ++
+        "gradientunits=\"userSpaceOnUse\"/></lineargradient><text>viewbox lineargradient</text></svg>");
+
+    try std.testing.expectEqualStrings("<svg viewBox=\"0 0 1 1\"><linearGradient id=\"svg-g\" " ++
+        "gradientUnits=\"userSpaceOnUse\"/></linearGradient><text>viewbox lineargradient</text></svg>", spelled);
 }
 
 fn hash_of(bytes: []const u8) [64]u8 {

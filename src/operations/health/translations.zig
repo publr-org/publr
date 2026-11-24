@@ -31,18 +31,6 @@ pub const Disagreement = struct {
     chosen: []const u8,
 };
 
-/// One language over one domain's messages.
-pub const Covered = struct {
-    locale: []const u8,
-    label: []const u8,
-    /// `publr` for the core's words, a plugin's name for its own.
-    domain: []const u8,
-    translated: u32,
-    total: u32,
-    /// The plugins bringing this language's translations of the domain.
-    providers: []const []const u8,
-};
-
 pub const Translations = struct {
     pub const name = "health.translations";
     pub const description = "List the messages installed translations render differently";
@@ -50,36 +38,57 @@ pub const Translations = struct {
         \\Administrators only. For each language, each message two or more plugins translate
         \\differently, with every plugin's version; `chosen` names the one picked with
         \\`health choose_translation`, empty while the first-party one shows. `open` counts
-        \\the ones not picked yet.
+        \\the ones not picked yet. A page of 200 at a time, by language: `next` continues it.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        after: []const u8 = "",
+    };
     pub const Out = struct {
         disagreements: []const Disagreement,
         open: u32,
-        coverage: []const Covered = &.{},
+        next: []const u8 = "",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
         .disagreements = &.{},
         .open = 0,
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .after = "The page after this one: the `next` the last page answered",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .disagreements = "Each message with its language, every plugin's version, the one picked",
-        .open = "How many are not picked yet",
-        .coverage = "Each language over each domain's messages: how many it translates, by whom",
+        .open = "How many are not picked yet, over every page",
+        .next = "The next page's `after`; empty after the last",
     };
 
-    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        return listed(ctx);
+        return listed(ctx, try position_of(in.after));
     }
 };
 
-/// Every disagreement, and how many are not picked yet: also what Site Health's count adds.
-pub fn listed(ctx: *Ctx) Error!Translations.Out {
+/// A place in a list the running server holds in memory, in the order it holds it: what a
+/// page of it answers in `next` (`200`), read back from `after`.
+pub fn position_of(after: []const u8) Error!u32 {
+    if (after.len == 0) {
+        return 0;
+    }
+
+    if (after.len > 10) {
+        return error.Invalid;
+    }
+
+    std.debug.assert(after.len > 0 and after.len <= 10);
+
+    return std.fmt.parseInt(u32, after, 10) catch error.Invalid;
+}
+
+/// The page of disagreements from `start`, and how many over all are not picked yet: also
+/// what Site Health's count adds.
+pub fn listed(ctx: *Ctx, start: u32) Error!Translations.Out {
     std.debug.assert(registry.translations.len <= 1024);
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -88,14 +97,23 @@ pub fn listed(ctx: *Ctx) Error!Translations.Out {
         .disagreements = &.{},
         .open = 0,
     };
+    const page_max = sdk.operation.page_limit_max;
     var out: std.ArrayList(Disagreement) = .empty;
     var open: u32 = 0;
+    var place: u32 = 0;
 
     for (view.disagreements(view.context)) |language| {
         for (language.conflicts) |conflict| {
             const chosen = chosen_of(kept, language.locale, conflict.context, conflict.id);
+            const shown = place >= start and out.items.len < page_max;
 
             open += @intFromBool(chosen.len == 0);
+            place += 1;
+
+            if (!shown) {
+                continue;
+            }
+
             out.append(ctx.arena, .{
                 .locale = language.locale,
                 .label = language.label,
@@ -107,31 +125,16 @@ pub fn listed(ctx: *Ctx) Error!Translations.Out {
         }
     }
 
+    const shown_end = start + @as(u32, @intCast(out.items.len));
+
     return .{
         .disagreements = out.items,
         .open = open,
-        .coverage = try covered_of(ctx, view),
+        .next = if (shown_end < place)
+            std.fmt.allocPrint(ctx.arena, "{d}", .{shown_end}) catch return error.OutOfMemory
+        else
+            "",
     };
-}
-
-fn covered_of(ctx: *Ctx, view: sdk.context.Translations) Error![]const Covered {
-    std.debug.assert(ctx.now_ms >= 0);
-
-    const all = view.coverage(view.context);
-    const out = ctx.arena.alloc(Covered, all.len) catch return error.OutOfMemory;
-
-    for (all, out) |coverage, *covered| {
-        covered.* = .{
-            .locale = coverage.locale,
-            .label = coverage.label,
-            .domain = coverage.domain,
-            .translated = coverage.translated,
-            .total = coverage.total,
-            .providers = coverage.providers,
-        };
-    }
-
-    return out;
 }
 
 pub const MissingTranslations = struct {

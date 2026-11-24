@@ -20,6 +20,9 @@ pub const Part = struct {
     required: bool,
     input: []const shapes.Node,
     output: []const shapes.Node,
+    /// Answered once when a provider is installed and again when it updates, never per
+    /// call: its answer is kept as the provider's defaults (an item type's tax facts).
+    at_install: bool = false,
 };
 
 /// A contract a plugin owns, under its name: `payments.method`.
@@ -27,6 +30,9 @@ pub const Contract = struct {
     name: []const u8,
     parts: []const Part,
     component: Component = .none,
+    /// What the owner's slot hands a provider's component (`.with`): its root an object,
+    /// each field an attribute; empty when the contract leaves it open.
+    with: []const shapes.Node = &.{},
 
     pub fn part(contract: Contract, name: []const u8) ?Part {
         std.debug.assert(name.len > 0);

@@ -211,34 +211,29 @@ const tile_of = (item: ListedMedia): PickerItem => ({
   held: false,
 });
 
-const answer = async (response: Response) => {
-  if (response.ok) return response.json();
-  const failed = await response.json().catch(() => ({}));
-  throw new Error(failed.message ?? failed.error ?? `${response.status}`);
-};
 
 /** Asks the library for the files the filter keeps, within the families the field takes;
  * `more` adds the next page to those shown. */
 const load = async (more = false) => {
-  const query = new URLSearchParams();
-  if (state.folder !== "") query.set("folder", state.folder);
-  for (const tag of state.tags) query.append("tags", tag);
-  if (state.search !== "") query.set("search", state.search);
-  if (state.year > 0) query.set("year", String(state.year));
-  if (state.year > 0 && state.month > 0) query.set("month", String(state.month));
+  const input: Record<string, unknown> = {};
+  if (state.folder !== "") input.folder = state.folder;
+  if (state.tags.length > 0) input.tags = [...state.tags];
+  if (state.search !== "") input.search = state.search;
+  if (state.year > 0) input.year = state.year;
+  if (state.year > 0 && state.month > 0) input.month = state.month;
   if (state.families.length > 0) {
-    for (const family of state.type !== "" ? [state.type] : state.families) query.append("families", family);
+    input.families = state.type !== "" ? [state.type] : [...state.families];
   } else if (state.type !== "") {
-    query.set("kind", state.type);
+    input.kind = state.type;
   }
-  if (state.size_filter !== "") query.set("size", state.size_filter);
-  if (state.visibility !== "") query.set("visibility", state.visibility);
-  query.set("limit", String(page_size));
-  query.set("offset", String(more ? state.items.length : 0));
+  if (state.size_filter !== "") input.size = state.size_filter;
+  if (state.visibility !== "") input.visibility = state.visibility;
+  input.limit = page_size;
+  input.offset = more ? state.items.length : 0;
   const asked = ++latest;
   state.loading = true;
   try {
-    const listed: Listed = await answer(await fetch(Publr.url(`/api/media.list?${query}`), { credentials: "same-origin" }));
+    const listed = (await Publr.send("media.list", input)) as Listed;
     if (asked !== latest) return;
     const tiles = listed.items.map(tile_of);
     state.items = more ? [...state.items, ...tiles] : tiles;

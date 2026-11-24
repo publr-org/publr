@@ -148,10 +148,7 @@ fn take(target: Target, request: *Request, response: *Response, ctx: *Context) a
     );
 
     if (!signed) {
-        std.log.warn("webhook {s}.{s}: refused, its signature did not verify", .{
-            owner,
-            webhook.name,
-        });
+        std.log.warn("webhook {s}.{s}: refused, not verified", .{ owner, webhook.name });
         try store.webhook_deliveries.add_refused(system.db, delivery);
 
         return response.text(.unauthorized, "Signature not verified");
@@ -169,7 +166,8 @@ fn take(target: Target, request: *Request, response: *Response, ctx: *Context) a
         return response.text(.bad_request, "The body does not read");
     }
 
-    delivery.delivery_id = webhook_define.delivery_id_of(
+    // A delivery its run verifies is never a repeat: a forged copy must not drop the real.
+    delivery.delivery_id = if (webhook.signature == .verify) "" else webhook_define.delivery_id_of(
         webhook.delivery_id,
         webhook.body,
         arena,

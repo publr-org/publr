@@ -291,11 +291,27 @@ pub fn file_patterns(session: *const Session, app: *const App) ![]const FilePatt
 
     const arena = session.arena;
     var ctx = identity_module.context(session.project, arena, .system);
-    const listed = registry.SDK.dispatch(&ctx, apps_operations.Files, .{}) catch return &.{};
     const prefix = try std.fmt.allocPrint(arena, "{s}/design/patterns/", .{app.spec.folder});
     var out: std.ArrayList(FilePattern) = .empty;
+    var listed_files: std.ArrayList(apps_operations.Entry) = .empty;
+    var after: []const u8 = "";
 
-    for (listed.files) |file| {
+    // A page of paths at a time; the patterns themselves are bounded by `patterns_max`.
+    while (listed_files.items.len < apps_operations.files_max) {
+        const page = registry.SDK.dispatch(&ctx, apps_operations.Files, .{
+            .prefix = prefix,
+            .after = after,
+        }) catch break;
+
+        try listed_files.appendSlice(arena, page.files);
+        after = page.next;
+
+        if (after.len == 0) {
+            break;
+        }
+    }
+
+    for (listed_files.items) |file| {
         const inside = std.mem.startsWith(u8, file.path, prefix);
         const rest = if (inside) file.path[prefix.len..] else "";
 

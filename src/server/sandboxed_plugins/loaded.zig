@@ -1,6 +1,9 @@
 //! One installed plugin as the host holds it: its module, its manifest, what it is granted,
-//! and, once something calls it, its instance. The instance is disposable: a trap or an
-//! exhausted budget drops it and the next call makes a fresh one.
+//! and, once something calls it, its instance. While a request is open on the host
+//! (`request.zig`) the instance serves every call into the plugin and is dropped when the
+//! request ends: it never serves two requests. Outside a request it lasts one outermost call.
+//! A trap, an exhausted budget or its memory full spoils it: it takes no further call, and the
+//! next one gets a fresh instance.
 const std = @import("std");
 const wasm = @import("publr_wasm");
 const model = @import("../../model.zig");
@@ -9,13 +12,18 @@ const json = @import("../../lib/json.zig");
 const store = @import("../../store.zig");
 
 const sandboxed_plugin = model.sandboxed_plugin;
+const described_module = @import("described.zig");
 const wire = @import("../../sdk/plugin/wire.zig");
+const counted_module = @import("counted.zig");
 
 /// Instructions the fast interpreter runs in a millisecond: about 490,000 on an M-series core
 /// in a release build (a tight loop), rounded down. What turns a CPU limit into the budget
 /// WAMR enforces; a debug build runs about eight times slower against the same budget.
 pub const instructions_per_ms: u32 = 400_000;
 pub const stack_bytes: u32 = 64 << 10;
+/// Requests open at once on one host: an HTTP request, the top-level call inside it and the
+/// calls a hook of that one makes on a context of its own.
+pub const requests_open_max: u32 = 1 << 16;
 
 pub const Loaded = struct {
     arena_state: std.heap.ArenaAllocator,
@@ -25,6 +33,23 @@ pub const Loaded = struct {
     module: wasm.Module,
     instance: ?wasm.Instance = null,
     result_offset: u32 = 0,
+    /// Calls running on the instance now: more than one while a call nests (the plugin's
+    /// write runs its own hook).
+    running: u32 = 0,
+    /// A call on the instance trapped, ran out of its budget or filled its memory: what it
+    /// holds is not trusted again. No call enters it; the outermost call's end drops it.
+    spoiled: bool = false,
+    /// How many calls entered the plugin's module since it was loaded.
+    entered: u64 = 0,
+    /// What it cost in the request open on the host now (`counted.zig`).
+    counted: counted_module.Plugin = .{},
+    /// The largest of its SDK collections in the request, as it told (`publr_held`).
+    largest: counted_module.Largest = .{},
+    /// How many requests are open on the host (`Host.requests`); null for a plugin loaded
+    /// apart from one, whose instance lasts one outermost call.
+    requests: ?*const u32 = null,
+    /// How it lays out each entry's envelope, read from the module once (`shaped_entry.zig`).
+    described: []?described_module.Described = &.{},
     granted: []const []const u8,
     /// The permissions it holds now, each with its flags as an administrator left them.
     held: []const model.permission.Held,
@@ -70,6 +95,7 @@ pub const Loaded = struct {
         const Held = model.permission.Held;
 
         loaded.manifest = try json.parse(sandboxed_plugin.Manifest, arena, manifest_text, options);
+        try sandboxed_plugin.resolve_shapes(arena, &loaded.manifest);
         loaded.granted = try json.parse([]const []const u8, arena, granted_text, options);
         loaded.held = try sandboxed_plugin.held_now(
             arena,
@@ -149,19 +175,71 @@ pub const Loaded = struct {
 
         loaded.instance = instance;
         loaded.result_offset = offset;
+        loaded.counted.instances += 1;
 
         return &loaded.instance.?;
     }
 
-    pub fn drop_instance(loaded: *Loaded) void {
+    /// A call begins on the instance.
+    pub fn enter(loaded: *Loaded) void {
+        std.debug.assert(loaded.bytes.len > 0);
+        std.debug.assert(loaded.running < std.math.maxInt(u32));
+
+        loaded.running += 1;
+        loaded.entered += 1;
+        loaded.counted.invocations += 1;
+    }
+
+    /// A call ends. Inside a request the instance stays for the plugin's next call, each
+    /// call's own memory given back by the plugin as it returned; a spoiled one, and any
+    /// outside a request, is dropped with the outermost call.
+    pub fn leave(loaded: *Loaded) void {
+        std.debug.assert(loaded.running > 0);
         std.debug.assert(loaded.bytes.len > 0);
 
+        loaded.running -= 1;
+
+        if (loaded.running == 0 and (loaded.spoiled or !loaded.in_request())) {
+            loaded.drop_instance();
+        }
+    }
+
+    /// Whether a request is open on the host: only then an instance outlasts a call.
+    pub fn in_request(loaded: *const Loaded) bool {
+        std.debug.assert(loaded.bytes.len > 0);
+
+        const open = loaded.requests orelse return false;
+
+        std.debug.assert(open.* <= requests_open_max);
+
+        return open.* > 0;
+    }
+
+    /// The call running on the instance ended in a way that leaves its memory untrusted.
+    pub fn spoil(loaded: *Loaded) void {
+        std.debug.assert(loaded.running > 0);
+        std.debug.assert(loaded.bytes.len > 0);
+
+        loaded.spoiled = true;
+    }
+
+    pub fn drop_instance(loaded: *Loaded) void {
+        std.debug.assert(loaded.bytes.len > 0);
+        // An instance a call still runs on is never freed under it.
+        std.debug.assert(loaded.running == 0);
+
         if (loaded.instance) |*instance| {
+            loaded.counted.instructions += instance.instructions_used;
+            loaded.counted.memory_pages = @max(
+                loaded.counted.memory_pages,
+                instance.memory_pages(),
+            );
             instance.deinit();
         }
 
         loaded.instance = null;
         loaded.result_offset = 0;
+        loaded.spoiled = false;
 
         std.debug.assert(loaded.instance == null);
     }

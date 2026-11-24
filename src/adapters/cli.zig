@@ -8,6 +8,8 @@ pub const args_max: u32 = 128;
 /// As large as the biggest value an operation takes in one call (an app file, a piece of an
 /// upload), so a command sent with `--site` can carry it.
 pub const value_len_max: u32 = 1 << 20;
+/// The pages one command prints of a list answered a page at a time: 20 million items.
+pub const pages_max: u32 = 100_000;
 
 pub const Error = sdk.Error || error{ UnknownOp, UnknownFlag, MissingValue, WriteFailed };
 
@@ -17,10 +19,19 @@ const help = sdk.help;
 
 pub const Options = struct {
     now_ms: i64 = 0,
+    /// The site's clock may move here: a test site (`operations/clock.zig`).
+    test_clock: bool = false,
     err: ?*std.Io.Writer = null,
     password_env: ?[]const u8 = null,
     /// The installed plugins installed: their operations are commands too.
     sandboxed_plugins: ?*const sdk.sandboxed_plugins.SandboxedPlugins = null,
+    /// The process's working memory for loops and for nested installed calls
+    /// (`sdk/scratch.zig`); without them a call that needs one takes it from its own arena.
+    scratch: ?*sdk.Scratch = null,
+    call_scratch: ?*sdk.Scratch = null,
+    /// Compiled-in plugins' working memory (`sdk/plugin_memory.zig`); without it a
+    /// plugin's work stays in its caller's memory.
+    plugin_memory: ?*sdk.plugin_memory.Memory = null,
     /// Every compiled-in plugin's `State`, where a server made them.
     plugin_states: ?*anyopaque = null,
     /// The media library's files, where a server made them.
@@ -223,6 +234,9 @@ pub fn CLI(comptime SDK: type) type {
             }
 
             ctx.sandboxed_plugins = invocation.options.sandboxed_plugins;
+            ctx.scratch_set_aside = invocation.options.scratch;
+            ctx.calls_set_aside = invocation.options.call_scratch;
+            ctx.plugins_set_aside = invocation.options.plugin_memory;
             ctx.plugin_states = invocation.options.plugin_states;
             ctx.files = invocation.options.files;
             ctx.apps = invocation.options.apps;
@@ -230,6 +244,7 @@ pub fn CLI(comptime SDK: type) type {
             ctx.live = invocation.options.live;
             ctx.updater = invocation.options.updater;
             ctx.translations = invocation.options.translations;
+            ctx.test_clock = invocation.options.test_clock;
             ctx.language.locale = language.speaks(&ctx) catch "";
 
             inline for (SDK.operations) |Operation| {
@@ -339,13 +354,43 @@ pub fn CLI(comptime SDK: type) type {
                 return refused(invocation, ctx, Operation.name, err);
             };
 
+            try print_out(Operation.Out, result, out);
+
+            // A list answered a page at a time: every page, one JSON value each, unless
+            // the caller asked for one page with `--after`.
+            if (comptime sdk.operation.lists.paged(Operation)) {
+                if (in.after.len > 0) {
+                    return 0;
+                }
+
+                var next = result.next;
+                var pages: u32 = 1;
+
+                while (next.len > 0 and pages < pages_max) : (pages += 1) {
+                    var again = in;
+
+                    again.after = next;
+
+                    const page = SDK.dispatch(ctx, Operation, again) catch |err| {
+                        return refused(invocation, ctx, Operation.name, err);
+                    };
+
+                    try print_out(Operation.Out, page, out);
+                    next = page.next;
+                }
+            }
+
+            return 0;
+        }
+
+        fn print_out(comptime Out: type, result: Out, out: *std.Io.Writer) Error!void {
+            comptime std.debug.assert(@typeInfo(Out) == .@"struct");
+
             std.json.Stringify.value(result, .{
                 .whitespace = .indent_2,
             }, out) catch
                 return error.WriteFailed;
             out.writeByte('\n') catch return error.WriteFailed;
-
-            return 0;
         }
 
         /// An operation an installed plugin brings: flags read by its manifest's field shapes.
@@ -382,6 +427,24 @@ pub fn CLI(comptime SDK: type) type {
             };
 
             try runtime_cli.print_json(ctx.arena, result, out);
+
+            // A list answered a page at a time: every page, unless the caller named one.
+            var next = runtime_cli.next_of(ctx.arena, result);
+            var pages: u32 = 1;
+
+            while (next) |after| : (pages += 1) {
+                if (pages == pages_max) {
+                    break;
+                }
+
+                const again = try runtime_cli.input_after(ctx.arena, input, after) orelse break;
+                const page = SDK.call_json(ctx, found.name, again) catch |err| {
+                    return refused(invocation, ctx, found.name, err);
+                };
+
+                try runtime_cli.print_json(ctx.arena, page, out);
+                next = runtime_cli.next_of(ctx.arena, page);
+            }
 
             return 0;
         }

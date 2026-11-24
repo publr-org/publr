@@ -53,6 +53,9 @@ pub fn download(
         return ctx.fail(@import("http.zig").not_queued);
     }
 
+    // Never inside a write: what the run wrote so far commits first.
+    try @import("../sdk/job_write.zig").before_outside_call(ctx);
+
     if (builtin.os.tag == .wasi) {
         return error.Unavailable;
     }

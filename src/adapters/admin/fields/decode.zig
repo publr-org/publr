@@ -122,6 +122,13 @@ fn field_value(
     const nested = prefix.len > 0;
     const as_json = kind.control == .json or (def.many and (nested or kind.storage == .bool));
 
+    // A plugin kind keeping its value as JSON text (`sampler.weight`) is posted as that text.
+    const texted = kind.storage == .text or kind.storage == .long;
+
+    if (as_json and texted and !def.many) {
+        return json_text_value(arena, form, name);
+    }
+
     if (as_json) {
         return json_value(arena, form, name);
     }
@@ -308,6 +315,26 @@ fn json_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Err
     }
 
     return @import("../../../lib/json.zig").parse(Value, arena, text, .{}) catch error.Invalid;
+}
+
+/// JSON kept as its text, once it is known to parse: null when the field was left empty.
+fn json_text_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) Error!?Value {
+    std.debug.assert(name.len > 0);
+
+    const posted = form.text(name) orelse return null;
+    const text = std.mem.trim(u8, posted, " \t\r\n");
+
+    if (text.len == 0) {
+        return null;
+    }
+
+    _ = try json_value(arena, form, name) orelse return null;
+
+    std.debug.assert(text.len <= json_bytes_max);
+
+    return .{
+        .string = text,
+    };
 }
 
 /// An item or group drawn closed: its value as JSON, an object; null when it had none.

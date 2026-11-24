@@ -82,7 +82,9 @@ fn ensure_taxonomy(ctx: *Ctx, handle: []const u8, definition: []const u8) Error!
 
     if (found == null) {
         _ = try registry.SDK.dispatch(ctx, taxonomy.Create, .{
-            .definition = definition,
+            .definition = .{
+                .text = definition,
+            },
         });
     }
 }
@@ -236,7 +238,7 @@ pub fn written_of(ctx: *Ctx, id: []const u8) Error!Written {
     const got = try registry.SDK.dispatch(ctx, record.Get, .{
         .id = id,
     });
-    const parsed = std.json.parseFromSliceLeaky(Written, ctx.arena, got.document, .{
+    const parsed = std.json.parseFromSliceLeaky(Written, ctx.arena, got.document.text, .{
         .ignore_unknown_fields = true,
     }) catch return error.Invalid;
 
@@ -255,7 +257,9 @@ pub fn save(ctx: *Ctx, id: []const u8, document: anytype) Error!void {
 
     const saved = try registry.SDK.dispatch(ctx, record.Save, .{
         .id = id,
-        .document = text,
+        .document = .{
+            .text = text,
+        },
     });
 
     if (saved.changed) {

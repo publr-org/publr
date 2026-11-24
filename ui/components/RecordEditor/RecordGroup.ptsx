@@ -79,7 +79,8 @@ export function RecordGroup({
   parts,
 }: RecordGroupProps) {
   return (
-    <details class="group/disclosure rounded-xl border border-border" open={!collapsed || closed}>
+    <details class="group/disclosure rounded-xl border border-border"
+      open={!collapsed || closed || !!state.groups_refused[name]}>
       <summary class="flex cursor-pointer list-none items-center gap-2 px-5 py-3 [&::-webkit-details-marker]:hidden">
             <Icon name="chevron-right" size="sm" classes="shrink-0 text-muted-foreground transition-transform group-open/disclosure:rotate-90" />
         <Text as="span" variant="heading-xs">
@@ -133,6 +134,7 @@ export function RecordGroup({
                   accept={cell.accept}
                   can_upload={cell.can_upload}
                   options={cell.cell_options}
+                  error={state.part_problems[cell.name] ?? ""}
                 />
               ))}
             </div>
@@ -193,6 +195,7 @@ export function RecordGroup({
             accept={child.accept}
             can_upload={child.can_upload}
             options={child.part_options}
+            error={state.part_problems[child.name] ?? ""}
           />
         ))}
       </div>

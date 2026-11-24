@@ -106,7 +106,7 @@ fn printed(context: Context, handle: []const u8, route: ?[]const u8) ![]const Pr
     var out: std.ArrayList(Printed) = .empty;
 
     for (listed.documents) |text| {
-        const document = json.parse(Printed, arena, text, .{
+        const document = json.parse(Printed, arena, text.text, .{
             .ignore_unknown_fields = true,
         });
         const read = document catch continue;

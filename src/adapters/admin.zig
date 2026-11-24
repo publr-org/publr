@@ -31,6 +31,8 @@ const revision_pages = @import("admin/revisions.zig");
 const device_pages = @import("admin/devices.zig");
 const secret_pages = @import("admin/secrets.zig");
 const provider_pages = @import("admin/providers.zig");
+const user_type_pages = @import("admin/user_types.zig");
+const live_pages = @import("admin/live.zig");
 const removal_pages = @import("admin/removals.zig");
 const trash_pages = @import("admin/trash.zig");
 const health_pages = @import("admin/health.zig");
@@ -197,11 +199,12 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 174 + preview_pages.routes_count +
+pub const routes_count: u32 = 174 + @import("admin/ledger.zig").routes_count +
+    preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
     rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
-    provider_pages.routes_count +
+    provider_pages.routes_count + user_type_pages.routes_count + live_pages.routes_count +
     design_pages.routes_count;
 const client_files = @import("../ui/client_files.zig");
 
@@ -247,6 +250,7 @@ pub fn register(router: *http.Router) void {
     router.post("/admin/settings/devices/approve", &device_pages.decide);
     register_settings_pages(router);
     @import("admin/plugins.zig").register(router);
+    @import("admin/ledger.zig").register(router);
     @import("admin/frame.zig").register(router);
     router.get("/admin/settings/apps", &app_scope.list);
     router.get("/admin/settings/:handle", &@import("admin/content/form.zig").settings_page);
@@ -334,6 +338,8 @@ fn register_settings_pages(router: *http.Router) void {
     design_pages.register(router);
     secret_pages.register(router);
     provider_pages.register(router);
+    user_type_pages.register(router);
+    live_pages.register(router);
     removal_pages.register(router);
     trash_pages.register(router);
     @import("admin/queue.zig").register(router);
@@ -1587,11 +1593,15 @@ test "a settings type uses the shared editor and publishes only after a guarded 
     };
     try records.fixture.post_type(&system);
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = try content_type.encode(arena, website),
+        .definition = .{
+            .text = try content_type.encode(arena, website),
+        },
     });
     const record = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "post",
-        .document = "{\"title\":\"A post\"}",
+        .document = .{
+            .text = "{\"title\":\"A post\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, records.Publish, .{
         .id = record.id,
@@ -1628,7 +1638,7 @@ test "a settings type uses the shared editor and publishes only after a guarded 
     const home = try registry.SDK.dispatch(&system, records.Get, .{
         .id = after.records[0].id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, home.document, "Welcome home") != null);
+    try std.testing.expect(std.mem.indexOf(u8, home.document.text, "Welcome home") != null);
     const content = try registry.SDK.dispatch(&system, records.List, .{});
     try std.testing.expectEqual(@as(usize, 1), content.records.len);
     try std.testing.expectEqualStrings(record.id, content.records[0].id);
@@ -1688,7 +1698,9 @@ test "a long entry draws its items past the fold closed and answers their fields
         },
     };
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = try content_type.encode(arena, faq_type),
+        .definition = .{
+            .text = try content_type.encode(arena, faq_type),
+        },
     });
 
     var items: std.Io.Writer.Allocating = .init(arena);
@@ -1705,7 +1717,9 @@ test "a long entry draws its items past the fold closed and answers their fields
     });
     const record = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "faqpage",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
     const path = try std.fmt.allocPrint(arena, "/admin/content/{s}", .{record.id});
     const page = try flow.call("GET", path, "");
@@ -1940,7 +1954,9 @@ test "schema creation pages fit a fixed request arena with many field definition
             .fields = &fields,
         };
         _ = try registry.SDK.dispatch(&system, types.Create, .{
-            .definition = try model.content_type.encode(arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(arena, def),
+            },
         });
     }
     // Same 4 MiB scratch budget as the HTTP server, reset for every request.

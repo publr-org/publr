@@ -96,6 +96,9 @@ fn children_of(
 
     const arena = ctx.arena;
     const scratch = try ctx.scratch();
+    // Read inside a caller's loop that works in the scratch (a query's page): the children
+    // are kept in it, so no page of them is given back before that caller's own rewind.
+    const nested = scratch.holds(arena);
     const kept_found = try arena.alloc(?Child, kept.len);
     var rest: std.ArrayList(Child) = .empty;
     var kept_left: u32 = @intCast(kept.len);
@@ -105,7 +108,7 @@ fn children_of(
 
     while (kept_left > 0 or rest.items.len < children_max - kept.len) {
         const begun = scratch.mark();
-        defer scratch.rewind(begun);
+        defer if (!nested) scratch.rewind(begun);
 
         var paged = ctx.*;
 
@@ -137,7 +140,7 @@ fn children_of(
                 continue;
             }
 
-            const fields = std.json.parseFromSliceLeaky(Value, arena, text, .{
+            const fields = std.json.parseFromSliceLeaky(Value, arena, text.text, .{
                 .allocate = .alloc_always,
             }) catch continue;
             const child: Child = .{

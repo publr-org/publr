@@ -20,3 +20,4 @@ pub const Options = publr_http.Options;
 pub const Form = publr_http.Form;
 pub const parse = publr_http.parse;
 pub const static = publr_http.static;
+pub const arena_used = publr_http.arena_used;

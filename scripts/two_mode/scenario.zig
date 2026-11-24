@@ -16,6 +16,10 @@ const visit = "{\"note\":\"Lunch\",\"place\":" ++
 const lost = "{\"note\":\"Lost\",\"place\":" ++
     "\"{\\\"name\\\":\\\"Nowhere\\\",\\\"lat\\\":95,\\\"lng\\\":0}\"}";
 
+/// A salutation carrying sampler's parcel group, placed on greeter's type.
+const weighed = "{\"note\":\"Parcel\",\"sampler_1\":{\"weight\":\"{\\\"grams\\\":120}\"}}";
+const negative = "{\"note\":\"Parcel\",\"sampler_1\":{\"weight\":\"{\\\"grams\\\":-1}\"}}";
+
 /// The same in both modes before any step: the first admin and an editor.
 pub const setup = [_][]const []const u8{
     &.{ "project", "init", "--email", admin, "--display_name", "Admin", "--password", password },
@@ -46,6 +50,10 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", editor, "sampler", "hello" },
     // A deprecated operation: every caller told, the same both ways.
     &.{ "sampler", "hi", "--who", "stranger" },
+    // What it reads of visitors' requests: none brought a referral to the command line.
+    &.{ "--as", admin, "sampler", "referral" },
+    // Its type of user, listed with core's own.
+    &.{ "--as", admin, "user_type", "list" },
     // A `define` operation untrusted callers reach, its ready answer letting in the signed in.
     &.{ "sampler", "wave", "--who", "stranger" },
     &.{ "--as", editor, "sampler", "wave", "--who", "Ada" },
@@ -57,6 +65,20 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "sampler", "submit", "--text", "spam" },
     // A value applied under a name and changed by a `*` modifier: 3 doubled to 6 both ways.
     &.{ "--as", admin, "sampler", "measure", "--text", "abc" },
+    // Its ledger: a tip moved once though sent twice, a spend past the floor refused, its
+    // accounts read and the books checked, and a person never writing on it.
+    &.{ "--as", admin, "sampler", "tip", "--id", "t1", "--points", "5" },
+    &.{ "--as", admin, "sampler", "tip", "--id", "t1", "--points", "5" },
+    &.{ "--as", admin, "ledger", "accounts", "--plugin", "sampler" },
+    &.{ "--as", admin, "ledger", "check" },
+    &.{ "--as", admin, "ledger", "open", "--name", "held", "--unit", "PLN" },
+    // Its tallies walked back a page at a time, more than two pages of them, every way.
+    &.{ "--as", admin, "sampler", "tally", "--word", "pine", "--count", "450" },
+    // A computed field: worked out when kept, again when a tally it counted is kept, never
+    // taken from a save.
+    &.{ "--as", admin, "sampler", "basket", "--word", "fern" },
+    // A list of the plugin's own, a few kibibytes held.
+    &.{ "--as", admin, "sampler", "hoard", "--count", "300" },
     // A job the plugin's code queues, listed for the operator the same in both builds.
     &.{ "--as", admin, "sampler", "later", "--note", "Remember" },
     &.{ "--as", admin, "job", "list" },
@@ -126,6 +148,10 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "record", "create", "--type", "sampler.sample_visit", "--document", visit },
     &.{ "--as", admin, "record", "create", "--type", "sampler.sample_visit", "--document", lost },
     &.{ "--as", admin, "record", "list", "--type", "sampler.sample_visit" },
+    // Its field group on greeter's type: the weight's `.validate` runs where sampler runs.
+    &.{ "--as", admin, "record", "create", "--type", "greeter.salutation", "--document", weighed },
+    &.{ "--as", admin, "record", "create", "--type", "greeter.salutation", "--document", negative },
+    &.{ "--as", admin, "record", "list", "--type", "greeter.salutation" },
     // A plugin's command list: greeter's; the sampler's also lists `settings`, compiled in
     // only.
     &.{ "greeter", "--help" },

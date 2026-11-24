@@ -85,9 +85,13 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
 fn own_data(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
 
+    // A plugin's made files are its own: each operation checks the part and the type are.
     return std.mem.startsWith(u8, operation_name, "internal.") or
         std.mem.eql(u8, operation_name, "custom_fields.values") or
-        std.mem.eql(u8, operation_name, "custom_fields.save_values");
+        std.mem.eql(u8, operation_name, "custom_fields.save_values") or
+        std.mem.eql(u8, operation_name, "media.write_part") or
+        std.mem.eql(u8, operation_name, "media.make") or
+        std.mem.eql(u8, operation_name, "media.made");
 }
 
 /// Everything one of the account's roles grants, and the doors open to everyone. Short of
@@ -202,7 +206,48 @@ fn plugin_grant(ctx: *const Ctx, request: Request, roles: []const Role) operatio
     });
     const held = plugin.roles orelse return granted;
 
-    return Grant.intersect(granted, role_grant(roles, held, request), ctx.arena);
+    // Its own types' records are its own business whoever it acts for: a visitor's account,
+    // holding none of the admin's roles, still has its order made.
+    if (own_records(access, request)) {
+        return granted;
+    }
+
+    const narrowed = try Grant.intersect(granted, role_grant(roles, held, request), ctx.arena);
+
+    // A query names no type ahead: what the account may not read, the plugin still reads of
+    // its own types (an order it just placed for a customer) and of the types its own
+    // `records.read` names (a plugin it requires), and nothing else: a wide read stays on its
+    // own types.
+    if (!narrowed.allows() and granted.allows() and own_query(access, request)) {
+        var own = granted;
+
+        own.types = granted.types orelse access.own_types;
+
+        return own;
+    }
+
+    return narrowed;
+}
+
+/// Whether the request is a query (GROQ) by a plugin that has types of its own.
+fn own_query(access: *const plugin_access.Access, request: Request) bool {
+    std.debug.assert(request.operation_name.len > 0);
+
+    return request.type_id == null and access.own_types.len > 0 and
+        std.mem.eql(u8, request.operation_name, "record.query");
+}
+
+/// Whether the request is a record operation on one of the plugin's own types.
+fn own_records(access: *const plugin_access.Access, request: Request) bool {
+    std.debug.assert(request.operation_name.len > 0);
+
+    const type_id = request.type_id orelse return false;
+    const permission = @import("../model/permission.zig");
+
+    std.debug.assert(type_id.len > 0);
+
+    return permission.contains(access.own_types, type_id) and
+        permission.contains(&permission.own_records, request.operation_name);
 }
 
 pub fn authorize(
@@ -248,10 +293,11 @@ pub fn authorize(
         }, ctx.arena);
     }
 
+    // An app reaches the plugins it lists, and the providers of the contracts they own.
     if (ctx.app_plugins) |plugins| {
         if (result.allows()) {
             result = try Grant.intersect(result, .{
-                .plugins = plugins,
+                .plugins = try @import("contract.zig").with_providers(ctx, plugins),
             }, ctx.arena);
         }
     }
@@ -295,6 +341,72 @@ test "core policy: a plugin's own type is reached whoever it runs for, only that
     not_own.own_types = &.{};
 
     try std.testing.expectError(error.Denied, authorize(&anon, not_own, &.{}, &role.core));
+}
+
+test "an installed plugin acting for a visitor's account queries its own types, only those" {
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const access: plugin_access.Access = .{
+        .held = &.{},
+        .own_types = &.{"order"},
+    };
+    var acting = harness.ctx(.{
+        .plugin = .{
+            .name = "orders",
+            .access = &access,
+            .roles = &.{"customer"},
+        },
+    });
+
+    acting.plugin = "orders";
+
+    const query: Request = .{
+        .operation_name = "record.query",
+        .kind = .read,
+        .plugin_access = &access,
+    };
+    const granted = try authorize(&acting, query, &.{}, &role.core);
+
+    try std.testing.expect(granted.allows_type("order"));
+    try std.testing.expect(!granted.allows_type("post"));
+}
+
+test "an installed plugin acting for a visitor's account queries what its records.read names" {
+    var harness: Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const held = [_]@import("../model/permission.zig").Held{.{
+        .key = "records.read",
+        .records = &.{"orders.order"},
+    }};
+    const access: plugin_access.Access = .{
+        .held = &held,
+        .own_types = &.{"payments.payment"},
+    };
+    var acting = harness.ctx(.{
+        .plugin = .{
+            .name = "payments",
+            .access = &access,
+            .roles = &.{"customer"},
+        },
+    });
+
+    acting.plugin = "payments";
+
+    const query: Request = .{
+        .operation_name = "record.query",
+        .kind = .read,
+        .plugin_access = &access,
+    };
+    const named = try authorize(&acting, query, &.{}, &role.core);
+
+    // The type of the plugin it requires stays in reach, beside its own; nothing else.
+    try std.testing.expect(named.allows_type("payments.payment"));
+    try std.testing.expect(named.allows_type("orders.order"));
+    try std.testing.expect(!named.allows_type("post"));
 }
 
 test "a compiled-in plugin's code is held to its grants, queued work included" {

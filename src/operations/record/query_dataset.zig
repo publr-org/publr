@@ -324,7 +324,7 @@ pub const Source = struct {
                 .created_at = record.created_at,
                 .updated_at = record.updated_at,
                 .status = record.status,
-            }, text);
+            }, text.text);
             const kept = if (read.keep) |keep| try keep.of(document) else true;
 
             if (kept) {
@@ -438,7 +438,7 @@ pub const Source = struct {
             .type = read.handle,
             .created_at = item.created_at,
             .updated_at = item.updated_at,
-        }, item.document);
+        }, item.document.text);
         const kept = if (read.keep) |wanted| try wanted.of(document) else true;
 
         if (kept) {

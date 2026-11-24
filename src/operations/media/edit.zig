@@ -130,7 +130,7 @@ fn translations_of(ctx: *Ctx, id: []const u8) Error![]const Translation {
         .id = id,
     });
     const Value = std.json.Value;
-    const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
+    const document = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document.text, .{}) catch {
         return error.Invalid;
     };
     const out = ctx.arena.alloc(Translation, others.len) catch return error.OutOfMemory;

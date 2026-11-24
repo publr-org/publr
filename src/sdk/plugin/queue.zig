@@ -31,14 +31,15 @@ pub fn Queue(comptime Base: type) type {
             return self.base.call(Operation, in);
         }
 
-        /// An operation by name with its input as JSON: how a contract's provider is called
-        /// (`publr.providers`), compiled in or installed.
-        pub fn call_json(
+        /// An operation by a name known only when it runs: how a contract's provider is
+        /// called (`publr.providers`), compiled in or installed.
+        pub fn call_named(
             self: *Self,
+            comptime Out: type,
             name: []const u8,
-            input: []const u8,
-        ) @TypeOf(Base.call_json(@as(*Base, undefined), "", "")) {
-            return self.base.call_json(name, input);
+            in: anytype,
+        ) @TypeOf(Base.call_named(@as(*Base, undefined), Out, name, in)) {
+            return self.base.call_named(Out, name, in);
         }
 
         pub fn mod(
@@ -49,8 +50,47 @@ pub fn Queue(comptime Base: type) type {
             return self.base.mod(name, value);
         }
 
+        pub fn mod_all(
+            self: *Self,
+            comptime name: []const u8,
+            comptime Value: type,
+            values: []const Value,
+        ) @TypeOf(Base.mod_all(@as(*Base, undefined), name, Value, values)) {
+            return self.base.mod_all(name, Value, values);
+        }
+
         pub fn caller(self: *const Self) @TypeOf(Base.caller(@as(*const Base, undefined))) {
             return self.base.caller();
+        }
+
+        pub fn sign(
+            self: *Self,
+            intent: []const u8,
+            subject: []const u8,
+            expires: ?words.Time,
+        ) @TypeOf(Base.sign(@as(*Base, undefined), "", "", null)) {
+            return self.base.sign(intent, subject, expires);
+        }
+
+        pub fn verify(
+            self: *Self,
+            intent: []const u8,
+            token: []const u8,
+        ) @TypeOf(Base.verify(@as(*Base, undefined), "", "")) {
+            return self.base.verify(intent, token);
+        }
+
+        pub fn random(
+            self: *Self,
+            buffer: []u8,
+        ) @TypeOf(Base.random(@as(*Base, undefined), buffer)) {
+            return self.base.random(buffer);
+        }
+
+        pub fn time_zone(
+            self: *Self,
+        ) @TypeOf(Base.time_zone(@as(*Base, undefined))) {
+            return self.base.time_zone();
         }
 
         pub fn now(self: *const Self) words.Time {
@@ -80,6 +120,11 @@ pub fn Queue(comptime Base: type) type {
             return self.base.arena();
         }
 
+        /// Memory of its own for one step of the work, given back at its `end()`.
+        pub fn scope(self: *Self) @TypeOf(Base.scope(@as(*Base, undefined))) {
+            return self.base.scope();
+        }
+
         pub fn t(self: *const Self, comptime text: []const u8, values: anytype) []const u8 {
             return self.base.t(text, values);
         }
@@ -92,6 +137,10 @@ pub fn Queue(comptime Base: type) type {
             values: anytype,
         ) []const u8 {
             return self.base.tn(one, many, count, values);
+        }
+
+        pub fn language(self: *const Self) []const u8 {
+            return self.base.language();
         }
 
         pub fn locale(

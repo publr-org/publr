@@ -381,6 +381,92 @@ pub fn internal_changed(
     try index.invalidate(&keys, ctx.now_ms);
 }
 
+/// An internal record's indexed values changed (`values`, what it held before and holds
+/// now): `internal:<plugin>/<kind>/<field>=<value>` for each, read by whatever looked
+/// records up by that value, so a cart's lines changing never touches another cart's.
+pub fn internal_matched(
+    ctx: *Ctx,
+    plugin: []const u8,
+    kind: []const u8,
+    values: []const Matched,
+) !void {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(values.len <= 2 * matched_max);
+
+    if (values.len == 0) {
+        return;
+    }
+
+    var buffers: [2 * matched_max][key_len_max]u8 = undefined;
+    var keys: [2 * matched_max][]const u8 = undefined;
+
+    for (values, 0..) |value, index| {
+        keys[index] = try internal_match_key(&buffers[index], plugin, kind, value);
+    }
+
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
+
+    try index.invalidate(keys[0..values.len], ctx.now_ms);
+}
+
+/// An indexed field and the text it holds.
+pub const Matched = struct {
+    field: []const u8,
+    value: []const u8,
+};
+
+/// The most indexed fields one collection has.
+pub const matched_max: u32 = 8;
+
+/// `internal:<plugin>/<kind>/<field>=<value>`; a value too long for a key is named by its
+/// hash, the same for the read and the write.
+pub fn internal_match_key(
+    buffer: *[key_len_max]u8,
+    plugin: []const u8,
+    kind: []const u8,
+    matched: Matched,
+) ![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(matched.field.len > 0);
+
+    const format = "internal:{s}/{s}/{s}={s}";
+
+    return std.fmt.bufPrint(buffer, format, .{ plugin, kind, matched.field, matched.value }) catch {
+        const hash = std.hash.Wyhash.hash(0, matched.value);
+
+        return std.fmt.bufPrint(buffer, "internal:{s}/{s}/{s}=#{x}", .{
+            plugin,
+            kind,
+            matched.field,
+            hash,
+        });
+    };
+}
+
+/// A ledger account's totals changed: pages that read it (`ledger:<id>`) are built again.
+pub fn ledger_changed(ctx: *Ctx, account: []const u8) !void {
+    std.debug.assert(account.len > 0);
+    std.debug.assert(account.len < key_len_max - 8);
+
+    var buffer: [key_len_max]u8 = undefined;
+    var index: deps.Index = .{
+        .db = ctx.db,
+        .options = .{
+            .quiet_ms = deps.quiet_ms,
+        },
+    };
+    const keys = [_][]const u8{
+        try std.fmt.bufPrint(&buffer, "ledger:{s}", .{account}),
+    };
+
+    try index.invalidate(&keys, ctx.now_ms);
+}
+
 /// In place of a record's id: every record of the collection.
 pub const internal_every = "*";
 

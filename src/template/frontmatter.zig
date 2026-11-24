@@ -1197,6 +1197,15 @@ pub fn import_line(compiler: *Compiler, line: []const u8) Error!void {
     }
 
     const quoted_path = spec[1 .. spec.len - 1];
+
+    // A plugin's interactive component: `plugin:<plugin>/<Component>.ptsx`, placed by name.
+    const plugin_interactive = std.mem.startsWith(u8, quoted_path, imports.plugin_prefix) and
+        std.mem.endsWith(u8, quoted_path, ".ptsx");
+
+    if (plugin_interactive) {
+        return import_pjsx(compiler, local_name, quoted_path);
+    }
+
     // A plugin's component is named without its extension: `plugin:cart/MiniCart`.
     const named = imports.plugin_component(compiler.arena, quoted_path) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,

@@ -1,13 +1,45 @@
-//! A design-system component's props on their way from an installed plugin's view to the host
-//! that draws it: one JSON object, a field per prop. A node prop (children, `actions`, `empty`)
-//! is drawn first, where the view runs, and travels as its HTML; the host takes it back as
-//! markup drawn ahead of time. What only a render in one process means (the request, the
-//! family roots) never travels: the host hands its own.
+//! What an installed plugin's view hands the host to draw, once for a whole page: its own
+//! markup, and every design-system component it reached, each a name and its props where
+//! they lie in the plugin's memory, laid out as the plugin's build describes them
+//! (`shape_wire.zig`). Where a component goes in the markup, a placeholder stands
+//! (`<publr-drawn n="3">`); a node prop (children, `actions`, `empty`) is markup too, with
+//! placeholders for the components inside it, so a tree of any depth travels flat and no
+//! markup is written twice. What only a render in one process means (the request, the family
+//! roots) never travels: the host hands its own.
 const std = @import("std");
+const shape_wire = @import("shape_wire.zig");
+const shape_said = @import("shape_said.zig");
 
-pub const props_bytes_max: u32 = 1 << 20;
+/// The most components one page asks for, and the most its own markup takes.
+pub const components_max: u32 = 4096;
+pub const markup_bytes_max: u32 = 4 << 20;
+pub const name_len_max: u32 = 64;
 
-pub const Error = error{ Invalid, OutOfMemory, WriteFailed };
+/// The tag standing where a component goes; `n` is its place in the page's components.
+/// Attributes a writer around it puts on a component's root land on it, and the host moves
+/// them onto the root it draws.
+pub const placeholder_tag = "publr-drawn";
+pub const placeholder_number = "n";
+
+/// A page to draw (`publr_draw`): where its markup and its components are.
+pub const Page = extern struct {
+    markup: u32,
+    markup_len: u32,
+    components: u32,
+    components_len: u32,
+};
+
+/// One component of a page: its name, how its props lie (`describe`), where they are, and
+/// their unions beside them (`shape_parts.zig`).
+pub const Component = extern struct {
+    name: u32,
+    name_len: u32,
+    described: u32,
+    described_len: u32,
+    props: u32,
+    table: u32 = 0,
+    table_len: u32 = 0,
+};
 
 /// Whether `Type` is the render runtime's node: markup now or later, drawn by `render`.
 pub fn is_node(comptime Type: type) bool {
@@ -15,8 +47,25 @@ pub fn is_node(comptime Type: type) bool {
         @hasField(Type, "raw") and @hasDecl(Type, "is_empty");
 }
 
+/// The node `Type` is or may hold; null for any other type.
+pub fn node_of(comptime Type: type) ?type {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .@"opaque");
+
+        if (is_node(Type)) {
+            return Type;
+        }
+
+        if (@typeInfo(Type) == .optional and is_node(@typeInfo(Type).optional.child)) {
+            return @typeInfo(Type).optional.child;
+        }
+
+        return null;
+    }
+}
+
 /// A pointer to one thing (the request, the family roots): this process's alone.
-fn is_local(comptime Type: type) bool {
+pub fn is_local(comptime Type: type) bool {
     const info = @typeInfo(Type);
 
     comptime std.debug.assert(info != .@"opaque");
@@ -28,122 +77,59 @@ fn is_local(comptime Type: type) bool {
     return info == .pointer and info.pointer.size == .one;
 }
 
-/// `props` as the wire's JSON; `draw` turns a node into its HTML (`draw(node) ![]const u8`).
-pub fn encode(
-    arena: std.mem.Allocator,
-    comptime Props: type,
-    props: Props,
-    draw: anytype,
-) Error![]const u8 {
-    comptime std.debug.assert(@typeInfo(Props) == .@"struct");
+/// Whether field `name` of a component's props is handed to the host.
+pub fn crosses(comptime Props: type, comptime name: []const u8) bool {
+    comptime {
+        std.debug.assert(@typeInfo(Props) == .@"struct");
 
-    var out: std.Io.Writer.Allocating = .init(arena);
-    var json: std.json.Stringify = .{
-        .writer = &out.writer,
-    };
-
-    try json.beginObject();
-
-    inline for (
-        comptime std.meta.fieldNames(Props),
-        comptime std.meta.fieldTypes(Props),
-    ) |field_name, FieldType| {
-        if (comptime !is_local(FieldType)) {
-            try json.objectField(field_name);
-            try write_field(&json, FieldType, @field(props, field_name), draw);
-        }
+        return !is_local(@FieldType(Props, name));
     }
-
-    try json.endObject();
-
-    std.debug.assert(out.written().len >= 2);
-
-    return out.written();
 }
 
-fn write_field(
-    json: *std.json.Stringify,
-    comptime Type: type,
-    value: Type,
-    draw: anytype,
-) Error!void {
-    comptime std.debug.assert(!is_local(Type));
+/// How `Props` lies in this build, as the host reads it: each field that crosses by its
+/// name, a node as the text its `raw` holds (none for a node left out).
+pub fn describe(comptime Props: type) []const u8 {
+    comptime {
+        @setEvalBranchQuota(shape_wire.nodes_max * shape_wire.steps_per_node);
 
-    if (comptime is_node(Type)) {
-        return json.write(try draw.node(value));
-    }
+        const info = @typeInfo(Props).@"struct";
+        var fields: []const u8 = "";
+        var count: u32 = 0;
 
-    if (comptime @typeInfo(Type) == .optional and is_node(@typeInfo(Type).optional.child)) {
-        if (value) |node| {
-            return json.write(try draw.node(node));
+        for (info.field_names, info.field_types) |name, Field| {
+            if (!crosses(Props, name)) {
+                continue;
+            }
+
+            const offset = @offsetOf(Props, name);
+            const part = if (node_of(Field)) |Node|
+                shape_wire.word(offset + @offsetOf(Node, "raw")) ++ shape_wire.word(0) ++
+                    shape_said.said(?[]const u8, &.{}, false)
+            else
+                shape_wire.word(offset) ++ shape_wire.word(0) ++
+                    shape_said.said(Field, &.{Props}, false);
+
+            fields = fields ++ &[_]u8{name.len} ++ name ++ part;
+            count += 1;
         }
 
-        return json.write(null);
-    }
+        std.debug.assert(count <= info.field_names.len);
 
-    try json.write(value);
+        return "o\x00" ++ shape_wire.word(@sizeOf(Props)) ++ shape_wire.word(count) ++ fields;
+    }
 }
 
-/// The wire's JSON as `Props`: a node prop is markup drawn ahead of time (`Node.raw`), a prop
-/// left out takes its default, and one with no default must be there.
-pub fn decode(arena: std.mem.Allocator, comptime Props: type, text: []const u8) Error!Props {
-    comptime std.debug.assert(@typeInfo(Props) == .@"struct");
+/// The placeholder for component `number`, as markup.
+pub fn write_placeholder(writer: *std.Io.Writer, number: u32) std.Io.Writer.Error!void {
+    std.debug.assert(number < components_max);
 
-    if (text.len == 0 or text.len > props_bytes_max) {
-        return error.Invalid;
-    }
-
-    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}) catch {
-        return error.Invalid;
-    };
-    const object = if (parsed == .object) parsed.object else return error.Invalid;
-    var props: Props = undefined;
-
-    inline for (
-        comptime std.meta.fieldNames(Props),
-        comptime std.meta.fieldTypes(Props),
-        @typeInfo(Props).@"struct".field_attrs,
-    ) |field_name, FieldType, field_attrs| {
-        const given = if (comptime is_local(FieldType)) null else object.get(field_name);
-
-        if (given) |value| {
-            @field(props, field_name) = try read_field(arena, FieldType, value);
-        } else if (field_attrs.defaultValue(FieldType)) |default| {
-            @field(props, field_name) = default;
-        } else {
-            return error.Invalid;
-        }
-    }
-
-    return props;
-}
-
-fn read_field(arena: std.mem.Allocator, comptime Type: type, value: std.json.Value) Error!Type {
-    comptime std.debug.assert(!is_local(Type));
-
-    if (comptime is_node(Type)) {
-        return .{
-            .raw = if (value == .string) value.string else return error.Invalid,
-        };
-    }
-
-    if (comptime @typeInfo(Type) == .optional and is_node(@typeInfo(Type).optional.child)) {
-        return switch (value) {
-            .null => null,
-            .string => |html| .{
-                .raw = html,
-            },
-            else => error.Invalid,
-        };
-    }
-
-    return std.json.parseFromValueLeaky(Type, arena, value, .{
-        .ignore_unknown_fields = true,
-    }) catch error.Invalid;
+    try writer.print("<" ++ placeholder_tag ++ " " ++ placeholder_number ++ "=\"{d}\">", .{
+        number,
+    });
 }
 
 /// Stands for the runtime's node in the tests: the same shape, markup now or a body later.
-const TestNode = struct {
+pub const TestNode = struct {
     raw: ?[]const u8 = null,
     ctx: *const anyopaque = undefined,
     render_fn: ?*const fn () void = null,
@@ -153,7 +139,7 @@ const TestNode = struct {
     }
 };
 
-const TestProps = struct {
+pub const TestProps = struct {
     title: []const u8,
     tone: enum { info, success } = .info,
     count: f64 = 0,
@@ -166,51 +152,23 @@ const TestProps = struct {
     publr_request: ?*const anyopaque = null,
 };
 
-const TestDraw = struct {
-    pub fn node(_: TestDraw, given: TestNode) Error![]const u8 {
-        return given.raw orelse error.Invalid;
-    }
-};
+test "a description names every prop that crosses, a node as its text, the request not" {
+    const text = comptime describe(TestProps);
 
-test "props cross the wire: data as it is, nodes as their markup, the request left home" {
-    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    const marker: u8 = 0;
-    const text = try encode(arena, TestProps, .{
-        .title = "Sampler log",
-        .tone = .success,
-        .count = 2,
-        .rows = &.{.{
-            .name = "a",
-        }},
-        .children = .{
-            .raw = "<p>hi</p>",
-        },
-        .publr_request = &marker,
-    }, TestDraw{});
-
+    try std.testing.expectEqual(@as(u8, 'o'), text[0]);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\x05title") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\x08children") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\x07actions") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "publr_request") == null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "\"children\":\"<p>hi</p>\"") != null);
-
-    const back = try decode(arena, TestProps, text);
-
-    try std.testing.expectEqualStrings("Sampler log", back.title);
-    try std.testing.expectEqual(.success, back.tone);
-    try std.testing.expectEqualStrings("<p>hi</p>", back.children.raw.?);
-    try std.testing.expect(back.actions == null);
-    try std.testing.expect(back.publr_request == null);
-    try std.testing.expectEqualStrings("a", back.rows[0].name);
+    try std.testing.expect(std.mem.indexOf(u8, text, "render_fn") == null);
+    try std.testing.expect(node_of(?TestNode) == TestNode);
+    try std.testing.expect(node_of([]const u8) == null);
 }
 
-test "a prop with no default must be there; anything but an object is refused" {
-    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
+test "a placeholder is a tag a writer can put attributes on" {
+    var buffer: [64]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
 
-    try std.testing.expectError(error.Invalid, decode(arena, TestProps, "{\"title\":\"x\"}"));
-    try std.testing.expectError(error.Invalid, decode(arena, TestProps, "[]"));
-    try std.testing.expectError(error.Invalid, decode(arena, TestProps, ""));
-    try std.testing.expectError(error.Invalid, decode(arena, TestProps, "{\"title\":1," ++
-        "\"children\":\"\"}"));
+    try write_placeholder(&writer, 12);
+    try std.testing.expectEqualStrings("<publr-drawn n=\"12\">", writer.buffered());
 }

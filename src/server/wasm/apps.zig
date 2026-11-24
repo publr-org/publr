@@ -28,7 +28,14 @@ pub const Host = struct {
 
         host.reason = .{};
 
-        var source = try apps.folder.project_apps(host.gpa, host.io, dir, &host.reason);
+        var arena_state = std.heap.ArenaAllocator.init(host.gpa);
+        defer arena_state.deinit();
+
+        const slots = try apps.provider_slots.sources(
+            arena_state.allocator(),
+            host.project.sandboxed_plugins,
+        );
+        var source = try apps.folder.project_apps(host.gpa, host.io, dir, &host.reason, slots);
         errdefer source.deinit();
 
         const loaded = try host.gpa.alloc(apps.App, source.specs.len);

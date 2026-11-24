@@ -401,6 +401,30 @@
         ]
       },
       {
+        "name": "ctx.scope()",
+        "summary": "Memory of its own for one step of a call, given back at end(): the call takes its largest step's memory, never the sum. keep(text) copies text out; leave() goes back to the call's memory.",
+        "code": [
+          {
+            "file": "operations/stretch.zig",
+            "decl": "run"
+          }
+        ],
+        "see": [
+          "Run publr --as-admin sampler stretch --steps 100 --kib 512."
+        ],
+        "look_for": "A hundred steps of 512 KiB answer within the plugin's 16 MiB: each step's memory went back before the next. last is the final step's text, kept out of its scope.",
+        "runs": [
+          {
+            "label": "Take 100 steps of 512 KiB",
+            "input": {
+              "steps": 100,
+              "kib": 512
+            },
+            "operation": "sampler.stretch"
+          }
+        ]
+      },
+      {
         "name": "ctx.caller()",
         "summary": "Who is calling: whether signed in, their roles, the visitor's id, where the call came from.",
         "code": [

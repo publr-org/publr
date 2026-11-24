@@ -5,6 +5,7 @@ const std = @import("std");
 const db = @import("../lib/db.zig");
 const content_type = @import("../model/content_type.zig");
 const status_model = @import("../model/status.zig");
+const editor_model = @import("../model/editor.zig");
 const field = @import("../model/field.zig");
 const groups = @import("field_groups.zig");
 const tables_module = @import("tables.zig");
@@ -147,7 +148,9 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.bind_text(5, def.icon);
             try statement.bind_int(6, if (def.public) 1 else 0);
             try statement.bind_text(7, def.editor);
-            try statement.bind_text(8, def.editor_config);
+            var config: [editor_model.config_bytes_max * 2]u8 = undefined;
+
+            try statement.bind_text(8, def.editor_config.text(&config));
             try statement.bind_text(9, definition);
             try statement.bind_int(11, if (def.system) 1 else 0);
         }

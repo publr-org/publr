@@ -320,7 +320,9 @@ fn fix(session: *Session, target: []const u8, app: []const u8) !void {
     };
     _ = try registry.SDK.dispatch(&across, types.Update, .{
         .type = def.handle,
-        .definition = try model.content_type.encode(session.arena, def),
+        .definition = .{
+            .text = try model.content_type.encode(session.arena, def),
+        },
     });
 }
 

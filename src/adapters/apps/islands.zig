@@ -158,12 +158,21 @@ fn dynamic_island(
 
     identity_module.repair_hint(project, request, response, ctx.arena, &identity, now_ms);
 
+    var follows: context_module.Follows = .{
+        .deps = .{
+            .arena = ctx.arena,
+            .app = app.spec.name,
+        },
+        .revision = app.index.revision() catch 0,
+    };
     const html = try pages.render_fragment(ctx.arena, app, found, .{
         .arena = ctx.arena,
         .project = project,
         .app = app,
         .request = request,
         .place = place,
+        .deps = &follows.deps,
+        .follows = &follows,
         .live = true,
         .caller = Context.visitor(project, app, ctx.arena, request),
         .visitor_id = try visitor.ensure(project, request, response, ctx.arena),
@@ -224,12 +233,26 @@ fn batch(
             null
         else
             build.built_island(app, ctx.arena, key);
+        // Each dynamic island tells what it read, as when it is asked alone: a `follow`
+        // placeholder answered in a batch follows it too.
+        const follows = try ctx.arena.create(context_module.Follows);
+
+        follows.* = .{
+            .deps = .{
+                .arena = ctx.arena,
+                .app = app.spec.name,
+            },
+            .revision = app.index.revision() catch 0,
+        };
+
         const html = built orelse try pages.render_fragment(ctx.arena, app, found, .{
             .arena = ctx.arena,
             .project = project,
             .app = app,
             .request = request,
             .place = place,
+            .deps = if (found.dynamic) &follows.deps else null,
+            .follows = if (found.dynamic) follows else null,
             .live = found.dynamic,
             .caller = if (found.dynamic) caller else .anonymous,
             .visitor_id = if (found.dynamic) visitor_id else "",

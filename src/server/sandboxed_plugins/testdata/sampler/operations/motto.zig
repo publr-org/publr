@@ -1,7 +1,8 @@
 //! Give an account the sampler's motto.
 //!
 //! Writes the Motto of the account's Sampler profile, the sampler's own field group on
-//! users, and answers it as read back. Administrators may call it.
+//! users, and answers it as read back; with no motto given, the account's motto is cleared.
+//! Administrators may call it.
 //!
 //! Example:
 //!   in: { "user": "admin@example.com", "motto": "Keep notes" }
@@ -14,8 +15,8 @@ const Profile = @import("../records/profile.zig");
 pub const In = struct {
     /// The account's id or email
     user: []const u8,
-    /// The motto
-    motto: []const u8,
+    /// The motto; none clears it
+    motto: ?[]const u8 = null,
 };
 
 pub const Out = struct {
@@ -25,7 +26,7 @@ pub const Out = struct {
 
 fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     std.debug.assert(in.user.len > 0);
-    std.debug.assert(in.motto.len <= 64 << 10);
+    std.debug.assert(in.motto == null or in.motto.?.len <= 64 << 10);
 
     try publr.fields.save(ctx, Profile.Fields, in.user, .{
         .motto = in.motto,

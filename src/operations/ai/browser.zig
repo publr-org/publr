@@ -18,7 +18,7 @@ pub const operations = [_]type{ Ready, Browse, Browsed, Answer };
 /// A call waiting for the browser, as the workspace page reads it; number 0 for none.
 pub const Pending = struct {
     number: u32 = 0,
-    call: []const u8 = "",
+    call: ?sdk.operation.Json = null,
 };
 
 /// The call the conversation's browser has to make, if one waits.
@@ -35,7 +35,9 @@ pub fn pending_of(ctx: *Ctx, id: []const u8) Error!Pending {
 
     return .{
         .number = @intCast(row.number),
-        .call = row.call,
+        .call = if (row.call.len > 0) .{
+            .text = row.call,
+        } else null,
     };
 }
 
@@ -99,14 +101,16 @@ pub const Browse = struct {
     pub const operator_only = true;
     pub const In = struct {
         id: []const u8,
-        call: []const u8,
+        call: sdk.operation.Json,
     };
     pub const Out = struct {
         number: u32,
     };
     pub const example: In = .{
         .id = conversation.example_id,
-        .call = example_call,
+        .call = .{
+            .text = example_call,
+        },
     };
     pub const example_out: Out = .{
         .number = 1,
@@ -127,7 +131,7 @@ pub const Browse = struct {
             return error.Denied;
         }
 
-        if (!an_id(in.id) or !an_action(ctx.arena, in.call)) {
+        if (!an_id(in.id) or !an_action(ctx.arena, in.call.text)) {
             return error.Invalid;
         }
 
@@ -138,7 +142,7 @@ pub const Browse = struct {
             return error.Conflict;
         }
 
-        const number = try browsers.call(ctx.db, row.id, in.call);
+        const number = try browsers.call(ctx.db, row.id, in.call.text);
 
         conversation.live.changed(ctx, row.id);
 
@@ -347,6 +351,7 @@ test "a browser call: asked by the agent, read and answered by the person, taken
     const account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
     var ada = harness.ctx(.{
         .user = .{
@@ -371,16 +376,22 @@ test "a browser call: asked by the agent, read and answered by the person, taken
     // Only the agent asks, and only for a call that names its action.
     try std.testing.expectError(error.Denied, SDK.dispatch(&ada, Browse, .{
         .id = id,
-        .call = example_call,
+        .call = .{
+            .text = example_call,
+        },
     }));
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Browse, .{
         .id = id,
-        .call = "{\"tab\":1}",
+        .call = .{
+            .text = "{\"tab\":1}",
+        },
     }));
 
     const asked = try SDK.dispatch(&system, Browse, .{
         .id = id,
-        .call = example_call,
+        .call = .{
+            .text = example_call,
+        },
     });
     try std.testing.expectEqual(@as(u32, 1), asked.number);
 
@@ -388,7 +399,7 @@ test "a browser call: asked by the agent, read and answered by the person, taken
         .id = id,
     });
     try std.testing.expectEqual(@as(u32, 1), read.browser_call.number);
-    try std.testing.expectEqualStrings(example_call, read.browser_call.call);
+    try std.testing.expectEqualStrings(example_call, read.browser_call.call.?.text);
 
     const waiting = try SDK.dispatch(&system, Browsed, .{
         .id = id,
@@ -426,7 +437,9 @@ test "a browser call: asked by the agent, read and answered by the person, taken
     // A call nobody answers is given up on, and the browser with it.
     _ = try SDK.dispatch(&system, Browse, .{
         .id = id,
-        .call = example_call,
+        .call = .{
+            .text = example_call,
+        },
     });
     const dropped = try SDK.dispatch(&system, Browsed, .{
         .id = id,

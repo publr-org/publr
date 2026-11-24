@@ -5,6 +5,7 @@ const std = @import("std");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
 const translations = @import("../../../operations/health/translations.zig");
+const coverage = @import("../../../operations/health/coverage.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;
@@ -31,8 +32,25 @@ pub fn page(request: *Request, response: *Response, ctx: *Context) Error!void {
         item.* = try disagreement_of(&session, disagreement);
     }
 
+    // Every language over every domain: as many as the running server holds, a page a call.
+    var covered: std.ArrayList(coverage.Covered) = .empty;
+    var after: []const u8 = "";
+
+    while (covered.items.len < coverage_rows_max) {
+        const page_of = registry.SDK.dispatch(&session.ctx, coverage.Coverage, .{
+            .after = after,
+        }) catch |err| return admin.fail(&session, err, back);
+
+        try covered.appendSlice(session.arena, page_of.coverage);
+        after = page_of.next;
+
+        if (after.len == 0) {
+            break;
+        }
+    }
+
     try admin.screen(&session, .ok, views.HealthTranslations, .{
-        .coverage = try coverage_of(&session, listed.coverage),
+        .coverage = try coverage_of(&session, covered.items),
         .disagreements = items,
         .open = @floatFromInt(listed.open),
         .notice = if (admin.query_param(&session, "picked") != null)
@@ -107,7 +125,10 @@ pub fn choose(request: *Request, response: *Response, ctx: *Context) Error!void 
 
 const Covered = views.HealthTranslations.CoverageItem;
 
-fn coverage_of(session: *Session, listed: []const translations.Covered) Error![]const Covered {
+/// The coverage rows the tab shows at most: every language (64) over many domains.
+const coverage_rows_max: u32 = 64 * 64;
+
+fn coverage_of(session: *Session, listed: []const coverage.Covered) Error![]const Covered {
     std.debug.assert(session.signed_in());
 
     const arena = session.arena;

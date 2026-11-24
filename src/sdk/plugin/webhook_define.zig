@@ -3,7 +3,10 @@
 //! plugin's declared secret, answers 200 at once and runs `run` as queued work with the body
 //! read as `Event`: JSON, a form (`.body = .form`), or the bytes as they came (`.body = .raw`,
 //! `Event` a `publr.webhook.Delivery`). Not an operation: no caller, no `.authorize`; the
-//! signature is its only credential. Listed in `.webhooks`, by built-in and installed plugins.
+//! signature is its only credential. A sender signing in a way only the plugin reads
+//! (`.signature = .{ .verify = .{} }`: Przelewy24's digest of fields in the body) is taken
+//! as it comes, and its run confirms it before acting (`secret.digest`, or the
+//! gateway asked back). Listed in `.webhooks`, by built-in and installed plugins.
 const std = @import("std");
 const job_define = @import("job_define.zig");
 const queue = @import("queue.zig");
@@ -68,6 +71,12 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
         }
 
         const raw = @hasField(Options, "body") and options.body == .raw;
+        const by_run = union_of(Signature, options.signature) == .verify;
+
+        if (by_run and @hasField(Options, "delivery_id")) {
+            @compileError("webhook " ++ options.name ++ ": `.verify` deliveries are never " ++
+                "dropped as repeats; the run is idempotent instead");
+        }
 
         if ((Event == Delivery) != raw) {
             @compileError("webhook " ++ options.name ++ ": `.body = .raw` hands `run` a " ++
@@ -291,6 +300,11 @@ pub fn verified(
     std.debug.assert(body.len <= body_bytes_max);
     std.debug.assert(now_ms >= 0);
 
+    // Its run checks it, with whichever of the plugin's secrets the sender used.
+    if (signature == .verify) {
+        return true;
+    }
+
     if (secret.len == 0) {
         return false;
     }
@@ -319,6 +333,7 @@ pub fn verified(
 
             return timestamped_verified(given, secret, body, now_ms);
         },
+        .verify => unreachable,
     }
 }
 
@@ -508,6 +523,13 @@ test "signatures: an HMAC in a header, the timestamped kind, a token; wrong ones
     };
 
     try std.testing.expect(verified(token, "abc", body, "X-Token: abc", 0));
+
+    const by_run: Signature = .{
+        .verify = .{},
+    };
+
+    try std.testing.expect(verified(by_run, "crc", body, "", 0));
+    try std.testing.expect(verified(by_run, "", body, "", 0));
     try std.testing.expect(!verified(token, "abc", body, "X-Token: abd", 0));
     try std.testing.expect(!verified(token, "", body, "X-Token: ", 0));
 }

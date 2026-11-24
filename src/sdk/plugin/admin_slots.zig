@@ -49,6 +49,11 @@ pub const Page = struct {
     /// A tab's primary action, in its tabbed page's header while it is open: `.{ .label =
     /// "Add role", .href = "/admin/roles/add" }`, an address in the admin.
     action: ?Action = null,
+    /// The page draws records of this type of the plugin's own (`"orders.order"`), in place
+    /// of the admin's form: opening one anywhere (`/admin/content/<id>`) opens this page with
+    /// `?id=<id>` in its query, and the panels plugins add to the type are drawn beside it.
+    /// Drawn by its `operation`; left out of the menu.
+    record: []const u8 = "",
 
     /// The operation that decides who sees the page: the drawing read, or the form's.
     pub fn gate(comptime page: Page) type {
@@ -241,6 +246,17 @@ pub fn pages_of(comptime Plugin: type) []const Page {
             if ((page.operation == null) == (page.form == null)) {
                 @compileError("plugin " ++ name ++ ": page " ++ page.path ++
                     " is drawn by an `operation` or declared as a `form`, one of them");
+            }
+
+            if (page.record.len > 0) {
+                const own = page.record.len > name.len + 1 and
+                    std.mem.startsWith(u8, page.record, name) and page.record[name.len] == '.';
+
+                if (!own or page.operation == null) {
+                    @compileError("plugin " ++ name ++ ": page " ++ page.path ++
+                        " draws records of a type of its own (`" ++ name ++
+                        ".<type>`), by an `operation`");
+                }
             }
 
             if (page.parent.len > 0) {

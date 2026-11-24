@@ -53,6 +53,13 @@ pub const Header = struct {
     value: []const u8,
 };
 
+/// HTTP Basic credentials: `Authorization: Basic base64(user:password)`, made after their
+/// secrets are filled in.
+pub const Basic = struct {
+    user: []const u8,
+    password: []const u8,
+};
+
 pub const Fetch = struct {
     pub const name = "http.fetch";
     /// A plugin's alone: not listed among the commands people and agents run.
@@ -75,11 +82,15 @@ pub const Fetch = struct {
         /// A form upload (multipart/form-data) in place of `body`, files as base64; the
         /// `Content-Type` is set for it. No secret is filled in a form.
         form: []const form_parts.Part = &.{},
+        /// HTTP Basic credentials, encoded by core once their secrets are filled in.
+        basic: ?Basic = null,
     };
     pub const Out = struct {
         status: u16,
         body: []const u8,
     };
+    /// Another server's bytes, sent and answered as they are: never read here.
+    pub const verbatim = .{"body"};
     pub const example: In = .{
         .url = "https://api.example.com/quote",
         .headers = &.{.{
@@ -98,6 +109,8 @@ pub const Fetch = struct {
         .body = "Up to 8 MiB; may hold {secret:NAME}",
         .form = "Up to 16 parts in place of the body: name, value, and for a file " ++
             "file_name and content_type, its value base64",
+        .basic = "HTTP Basic `user` and `password`, each may hold {secret:NAME}: sent as " ++
+            "`Authorization: Basic`, encoded after the secrets are filled in",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -110,6 +123,9 @@ pub const Fetch = struct {
         if (ctx.job.len == 0) {
             return ctx.fail(not_queued);
         }
+
+        // Never inside a write: what the run wrote so far commits first.
+        try @import("../sdk/job_write.zig").before_outside_call(ctx);
 
         return fetch_as(ctx, fetcher, in, timed.timeout_ms);
     }
@@ -256,14 +272,22 @@ pub const Filling = struct {
             };
         }
 
-        const headers = try ctx.arena.alloc(std.http.Header, in.headers.len);
+        const extra: u32 = if (in.basic != null) 1 else 0;
+        const headers = try ctx.arena.alloc(std.http.Header, in.headers.len + extra);
 
-        for (in.headers, headers) |header, *filled| {
+        for (in.headers, headers[0..in.headers.len]) |header, *filled| {
             const value = try fill(ctx, header.value, names, values);
 
             filled.* = .{
                 .name = header.name,
                 .value = value,
+            };
+        }
+
+        if (in.basic) |basic| {
+            headers[in.headers.len] = .{
+                .name = "Authorization",
+                .value = try basic_value(ctx, basic, names, values),
             };
         }
 
@@ -334,6 +358,30 @@ fn with_form(ctx: *Ctx, filling: *Filling, in: Fetch.In) Error!void {
     std.debug.assert(filling.body.len > 0);
 }
 
+/// `Basic base64(user:password)`, the secrets in both filled in first.
+fn basic_value(
+    ctx: *Ctx,
+    basic: Basic,
+    names: []const []const u8,
+    values: []const []const u8,
+) Error![]const u8 {
+    std.debug.assert(names.len == values.len);
+    std.debug.assert(names.len <= secrets_max);
+
+    const user = try fill(ctx, basic.user, names, values);
+    const password = try fill(ctx, basic.password, names, values);
+    const pair = std.fmt.allocPrint(ctx.arena, "{s}:{s}", .{ user, password }) catch {
+        return error.OutOfMemory;
+    };
+    const encoder = std.base64.standard.Encoder;
+    const value = try ctx.arena.alloc(u8, "Basic ".len + encoder.calcSize(pair.len));
+
+    @memcpy(value[0.."Basic ".len], "Basic ");
+    _ = encoder.encode(value["Basic ".len..], pair);
+
+    return value;
+}
+
 fn asked(ctx: *Ctx, in: Fetch.In, storage: *[secrets_max][]const u8) Error![]const []const u8 {
     std.debug.assert(secrets_max > 0);
 
@@ -344,6 +392,11 @@ fn asked(ctx: *Ctx, in: Fetch.In, storage: *[secrets_max][]const u8) Error![]con
 
     for (in.headers) |header| {
         all.appendSlice(ctx.arena, header.value) catch return error.OutOfMemory;
+    }
+
+    if (in.basic) |basic| {
+        all.appendSlice(ctx.arena, basic.user) catch return error.OutOfMemory;
+        all.appendSlice(ctx.arena, basic.password) catch return error.OutOfMemory;
     }
 
     return secrets.names_in(all.items, storage) catch error.Invalid;

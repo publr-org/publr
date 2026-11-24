@@ -4,14 +4,14 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const words = @import("words.zig");
 const permission_define = @import("permission_define.zig");
-const plugin_define = @import("define.zig");
 const Ask = @import("../../model/sandboxed_plugin.zig").Ask;
 const caller_view = @import("caller_view.zig");
 const role = @import("../../model/role.zig");
 const job_define = @import("job_define.zig");
 const job_queue = @import("../../store/job_queue.zig");
 const permission_model = @import("../../model/permission.zig");
-const language = @import("../../operations/user/language.zig");
+const user_language = @import("../../operations/user/language.zig");
+const plugin_memory = @import("../plugin_memory.zig");
 
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;
@@ -46,8 +46,13 @@ pub const HostApi = struct {
         const granted_here = !through_app and self.inner.within.len > 0 and
             granted_by_role(self.inner, self.inner.within);
 
+        const by_plugin = self.inner.plugin_called and self.inner.called_by.len > 0;
+        const from: caller_view.From = if (by_plugin) .{
+            .plugin = self.inner.called_by,
+        } else caller_view.from_of(raw, through_app, self.inner.over_api, self.inner.job);
+
         return .{
-            .from = caller_view.from_of(raw, through_app, self.inner.over_api, self.inner.job),
+            .from = from,
             .visitor = self.inner.visitor,
             .referer = self.inner.referer,
             .raw = raw,
@@ -74,15 +79,97 @@ pub const HostApi = struct {
     pub fn grant(self: *const PluginCtx, comptime key: []const u8) permission_define.Grant {
         std.debug.assert(self.inner.now_ms >= 0);
 
-        return permission_define.Grant.of(key, held_in(asks_of_running(self.inner.plugin), key));
+        return permission_define.Grant.of(key, held_of_running(self.inner.plugin, key));
     }
 
     /// The call's time, one value for the whole call.
+    /// Inside a computed field's function: the value it answers holds until `time`, and is
+    /// worked out again then whatever else happens (a sale ends). The earliest one counts.
+    pub fn holds_until(self: *PluginCtx, time: words.Time) sdk.Error!void {
+        std.debug.assert(self.inner.now_ms >= 0);
+        std.debug.assert(time.ms > 0);
+
+        _ = try self.call(@import("../../operations/internal.zig").HoldsUntil, .{
+            .until_ms = time.ms,
+        });
+    }
+
     pub fn now(self: *const PluginCtx) words.Time {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return .{
             .ms = self.inner.now_ms,
+        };
+    }
+
+    /// A link a person opens without signing in, for one purpose (`intent`, the plugin's
+    /// own word) and one subject, until `expires` (null: until revoked): its `token`, and
+    /// its `path` (`/_links/<token>`, which runs the plugin's operation named `intent`).
+    pub fn sign(
+        self: *PluginCtx,
+        intent: []const u8,
+        subject: []const u8,
+        expires: ?words.Time,
+    ) Error!@import("../../operations/link.zig").Sign.Out {
+        std.debug.assert(intent.len > 0);
+
+        return self.call(@import("../../operations/link.zig").Sign, .{
+            .intent = intent,
+            .subject = subject,
+            .expires_at = if (expires) |time| time.ms else 0,
+        });
+    }
+
+    /// A file the plugin makes, written in pieces (`write`) and kept with `done` as a file of
+    /// one of its own media types (`type_handle`, `kind` `media`): see `files_api.zig`.
+    pub fn make_file(
+        self: *PluginCtx,
+        type_handle: []const u8,
+        filename: []const u8,
+    ) @import("files_api.zig").Making(PluginCtx) {
+        std.debug.assert(type_handle.len > 0);
+
+        return @import("files_api.zig").Making(PluginCtx).begin(self, type_handle, filename);
+    }
+
+    /// The subject a link's token was signed for, when it is good for `intent`; not found
+    /// otherwise (another purpose, past its time, revoked).
+    pub fn verify(self: *PluginCtx, intent: []const u8, token: []const u8) Error![]const u8 {
+        std.debug.assert(intent.len > 0);
+
+        const read = try self.call(@import("../../operations/link.zig").Verify, .{
+            .intent = intent,
+            .token = token,
+        });
+
+        return read.subject;
+    }
+
+    /// Fills `buffer` (at most 64 bytes) from the host's cryptographic source: codes a person
+    /// must not guess. Never a hash of an id, which anyone who knows the id can work out.
+    pub fn random(self: *PluginCtx, buffer: []u8) Error!void {
+        std.debug.assert(buffer.len > 0);
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        const random_operation = @import("../../operations/random.zig");
+        const answered = try self.call(random_operation.Random, .{
+            .bytes = @intCast(buffer.len),
+        });
+
+        return random_operation.fill(buffer, answered.hex);
+    }
+
+    /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
+    pub fn time_zone(self: *PluginCtx) Error!words.TimeZone {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        const answered = try self.call(@import("../../operations/job.zig").TimeZone, .{});
+
+        std.debug.assert(answered.rule.len > 0);
+
+        return .{
+            .name = answered.name,
+            .rule = answered.rule,
         };
     }
 
@@ -179,6 +266,31 @@ pub const HostApi = struct {
         return self.said(one, many, count, values);
     }
 
+    /// Words marked where they were written (`publr.t`, `ctx.t`) and kept as written: a
+    /// label another plugin registered or stored (a line's work, `To send`), in the
+    /// caller's language when shown. The text itself where no language pack has it.
+    pub fn translate(self: *const PluginCtx, text: []const u8) []const u8 {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        if (text.len == 0) {
+            return text;
+        }
+
+        return self.inner.say(self.speaks(), .{
+            .id = text,
+            .plural = "",
+            .count = null,
+            .values = &.{},
+        }) catch text;
+    }
+
+    /// The language the call speaks (`pl`, `en`): what `t` answers in.
+    pub fn language(self: *const PluginCtx) []const u8 {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        return self.speaks();
+    }
+
     /// Text for one person, in their own language, else the site's: a message composed in
     /// its recipient's words, `const localize = ctx.locale(person); localize.t(…)`. `person`
     /// is the account's id; empty (a guest with no account) keeps the call's language.
@@ -192,7 +304,7 @@ pub const HostApi = struct {
             };
         }
 
-        const chosen = language.person_speaks(self.inner, person) catch |err| blk: {
+        const chosen = user_language.person_speaks(self.inner, person) catch |err| blk: {
             std.log.warn("ctx.locale: {s}'s language not read: {t}", .{ person, err });
             break :blk self.speaks();
         };
@@ -231,10 +343,7 @@ pub const HostApi = struct {
     fn speaks(self: *const PluginCtx) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 
-        return if (self.inner.language.locale.len > 0)
-            self.inner.language.locale
-        else
-            self.inner.address_code;
+        return self.inner.speaks();
     }
 
     fn said(
@@ -276,6 +385,63 @@ pub const HostApi = struct {
         }) catch text;
     }
 
+    /// Memory of its own for one step of an operation, as the sandboxed `scope` is: from
+    /// here until `end`, everything the call allocates and reads is in the scope's memory
+    /// (`sdk/plugin_memory.zig`), and `end` gives all of it back. Where the process set no
+    /// plugin memory aside, or there is no room, the step works in the memory it began in.
+    pub fn scope(self: *PluginCtx) Scope {
+        const outer = self.inner.arena;
+
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        if (self.inner.plugins_set_aside == null) {
+            return .{
+                .outer = outer,
+                .work = null,
+            };
+        }
+
+        const work = outer.create(plugin_memory.Work) catch {
+            return .{
+                .outer = outer,
+                .work = null,
+            };
+        };
+
+        work.begin(self.inner);
+
+        return .{
+            .outer = outer,
+            .work = if (work.own()) work else null,
+        };
+    }
+
+    pub const Scope = struct {
+        outer: std.mem.Allocator,
+        work: ?*plugin_memory.Work,
+
+        /// Back to the memory the call had before the scope; what the scope holds stays.
+        pub fn leave(self: *Scope) void {
+            if (self.work) |work| {
+                work.leave();
+            }
+        }
+
+        /// `text` copied into the memory the call had before the scope: what a step
+        /// carries out when it is more than a number.
+        pub fn keep(self: *Scope, text: []const u8) error{OutOfMemory}![]const u8 {
+            return self.outer.dupe(u8, text);
+        }
+
+        /// Everything the scope holds is given back.
+        pub fn end(self: *Scope) void {
+            const work = self.work orelse return;
+
+            work.end();
+            self.work = null;
+        }
+    };
+
     pub fn arena(self: *const PluginCtx) std.mem.Allocator {
         std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(self.inner.next_operation_id > 0);
@@ -298,7 +464,100 @@ pub const HostApi = struct {
 
         self.inner.failure = null;
 
-        return registry.SDK.call(self.inner, comptime registry.SDK.bound(Operation), in);
+        return in_working_memory(self.inner, comptime registry.SDK.bound(Operation), in);
+    }
+
+    /// A call a compiled-in plugin makes, run as an installed plugin's is: in the request's
+    /// working memory for nested calls, given back once the answer is copied out. A plugin
+    /// making many calls takes the largest one's memory, never the sum. From the caller's
+    /// own memory the answer is copied there. From a caller already in the working memory
+    /// (its own caller called it) only the call's share is given back, and the answer is
+    /// copied to the memory that lasts the top-level call. Run where the caller works
+    /// instead when the process set no working memory aside, when nothing lasts the call,
+    /// and for an answer that cannot be copied whole (`moved.plain`). An operation whose
+    /// work is a plugin's (another plugin's operation) runs in the plugins' own memory
+    /// (`in_plugin_memory`), never in core's working memory: a plugin's working data must
+    /// not be held to that memory's size.
+    fn in_working_memory(
+        inner: *sdk.Ctx,
+        comptime Bound: type,
+        in: Bound.In,
+    ) Error!Bound.Out {
+        const SDK = registry.SDK;
+        const moved = @import("../moved.zig");
+        const working_memory = sdk.call_json;
+
+        std.debug.assert(inner.now_ms >= 0);
+
+        if (comptime !moved.plain(Bound.Out)) {
+            return SDK.call(inner, Bound, in);
+        }
+
+        if (comptime !SDK.core_work(Bound)) {
+            return in_plugin_memory(inner, Bound, in);
+        }
+
+        const set_aside = inner.calls_set_aside orelse return SDK.call(inner, Bound, in);
+
+        if (set_aside.holds(inner.arena)) {
+            const lasting = inner.kept_memory() orelse return SDK.call(inner, Bound, in);
+            const begun = set_aside.mark();
+            const answer = SDK.call(inner, Bound, in) catch |err| {
+                working_memory.give_back(inner, begun);
+
+                return err;
+            };
+            const kept = moved.copy(Bound.Out, lasting, answer);
+
+            set_aside.rewind(begun);
+
+            return kept;
+        }
+
+        var working = try working_memory.Working.begin(inner);
+        const result = SDK.call(inner, Bound, in);
+
+        working.end();
+
+        const answer = result catch |err| {
+            try working.give_back_failed();
+
+            return err;
+        };
+
+        defer working.give_back();
+
+        return moved.copy(Bound.Out, inner.arena, answer);
+    }
+
+    /// Another plugin's operation called by a compiled-in plugin: the whole call, the
+    /// operation's own work and its hooks', is in memory of its own (`plugin_memory.zig`),
+    /// given back once the answer is copied to the caller's. An installed plugin's
+    /// operation has its own; a compiled-in one's lies there.
+    fn in_plugin_memory(
+        inner: *sdk.Ctx,
+        comptime Bound: type,
+        in: Bound.In,
+    ) Error!Bound.Out {
+        comptime std.debug.assert(@import("../moved.zig").plain(Bound.Out));
+        std.debug.assert(inner.now_ms >= 0);
+
+        var work: plugin_memory.Work = undefined;
+
+        work.begin(inner);
+
+        const result = registry.SDK.call(inner, Bound, in);
+
+        work.leave();
+        defer work.end();
+
+        const answer = try result;
+
+        if (!work.own()) {
+            return answer;
+        }
+
+        return @import("../moved.zig").copy(Bound.Out, inner.arena, answer);
     }
 
     /// Which refusal the last `ctx.call` came back with as `error.Failed`, or the plugin's
@@ -316,11 +575,7 @@ pub const HostApi = struct {
     /// A remote operation answers `Unavailable` while it is off: its plugin is not there,
     /// or it does not fit what that plugin is now.
     fn remote_reachable(inner: *const sdk.Ctx, comptime name: []const u8) Error!void {
-        const compiled_in = comptime for (registry.SDK.operations) |Candidate| {
-            if (std.mem.eql(u8, Candidate.name, name)) {
-                break true;
-            }
-        } else false;
+        const compiled_in = comptime registry.SDK.find(name) != null;
 
         std.debug.assert(name.len > 0);
 
@@ -347,37 +602,177 @@ pub const HostApi = struct {
     /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any
     /// plugin) and answers what they made of it; with none, the value as it went.
     pub fn mod(self: *PluginCtx, comptime name: []const u8, value: anytype) Error!@TypeOf(value) {
+        const changed = try self.mod_all(name, @TypeOf(value), &.{value});
+
+        std.debug.assert(changed.len == 1);
+
+        return changed[0];
+    }
+
+    /// `mod` for many values at once: a cart's lines, an order's charges. Each modifier
+    /// hears them in batches with its reads made together for all, so the cost is one call
+    /// per batch, never one per value. Answers them in the same order.
+    pub fn mod_all(
+        self: *PluginCtx,
+        comptime name: []const u8,
+        comptime Value: type,
+        values: []const Value,
+    ) Error![]const Value {
         comptime {
             if (!mods.valid(name, false)) {
                 @compileError("`" ++ name ++ "` is no mod name: dotted parts of a-z, 0-9 and _");
             }
         }
 
-        const Value = @TypeOf(value);
-        const values: []const Value = &.{value};
         const memory = self.arena();
-        const text = std.json.Stringify.valueAlloc(memory, values, .{}) catch {
-            return error.OutOfMemory;
-        };
-        const answered = try self.call(mods.Apply, .{
-            .name = name,
-            .values = text,
-        });
+        const changed = memory.alloc(Value, values.len) catch return error.OutOfMemory;
+        var start: usize = 0;
 
-        const changed = std.json.parseFromSliceLeaky([]const Value, memory, answered.values, .{
-            .ignore_unknown_fields = true,
-            .allocate = .alloc_always,
-        }) catch return value;
+        while (start < values.len) {
+            const end = @min(values.len, start + mods.items_max);
+            const batch = values[start..end];
+            const made = try self.applied(name, Value, batch);
 
-        return if (changed.len == 1) changed[0] else value;
+            @memcpy(changed[start..end], if (made.len == batch.len) made else batch);
+            start = end;
+        }
+
+        std.debug.assert(changed.len == values.len);
+
+        return changed;
     }
 
-    /// Calls an operation by name, JSON in and out, through the same checks.
+    /// One batch through `mod.apply`: laid out once, held that way through every modifier
+    /// (`server/sandboxed_plugins/applied.zig`), read back as `Value`s. No text is written.
+    fn applied(
+        self: *PluginCtx,
+        comptime name: []const u8,
+        comptime Value: type,
+        batch: []const Value,
+    ) Error![]const Value {
+        const held_values = @import("../../server/sandboxed_plugins/applied.zig");
+        const inner = self.inner;
+        const memory = inner.arena;
+        const outer = inner.applying;
+
+        std.debug.assert(batch.len <= mods.items_max);
+
+        // The values laid out, each modifier's copy of them and the apply's own work are
+        // in memory of their own, given back once the last values are read back.
+        var work: plugin_memory.Work = undefined;
+
+        work.begin(inner);
+        defer work.end();
+
+        // Nobody modifies the name: the call is still made, and nothing is laid out.
+        var held: []const u8 = if (registry.SDK.modified(inner, name))
+            try held_values.from_typed(Value, inner.arena, batch)
+        else
+            "";
+
+        inner.applying = if (held.len > 0) &held else null;
+        defer inner.applying = outer;
+        inner.failure = null;
+
+        _ = try registry.SDK.call(inner, comptime registry.SDK.bound(mods.Apply), .{
+            .name = name,
+            .values = .{
+                .text = "[]",
+            },
+        });
+
+        if (held.len == 0) {
+            return batch;
+        }
+
+        const moved = @import("../moved.zig");
+
+        // Read back in the work's memory and copied whole to the caller's: what the
+        // caller keeps is the values alone, never the piece they were read from.
+        if (comptime moved.plain(Value)) {
+            const read = try held_values.to_typed(Value, inner.arena, held);
+
+            work.leave();
+
+            return if (work.own()) moved.copy([]const Value, memory, read) else read;
+        }
+
+        work.leave();
+
+        // What is read back points into the piece it is read from: that lies with it.
+        const last = if (work.own())
+            memory.dupe(u8, held) catch return error.OutOfMemory
+        else
+            held;
+
+        return held_values.to_typed(Value, memory, last);
+    }
+
+    /// Calls an operation by a name known only when it runs (a contract's provider), `in`
+    /// any struct, the answer read as an `Out`.
+    pub fn call_named(
+        self: *PluginCtx,
+        comptime Out: type,
+        name: []const u8,
+        in: anytype,
+    ) Error!Out {
+        std.debug.assert(name.len > 0);
+
+        const moved = @import("../moved.zig");
+
+        // The input's JSON, the answer's and what reading it takes are in memory of their
+        // own: the caller keeps the answer alone, when it can be copied whole.
+        var work: plugin_memory.Work = undefined;
+
+        if (comptime moved.plain(Out)) {
+            work.begin(self.inner);
+        } else {
+            work.stay(self.inner);
+        }
+
+        defer work.end();
+
+        const input = std.json.Stringify.valueAlloc(self.inner.arena, in, .{}) catch {
+            return error.OutOfMemory;
+        };
+        const output = try self.call_json(name, input);
+        const read = std.json.parseFromSliceLeaky(Out, self.inner.arena, output, .{
+            .ignore_unknown_fields = true,
+            .allocate = .alloc_always,
+        }) catch return error.Invalid;
+
+        work.leave();
+
+        if (comptime !moved.plain(Out)) {
+            return read;
+        }
+
+        return if (work.own()) moved.copy(Out, self.inner.arena, read) else read;
+    }
+
+    /// Calls an operation by name, JSON in and out, through the same checks: core's own way,
+    /// which an installed plugin's module does not have.
     pub fn call_json(self: *PluginCtx, name: []const u8, input: []const u8) Error![]const u8 {
         std.debug.assert(name.len > 0);
         std.debug.assert(self.reads == null);
 
-        return registry.SDK.call_json(self.inner, name, input);
+        // The call works in memory of its own, as one by type does: its answer is kept.
+        var work: plugin_memory.Work = undefined;
+
+        work.begin(self.inner);
+
+        const result = registry.SDK.call_json(self.inner, name, input);
+
+        work.leave();
+        defer work.end();
+
+        const output = try result;
+
+        if (!work.own()) {
+            return output;
+        }
+
+        return self.inner.arena.dupe(u8, output) catch error.OutOfMemory;
     }
 
     /// Emits an event: `ctx.emit(OutOfStock, .{ .variant = ref })`, a type made with
@@ -385,7 +780,7 @@ pub const HostApi = struct {
     /// the write (a refusal rolls it back); `on` hooks hear it from the queue once it commits.
     pub fn emit(self: *PluginCtx, comptime Event: type, payload: Event.Payload) void {
         comptime std.debug.assert(@hasDecl(Event, "publr_event_definition"));
-        std.debug.assert(self.inner.parent != null);
+        std.debug.assert(self.inner.now_ms >= 0);
 
         const name = if (comptime Event.full_name.len > 0)
             Event.full_name
@@ -401,13 +796,35 @@ pub const HostApi = struct {
         // A message (`publr.messaging.Email`) needs `messaging.send`; a refused one fails the
         // write.
         if (permission_model.key_for_event(name)) |key| {
-            if (held_in(asks_of_running(self.inner.plugin), key) == null) {
+            if (held_of_running(self.inner.plugin, key) == null) {
                 self.inner.event_refusal = self.inner.event_refusal orelse error.Denied;
                 return;
             }
         }
 
-        self.inner.emit_json(name, text, true);
+        // An email carrying the site's media: only from a plugin that reads media.
+        const messaging = @import("../messaging.zig");
+
+        const others_media = messaging.carries_media(self.inner.arena, name, text) and
+            (self.inner.plugin.len == 0 or
+                !messaging.carries_own_files_only(self.inner, self.inner.plugin, text));
+
+        if (others_media) {
+            if (held_of_running(self.inner.plugin, "media.read") == null) {
+                self.inner.event_refusal = self.inner.event_refusal orelse error.Denied;
+                return;
+            }
+        }
+
+        // A message names the plugin that sent it.
+        const sent = messaging.signed(self.inner.arena, name, text, self.inner.plugin) catch
+            return self.refuse_emit();
+
+        if (self.inner.parent == null) {
+            return registry.SDK.emit_alone(self.inner, name, sent);
+        }
+
+        self.inner.emit_json(name, sent, true);
     }
 
     /// An event that could not be written fails the write, as a refused one does.
@@ -506,21 +923,28 @@ pub fn held_in(asks: []const Ask, key: []const u8) ?permission_model.Held {
     return null;
 }
 
-/// What the compiled-in plugin `plugin` asked for in its `.permissions`; nothing for any other.
-fn asks_of_running(plugin: []const u8) []const Ask {
+/// What the compiled-in plugin `plugin` holds of `key`, as its `.permissions` asked; null
+/// when it asked nothing of it, or is no compiled-in plugin. Read from the grants the build
+/// worked out once per plugin, never from its declarations in the caller's evaluation.
+fn held_of_running(plugin: []const u8, key: []const u8) ?permission_model.Held {
     std.debug.assert(plugin.len <= 64);
+    std.debug.assert(key.len > 0);
 
-    inline for (registry.native_plugins.all) |Plugin| {
-        if (std.mem.eql(u8, Plugin.manifest.name, plugin)) {
-            if (comptime !plugin_define.has(Plugin, "permissions")) {
-                return &.{};
-            }
-
-            return comptime plugin_define.get(Plugin, "permissions");
+    for (registry.native_plugins.merged_plugin_grants) |grants| {
+        if (!std.mem.eql(u8, grants.name, plugin)) {
+            continue;
         }
+
+        for (grants.access.held) |held| {
+            if (std.mem.eql(u8, held.key, key)) {
+                return held;
+            }
+        }
+
+        return null;
     }
 
-    return &.{};
+    return null;
 }
 
 test "a compiled-in plugin is granted what it asked for, nothing more" {
@@ -538,7 +962,7 @@ test "a compiled-in plugin is granted what it asked for, nothing more" {
     ).on);
     try std.testing.expect(!permission_define.Grant.of(
         "http.fetch",
-        held_in(asks_of_running("no_such_plugin"), "http.fetch"),
+        held_of_running("no_such_plugin", "http.fetch"),
     ).on);
 }
 
@@ -560,16 +984,52 @@ test "a compiled-in plugin's http.fetch grant answers its domains as asked" {
 fn running_failures(operation_name: []const u8) []const sdk.operation.Failure {
     std.debug.assert(operation_name.len <= sdk.operation.name_len_max * 2);
 
-    inline for (registry.SDK.operations) |Operation| {
-        if (comptime @hasDecl(Operation, "failures")) {
-            if (std.mem.eql(u8, Operation.name, operation_name)) {
-                return comptime words.failures_of(Operation);
-            }
+    for (declared_failures) |entry| {
+        if (std.mem.eql(u8, entry.name, operation_name)) {
+            return entry.failures;
         }
     }
 
     return &.{};
 }
+
+const DeclaredFailures = struct {
+    name: []const u8,
+    failures: []const sdk.operation.Failure,
+};
+
+/// Every compiled-in operation declaring failures, with them: built once, read by name.
+const declared_failures: []const DeclaredFailures = table: {
+    const operations = registry.SDK.operations;
+
+    // A few branches an operation, once: the budget grows with the list.
+    @setEvalBranchQuota(1000 + operations.len * 32);
+
+    var count: u32 = 0;
+
+    for (operations) |Operation| {
+        if (@hasDecl(Operation, "failures")) {
+            count += 1;
+        }
+    }
+
+    var entries: [count]DeclaredFailures = undefined;
+    var index: u32 = 0;
+
+    for (operations) |Operation| {
+        if (@hasDecl(Operation, "failures")) {
+            entries[index] = .{
+                .name = Operation.name,
+                .failures = words.failures_of(Operation),
+            };
+            index += 1;
+        }
+    }
+
+    const done = entries;
+
+    break :table &done;
+};
 
 test "ctx.failure() names the refusal a call came back with" {
     var harness: sdk.testing.Harness = undefined;

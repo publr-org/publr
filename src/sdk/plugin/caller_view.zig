@@ -3,6 +3,7 @@
 //! operation, and the visitor's stable id, signed in or not.
 const std = @import("std");
 const Caller = @import("../caller.zig").Caller;
+const Account = @import("../account_ref.zig").Account;
 
 pub const From = union(enum) {
     /// The admin, signed in.
@@ -52,6 +53,19 @@ pub const View = struct {
         std.debug.assert(!(view.granted_here and view.from == .app));
 
         return view.granted_here;
+    }
+
+    /// The signed-in person's account (through the admin, an app's pages, or a device acting
+    /// for them), to keep in a `publr.Account` field; null when nobody is signed in.
+    pub fn account(view: View) ?Account {
+        const id = view.raw.user_id() orelse return null;
+
+        std.debug.assert(id.len > 0);
+        std.debug.assert(view.signed_in() or view.raw == .plugin);
+
+        return .{
+            .id = id,
+        };
     }
 
     /// Whether the caller is the person with this id: for "is it theirs?" checks.

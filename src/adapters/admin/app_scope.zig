@@ -325,21 +325,29 @@ test "the switcher narrows the admin to what the app reaches, and places new typ
     note.name = "Note";
     note.app = "docs";
     _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
-        .definition = try model.content_type.encode(arena, note),
+        .definition = .{
+            .text = try model.content_type.encode(arena, note),
+        },
     });
 
     const Create = record_operations.Create;
     _ = try registry.SDK.dispatch(&system, Create, .{
         .type = "post",
-        .document = "{\"title\":\"Global news\"}",
+        .document = .{
+            .text = "{\"title\":\"Global news\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, Create, .{
         .type = "note",
-        .document = "{\"title\":\"Docs only\"}",
+        .document = .{
+            .text = "{\"title\":\"Docs only\"}",
+        },
     });
     try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Create, .{
         .type = "post",
-        .document = "{\"title\":\"Told an app\"}",
+        .document = .{
+            .text = "{\"title\":\"Told an app\"}",
+        },
         .app = "www",
     }));
 

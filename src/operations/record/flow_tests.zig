@@ -51,7 +51,9 @@ test "a transition's authorize holds on every path that moves a record" {
     var system = harness.ctx(.system);
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = try model.content_type.encode(system.arena, reviewed_type),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, reviewed_type),
+        },
     });
 
     var editor = harness.ctx(.{
@@ -68,7 +70,9 @@ test "a transition's authorize holds on every path that moves a record" {
     });
     const created = try SDK.dispatch(&editor, record.Create, .{
         .type = "guestbook.entry",
-        .document = "{\"title\":\"Lovely\"}",
+        .document = .{
+            .text = "{\"title\":\"Lovely\"}",
+        },
     });
 
     // Not where the transition starts: refused by name.
@@ -123,12 +127,16 @@ test "a move in bulk raises each record's named transition, as a move of its own
     var admin = harness.ctx(.system);
     try SDK.bootstrap(&admin);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = try model.content_type.encode(admin.arena, reviewed_type),
+        .definition = .{
+            .text = try model.content_type.encode(admin.arena, reviewed_type),
+        },
     });
 
     const created = try SDK.dispatch(&admin, record.Create, .{
         .type = "guestbook.entry",
-        .document = "{\"title\":\"Lovely\"}",
+        .document = .{
+            .text = "{\"title\":\"Lovely\"}",
+        },
     });
     var trail: sdk.trail.Trail = .{
         .root = 1,
@@ -177,11 +185,15 @@ test "the trash: restore goes back where the record was, destroy is a person's, 
     });
     const archived = try SDK.dispatch(&editor, record.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Kept\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Kept\",\"body\":\"x\"}",
+        },
     });
     const live = try SDK.dispatch(&editor, record.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Live\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Live\",\"body\":\"x\"}",
+        },
     });
 
     _ = try SDK.dispatch(&editor, record.Transition, .{
@@ -333,7 +345,9 @@ test "a status standing in for another plugin's takes its meaning and is found b
 
     // Without orders, the sale's own meaning: settled is not shown on the site.
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = try model.content_type.encode(system.arena, sale_type),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, sale_type),
+        },
     });
 
     const alone = (try record.domain.definition.find(&admin, "shop.sale")).?;
@@ -341,12 +355,16 @@ test "a status standing in for another plugin's takes its meaning and is found b
     try std.testing.expect(!alone.def.flow.is_live("shop.settled"));
 
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = try model.content_type.encode(system.arena, order_type),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, order_type),
+        },
     });
 
     const sale = try SDK.dispatch(&admin, record.Create, .{
         .type = "shop.sale",
-        .document = "{\"title\":\"Tea\"}",
+        .document = .{
+            .text = "{\"title\":\"Tea\"}",
+        },
     });
     const settled = try SDK.dispatch(&admin, record.Transition, .{
         .id = sale.id,
@@ -382,12 +400,16 @@ test "a Private type with roles ticked: those roles and administrators reach it,
     ledger.roles = &.{"editor"};
 
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = try model.content_type.encode(system.arena, ledger),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, ledger),
+        },
     });
 
     const made = try SDK.dispatch(&system, record.Create, .{
         .type = "orders.ledger",
-        .document = "{\"title\":\"#1001\"}",
+        .document = .{
+            .text = "{\"title\":\"#1001\"}",
+        },
     });
     var contributor = harness.ctx(.{
         .user = .{

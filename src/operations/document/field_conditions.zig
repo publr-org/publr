@@ -46,6 +46,9 @@ pub fn filters_of(
         const single = def orelse return error.Invalid;
         const clause = model.filter.parse_clause(text) orelse return error.Invalid;
         const name = field_filter.field_of(clause.key) orelse return error.Invalid;
+
+        try readable(ctx, single, name);
+
         const found = model.document.find_path(single.fields, name) orelse return error.Invalid;
         const kind = model.kinds.lookup(registry.kinds(ctx), found.kind);
         const condition = field_filter.condition_of(
@@ -101,6 +104,9 @@ pub fn sort_of(ctx: *const sdk.Ctx, def: ?Def, given: ?[]const u8) Error!?store.
     }
 
     const single = def orelse return error.Invalid;
+
+    try readable(ctx, single, name);
+
     const found = model.document.find_path(single.fields, name) orelse return error.Invalid;
     const kind = model.kinds.lookup(registry.kinds(ctx), found.kind);
 
@@ -113,3 +119,26 @@ pub fn sort_of(ctx: *const sdk.Ctx, def: ?Def, given: ?[]const u8) Error!?store.
         .descending = descending,
     };
 }
+
+/// A field the caller may not read (`.visibility`) filters and orders as one the type does
+/// not have: matching on it would tell its value.
+pub fn readable(ctx: *const sdk.Ctx, def: Def, path: []const u8) Error!void {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(def.fields.len <= model.field.fields_max);
+
+    const top = path[0 .. std.mem.indexOfScalar(u8, path, '.') orelse path.len];
+
+    for (def.fields) |field| {
+        if (!std.mem.eql(u8, field.name, top)) {
+            continue;
+        }
+
+        if (field.visibility.hidden() and !visibility.sees(ctx, field.visibility)) {
+            return error.Invalid;
+        }
+
+        return;
+    }
+}
+
+const visibility = @import("visibility.zig");

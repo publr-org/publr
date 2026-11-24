@@ -107,6 +107,9 @@ pub const Stream = struct {
             return ctx.fail(http.not_queued);
         }
 
+        // Never inside a write: what the run wrote so far commits first.
+        try @import("../sdk/job_write.zig").before_outside_call(ctx);
+
         const Method = std.http.Method;
         const method = std.meta.stringToEnum(Method, in.method) orelse return error.Invalid;
         const uri = std.Uri.parse(in.url) catch return error.Invalid;

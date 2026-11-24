@@ -74,6 +74,12 @@ pub const Holds = enum {
     choice,
     texts,
     references,
+    /// An exact number with places (`publr.Decimal`).
+    decimal,
+    /// A struct of its own fields: a group.
+    group,
+    /// A list of structs: a repeater's rows, or an internal record's list of groups.
+    rows,
     any,
 };
 
@@ -274,7 +280,7 @@ fn provided_finding(user: User, registered: Registered, providers: []const Provi
 
         base.why = .misfit;
 
-        if (contract.check_input(part.input, operation.input)) |problem| {
+        if (contract.check_provider_input(part.input, operation.input)) |problem| {
             base.problem = problem;
             base.nodes = if (problem.on_user_side) part.input else operation.input;
             return base;
@@ -606,6 +612,18 @@ pub fn holds_kind(holds: Holds, kind: []const u8, many: bool) bool {
         return true;
     }
 
+    // The containers hold no values of their own: they are read by what they are.
+    switch (holds) {
+        .rows => {
+            const repeater = std.mem.eql(u8, kind, "repeater") and !many;
+
+            return repeater or (std.mem.eql(u8, kind, "group") and many);
+        },
+        .group => return std.mem.eql(u8, kind, "group") and !many,
+        .decimal => return std.mem.eql(u8, kind, "decimal") and !many,
+        else => {},
+    }
+
     const found = kinds.find(&kinds.core, kind) orelse return false;
     const storage = found.storage;
     const text_like = storage == .text or storage == .long;
@@ -633,7 +651,7 @@ pub fn holds_kind(holds: Holds, kind: []const u8, many: bool) bool {
         .money => is(kind, "money"),
         .reference => storage == .ref,
         .choice => is(kind, "select"),
-        .texts, .references => false,
+        .texts, .references, .decimal, .group, .rows => false,
         .any => true,
     };
 }
@@ -803,6 +821,9 @@ fn holds_text(holds: Holds) []const u8 {
         .choice => "a choice",
         .texts => "a list",
         .references => "references",
+        .decimal => "a decimal",
+        .group => "a group of fields",
+        .rows => "a list of groups",
         .any => "anything",
     };
 }

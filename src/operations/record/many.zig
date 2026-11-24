@@ -379,7 +379,9 @@ test "transition_many: named, every match in one call, refusals" {
         const mark = harness.fixed.end_index;
         const created = try SDK.dispatch(&editor, record_operations.Create, .{
             .type = "post",
-            .document = document,
+            .document = .{
+                .text = document,
+            },
         });
 
         @memcpy(buffer, created.id[0..store.records.id_len]);

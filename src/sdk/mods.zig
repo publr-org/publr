@@ -2,25 +2,32 @@
 //! makes it, and every plugin's `publr.modify("checkout.methods", run)` changes it in turn,
 //! compiled-in plugins first, then installed ones. Nothing is declared ahead: a name nobody
 //! modifies comes back as it went. A modifier's name may hold `*` for exactly one part
-//! (`*.title`, `checkout.*`). Values cross as JSON, a batch at a time, so a modifier written
-//! for one item has its reads made together for all (`plugin/mod_reads.zig`).
+//! (`*.title`, `checkout.*`). Values cross laid out, a batch at a time: core holds them as
+//! their owner laid them out, hands each modifier the batch in its own type, and lays its
+//! answer over them where they lie (`server/sandboxed_plugins/applied.zig`); no text is
+//! written or read between plugins. A modifier written for one item has its reads made
+//! together for all (`plugin/mod_reads.zig`); one written for the batch
+//! (`publr.modify_all`) takes them all at once. A modifier that fails refuses
+//! the apply: values never come back unchanged without a word.
 
 const std = @import("std");
+const operation = @import("operation.zig");
 
 pub const items_max: u32 = 200;
 pub const name_len_max: u32 = 96;
 pub const text_bytes_max: u32 = 512;
 
-/// What `ctx.mod` calls (core's `mod.apply`): the values, a JSON array, through every
-/// modifier of `name`; they come back in the same order.
+/// What `ctx.mod` calls (core's `mod.apply`): the values through every modifier of `name`;
+/// they come back in the same order. A plugin's values are held laid out the whole way
+/// (`Ctx.applying`); `values` is a JSON array only for a call from the outer edge.
 pub const Apply = struct {
     pub const name = "mod.apply";
     pub const In = struct {
         name: []const u8,
-        values: []const u8,
+        values: operation.Json,
     };
     pub const Out = struct {
-        values: []const u8,
+        values: operation.Json,
     };
 };
 
@@ -41,7 +48,8 @@ pub const Modifier = struct {
     reason: []const u8,
 };
 
-/// The values one apply hands each modifier, in order; it answers them changed.
+/// The values of one apply whose shape comes with the data (the outer edge's JSON, a
+/// record's document), in order.
 pub const Batch = struct {
     items: []std.json.Value,
 };
@@ -96,19 +104,6 @@ pub fn matches(pattern: []const u8, name: []const u8) bool {
     }
 
     return given.next() == null;
-}
-
-/// Takes `changed` into `batch` when it is the same size; anything else is ignored.
-pub fn take(batch: *Batch, changed: Batch) bool {
-    std.debug.assert(batch.items.len <= items_max);
-
-    if (changed.items.len != batch.items.len) {
-        return false;
-    }
-
-    @memcpy(batch.items, changed.items);
-
-    return true;
 }
 
 /// Text a modifier answered, for a page to show: cut on a character at `text_bytes_max`,

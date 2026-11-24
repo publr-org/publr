@@ -154,14 +154,7 @@ export const listen = (csrf: () => string, listener: Listener) => {
     listener.writing();
     try {
       const audio = await base64_of(new Blob(chunks, { type: format }));
-      const response = await fetch(Publr.url("/api/ai.transcribe"), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf() },
-        body: JSON.stringify({ audio, format }),
-      });
-      const asked = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(asked.message ?? asked.error ?? `${response.status}`);
+      const asked = (await Publr.send("ai.transcribe", { audio, format }, { csrf: csrf() })) as { asked: string };
       // Written down in the background: the words are read once they land.
       const found = await landed(asked.asked);
       if (found.state !== "done") throw new Error(found.problem ?? "");

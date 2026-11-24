@@ -157,6 +157,7 @@ got, and `ctx.grant("records.write")` tells it whether the key is on and with wh
 | `site.read` | | | low |
 | `settings.write` | | | high |
 | `http.fetch` | `.domains` | | high |
+| `mail.send` | | | high |
 | `media.read` | | `.private` | low; high with private files |
 | `media.write` | | | medium |
 | `messaging.send` | | | medium |
@@ -186,6 +187,9 @@ What each opens:
 - Queued work (jobs, `on` hooks) runs with the plugin's own grant, `.publish` included.
 - `messaging.send` lets a plugin emit message events (`publr.messaging.Email`, `Sms`,
   `Push`) beside its own; without it a message is not sent and the write fails.
+- `mail.send` lets a plugin hand an email to an SMTP server it names, from queued work only
+  (`publr.operations.mail.Send`, [mail](cli/mail.md)): how a messaging provider reaches a
+  site's own mail server.
 
 A `call:<plugin>.<verb>` key, for another plugin's operation, and `ai.progress` pass as
 they are. Any other key, or an option its key does not take (`.domains` on
@@ -236,8 +240,8 @@ const Secrets = struct {
 Declaring is the request: a secret is not a permission. The plugin uses exactly what it
 declares; a `{secret:NAME}` its code writes without declaring it fails the build, and one
 made at run time is refused (`SecretNotDeclared`). A plugin with secrets asks for
-`http.fetch`, the only way one is sent. At install each secret's field sits under the
-`http.fetch` request with its label and where to find it: optional, filled later on the
+`http.fetch` or `mail.send`, the only ways one is sent. At install each secret's field sits
+under the first of those requests with its label and where to find it: optional, filled later on the
 plugin's page, which says what is still missing; once set it shows "Set" (or "Set, shared
 with" the other plugins naming it) and Replace, never the value. Names are site-wide:
 plugins naming `OPENAI_API_KEY` share one value. `PUBLR_SECRET_KEY` and
@@ -295,17 +299,395 @@ write committed, core hands it to the first provider of its `messaging` contract
 (`publr.messaging.contract`) that is switched on and covers the channel. With no provider
 nothing is sent and nothing fails. A provider registers `channels` (the channels it covers)
 and `send` (one `publr.messaging.Message`), and `attachments` when it sends files; its
-`send` runs from the queue, so it may call out.
+`send` runs from the queue, so it may call out: through `http.fetch` to an email service's API,
+or through `mail.send` to an SMTP server.
+
+An email is `transactional` (a receipt, a password link) or `marketing` (a newsletter, a
+reminder): `.stream`. A provider whose `channels` answers `streams` takes only those, so bulk
+mail can go through a bulk provider and receipts through another. A marketing email names
+where to stop it (`.unsubscribe`, a signed link): core writes `List-Unsubscribe` and
+`List-Unsubscribe-Post` (one click) on it, and refuses one without. `.from` and `.reply_to`
+are per message (empty: the provider's own); `.preheader` opens the HTML hidden;
+`.reference` (an order's id) is kept with the provider's id for the message. Files are the
+site's own media by id (`.attachments = &.{.{ .name, .media }}`, which needs `media.read`):
+core hands the provider their bytes, base64, with their type, never an address to fetch.
+`.sender` is the plugin that emitted the message, written by core as it is emitted (any
+value the plugin gave is replaced); empty for Publr's own.
+
+**Testing emails.** On a development site, install the `email_inbox` plugin (Local inbox):
+a provider that sends nothing and keeps every message on the site, read under Local inbox
+in the admin or with `publr email_inbox messages --to ada@example.com --subject "order"`.
+It keeps messages only where core would move a test clock (on this computer, served over
+plain http, never hosted or a copy); anywhere else it covers no channel, so mail goes to
+the next provider. To try the real `smtp` plugin, run Mailpit or MailHog on this computer
+and set it up under Settings › System › Email as server `127.0.0.1`, port `1025`, security
+none, no user name; their web inbox is at `http://127.0.0.1:8025`.
+
+A provider reports what became of a message later (its server refused it, the recipient
+marked it as spam) with `messaging.feedback` from its webhook's run: core raises
+`publr.messaging.Bounced` or `Complained` with the address and the sender's `reference`, for
+whoever keeps who may be mailed.
+
+`messaging.render` makes an email's HTML: the site's layout around it (`messaging
+set_layout`, HTML with `{content}`), each `{name}` given a value, escaped, its `<style>`
+written into the elements as mail apps want, and its text version. A preview sends the
+template's sample values.
+
+A copy of the site (an environment or a branch: the process started with `PUBLR_COPY` set)
+mails staff accounts alone, never a customer or a visitor.
+
+A link a person opens without signing in (unsubscribe, a cart, an invoice) is signed:
+`ctx.sign(intent, subject, expires)` answers a token and its `/_links/<token>` path,
+`ctx.verify(intent, token)` the subject. The intent is the plugin's own word, read by it
+alone; `link revoke_all` stops every link signed so far. Opening `/_links/<token>` runs the
+plugin's operation named by the intent, as the plugin, given `{ "subject" }`; it answers
+`redirect` (a path on the site), `file` (the id of a file the plugin made, downloaded) or
+`text`.
+
+A plugin makes files (an invoice's PDF, a label, a feed, a CSV export) with
+`ctx.make_file("invoices.document", "invoice-FK-1.pdf")`: `write` each part as it is made,
+then `done`, and the file is kept as a published file of the plugin's own media type
+(`.kind = .media`; private unless the type is public). Staff open a private one from where
+the plugin shows it; a buyer opens it through a signed link answering `{ "file": id }`; an
+email attaches it by its id with no `media.read`. The plugin holds one 256 KiB piece at a
+time, and a file is at most `.limits.file_mib` (4 MiB unless raised).
 
 Settings › Providers lists every contract's providers, compiled in or installed, in the
 order they are tried: an administrator switches each on or off, moves it up or down, and
 opens its plugin's settings from there (`provider.list`, `provider.set`).
 
+### Visitors' requests
+
+A plugin reads what a visitor brings to the site (a referral code, campaign tags, a consent
+cookie) by declaring it and asking for `request.read`, as any permission, at install:
+
+```zig
+.request = .{
+    .query = .{ "ref", "utm_source" },
+    .cookies = .{"consent"},
+    .redirects = .{.{ .prefix = "/ref/", .operation = "follow" }},
+},
+```
+
+Core keeps, for each visitor, the first and the latest landing that brought a parameter some
+plugin reads: where they landed, the page that sent them and when. `ctx.call(publr.operations.
+request.Read, .{})` answers the plugin's own names of them, the visitor's address now (behind
+the site's proxy) and the cookies it declares, from a call the visitor makes. With
+`request.redirect` a plugin answers the site's addresses under its prefixes: `/ref/ada` runs
+its operation `follow` with `{ "path", "rest" }` (`rest` is `ada`) as the plugin, for the
+visitor, and its answer `{ "to", "status" }` (a path on the site; 302 unless it says 301,
+303, 307 or 308) sends the visitor on. A redirect's landing is kept like any other.
+
+### How values cross
+
+An installed plugin talks to Publr, and to other plugins, in plain structs. It never writes
+or reads text to do it.
+
+- **A value goes as it lies.** The plugin hands over where its struct is and a description
+  of how the type is laid out in its build. Publr copies the value out of the plugin's
+  memory. The answer is built in the layout the plugin described and written into room the
+  plugin makes for it.
+- **Publr's own operations take the struct itself.** The input of `record.get` or
+  `internal.save` is read straight into the operation's own type, and its answer is laid
+  out straight from it. Fields are matched by name, so a plugin built against an older
+  Publr still fits.
+- **Between two plugins nothing is in between.** What one plugin sends another (a call to
+  its operation, a hook's input, a provider's answer) is copied whole out of the sender and
+  built in the receiver's layout, fields, enum tags and a union's alternatives matched by
+  name. A field only the sender has is left behind; one only the receiver has takes its
+  default.
+- **A value modifiers change stays laid out.** What a plugin applies with `ctx.mod` is
+  copied out of it once and kept as that plugin laid it out. Each modifier gets the values
+  built in its own type, fields matched by name, and what it answers is laid over the
+  values where they lie: a field it does not have stays, a field only it has travels on to
+  the next modifier, a list's items are matched by their `id`, money key by key. The last
+  answer is built in the layout of the plugin that applied. It is the same for a plugin
+  compiled in. Only `mod apply` from the CLI or REST takes and answers JSON.
+- **A field holding nothing is `null`.** It arrives as `null`, never as a missing field.
+  Inside a record's document it is left out, as it always was; `publr.fields.save` sends
+  `null`, which clears the field.
+- **JSON is written once, by Publr, where it is kept or leaves:** a record's document in
+  the database, a queued job's input, an event an `on` hook hears, the log, and the answer
+  to REST or the CLI.
+
+What a struct handed over may hold:
+
+| In the struct | Where Publr writes JSON |
+|---|---|
+| a number up to 64 bits, `bool`, text, an enum | the same; an enum is its tag's name |
+| an optional, a slice, a pointer to one value, a struct | `null` or the value; an array; the value; an object |
+| a tuple | an array |
+| a tagged union (`union(enum)`) | `{ "alternative": payload }` |
+| a struct that holds itself (a tree's node its children), in a slice or a pointer | nested the same way, 64 levels at most |
+| `publr.Money` | `{ "PLN": 12300 }` |
+| `publr.Time`, `publr.Account`, a ledger account, `publr.ProviderRef` | its milliseconds, its id, its name |
+| `publr.Decimal(n)` | its exact text, `"1.250"` |
+| a reference (`publr.record.AnyRef`, a typed one) | its id |
+| `publr.sdk.operation.Json` | any JSON |
+
+Not a `std.json.Value`, a hash map, a fixed array, an int over 64 bits or an untagged
+union: the build says so. A struct of your own that reads its own JSON says how it lies
+with `pub const publr_form` (`.inner`: as its one field; `.lone`: its fields, in JSON its
+first alone; `.keyed`: its list of pairs is an object keyed by each pair's first field;
+`.fields`: its fields, whatever JSON it reads). A field named in `pub const publr_local`
+never crosses and comes zeroed.
+
+`publr.sdk.operation.Json` is a value whose shape comes with the data: a record's document,
+a query's result. In an installed plugin it is bytes read where they lie, not text:
+
+```zig
+const facts = try record.document.as(Facts, ctx.arena());        // as a struct
+const read = try record.document.read(ctx.arena());              // part by part
+const title = if (read.get("title")) |held| held.text() else null;
+const document = try Json.of(ctx.arena(), facts);                // from a struct
+```
+
+`read` gives a `publr.Value`: `get(key)`, `at(index)`, `items()`, `entries()`, `count()`,
+`text()`, `int()`, `float()`, `boolean()`, `is_null()`. `publr.value.Builder` writes one
+part by part. An operation whose name is known only when the plugin runs (a contract's
+provider) is called with `ctx.call_named(Out, name, in)`: the same structs, no text.
+
+Nothing a plugin says is trusted. Every address, length and count is checked against that
+plugin's memory. A description is checked whole before it is used: sizes, offsets, nesting
+(64 levels) and the number of parts (4,096) are bounded, and a part may name one it is
+inside of only where it lies at an address of its own. A value's addresses are followed 64
+deep at most, so a value that points at itself ends the call. A text must be UTF-8, an enum
+must hold one of its tags, a union one of its alternatives. A value whose shape comes with
+the data is checked whole before any of it is used: every length inside its part, every
+count the number of items there, 64 levels of nesting. One value may make Publr read at
+most 32 MiB. A request that fails any check ends that call with `Invalid`. Values are always
+copied, never shared, and built in zeroed memory, so nothing of Publr's or of another
+plugin's lies between the fields. Every call is still authorized and validated as any other.
+
+A modifier's answer is held to the same checks before it is laid over anything. It is
+copied out of the modifier whole, at most 200 values and 1 MiB of them laid out; the
+layout the values take with its added fields is put together by Publr and read back like
+any description. An answer that is not as many values as it was given changes nothing; one
+value that cannot lie over what it was given (nothing where the value must hold something,
+a number its field cannot hold, a text where it holds a struct) leaves that value as it
+was and the others change. A modifier can write the fields it names and add fields of its
+own, nothing else: what it does not name is copied from the value as it was.
+
+A page is handed over the same way, once. The plugin's view runs in the plugin and
+describes the page: its own markup, and each design-system component it reached with its
+props as the struct they are. Publr reads every component's props where they lie, draws
+them all natively and answers the finished page, so a page costs one call however many
+components it has ([Core draws the page](#core-draws-the-page)).
+
+What still crosses as text: a page's own markup, which is text by nature, and the state a
+view seeds for the browser, written as JSON where the view runs; a file's bytes, as base64
+in a text; and the plugin's manifest, read once when it is built. Inside Publr, an
+operation's input is still written as JSON to read the records it takes by reference, and
+where one side of a move or a merge is a value whose shape comes with the data (a record's
+document, a `publr.sdk.operation.Json` field, the values `mod apply` got as JSON) or a
+union, that part is read as the tree it stands for, once.
+
+An event is JSON only in the queue. Each `on` hook waits with the fields its own type
+names, read from the answer where it lies, so an operation that answers a megabyte still
+reaches a hook that reads its id ([Plugin API: Hooks and events](plugin-api.md#hooks-and-events)).
+
+### Core draws the page
+
+`publr.views.render(ctx, base, View, props)` answers a page's HTML the same either way a
+plugin runs. Compiled in, the view and every component draw in the process. Installed, the
+plugin carries no design system:
+
+1. The view runs in the plugin. Where it reaches a component (`<Table>`, `<Text>`,
+   `<IndexPage>`), nothing is drawn yet: the component's name and props join the page's
+   list, and a placeholder (`<publr-drawn n="3">`) is written where it goes. A component's
+   children are the plugin's markup too, with placeholders for the components inside them,
+   so a tree of any depth is a flat list and no markup is written twice.
+2. The page is handed to Publr in one call: the markup and the list. Each component's props
+   are read where they lie in the plugin's memory, by the layout the plugin's build
+   describes, into the design system's own types.
+3. Publr draws every component natively, puts each where its placeholder stands, and
+   answers the page.
+
+The view is written as before: any component, nested any way, the plugin's own markup
+between them, state and handlers for the browser. Attributes a view puts on a component's
+root (a list row's key, `data-part`, a slot's classes) reach the root Publr draws: a class
+or a style given again is added to the root's, anything else replaces it.
+
+A page is the plugin's data and is checked as such. A component must be one an installed
+plugin may draw, and a prop one of its props with a value of its type (a tone that is not a
+tone ends the page with `Invalid`). A placeholder must name a component of the page, and
+inside a component's children only one drawn before it, so no page holds itself. A page has
+at most 4,096 components, 4 MiB of its own markup and 4 MiB once drawn, its props take at
+most 8 MiB, and components nest 64 deep. A plugin's page is shown in the plugin frame, as
+before; where a plugin's output goes on a trusted page, it still goes through the sanitizer.
+
+### Reads are walks and pages
+
+A plugin that works over many records walks them: it asks for all of them and loops, and
+holds one page at a time whatever their number.
+
+```zig
+var lines = Lines.where(ctx, .order, order.id);
+
+while (try lines.next()) |line| {
+    total += line.value.amount;
+}
+```
+
+Underneath, 200 records are read at a time, each page from where the last ended, and given
+back before the next is read. What the loop allocates for one row (`ctx.arena()`, a record
+it reads for it) is given back at the next row. So a row is good until the next `next`: a
+number or an enum copied out of it stays good, text is kept with `lines.keep(text)` and a
+whole row with `lines.kept(line)`, both into the memory the walk began in. A walk the loop
+leaves early (`break`, `return`) holds its page until the operation or scope around it
+ends; `lines.end()` gives it back at once. In a debug build each row is a copy given back
+and overwritten at the next, so a row kept past `next` shows in the first test that does it.
+
+- `Lines.where(ctx, .order, id)`: the records whose indexed field holds the value, the oldest
+  first; `Lines.all(ctx)` for every record of the type. Shaped before the first row:
+  `.newest()`, `.first(10)`, `.as(Shown)` for only the fields `Shown` names.
+- `.count()` and `.any()`: how many there are, counted from the index, none read; `.one()`:
+  the one record, or null, two being a conflict.
+
+A screen shows a page: it says how many rows it wants, and reads no more.
+
+- `Lines.page(ctx, .order, id, .{ .limit = 10, .offset = 20, .oldest = true })`: a page of
+  the internal records whose indexed field holds the value. 50 rows when no limit is given,
+  200 at most; the newest first, or with `.oldest` in the order they were made.
+- `Lines.page_of(ctx, Shown, .order, id, .{ .limit = 10 })`: the same page, each record with
+  only the fields `Shown` names (a struct of some of the record's fields, with their
+  types). A list that shows two fields reads two.
+- `Lines.where(ctx, .order, id).count()`: how many there are, counted from the index. No
+  record is read, so a list can say "10 of 2,000" beside the page it shows.
+- `Lines.many(ctx, ids)` and `Lines.many_of(ctx, Shown, ids)`: up to 200 internal records by
+  id in one call, never one call an id.
+- `publr.ledger.page(ctx, .{ .about = order, .limit = 10 })`: a page of the transfers about
+  a record, narrowed by `.reason`, `.account` or `.name` when given. A sum is never added up
+  from transfers: `publr.ledger.totals` adds it up in the database, for one record or for a
+  page of finer ones (`.details`).
+- Content is read with GROQ, which slices and projects itself:
+  `*[_type == "notes.note"] | order(_createdAt desc) [0...10] { title }`, and
+  `count(*[...])` for how many.
+
+### Lists in an operation hold a page
+
+Every list an operation takes or answers holds at most 200 items, a page, unless the struct
+holding it says fewer: `pub const limits = .{ .tags = 20 };` beside its fields. A limit past
+200 does not build. An input past its limit is refused before the operation runs, named at
+the list (`tags: At most 20`); an answer past it fails the call, the operation's own fault.
+
+What may hold more is answered a page at a time: the operation takes `after: []const u8 = ""`
+and answers `next: []const u8`, empty after the last page. A walk hands over its page and
+where the next begins:
+
+```zig
+fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
+    const page = try Lines.where(ctx, .order, in.order).page_after(in.after);
+
+    return .{ .lines = try shown_of(ctx, page.rows), .next = page.next };
+}
+```
+
+A plugin calling such an operation walks its pages, one held at a time, the page before
+and what it allocated for it given back at the next:
+
+```zig
+var pages = publr.pages(ctx, Lines.operation, .{ .order = order.id });
+
+while (try pages.next()) |page| {
+    for (page.lines) |line| { ... }
+}
+```
+
+The CLI prints every page, one JSON value each, unless `--after` asks for one; REST and
+MCP answer the page asked for, with its `next`.
+
+A page of an admin screen shows a page of each list it holds (ten rows is a good start),
+with a "Show more" that asks the operation for more rows and draws them in the browser. A
+figure a page needs that would mean adding up every record (an order's total, a line's
+amount) is kept on a record when it changes, and read from there.
+
+Many amounts on one page are written in one call, `publr.operations.money.Texts` (up to
+1,000). The site's currencies are asked for once in a call, however many amounts are
+written, whichever of `money.text` and `money.texts` writes them.
+
 ### Limits
 
 Every call into a plugin runs within limits: 100 ms of CPU (counted in instructions),
-16 MiB of memory, 1,000 calls of its own, 1 MiB of output. A plugin that needs more asks
-in `define`'s `.limits`, with a reason; each raised limit is a high-tier request.
+16 MiB of memory, 1,000 calls of its own, 1 MiB of output, files it makes of 4 MiB. A
+plugin that needs more asks in `define`'s `.limits`, with a reason; each raised limit is a
+high-tier request. The CPU limit counts everything a call runs in the plugin, calls nested
+in its own included. A plugin is started at most once for a request and that instance is
+gone when the request ends; a call that traps or goes over a limit drops it at once. A
+plugin keeps nothing between calls but what it stores
+([reference](plugin-api.md#permissions-secrets-limits)).
+
+Going over a limit is never quiet. An operation that goes over fails. A modifier that goes
+over refuses the apply and the operation that asked for the value (`ModifierFailed`). A
+`before` or `after` hook on an operation that goes over refuses the write. Two hooks cannot
+stop what they hook, by design, and say so instead: one that only adds fields to a list's
+rows leaves them out (a list every screen reads never fails for one plugin's column), and
+one on an event that cannot be refused (signing out, an administrator signing in) lets it
+go on. Either failure is a warning line under the call in the Activity or Error log and on
+the plugin's Log, and in the server's log. Neither changes what the hooked call stores; a
+write the hook itself finished before it failed was a whole operation of its own and stays. Publr's own working memory for a call
+is bounded too (4 MiB for the deepest path of nested calls): each call a plugin makes gives
+its memory back as it answers, and a call that still runs out fails with `OutOfMemory`. It
+is never run a second time.
+
+A plugin compiled into the build holds memory the same way. Publr sets one piece of memory
+aside for all compiled-in plugins' work: 32 MiB, an installed plugin's 16 MiB in the layout
+a compiled-in plugin has, where an address and a length are twice as wide. Each piece of
+work (an operation, a hook, a modifier, a job, a call to another plugin, a
+[`ctx.scope()`](plugin-api.md#memory-for-one-step-ctxscope)) takes whole pages of it and
+gives them back as it ends; what it answers is copied to its caller's memory first. A
+record read or written through the SDK is one such step: the JSON it is stored as goes
+back with it, and the caller keeps its own structs. The calls a plugin makes to Publr's own
+operations run in Publr's working memory, as an installed plugin's do. The request's own
+memory then holds what lasts the request, never a plugin's working data. A piece of work
+that runs out of the plugins' memory fails with `OutOfMemory`. Two kinds of work stay in
+their caller's memory: an operation whose answer cannot be copied whole (it points at
+something else, as a list's open rows do), and a hook that takes a value it could change
+where it lies (a list that is not constant).
+
+Running out of memory, and coming close, are named. A plugin's own collections
+(`publr.List`, `publr.IdMap`, `publr.IdList`) tell Publr how much they hold as they grow. A
+plugin that runs out of memory leaves a line on the call's Error log entry naming the
+largest collection it made in the request and what it held:
+`sampler.hoard ran out of memory (it may hold 16 MiB); the largest collection it made, a
+publr.List of operations.hoard.Kibibyte, held 14048 KiB`. A request that leaves a plugin
+holding more than half of what it may (or the compiled-in plugins more than half of theirs)
+writes a warning to the server's log, naming the request and that collection: a warning
+before the limit, so a plugin whose memory follows its data is seen before it fails.
+
+### What a request cost
+
+Publr counts what plugins cost in every request (an HTTP request, a command, a queued
+run): for each installed plugin the instructions it executed, its calls into Publr, how
+often it was entered, the instances made for it and the most memory it held; for the
+compiled-in plugins together the pieces of work they began and the most memory they held;
+and Publr's own working memory at its fullest. Start the server or run a command with
+`PUBLR_COUNTERS=1` and each request that reached a plugin writes its lines to the process's
+error output:
+
+```
+counted orders.place_for plugin=orders instructions=1320114 host_calls=412 invocations=3 instances=1 memory_kib=2560
+counted orders.place_for plugin=tax instructions=864445 host_calls=201 invocations=2 instances=1 memory_kib=832
+counted orders.place_for plugin=* instructions=2184559 host_calls=613 invocations=5 instances=2 memory_kib=2560
+counted orders.place_for core scratch_kib=1120 arena_kib=721 db_kib=5725
+```
+
+The second word names the request: the operation a command called, `post_/path` for an HTTP
+request, the job or event of a queued run. `plugin=*` adds the installed plugins up
+(`memory_kib` is the largest one's). `scratch_kib` is the working memory for nested calls
+(4 MiB at most), `arena_kib` the request's own, `db_kib` the most SQLite held during it (of its
+64 MiB; counted only while `PUBLR_COUNTERS` is set). A request in which compiled-in plugins
+worked has one more line, before core's, and no `plugin=` lines when no installed plugin
+ran:
+
+```
+counted orders.place_for compiled_in work=7151 memory_kib=4800
+```
+
+`work` is how many pieces of work the compiled-in plugins began (an operation, a hook, a
+modifier, a job, a scope), `memory_kib` the most they held together. Counting is always on and costs a few additions a call; the
+lines are written only when the variable is set. They go to the operator's output alone:
+never into an answer, and no plugin can read them.
 
 ## Writing a plugin
 
@@ -334,7 +716,9 @@ pub const plugin = publr.plugin.define(manifest, .{
 });
 ```
 
-- **The words.** The first line of `main.zig`'s `//!` is the plugin's description; the
+- **The words.** The first line of `main.zig`'s `//!` is the plugin's description. Opened
+  with a name and a colon (`//! Bank transfer: the buyer pays…`), that name is how the admin
+  and other plugins show it ("From Bank transfer"), translated like its other words; the
   rest is the text on its settings page. An operation's words are the `///` above it, or
   its file's `//!`. Every field of a record, an input and an output has a `///`. A
   missing comment fails the build, and says where it goes. `publr plugin build` and
@@ -342,10 +726,9 @@ pub const plugin = publr.plugin.define(manifest, .{
 - **The options** are struct fields: a misspelt one fails the build. Every part is written
   out where it is used (`.records = &.{Entries}`, `.operations = &.{List}`); Publr never
   looks inside a file for a name.
-- **Decided but not built.** `define` refuses these options and names the gate that brings
-  them: `register_taxonomies`, `register_columns`,
-  `register_components`, `register_location_rules`, `taxonomies`. Outside search
-  engines and field editors in the plugin frame come with later gates too.
+- **Decided but not built.** `register_components` is no option of `define` yet, so naming
+  it fails the build. Outside search engines and field editors in the plugin frame come
+  with later gates too.
 
 ### Operations
 
@@ -423,12 +806,14 @@ and an operation without `.authorize` is never reached.
 | `ctx.call(Operation, in)` | any operation, through the same checks as every caller; its own definitions too (`ctx.call(Add, ...)`) |
 | `ctx.fail(.Name, "Only {left} left", .{ .left = left })` | refuses in the plugin's words, translated, with the status its `Fails:` line gives; the write rolls back |
 | `ctx.t(text, values)`, `ctx.tn(one, many, count, values)` | text for people in the caller's language |
+| `ctx.translate(label)` | words marked where they were written (`publr.t`, another plugin's `ctx.t`) and kept as written, such as a label another plugin stored, in the caller's language |
 | `ctx.log(.info, "Charged {s}", .{amount})` | a log line with a level (`.info`, `.warn`, `.err`): under the call in the Activity log or Error log, and on the plugin's Log tab |
-| `ctx.now()` | the call's time as `publr.Time`, the type of `datetime` fields |
+| `ctx.now()` | the call's time as `publr.Time`, the type of `datetime` fields; on a test site, the time `project set_clock` moved it to, as queued work's moments are ([CLI](cli/project.md)) |
 | `ctx.caller()` | who calls: `.from`, `.visitor`, `.referer`, `signed_in()`, `has_role(name)`, `granted()`, `is(id)` |
 | `ctx.grant(key)` | whether a permission is on, its flags, and (`http.fetch`) its domains |
 | `ctx.emit(Event, payload)` | emits an event: `after` hooks now, `on` hooks from the queue once the write commits |
 | `ctx.arena()`, `ctx.alloc(T, n)`, `ctx.print(fmt, args)` | memory freed when the call ends |
+| `ctx.scope()` | memory of its own for one step, given back at its `end()`: a call with several large steps takes the memory of the largest ([reference](plugin-api.md#memory-for-one-step-ctxscope)) |
 
 ### Records
 
@@ -458,15 +843,23 @@ pub const Posts = publr.record.define(Post, .{
 
 The struct is the record: its `///` is the type's name and description, each field's its
 label and help. Kinds follow the Zig types (text, integer, number, boolean, `publr.Time` a
-datetime, an enum a select, a `Posts.Ref` or `publr.record.AnyRef` a reference); a field
+datetime, an enum a select, a `Posts.Ref` or `publr.record.AnyRef` a reference, a
+`publr.ProviderRef(Contract)` one provider of a contract, see
+[Contracts and providers](plugin-api.md#contracts-and-providers), a `publr.Account` a
+person's account, a `user` field kept as the account's id, never an id in a text field:
+`ctx.caller().account()` is the signed-in person's); a field
 without a default is required. `.fields` overrides a field's kind, its rules
 (`.validation = .{ .max_len = 280 }`, checked on every write whoever writes, and shown
 beside the field's help) and its options (how it is edited). `.internal
 = true` makes it the plugin's bookkeeping (internal records, never in the admin's content
-list), with `.indexed` for the fields it is found by (`&.{.page}`). The name is the plugin's
+list), with `.indexed` for the fields it is found by (`&.{.page}`); it runs the same rules
+on every write, and a `.unique` value (a transfer's id) is held once, so the same write sent
+twice is a conflict. `.visibility` keeps a field to its plugin and named roles (`.restricted`,
+or `.special` for health data). The name is the plugin's
 and the type's, `blog.post`: apps, GROQ, `--type` and other plugins use it whole. A
 `.validate = fn (Post, *publr.Problems(Post)) void` checks rules across fields on every
-create and save, whoever writes. Other options: `.title_field` (a field, `.title`),
+create and save, whoever writes; a write of many records (`create_many`, `save_many`) is
+checked in one go, and a plugin is started only for a write of its own kind of record. Other options: `.title_field` (a field, `.title`),
 `.public`, `.url`, `.plural_name`, `.menu`, `.editor`, `.kind`, `.app`. The handle reads and
 writes typed values: `Posts.get(ctx, id, .{})`, `Posts.find_one(ctx, .slug, "hello")`,
 `Posts.create(ctx, value)`, `Posts.save(ctx, id, fields, .{})`.
@@ -529,6 +922,78 @@ const rows = try greetings_so_far.execute(ctx, u32, .{});
 A query's `$names` are bound from the struct `execute` is given and never written into the
 text; a `$name` the struct lacks, or a field the query never names, fails the build. It
 reads as the caller, with their access applied, and leaves trashed records out.
+
+#### Computed fields
+
+A field of an internal record can be worked out by the plugin instead of written by a
+caller. Publr stores it with the record and works it out again only when something it
+read has changed:
+
+```zig
+pub const Line = struct {
+    cart: Carts.Ref,
+    item: publr.record.AnyRef,
+    quantity: u32,
+    /// Priced: what its item costs, worked out by `priced`
+    priced: Priced = .{},
+};
+
+pub const Lines = publr.record.define(Line, .{
+    .name = "shop.line",
+    .internal = true,
+    .indexed = &.{.cart},
+    .fields = .{
+        .priced = .{
+            .kind = "virtual",
+            .options = .{
+                .virtual = .{
+                    .computed = priced,
+                },
+            },
+        },
+    },
+});
+
+fn priced(ctx: *publr.Ctx, line: *const Line) publr.Error!Priced {
+    const product = try Products.get(ctx, line.item.id, .{});
+
+    return .{
+        .total = product.value.price * line.quantity,
+    };
+}
+```
+
+- Reading a line gives the stored value. You never call `priced` and never say what it
+  depends on: Publr notes every record, list and operation it read (another plugin's
+  reads too, when it asks one). A change to any of them makes the value stale, and the
+  next read works it out again before it answers. Values are always fresh.
+- A create or save of the line works its values out in the same write. What a caller
+  sends for a computed field is ignored.
+- The function only reads. It gets no reader: no person signed in, no visitor, no
+  cookies, the main language, live records only. A value is stored once for everyone, so
+  whatever it depends on must be on a record (a cart keeps its account's roles).
+- The clock is not a read. When an answer stops holding at a time (a sale ends), say so:
+  `try ctx.holds_until(sale.ends)`. It is worked out again then.
+- Every computed value goes through the mod `<record>.<field>`, `shop.line.priced`, so any
+  plugin can change it with `publr.modify` (see [Hooks, events and other
+  plugins](#hooks-events-and-other-plugins)). Installing, removing or updating such a
+  modifier makes the values stale.
+- Totals are added up by Publr, a page at a time, never handed over as a list:
+  `Lines.where(ctx, .cart, id).sum("priced.total")`.
+- A computed field is never indexed, at most 8 per record. Computed fields are on
+  internal records only.
+
+### A ledger
+
+Counted balances (store credit, points, what a buyer owes, what a shop owes a partner) go on
+core's double-entry ledger, not in records: a plugin declares its account names, reasons and
+units once with `publr.ledger.define`, lists it as `.ledger`, and moves its own accounts with
+`Ledger.transfer`, `hold`, `post_hold`, `void_hold`, `chain`, `reverse` and `convert`. A
+transfer's id is the plugin's own, so a retry is harmless; limits are checked inside the
+write; a refused chain undoes only itself. Another plugin's accounts are moved only when that
+plugin hands one over by calling, and read with the `ledger.read` grant naming it. People see
+each plugin's accounts on its Ledger tab and every plugin's in Settings › Ledger, read only.
+The whole API is in [Plugin API: The ledger](plugin-api.md#the-ledger).
 
 ### Hooks, events and other plugins
 
@@ -604,6 +1069,31 @@ location rules:
 }},
 ```
 
+Placed on another plugin's type (`destination` `content` and the `type`), the group is a
+field of each record's own document, under the group's name (`shipping: { weight }`):
+saved, versioned and published with the record, shown in its form, read by whoever reads
+the record. A field whose value is one of the plugin's own kinds takes that kind; a kind
+made with `.code_only = true` is never offered in Structure, so only the plugin puts it on
+a type. The type itself never stores the group: it goes when the plugin's group goes.
+
+```zig
+// The plugin's kind: `publr.field.kind(Weight, .{ .name = "weight", .code_only = true })`.
+
+/// Shipping
+pub const Fields = struct {
+    /// Weight
+    weight: ?Weight = null,
+};
+
+.register_fields = &.{.{
+    .fields = Fields,
+    .location = &.{.{ .rules = &.{
+        .{ .field = "destination", .value = "content" },
+        .{ .field = "type", .value = "products.product" },
+    } }},
+}},
+```
+
 ### Checks
 
 `publr plugin check --dir <folder>` reads a plugin's source for what the rules forbid and
@@ -622,7 +1112,7 @@ On top, an installed plugin says what it needs, in `define`:
 ```zig
 .permissions = &.{.{ .key = "users.names", .reason = "Greets the people on the site by name" }},
 .limits = .{ .cpu_ms = 2000, .reason = "Resizes images" },
-.depends_on = &.{"newsletter@^1"},
+.depends_on = .{"newsletter@^1"},
 ```
 
 A plugin never writes `export fn`.
@@ -775,6 +1265,34 @@ admin's own without styling it. `publr plugin build` writes `ui/operations.d.ts`
 operation's input and output as TypeScript, and `plugin scaffold` gives a working plugin
 to start from.
 
+### Components for the site
+
+A plugin brings pieces the apps place on their pages: `components/<Name>.publr`, templates an
+app imports as `plugin:<plugin>/<Name>` (`<Name>.dynamic.publr` for one drawn for each
+visitor), and `interactive/<Name>.ptsx`, PJSX components that keep state in the browser (an
+addresses editor, a filter, a slider). A plugin's own component imports an interactive one
+as an app does, `import AddressBook from '../interactive/AddressBook.ptsx'`; an app imports it
+as `plugin:<plugin>/<Name>.ptsx`. Either way the app must reach the plugin (its `.plugins`).
+
+Nothing is compiled where the site runs. `publr plugin build` lowers `interactive/` with the
+tool the SDK carries and puts what it made in the module: the components' server render as
+one JavaScript program, their browser stores, and their classes. Publr draws them on the
+server in its script engine, markup and all, as an app's own compiled-in components draw;
+the page loads the plugin's stores (`_app/interactive-<plugin>.js`) after its own and the
+component hydrates, inside an island too (`dynamic`, `follow`). A built-in plugin's
+`interactive/` is built the same way by Publr's build. The classes join the app's sheet.
+A call site hands a text, a number or true or false, and a list or an object the page's
+script made (`addresses={account.addresses}`), which the component reads as its prop's type.
+The first one of a plugin on a page costs about half a millisecond, most of it starting the
+engine with the plugin's program; the page keeps that engine, so each further one costs a
+tenth of that. An app loads the stores of the plugins whose components it imports, no
+others. A site's folder carries `interactive/`, never what was built from it: a site that
+receives it (a push, a merge, `publr apps load`, a restart) builds it before loading its apps.
+
+A plugin's admin page or panel places its interactive components as its views place each
+other, `import AddressBook from '../interactive/AddressBook.ptsx'`: lowered with its views,
+their stores in the plugin's.
+
 ## Transient plugins
 
 `publr serve --plugin <file.wasm>` (repeated for more, up to eight) starts a server with a
@@ -831,7 +1349,7 @@ and enabled (a new plugin) or applied as its next version (one already there, th
 kept to roll back to). What it asks for is granted by tier; high requests wait for an
 administrator. Built again unchanged, it is up to date. `zig build sandboxed-plugins` builds
 every plugin under `plugins/` that is not compiled in the same way into
-`zig-out/sandboxed-plugins/<name>.wasm`, as the tests build theirs; see
+`zig-out/sandboxed-plugins/<name>.wasm`, compiled with LLVM for speed; see
 [Build](contributing/build.md#the-plugins).
 
 **Every plugin builds for the sandbox.** What cannot run there is left out of that build,
@@ -945,6 +1463,18 @@ seconds in all. No answer in time, or an error, and the login says "Try again"; 
 go to the plugin's log under `sign_in:<provider>`. The core does the rest: the routes, the
 cookie, the buttons, and whose account it is ([Auth](auth.md#signing-in-with-a-provider)).
 
+A provider of the other kind reads who someone is from a header that a proxy in front of
+the admin puts on every request (an identity-aware proxy such as Google IAP). In place of
+`authorize_url` and `exchange` it declares `.from_request = .{ .header, .read }`: the
+header's name in lower case, and `read(ctx, value)`, which returns the `Claims` the value
+names, or null when it does not check out. `read` decides, so it never calls out: it checks
+a signature against keys the plugin keeps (a job fetches them). An optional
+`.new_member(ctx, claims)` says what someone the proxy let through with no account gets:
+null for nothing (the default when it is left out), an empty list for an account with no
+role, or the roles an administrator chose on the plugin's own settings. A site has at most one such
+provider; while it is available the admin signs in through it alone and checks it on every
+request ([Auth](auth.md#behind-an-identity-aware-proxy)).
+
 A plugin can answer **HTTP routes** (`host.route`, each a `publr.plugin.Route`): a
 method (`get` or `post`), a path and a handler, `fn (request, response, ctx)` like the
 core's. Every path lives under a prefix the plugin owns, `/admin/<own>`, `/api/<own>` or
@@ -1046,7 +1576,7 @@ A plugin can also act on the process around the operations:
 
 A plugin can **build on another**. It names what it depends on, each another plugin and,
 after `@`, the versions it works with (exact, `1.2.3`, or caret, `^0.2`: the same leftmost
-non-zero part, no older): `.depends_on = &.{"newsletter@^1.2"}`.
+non-zero part, no older): `.depends_on = .{"newsletter@^1.2"}`.
 A compiled-in plugin's requirements are checked when the binary is built (present, in
 range, never round a loop); an installed one's when it is enabled. A plugin it only works
 with when present goes in `compatible_with`, with the same ranges.

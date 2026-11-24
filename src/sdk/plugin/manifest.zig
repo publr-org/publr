@@ -20,6 +20,14 @@ pub const translations_section_name = "publr.translations";
 /// The browser half of the plugin's views, when they keep state or answer clicks: the stores
 /// its lowering registers, served at `<admin>/plugin/<name>/stores.js` for its frame.
 pub const stores_section_name = "publr.stores";
+/// The plugin's site components (`components/<Name>.publr`, `[{ "name", "text" }]`), when it
+/// brings any: apps import them as a compiled-in plugin's (`plugin:<name>/<Name>`), and a
+/// provider's `.component` is drawn in its contract owner's slot.
+pub const components_section_name = "publr.components";
+/// The plugin's interactive components (`interactive/*.ptsx`), when it brings any, built for a
+/// place with no compiler: `{ "components", "render", "browser", "classes" }`, the render as
+/// JavaScript (`sdk.sandboxed_plugins.Interactive`).
+pub const interactive_section_name = "publr.interactive";
 pub const format = sandboxed_plugin.format;
 
 pub const Manifest = sandboxed_plugin.Manifest;
@@ -29,7 +37,11 @@ pub const Hook = sandboxed_plugin.Hook;
 
 pub fn of(comptime Plugin: type) Manifest {
     comptime {
-        @setEvalBranchQuota(200_000);
+        // A part for the plugin and one for each thing it declares: never a fixed quota.
+        const published = @import("../published.zig");
+
+        @setEvalBranchQuota(200_000 +
+            published.declared_count(Plugin) * published.branches_per_declared);
 
         const contract = @import("../plugin.zig");
 
@@ -58,11 +70,14 @@ pub fn of(comptime Plugin: type) Manifest {
             .register_taxonomies = plugin_define.get(Plugin, "register_taxonomies"),
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
+            .user_types = contract.user_types_of(Plugin),
             .statuses = @import("record_flow.zig").registered_of(Plugin),
             .internal_records = plugin_define.get(Plugin, "internal_records"),
+            .ledger = @import("ledger_define.zig").declared_of(Plugin),
             .remotes = @import("remote_contract.zig").uses_of(Plugin),
             .events = @import("remote_contract.zig").events_of(Plugin),
             .compatible_with = plugin_define.get(Plugin, "compatible_with"),
+            .request = request_of(Plugin),
             .providers = @import("../contract.zig").registered_of(Plugin),
             .contracts = @import("../contract.zig").owned_of(Plugin),
             .pages = pages_of(Plugin),
@@ -80,7 +95,76 @@ pub fn of(comptime Plugin: type) Manifest {
                 &docs_of(Plugin).warnings
             else
                 &.{},
+            .messages = if (@hasDecl(docs_of(Plugin), "messages"))
+                &docs_of(Plugin).messages
+            else
+                &.{},
         };
+    }
+}
+
+/// What it reads of visitors' requests (`.request`), as the manifest carries it.
+pub fn request_of(comptime Plugin: type) sandboxed_plugin.RequestReads {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        if (!plugin_define.has(Plugin, "request")) {
+            return .{};
+        }
+
+        const given = plugin_define.get(Plugin, "request");
+        var made: sandboxed_plugin.RequestReads = .{};
+
+        if (@hasField(@TypeOf(given), "query")) {
+            made.query = names_of(given.query);
+        }
+
+        if (@hasField(@TypeOf(given), "cookies")) {
+            made.cookies = names_of(given.cookies);
+        }
+
+        if (@hasField(@TypeOf(given), "redirects")) {
+            var list: []const sandboxed_plugin.Redirect = &.{};
+
+            for (given.redirects) |redirect| {
+                list = list ++ &[_]sandboxed_plugin.Redirect{.{
+                    .prefix = redirect.prefix,
+                    .operation = redirect.operation,
+                }};
+            }
+
+            made.redirects = list;
+        }
+
+        const RequestReads = sandboxed_plugin.RequestReads;
+        const too_many = made.query.len + made.cookies.len > RequestReads.names_max or
+            made.redirects.len > RequestReads.redirects_max;
+
+        if (too_many) {
+            @compileError("plugin " ++ Plugin.manifest.name ++ ": `.request` names at most 16 " ++
+                "query parameters and cookies and 8 redirects");
+        }
+
+        const done = made;
+
+        return done;
+    }
+}
+
+/// A list of names as written (`.{ "ref", "utm_source" }`, or `&.{ ... }`).
+fn names_of(comptime given: anytype) []const []const u8 {
+    comptime {
+        var list: []const []const u8 = &.{};
+
+        std.debug.assert(given.len <= 64);
+
+        for (given) |name| {
+            list = list ++ &[_][]const u8{name};
+        }
+
+        const done = list;
+
+        return done;
     }
 }
 
@@ -154,6 +238,14 @@ fn operations_of(comptime Plugin: type) []const Operation {
         var list: []const Operation = &.{};
 
         for (operation_types(Plugin)) |Declared| {
+            if (sdk_operation.values.problem(Declared)) |message| {
+                @compileError(message);
+            }
+
+            if (sdk_operation.lists.problem(Declared)) |message| {
+                @compileError(message);
+            }
+
             list = list ++ &[_]Operation{.{
                 .name = Declared.name,
                 .kind = if (Declared.kind == .read) .read else .write,
@@ -231,8 +323,9 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
                     .label = page.label,
                     .icon = page.icon,
                     .operation = page.operation.?.name,
-                    .hidden = page.menu != null,
+                    .hidden = page.menu != null or page.record.len > 0,
                     .bare = page.bare,
+                    .record = page.record,
                     .parent = page.parent,
                     .action_label = if (page.action) |action| action.label else "",
                     .action_href = if (page.action) |action| action.href else "",
@@ -327,6 +420,7 @@ fn hooks_of(comptime Plugin: type) []const Hook {
                 .stage = stage,
                 .target = target,
                 .reason = Declared.reason,
+                .about = if (@hasDecl(Declared, "about")) Declared.about else "",
             }};
         }
 
@@ -604,6 +698,8 @@ pub fn write(
     var complete = manifest;
 
     complete.operations = &operations;
+    // An answer many operations share is written once.
+    sandboxed_plugin.share_shapes(arena, &complete) catch return error.WriteFailed;
 
     try std.json.Stringify.value(complete, .{
         .emit_null_optional_fields = false,

@@ -71,7 +71,31 @@ pub const Def = struct {
     validation: Validation = .{},
     /// How the field is shown and edited.
     options: Options = .{},
+    /// Who may read its value.
+    visibility: Visibility = .{},
     fields: []const Def = &.{},
+};
+
+/// Who may read a field's value: by default whoever reads its record. A restricted field is
+/// read only by the plugin that declares it, people holding one of `roles`, and
+/// administrators; a special-category field (health data) only by the plugin and `roles`,
+/// never by administrators or agents, and never in core's views, exports, search or emails.
+pub const Visibility = struct {
+    restricted: bool = false,
+    special: bool = false,
+    /// The roles that read it besides its plugin.
+    roles: []const []const u8 = &.{},
+    /// The plugin declaring it; set by core from the type or field group it is on.
+    plugin: []const u8 = "",
+
+    pub fn hidden(visibility: Visibility) bool {
+        return visibility.restricted or visibility.special;
+    }
+
+    /// Written sparsely: only what differs from the defaults.
+    pub fn jsonStringify(self: Visibility, writer: anytype) !void {
+        try options.write_sparse(Visibility, self, writer);
+    }
 };
 
 /// One field option of a dimension's owner, as a plugin's field gives it.
@@ -404,6 +428,10 @@ fn validate_kind_rules(
         problems.add(def.name, "only a terms field names a taxonomy");
     }
 
+    if (def.visibility.hidden() and (def.searchable or def.validation.unique)) {
+        problems.add(def.name, "a field only some may read is never searched or unique");
+    }
+
     if (def.validation.unique and (!kind.unique_allowed or def.many)) {
         problems.add(def.name, "only a single text, email or url field can be unique");
     }
@@ -417,9 +445,22 @@ fn validate_kind_rules(
     validate_shape(kind, def, problems);
     validate_lists(kind, def, problems);
     validate_dimensions(def, problems);
+    validate_provider(def, problems);
 
     if (kind.has.media) {
         validate_media(def, problems);
+    }
+}
+
+/// A provider field, and only one, names the contract whose providers it picks from.
+fn validate_provider(def: Def, problems: *Problems) void {
+    std.debug.assert(def.name.len > 0);
+    std.debug.assert(problems.len <= problems_max);
+
+    const provider = std.mem.eql(u8, def.kind, "provider");
+
+    if (provider != (def.options.provider.contract.len > 0)) {
+        problems.add(def.name, "a provider field names the contract it picks from");
     }
 }
 

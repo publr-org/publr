@@ -165,20 +165,55 @@ pub fn render_fragment(
         if (app.options.diagnostic) |reason| reason.len = 0;
     }
 
+    var body: std.Io.Writer.Allocating = .init(arena);
     var out: std.Io.Writer.Allocating = .init(arena);
     var memo: Memo = .{};
     var fragment_context = context;
 
     fragment_context.memo = &memo;
-    try out.writer.print("<template patchfor=\"{s}\">", .{island.key});
     const fragment_renderer = renderer(arena, app, context.place);
 
-    try fragment_renderer.render(&out.writer, island.template, &fragment_context, .{
+    try fragment_renderer.render(&body.writer, island.template, &fragment_context, .{
         .values = island.props,
     });
-    try out.writer.writeAll("</template>\n");
+    try out.writer.print("<template patchfor=\"{s}\"", .{island.key});
+
+    // A dynamic island tells what it read, and as of which change: a `follow` placeholder
+    // asks `/_live` whether any of it changed since, and is drawn again when it did.
+    if (context.follows) |follows| {
+        try out.writer.print(" data-revision=\"{d}\" data-follows=\"", .{follows.revision});
+
+        for (follows.deps.keys.items, 0..) |key, index| {
+            const separator: []const u8 = if (index == 0) "" else " ";
+
+            try out.writer.print("{s}{f}", .{ separator, html_escaped(key) });
+        }
+
+        try out.writer.writeAll("\"");
+    }
+
+    try out.writer.print(">{s}</template>\n", .{body.written()});
 
     return out.written();
+}
+
+fn html_escaped(text: []const u8) std.fmt.Alt([]const u8, write_escaped) {
+    return .{
+        .data = text,
+    };
+}
+
+fn write_escaped(text: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    std.debug.assert(text.len <= 64 << 10);
+
+    for (text) |char| {
+        switch (char) {
+            '"' => try writer.writeAll("&quot;"),
+            '&' => try writer.writeAll("&amp;"),
+            '<' => try writer.writeAll("&lt;"),
+            else => try writer.writeByte(char),
+        }
+    }
 }
 
 /// A request for one of the app's pages: its middleware, then its routes, then its 404.

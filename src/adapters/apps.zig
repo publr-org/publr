@@ -8,6 +8,8 @@ const http = @import("../lib/http.zig");
 const state = @import("apps/state.zig");
 const pages = @import("apps/pages.zig");
 const api = @import("apps/api.zig");
+const follow_live = @import("apps/live.zig");
+pub const follow = follow_live;
 const islands = @import("apps/islands.zig");
 const assets = @import("apps/assets.zig");
 const toolbar = @import("apps/toolbar.zig");
@@ -24,6 +26,7 @@ pub const edge = @import("apps/edge.zig");
 pub const artifacts = @import("apps/artifacts.zig");
 pub const load = @import("apps/load.zig");
 pub const folder = @import("apps/folder.zig");
+pub const provider_slots = @import("apps/provider_slots.zig");
 pub const App = state.App;
 pub const Options = state.Options;
 pub const valid_options = state.valid_options;
@@ -108,6 +111,8 @@ pub fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anye
         try assets.serve(target.app, target.path, request, response, ctx);
     } else if (std.mem.startsWith(u8, target.path, islands.islands_prefix)) {
         try islands.island(project, target, request, response, ctx);
+    } else if (std.mem.eql(u8, target.path, follow_live.prefix)) {
+        try follow_live.answer(project, target, request, response, ctx.arena);
     } else {
         const choice = @import("apps/language_choice.zig");
 
@@ -275,6 +280,7 @@ test {
     std.testing.refAllDecls(edge);
     std.testing.refAllDecls(@import("apps/public.zig"));
     std.testing.refAllDecls(@import("apps/imported.zig"));
+    std.testing.refAllDecls(toolbar);
     std.testing.refAllDecls(@import("apps/design.zig"));
     std.testing.refAllDecls(@import("apps/block_css.zig"));
 }
@@ -346,7 +352,9 @@ pub const Harness = struct {
         system.now_ms = now_ms;
         try registry.SDK.bootstrap(&system);
         _ = try registry.SDK.dispatch(&system, content_type_operations.Create, .{
-            .definition = post,
+            .definition = .{
+                .text = post,
+            },
         });
     }
 
@@ -432,7 +440,9 @@ pub const Harness = struct {
         );
         const created = try registry.SDK.dispatch(&system, record_operations.Create, .{
             .type = "post",
-            .document = document,
+            .document = .{
+                .text = document,
+            },
         });
         _ = try registry.SDK.dispatch(&system, record_operations.Publish, .{
             .id = created.id,
@@ -662,18 +672,24 @@ test "a per-request render reads as the visitor, live records only; a shared one
     const definition = try @import("../model.zig").content_type.encode(arena, private);
     const types = @import("../operations/content_type.zig");
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = definition,
+        .definition = .{
+            .text = definition,
+        },
     });
     const live = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Mine, live\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Mine, live\",\"body\":\"x\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, record_operations.Publish, .{
         .id = live.id,
     });
     _ = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Mine, draft\",\"body\":\"y\"}",
+        .document = .{
+            .text = "{\"title\":\"Mine, draft\",\"body\":\"y\"}",
+        },
     });
 
     const shared: context.Context = .{
@@ -709,7 +725,15 @@ test "islands: a dynamic fragment is rendered per request and never kept, a stat
 
     const signed_in = try harness.get("/_islands/signed-in");
     try std.testing.expectEqual(@as(u16, 200), signed_in.status.code());
-    try std.testing.expect(contains(signed_in.body, "<template patchfor=\"signed-in\">"));
+    // What it read, and as of which change: what a page following it asks `/_live` about.
+    try std.testing.expect(contains(signed_in.body, "<template patchfor=\"signed-in\" " ++
+        "data-revision=\""));
+    try std.testing.expect(contains(signed_in.body, "data-follows=\""));
+
+    const asked = try harness.get("/_live?since=0&keys=record:none");
+    try std.testing.expectEqual(@as(u16, 200), asked.status.code());
+    try std.testing.expect(contains(asked.body, "\"changed\":false"));
+    try std.testing.expectEqualStrings("no-store", asked.header("Cache-Control").?);
     try std.testing.expectEqualStrings("no-store", signed_in.header("Cache-Control").?);
     try std.testing.expectEqualStrings("Cookie, Origin", signed_in.header("Vary").?);
 
@@ -731,8 +755,10 @@ test "islands: a dynamic fragment is rendered per request and never kept, a stat
 
     const batch = try harness.get("/_islands/?keys=signed-in,clock");
     try std.testing.expectEqual(@as(u16, 200), batch.status.code());
-    try std.testing.expect(contains(batch.body, "<template patchfor=\"signed-in\">"));
-    try std.testing.expect(contains(batch.body, "<template patchfor=\"clock\">"));
+    // Each fragment of a batch says what it read too, as one asked alone does.
+    try std.testing.expect(contains(batch.body, "<template patchfor=\"signed-in\" " ++
+        "data-revision=\""));
+    try std.testing.expect(contains(batch.body, "<template patchfor=\"clock\""));
 
     const unknown = try harness.get("/_islands/nope");
     try std.testing.expectEqual(@as(u16, 404), unknown.status.code());
@@ -1207,6 +1233,7 @@ test "with an app on a subdomain, one sign-in holds on every app of the domain" 
     _ = try registry.SDK.dispatch(&system, users.Create, .{
         .email = "ed@x.test",
         .display_name = "Ed",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
 

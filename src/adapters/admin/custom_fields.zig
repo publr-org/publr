@@ -81,7 +81,9 @@ pub fn create(
     };
     _ = registry.SDK.dispatch(&session.ctx, operations.Create, .{
         .group = def.handle,
-        .definition = encoded,
+        .definition = .{
+            .text = encoded,
+        },
     }) catch |err| {
         return admin.fail(session, err, "/admin/custom-fields/new");
     };

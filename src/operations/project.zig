@@ -26,6 +26,7 @@ pub const namespace: sdk.operation.Namespace = .{
     \\initialised, exactly once. `project impact` says what a change rebuilds in the
     \\apps' builds. `project put` puts anything it stores exactly as another copy of the
     \\project keeps it, ids kept: what keeps copies (environments, branches) in sync.
+    \\`project set_clock` moves a test site's clock, to try time-driven work.
     ,
 };
 

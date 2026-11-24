@@ -15,6 +15,8 @@ const Error = sdk.Error;
 const Manifest = model.sandboxed_plugin.Manifest;
 const fit = model.plugin_contracts;
 
+pub const Provider = fit.Provider;
+
 pub const ProvidersOptions = struct {
     /// An update about to land: it stands in for the installed plugin of its name.
     replacing: ?*const Manifest = null,
@@ -32,19 +34,95 @@ pub fn providers(ctx: *Ctx, options: ProvidersOptions) Error![]const fit.Provide
 
     list.appendSlice(ctx.arena, natives) catch return error.OutOfMemory;
 
-    for (try installed(ctx)) |manifest| {
-        const stands_in = replacing != null and std.mem.eql(u8, replacing.?.name, manifest.name);
+    for (try store.sandboxed_plugins.needs(ctx.db, ctx.arena)) |plugin| {
+        const stands_in = replacing != null and std.mem.eql(u8, replacing.?.name, plugin.name);
 
-        if (!stands_in) {
-            try append(ctx, &list, &manifest);
+        if (plugin.enabled and !stands_in) {
+            list.append(ctx.arena, try provider_of(ctx, plugin.name)) catch {
+                return error.OutOfMemory;
+            };
         }
     }
 
     if (replacing) |manifest| {
-        try append(ctx, &list, manifest);
+        try append(ctx.arena, ctx.arena, &list, manifest);
     }
 
     return list.items;
+}
+
+/// An enabled installed plugin as a provider, its manifest read in the request's scratch and
+/// only what a provider holds kept: a loop over every plugin takes one manifest's memory.
+fn provider_of(ctx: *Ctx, name: []const u8) Error!fit.Provider {
+    std.debug.assert(name.len > 0);
+
+    const scratch = try ctx.scratch();
+    const begun = scratch.mark();
+    defer scratch.rewind(begun);
+
+    // Inside a loop already working in the scratch, what is kept would go with the rewind.
+    const working = if (scratch.holds(ctx.arena)) ctx.arena else scratch.allocator();
+    const text = try store.sandboxed_plugins.manifest_of(ctx.db, working, name) orelse {
+        return error.NotFound;
+    };
+    const manifest = try state.parse_provided(working, text);
+    const provider = model.sandboxed_plugin.contract_provider(working, &manifest) catch {
+        return error.OutOfMemory;
+    };
+
+    std.debug.assert(std.mem.eql(u8, provider.plugin, name));
+
+    return copy_sharing(ctx.arena, provider);
+}
+
+/// A provider copied to be kept, a shape its operations share copied once.
+fn copy_sharing(kept: std.mem.Allocator, provider: fit.Provider) Error!fit.Provider {
+    std.debug.assert(provider.plugin.len > 0);
+    std.debug.assert(provider.operations.len <= 1 << 16);
+
+    var bare = provider;
+
+    bare.operations = &.{};
+
+    var copied = try model.deep_copy.copy(fit.Provider, kept, bare);
+    const operations = try kept.alloc(fit.Provided, provider.operations.len);
+    var originals: std.ArrayList([]const model.contract.Node) = .empty;
+    var copies: std.ArrayList([]const model.contract.Node) = .empty;
+
+    for (provider.operations, operations) |operation, *made| {
+        made.* = .{
+            .name = try kept.dupe(u8, operation.name),
+            .input = try shared(kept, &originals, &copies, operation.input),
+            .output = try shared(kept, &originals, &copies, operation.output),
+        };
+    }
+
+    copied.operations = operations;
+
+    return copied;
+}
+
+fn shared(
+    kept: std.mem.Allocator,
+    originals: *std.ArrayList([]const model.contract.Node),
+    copies: *std.ArrayList([]const model.contract.Node),
+    nodes: []const model.contract.Node,
+) Error![]const model.contract.Node {
+    std.debug.assert(originals.items.len == copies.items.len);
+    std.debug.assert(nodes.len <= 1 << 20);
+
+    for (originals.items, copies.items) |original, copy| {
+        if (original.ptr == nodes.ptr and original.len == nodes.len) {
+            return copy;
+        }
+    }
+
+    const copy = try model.deep_copy.copy([]const model.contract.Node, kept, nodes);
+
+    try originals.append(kept, nodes);
+    try copies.append(kept, copy);
+
+    return copy;
 }
 
 /// Refused, in plain words, when a remote the plugin needs does not fit what is there.
@@ -107,7 +185,18 @@ pub const Standing = struct {
 pub fn standing(ctx: *Ctx, manifest: *const Manifest) Error!Standing {
     std.debug.assert(manifest.name.len > 0);
 
-    const there = try providers(ctx, .{});
+    return standing_among(ctx, manifest, try providers(ctx, .{}));
+}
+
+/// `standing` against what is there, read once by a caller showing several plugins.
+pub fn standing_among(
+    ctx: *Ctx,
+    manifest: *const Manifest,
+    there: []const fit.Provider,
+) Error!Standing {
+    std.debug.assert(manifest.name.len > 0);
+    std.debug.assert(there.len <= 1 << 16);
+
     var found: [fit.findings_max]fit.Finding = undefined;
     const count = fit.check(user_of(manifest), there, &found);
     var blocked: std.ArrayList([]const u8) = .empty;
@@ -228,14 +317,24 @@ pub fn user_of(manifest: *const Manifest) fit.User {
     return model.sandboxed_plugin.contract_user(manifest);
 }
 
-fn append(ctx: *Ctx, list: *std.ArrayList(fit.Provider), manifest: *const Manifest) Error!void {
+/// `manifest` added to `list` as a provider: worked out in `working`, kept in `kept`.
+pub fn append(
+    kept: std.mem.Allocator,
+    working: std.mem.Allocator,
+    list: *std.ArrayList(fit.Provider),
+    manifest: *const Manifest,
+) Error!void {
     std.debug.assert(manifest.name.len > 0);
 
-    const provider = model.sandboxed_plugin.contract_provider(ctx.arena, manifest) catch {
+    const provider = model.sandboxed_plugin.contract_provider(working, manifest) catch {
         return error.OutOfMemory;
     };
 
-    list.append(ctx.arena, provider) catch return error.OutOfMemory;
+    std.debug.assert(provider.plugin.len > 0);
+
+    list.append(kept, try model.deep_copy.copy(fit.Provider, kept, provider)) catch {
+        return error.OutOfMemory;
+    };
 }
 
 /// The manifests of the enabled installed plugins.

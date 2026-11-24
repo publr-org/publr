@@ -37,12 +37,21 @@ pub fn add(
     std.debug.assert(plugins_dir.len > 0);
     std.debug.assert(module.root_source_file != null);
 
+    const marks = builder.createModule(.{
+        .root_source_file = builder.path("src/model/i18n/marks.zig"),
+        .target = builder.graph.host,
+        .optimize = .debug,
+    });
     const tool = builder.addExecutable(.{
         .name = "i18n_messages",
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/i18n.zig"),
             .target = builder.graph.host,
             .optimize = .debug,
+            .imports = &.{.{
+                .name = "i18n_marks",
+                .module = marks,
+            }},
         }),
     });
     const run = builder.addRunArtifact(tool);

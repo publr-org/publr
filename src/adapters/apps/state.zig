@@ -360,12 +360,41 @@ pub fn engine_options(spec: *const Spec) engine.Options {
 
 /// Compiles every app and its stylesheet as `serve` would, with no database: the build runs
 /// it (`publr check-apps`), so a template the engine refuses fails the build rather than
-/// the first start. Null when all compile; else why not, in `arena`.
-pub fn check_apps(gpa: std.mem.Allocator, arena: std.mem.Allocator) !?[]const u8 {
+/// the first start. A component from a plugin not compiled in stands in as one that draws
+/// what it is given, until the plugin is installed. Null when all compile; else why not, in
+/// `arena`.
+pub fn check_apps(gpa: std.mem.Allocator, arena: std.mem.Allocator, io: std.Io) !?[]const u8 {
     std.debug.assert(spec_module.all.len <= spec_module.apps_max);
 
-    return check_specs(gpa, arena, spec_module.all);
+    const folder = @import("folder.zig");
+    const imported = @import("imported.zig");
+    const specs = try arena.dupe(Spec, try folder.slotted(arena, io, spec_module.all, .{}));
+
+    for (specs) |*spec| {
+        spec.templates = try imported.with_stand_ins(
+            arena,
+            spec.templates,
+            &compiled_in_plugins,
+            folder.templates_max,
+        );
+    }
+
+    return check_specs(gpa, arena, specs);
 }
+
+/// The compiled-in plugins' names: their components join an app as `serve` joins them.
+const compiled_in_plugins = names: {
+    const all = @import("../../server/registry.zig").native_plugins.all;
+    var out: [all.len][]const u8 = undefined;
+
+    for (all, &out) |Plugin, *slot| {
+        slot.* = Plugin.manifest.name;
+    }
+
+    const done = out;
+
+    break :names done;
+};
 
 /// `check_apps` for any apps: the ones a project's folder holds (`publr apps load`).
 pub fn check_specs(

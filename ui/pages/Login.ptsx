@@ -1,6 +1,7 @@
 import { Publr } from "publr-jsx";
 import { CardPage } from "../layouts/CardPage.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { ProviderButton } from "../components/ProviderButton.ptsx";
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { Input } from "@publr/ui/Input.ptsx";
@@ -17,48 +18,74 @@ export type LoginProps = {
     icon: string;
     href: string;
   }>;
+  /** False behind an identity-aware proxy: the proxy signs people in, so there is no form,
+   * only the way back in through it. */
+  password?: boolean;
+  /** Just signed out behind such a proxy: says so, with one button to sign in again. */
+  signed_out?: boolean;
+  /** Signed in behind such a proxy with no role yet: waiting for an administrator. */
+  waiting?: boolean;
 };
 
-export function Login({ notice, action = "/admin/login", providers = [] }: LoginProps) {
+export function Login({
+  notice,
+  action = "/admin/login",
+  providers = [],
+  password = true,
+  signed_out = false,
+  waiting = false,
+}: LoginProps) {
   return (
     <CardPage
-      title={Publr.t("Log in")}
-      description={Publr.t("Welcome back to Publr.")}
+      title={
+        waiting ? Publr.t("Waiting for access") : signed_out ? Publr.t("Signed out") : Publr.t("Log in")
+      }
+      description={
+        waiting
+          ? Publr.t("Your account is set up. An administrator still has to give you access.")
+          : signed_out
+            ? Publr.t("You're signed out of Publr. Your organisation's account stays signed in.")
+            : Publr.t("Welcome back to Publr.")
+      }
       notice={notice}
       footer={
+        password &&
         providers.length > 0 && (
           <div class="contents">
             {providers.map((provider) => (
-              <Button href={provider.href} hierarchy="secondary" size="lg" classes="w-full">
-                <svg viewBox="0 0 24 24" class="size-4 shrink-0" fill="currentColor" aria-hidden="true">
-                  <path d={provider.icon} />
-                </svg>
-                {Publr.t("Continue with {provider}", { provider: provider.label })}
-              </Button>
+              <ProviderButton provider={provider} again={false} />
             ))}
           </div>
         )
       }
     >
-      <form method="post" action={action} class="flex flex-col gap-4">
-        <Field>
-          <FieldLabel htmlFor="email">{Publr.t("Email")}</FieldLabel>
-          <Input id="email" type="email" name="email" required autocomplete="username" />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
-          <Input
-            id="password"
-            type="password"
-            name="password"
-            required
-            autocomplete="current-password"
-          />
-        </Field>
-        <Button type="submit" size="lg" classes="mt-2 w-full">
-          {Publr.t("Log in")}
-        </Button>
-      </form>
+      {password ? (
+        <form method="post" action={action} class="flex flex-col gap-4">
+          <Field>
+            <FieldLabel htmlFor="email">{Publr.t("Email")}</FieldLabel>
+            <Input id="email" type="email" name="email" required autocomplete="username" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="password">{Publr.t("Password")}</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              name="password"
+              required
+              autocomplete="current-password"
+            />
+          </Field>
+          <Button type="submit" size="lg" classes="mt-2 w-full">
+            {Publr.t("Log in")}
+          </Button>
+        </form>
+      ) : (
+        <div class="flex flex-col gap-2">
+          {providers.map((provider) => (
+            <ProviderButton provider={provider} again={signed_out} />
+          ))}
+        </div>
+      )}
     </CardPage>
   );
 }

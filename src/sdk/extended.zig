@@ -13,7 +13,14 @@ pub const Error = error{ Denied, Invalid, OutOfMemory };
 pub const fields_max: u32 = 64;
 pub const rows_max: u32 = 1000;
 
-pub const Extended = struct {
+/// In an installed plugin's module the rows are handed over as they lie
+/// (`extended_laid.zig`); Publr itself keeps them as the JSON it answers.
+pub const Extended = if (@import("operation/json.zig").sandboxed)
+    @import("extended_laid.zig").Extended
+else
+    Kept;
+
+const Kept = struct {
     /// Its keys are the rows' ids: described as an object, written by `jsonStringify`.
     pub const json_object = true;
 
@@ -168,8 +175,10 @@ pub const Extended = struct {
         value: Value,
         _: std.json.ParseOptions,
     ) std.json.ParseFromValueError!Extended {
+        // A read nobody extended, as an installed plugin hands it back.
         const rows = switch (value) {
             .object => |object| object,
+            .null => return .{},
             else => return error.UnexpectedToken,
         };
         const open = try allocator.create(Open);

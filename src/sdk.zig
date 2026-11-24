@@ -6,10 +6,13 @@ const store_settings = @import("store/settings.zig");
 /// Rate limits: the general one and an operation's own `.limit`.
 pub const limits = limits_module;
 const plugin_operations = @import("sdk/plugin/operation_define.zig");
+const registry_tables = @import("sdk/registry_tables.zig");
 const builtin = @import("builtin");
 const contract = @import("model/contract.zig");
 const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
 const HostApi = @import("sdk/plugin/context.zig").HostApi;
+const applied = @import("server/sandboxed_plugins/applied.zig");
+const record_computed = @import("sdk/plugin/record_computed.zig");
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
@@ -34,10 +37,33 @@ pub const help = @import("sdk/help.zig");
 pub const changed_units = @import("sdk/changed_units.zig");
 pub const Extended = @import("sdk/extended.zig").Extended;
 pub const scratch = @import("sdk/scratch.zig");
+pub const plugin_memory = @import("sdk/plugin_memory.zig");
+pub const moved = @import("sdk/moved.zig");
 pub const definition_cache = @import("sdk/definition_cache.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;
+
+/// What the operation about to run may move of another plugin's ledger: a plugin's operation
+/// the accounts of the plugin whose code called it directly (compiled in: `code`, else the
+/// installed caller); core's own operations keep what the plugin running was handed.
+fn handed_by_of(ctx: *const Ctx, owner: []const u8, code: ?[]const u8) []const u8 {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    if (owner.len == 0) {
+        return ctx.handed_by;
+    }
+
+    if (code) |running| {
+        return running;
+    }
+
+    return switch (ctx.caller) {
+        .plugin => |calling| calling.name,
+        else => "",
+    };
+}
+
 pub const Reads = context.Reads;
 pub const Error = operation.Error;
 pub const Grant = grant.Grant;
@@ -116,6 +142,7 @@ pub fn SDK(comptime registry: Registry) type {
 
     return struct {
         const SDKSelf = @This();
+        const tables = registry_tables.Tables(registry);
 
         pub const operations = registry.operations;
         pub const namespaces = registry.namespaces;
@@ -158,6 +185,22 @@ pub fn SDK(comptime registry: Registry) type {
         /// The operation the core runs for `Given`: itself, or, for one a plugin made with
         /// `publr.operation.define`, the bound operation it became, so a plugin's own code
         /// names its operations by their definitions.
+        /// Whether `Operation` is core's own and its work is core's: not a plugin's
+        /// operation, and not the apply of modifiers, which runs plugins' code over the
+        /// values. What such an operation works with is core's alone and can be given back
+        /// once its answer is copied (`PluginCtx.call`); a compiled-in plugin's own working
+        /// data lies where its caller works.
+        pub fn core_work(comptime Operation: type) bool {
+            comptime {
+                const name = Operation.name;
+
+                std.debug.assert(name.len > 0);
+
+                return tables.operation_owner(name).len == 0 and
+                    !std.mem.startsWith(u8, name, "mod.");
+            }
+        }
+
         pub fn bound(comptime Given: type) type {
             comptime {
                 if (!@hasDecl(Given, "publr_operation_definition")) {
@@ -206,11 +249,14 @@ pub fn SDK(comptime registry: Registry) type {
             const operation_id = ctx.allocate_operation_id();
             const parent = ctx.parent;
             const notify = ctx.notify;
+            // What the trail keeps grows while nested calls run: never in their working memory.
             var trail_state: trail.Trail = .{
                 .root = operation_id,
-                .arena = ctx.arena,
+                .arena = ctx.lasting orelse ctx.arena,
             };
             const opened = trail_open(ctx, &trail_state);
+            const installed = request_open(ctx, parent == null);
+            defer request_close(installed, ctx, name, parent == null);
 
             ctx.publishes = ctx.publishes and parent != null;
             ctx.parent = operation_id;
@@ -228,9 +274,7 @@ pub fn SDK(comptime registry: Registry) type {
                 });
                 log_failure(ctx, name, body.input_text(ctx), body.secret(), err);
 
-                if (parent == null) {
-                    flush_kept(ctx);
-                }
+                flush_top(ctx, parent == null);
 
                 return err;
             };
@@ -250,11 +294,20 @@ pub fn SDK(comptime registry: Registry) type {
 
             const was_code = ctx.plugin_code;
             const was_called = ctx.plugin_called;
+            const was_called_by = ctx.called_by;
+            const was_handed = ctx.handed_by;
 
             ctx.plugin_called = was_code;
             ctx.plugin_code = owner.len > 0;
+            // Who called, when a compiled-in plugin's code did: what its callee's
+            // `ctx.caller().from` names, as an installed plugin's calls name it.
+            ctx.called_by = if (was_code) running else "";
             defer ctx.plugin_code = was_code;
             defer ctx.plugin_called = was_called;
+            defer ctx.called_by = was_called_by;
+
+            ctx.handed_by = handed_by_of(ctx, owner, if (was_code) running else null);
+            defer ctx.handed_by = was_handed;
 
             const result = run(ctx, Body, body, &granted);
 
@@ -276,9 +329,7 @@ pub fn SDK(comptime registry: Registry) type {
                 log_failure(ctx, name, body.input_text(ctx), body.secret(), err);
             }
 
-            if (parent == null) {
-                flush_kept(ctx);
-            }
+            flush_top(ctx, parent == null);
 
             return result;
         }
@@ -300,9 +351,7 @@ pub fn SDK(comptime registry: Registry) type {
                 }
 
                 pub fn owner(_: Self) []const u8 {
-                    const owners = registry.operation_owners;
-
-                    return comptime owner_of(registry.operations, owners, Operation);
+                    return comptime tables.operation_owner(Operation.name);
                 }
 
                 pub fn secret(_: Self) []const []const u8 {
@@ -314,11 +363,17 @@ pub fn SDK(comptime registry: Registry) type {
                 }
 
                 pub fn admit(self: Self, ctx: *Ctx, top: bool) Error!Grant {
+                    try lists_fit(ctx, Operation.In, &self.in, .input);
+
                     return admit_counted(ctx, Operation, self.in, top);
                 }
 
                 pub fn run(self: Self, ctx: *Ctx, granted: *const Grant) Error!Out {
-                    return run_pipeline(ctx, Operation, self.in, granted);
+                    const out = try run_pipeline(ctx, Operation, self.in, granted);
+
+                    try lists_fit(ctx, Operation.Out, &out, .output);
+
+                    return out;
                 }
 
                 pub fn queue(_: Self, ctx: *Ctx, out: Out) Error!void {
@@ -333,6 +388,108 @@ pub fn SDK(comptime registry: Registry) type {
                     }
                 }
             };
+        }
+
+        /// Every list of an input or an answer within its limit (`operation/lists.zig`): an
+        /// input past it is refused, named at the list; an answer past it fails the call, the
+        /// operation's own fault.
+        pub fn lists_fit(
+            ctx: *Ctx,
+            comptime Value: type,
+            value: *const Value,
+            comptime side: enum { input, output },
+        ) Error!void {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const over = operation.lists.over_limit(Value, value) orelse return;
+            const message = std.fmt.allocPrint(ctx.arena, switch (side) {
+                .input => "At most {d}",
+                .output => "The answer holds more than {d} here: answer it a page at a time",
+            }, .{over.limit}) catch return error.OutOfMemory;
+            const problems = ctx.arena.alloc(operation.Problem, 1) catch {
+                return error.OutOfMemory;
+            };
+
+            std.debug.assert(over.path.len > 0);
+
+            problems[0] = .{
+                .field = over.path,
+                .message = message,
+            };
+
+            return ctx.refuse(problems);
+        }
+
+        /// A top-level call is a request on the installed plugins, inside whatever request
+        /// its adapter opened: each plugin is started once for all the call runs, and gone
+        /// when it ends (`sandboxed_plugins.SandboxedPlugins.request_begin`).
+        fn request_open(ctx: *Ctx, top: bool) ?*const sandboxed_plugins.SandboxedPlugins {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            if (!top) {
+                return null;
+            }
+
+            // What this call keeps past a piece of its work (an event kept outside a write,
+            // the site's currencies) lies where the call began, never in a loop's scratch.
+            ctx.call_memory = ctx.kept_memory();
+
+            if (ctx.plugins_set_aside) |memory| {
+                memory.fresh();
+            }
+
+            const installed = ctx.sandboxed_plugins orelse return null;
+
+            if (ctx.calls_set_aside) |working| {
+                working.peak_reset();
+            }
+
+            installed.request_begin();
+
+            return installed;
+        }
+
+        /// The top-level call's request ends, core's own memory told first for the counters.
+        fn request_close(
+            opened: ?*const sandboxed_plugins.SandboxedPlugins,
+            ctx: *Ctx,
+            name: []const u8,
+            top: bool,
+        ) void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(opened == null or top);
+
+            if (top) {
+                ctx.call_memory = null;
+            }
+
+            const installed = opened orelse return;
+            const scratch_module = @import("sdk/scratch.zig");
+            var told: sandboxed_plugins.Counted = .{
+                .label = name,
+                .scratch_bytes = if (ctx.calls_set_aside) |working| working.peak_bytes() else 0,
+                .arena_bytes = scratch_module.used_of(ctx.arena) orelse 0,
+            };
+
+            if (ctx.plugins_set_aside) |memory| {
+                told.plugin_bytes = memory.peak_bytes();
+                told.plugin_work = memory.begun;
+                told.plugin_bytes_max = memory.held.buffer.len;
+                told.largest_name = memory.largest_name;
+                told.largest_bytes = memory.largest_bytes;
+            }
+
+            installed.counted(told);
+            installed.request_end();
+        }
+
+        /// A top-level call ended: the events it kept outside its write are queued.
+        fn flush_top(ctx: *Ctx, top: bool) void {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            if (top) {
+                flush_kept(ctx);
+            }
         }
 
         /// A top-level call carries a trail while the registry keeps a log; inner calls add
@@ -473,7 +630,31 @@ pub fn SDK(comptime registry: Registry) type {
                 entry.message = if (own) |failure| failure.message else "";
             }
 
+            var said: [256]u8 = undefined;
+
+            // Out of memory in compiled-in plugins: what was largest in it is named.
+            if (err == error.OutOfMemory and entry.message.len == 0) {
+                entry.message = memory_said(ctx, &said);
+            }
+
             raise_failed(ctx, log.failure(ctx, &entry));
+        }
+
+        /// The largest collection a compiled-in plugin made in the request, when one grew.
+        fn memory_said(ctx: *const Ctx, buffer: []u8) []const u8 {
+            const memory = ctx.plugins_set_aside orelse return "";
+
+            std.debug.assert(buffer.len > 0);
+
+            if (memory.largest_bytes == 0) {
+                return "";
+            }
+
+            return std.fmt.bufPrint(buffer, "The largest collection a compiled-in plugin " ++
+                "made, {s}, held {d} KiB.", .{
+                memory.largest_name,
+                (memory.largest_bytes + 1023) / 1024,
+            }) catch "";
         }
 
         /// An Error log entry just written: `publr.errors.Failed` for it when it is an error,
@@ -626,8 +807,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
             std.debug.assert(ctx.now_ms >= 0);
 
-            const listed = registry.operations;
-            const owner = comptime owner_of(listed, registry.operation_owners, Operation);
+            const owner = comptime tables.operation_owner(Operation.name);
 
             try run_pre_hooks(ctx, Operation.name, Operation.kind);
             try check_fence(ctx, owner);
@@ -649,9 +829,13 @@ pub fn SDK(comptime registry: Registry) type {
             const answered = try admit_answer(ctx, Operation.name, .{
                 .untrusted_callers = if (defined) Operation.untrusted_callers else null,
                 .answer = if (defined) Operation.answer else null,
-                // A ready answer decides past the roles, as `open` does.
+                // A ready answer decides past the roles, as `open` does; so does a plugin's
+                // own code calling what only plugins may (`request.read` from a compiled-in
+                // hook on a visitor's order), held then to the plugin's grants.
                 .open = (@hasDecl(Operation, "open") and Operation.open) or
-                    (defined and Operation.answer != null),
+                    (defined and Operation.answer != null) or
+                    ((comptime @hasDecl(Operation, "plugins_only") and Operation.plugins_only) and
+                        ctx.plugin_code),
             });
 
             return authorize_request(ctx, .{
@@ -675,8 +859,12 @@ pub fn SDK(comptime registry: Registry) type {
 
             const through_app = ctx.app_plugins != null;
             const defined = declared.untrusted_callers != null;
+            // A plugin's code calling, installed or compiled in: a compiled-in plugin calls
+            // as whoever the request is for, a visitor without credentials too.
+            const plugin_code = ctx.caller == .plugin or ctx.plugin_code;
+            const credentialed = ctx.caller.is_authenticated() or plugin_code;
 
-            if (defined and !declared.untrusted_callers.? and !ctx.caller.is_authenticated()) {
+            if (defined and !declared.untrusted_callers.? and !credentialed) {
                 return error.Denied;
             }
 
@@ -688,7 +876,7 @@ pub fn SDK(comptime registry: Registry) type {
                 return declared.open;
             };
 
-            if (!plugin_operations.admits(ready, ctx.caller, through_app)) {
+            if (!plugin_operations.admits(ready, ctx.caller, through_app, plugin_code)) {
                 return error.Denied;
             }
 
@@ -715,8 +903,10 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// A call made for an app reaches only the plugins the app lists (`.plugins` in its
-        /// `app.zon`): an operation of any other is denied before it runs. Core's own
-        /// operations (no owner) are never fenced here; their grants say what they reach.
+        /// `app.zon`) and the providers of the contracts they own (a carrier of `shipping`'s
+        /// `shipping.method`): an operation of any other is denied before it runs, at any
+        /// depth. Core's own operations (no owner) are never fenced here; their grants say
+        /// what they reach.
         pub fn check_fence(ctx: *Ctx, owner: []const u8) Error!void {
             std.debug.assert(owner.len <= 128);
 
@@ -726,7 +916,9 @@ pub fn SDK(comptime registry: Registry) type {
                 return;
             }
 
-            for (plugins) |listed| {
+            const reached = try @import("sdk/contract.zig").with_providers(ctx, plugins);
+
+            for (reached) |listed| {
                 if (std.mem.eql(u8, listed, owner)) {
                     return;
                 }
@@ -842,10 +1034,8 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(ctx.parent != null);
 
-            inline for (registry.hooks) |Middleware| {
-                if (Middleware.stage == .pre) {
-                    try invoke_hook(ctx, Middleware, .{ name, kind });
-                }
+            inline for (comptime tables.hooks_where(is_pre)) |index| {
+                try invoke_hook(ctx, index, .{ name, kind });
             }
         }
 
@@ -853,6 +1043,16 @@ pub fn SDK(comptime registry: Registry) type {
         /// installed plugin brings. What a sandboxed plugin's `publr_call` reaches.
         pub fn call_json(ctx: *Ctx, name: []const u8, input: []const u8) Error![]const u8 {
             return @import("sdk/call_json.zig").call(@This(), ctx, name, input);
+        }
+
+        /// Calls an operation an installed plugin brings with a value another plugin handed
+        /// over: it reaches the operation's plugin with no JSON in between.
+        pub fn call_passed(
+            ctx: *Ctx,
+            name: []const u8,
+            input: sandboxed_plugins.Passed,
+        ) Error!sandboxed_plugins.Passed {
+            return @import("sdk/call_json.zig").call_passed(@This(), ctx, name, input);
         }
 
         /// Calls another plugin's operation through what that plugin publishes: `Call`
@@ -1006,14 +1206,42 @@ pub fn SDK(comptime registry: Registry) type {
             comptime std.debug.assert(name.len > 0);
             comptime std.debug.assert(name.len <= operation.name_len_max);
 
-            inline for (registry.operations) |Operation| {
-                if (comptime std.mem.eql(u8, Operation.name, name)) {
-                    return Operation;
-                }
+            if (comptime !@hasField(OperationsByName, name)) {
+                return null;
             }
 
-            return null;
+            const table: OperationsByName = .{};
+
+            return @field(table, name);
         }
+
+        /// Every operation under its name, built once: finding one costs the same however
+        /// many there are.
+        const OperationsByName = by_name: {
+            const list = registry.operations;
+
+            // A few branches an operation, once: the budget grows with the list.
+            @setEvalBranchQuota(1000 + list.len * 16);
+
+            var names: [list.len][]const u8 = undefined;
+            var types: [list.len]type = undefined;
+            var attributes: [list.len]std.builtin.Type.Struct.FieldAttributes = undefined;
+
+            for (list, &names, &types, &attributes) |Operation, *name, *field_type, *attribute| {
+                name.* = Operation.name;
+                field_type.* = type;
+                attribute.* = .{
+                    .@"comptime" = true,
+                    .default_value_ptr = &Operation,
+                };
+            }
+
+            const done_names = names;
+            const done_types = types;
+            const done_attributes = attributes;
+
+            break :by_name @Struct(.auto, null, &done_names, &done_types, &done_attributes);
+        };
 
         fn run(
             ctx: *Ctx,
@@ -1115,11 +1343,9 @@ pub fn SDK(comptime registry: Registry) type {
 
             var input = in;
 
-            inline for (registry.hooks) |Middleware| {
-                const applies = comptime hooks.applies(Middleware, Operation);
-
-                if (applies and Middleware.stage == .before) {
-                    try invoke_hook(ctx, Middleware, .{&input});
+            inline for (comptime tables.hooks_on(Operation.name)) |index| {
+                if (comptime registry.hooks[index].stage == .before) {
+                    try before_hook(ctx, index, Operation, &input);
                 }
             }
 
@@ -1138,13 +1364,12 @@ pub fn SDK(comptime registry: Registry) type {
                 out.extended = try out.extended.bound(ctx.arena, &ctx.plugin);
             }
 
-            inline for (registry.hooks) |Middleware| {
-                const applies = comptime hooks.applies(Middleware, Operation);
+            inline for (comptime tables.hooks_on(Operation.name)) |index| {
+                if (comptime registry.hooks[index].stage == .after) {
+                    const ran = after_hook(ctx, index, Operation, &input, &out);
+                    const owner = comptime tables.hook_owner(index);
 
-                if (applies and Middleware.stage == .after) {
-                    const ran = invoke_hook(ctx, Middleware, .{ &input, &out });
-
-                    if (extends) extended_or_none(Operation, ran) else try ran;
+                    if (extends) extended_or_none(ctx, Operation, owner, ran) else try ran;
                 }
             }
 
@@ -1152,7 +1377,7 @@ pub fn SDK(comptime registry: Registry) type {
                 if (sandboxed.hooked(.after, Operation.name)) {
                     const ran = runtime_after(ctx, sandboxed, Operation, input, out);
 
-                    if (extends) extended_or_none(Operation, ran) else try ran;
+                    if (extends) extended_or_none(ctx, Operation, "", ran) else try ran;
                 }
             }
 
@@ -1160,7 +1385,14 @@ pub fn SDK(comptime registry: Registry) type {
         }
 
         /// A hook extending a list read that fails leaves its fields out: the list still loads.
-        fn extended_or_none(comptime Operation: type, ran: Error!void) void {
+        /// By design: a list every screen reads never fails for one plugin's column. The read
+        /// changes nothing stored; the failure is a line under the call in the logs.
+        fn extended_or_none(
+            ctx: *Ctx,
+            comptime Operation: type,
+            owner: []const u8,
+            ran: Error!void,
+        ) void {
             comptime std.debug.assert(@hasField(Operation.Out, "extended"));
 
             ran catch |err| {
@@ -1168,7 +1400,38 @@ pub fn SDK(comptime registry: Registry) type {
                     Operation.name,
                     err,
                 });
+                hook_line(ctx, owner, "A hook adding fields to {s} failed ({t})", .{
+                    Operation.name,
+                    err,
+                });
             };
+        }
+
+        /// A hook's failure that does not stop what it hooks, said where an administrator
+        /// reads it: a line under the call in the Activity or Error log and, when the plugin
+        /// is known here, on its Log. An installed hook's own line names its plugin
+        /// (`server/sandboxed_plugins/interface.zig`).
+        fn hook_line(
+            ctx: *Ctx,
+            owner: []const u8,
+            comptime format: []const u8,
+            args: anytype,
+        ) void {
+            std.debug.assert(format.len > 0);
+
+            const lines = ctx.lines orelse return;
+            var buffer: [256]u8 = undefined;
+            var writer: std.Io.Writer = .fixed(&buffer);
+
+            writer.print(format, args) catch {
+                std.debug.assert(writer.buffered().len > 0);
+            };
+
+            lines.add(.{
+                .plugin = if (owner.len > 0) owner else "publr",
+                .level = .warn,
+                .text = writer.buffered(),
+            });
         }
 
         /// Every reference in the input read now, as the caller may see it: an operation
@@ -1246,7 +1509,7 @@ pub fn SDK(comptime registry: Registry) type {
                     .plugin = plugin,
                 });
 
-                return json_module.parse(Reference.Document, ctx.arena, got.document, .{
+                return json_module.parse(Reference.Document, ctx.arena, got.document.text, .{
                     .ignore_unknown_fields = true,
                     .allocate = .alloc_always,
                 }) catch error.Invalid;
@@ -1260,7 +1523,7 @@ pub fn SDK(comptime registry: Registry) type {
                 return error.NotFound;
             }
 
-            return json_module.parse(Reference.Document, ctx.arena, got.document, .{
+            return json_module.parse(Reference.Document, ctx.arena, got.document.text, .{
                 .ignore_unknown_fields = true,
                 .allocate = .alloc_always,
             }) catch error.Invalid;
@@ -1285,7 +1548,28 @@ pub fn SDK(comptime registry: Registry) type {
                 ctx.destructive = comptime operation.destroys(Operation);
                 defer ctx.destructive = was_destructive;
 
-                return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
+                // Called by a plugin's code, the whole call is in memory of its own already
+                // (`PluginCtx.call`); an answer that cannot be copied whole stays where made.
+                if (comptime !moved.plain(Operation.Out)) {
+                    return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
+                }
+
+                if (plugin_memory.is_work(ctx.arena)) {
+                    return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
+                }
+
+                var work: plugin_memory.Work = undefined;
+
+                work.begin(ctx);
+
+                const result = Operation.run(&wrapped, in, granted);
+
+                work.leave();
+                defer work.end();
+
+                const answer = result catch |err| return as_outcome(ctx.db, err);
+
+                return moved.copy(Operation.Out, ctx.arena, answer);
             }
 
             return Operation.run(ctx, in, granted) catch |err| as_outcome(ctx.db, err);
@@ -1346,14 +1630,124 @@ pub fn SDK(comptime registry: Registry) type {
             return error.Sqlite;
         }
 
+        /// A `before` hook on `Operation`: one naming only the fields it uses (another
+        /// plugin's operation, `publr.remote.operation`) reads the input in its own words, and
+        /// what it changed is laid over the input.
+        fn before_hook(
+            ctx: *Ctx,
+            comptime index: u32,
+            comptime Operation: type,
+            input: *Operation.In,
+        ) Error!void {
+            const Middleware = registry.hooks[index];
+            const Own = HookTakes(Middleware, 1);
+
+            std.debug.assert(Middleware.stage == .before);
+
+            if (!about_this(Middleware, Operation, input)) {
+                return;
+            }
+
+            if (comptime Own == Operation.In) {
+                return invoke_hook(ctx, index, .{input});
+            }
+
+            var mine = try hook_words.own(Own, ctx.arena, input.*);
+
+            try invoke_hook(ctx, index, .{&mine});
+            input.* = try hook_words.laid_over(Operation.In, ctx.arena, input.*, mine);
+        }
+
+        /// Whether a hook about one content type (`publr.hook.about`) hears this call: one
+        /// whose input names another type is none of its; one that names none is heard.
+        /// What the installed plugins' host checks before it starts a plugin
+        /// (`sandboxed_plugins/interface.zig`, `hears`), the same for a plugin compiled in.
+        fn about_this(
+            comptime Middleware: type,
+            comptime Operation: type,
+            input: *const Operation.In,
+        ) bool {
+            const named = comptime @hasDecl(Middleware, "about") and Middleware.about.len > 0 and
+                @hasField(Operation.In, "type");
+
+            if (comptime !named) {
+                return true;
+            }
+
+            std.debug.assert(Middleware.about.len <= 128);
+
+            const given: ?[]const u8 = input.type;
+
+            return if (given) |handle| std.mem.eql(u8, handle, Middleware.about) else true;
+        }
+
+        /// An `after` hook on `Operation`, the input and answer in its own words when it
+        /// names only the fields it uses.
+        fn after_hook(
+            ctx: *Ctx,
+            comptime index: u32,
+            comptime Operation: type,
+            input: *Operation.In,
+            out: *Operation.Out,
+        ) Error!void {
+            const Middleware = registry.hooks[index];
+            const OwnIn = HookTakes(Middleware, 1);
+            const OwnOut = HookTakes(Middleware, 2);
+
+            std.debug.assert(Middleware.stage == .after);
+
+            if (!about_this(Middleware, Operation, input)) {
+                return;
+            }
+
+            if (comptime @hasField(Operation.Out, "extended")) {
+                if (own_extension(ctx, comptime tables.hook_owner(index))) {
+                    return;
+                }
+            }
+
+            if (comptime OwnIn == Operation.In and OwnOut == Operation.Out) {
+                return invoke_hook(ctx, index, .{ input, out });
+            }
+
+            var in_mine = if (comptime OwnIn == Operation.In)
+                input.*
+            else
+                try hook_words.own(OwnIn, ctx.arena, input.*);
+            var out_mine = if (comptime OwnOut == Operation.Out)
+                out.*
+            else
+                try hook_words.own(OwnOut, ctx.arena, out.*);
+
+            return invoke_hook(ctx, index, .{ &in_mine, &out_mine });
+        }
+
+        /// Whether `owner` is the plugin making this list read: a hook extending a list's rows
+        /// adds what others read, so the plugin's own reads skip it.
+        fn own_extension(ctx: *const Ctx, owner: []const u8) bool {
+            std.debug.assert(owner.len <= 64);
+            std.debug.assert(ctx.plugin.len <= 64);
+
+            return owner.len > 0 and std.mem.eql(u8, ctx.plugin, owner);
+        }
+
+        /// What a hook's `run` takes at `position` (after its context), pointed at.
+        fn HookTakes(comptime Middleware: type, comptime position: u32) type {
+            const parameters = @typeInfo(@TypeOf(Middleware.run)).@"fn".param_types;
+
+            comptime std.debug.assert(parameters.len > position);
+
+            return std.meta.Child(parameters[position].?);
+        }
+
         /// Inside an operation, or outside any for an event the server announces itself
         /// (`announce`): `ctx.parent` may be null.
-        pub fn invoke_hook(ctx: *Ctx, comptime Middleware: type, args: anytype) Error!void {
+        pub fn invoke_hook(ctx: *Ctx, comptime index: u32, args: anytype) Error!void {
             std.debug.assert(args.len <= 2);
 
+            const Middleware = registry.hooks[index];
             const running = ctx.plugin;
-            const owners = registry.hook_owners;
-            const owner = comptime owner_of(registry.hooks, owners, Middleware);
+            const owner = comptime tables.hook_owner(index);
 
             if (hook_off(ctx, owner, Middleware)) {
                 return;
@@ -1370,12 +1764,22 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.plugin_code = owner.len > 0;
             defer ctx.plugin_code = was_code;
 
+            // A hook never moves accounts the operation it hooks was handed.
+            const was_handed = ctx.handed_by;
+
+            ctx.handed_by = "";
+            defer ctx.handed_by = was_handed;
+
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
                 var wrapped: PluginCtx = .{
                     .inner = ctx,
                 };
 
-                return @call(.auto, Middleware.run, .{&wrapped} ++ args);
+                if (comptime !hook_memory.settles(Middleware)) {
+                    return @call(.auto, Middleware.run, .{&wrapped} ++ args);
+                }
+
+                return hook_memory.run(ctx, Middleware, &wrapped, args);
             }
 
             return @call(.auto, Middleware.run, .{ctx} ++ args);
@@ -1425,16 +1829,7 @@ pub fn SDK(comptime registry: Registry) type {
             comptime std.debug.assert(stage == .before or stage == .after);
             std.debug.assert(name.len > 0);
 
-            inline for (registry.hooks) |Middleware| {
-                const listening = comptime Middleware.stage == stage and
-                    @hasDecl(Middleware, "event") and @hasDecl(Middleware, "Payload");
-
-                if (listening and std.mem.eql(u8, Middleware.event, name)) {
-                    const ran = typed_hook(ctx, stage, Middleware, payload);
-
-                    try settle_refusal(ran, refusable, name);
-                }
-            }
+            try hooks_on_compiled(ctx, stage, name, payload, refusable);
 
             const sandboxed = ctx.sandboxed_plugins orelse return;
             const hook_stage: sandboxed_plugins.Stage = if (stage == .before) .before else .after;
@@ -1444,30 +1839,62 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             // A `before` hook may hand back the payload changed; an event's stays as emitted.
+            const sent: sandboxed_plugins.Passed = .{
+                .json = payload,
+            };
             const ran: Error!void = if (stage == .before)
-                discard(sandboxed.before(ctx, name, payload))
+                discard(sandboxed.before(ctx, name, sent))
             else
-                sandboxed.after(ctx, name, payload, "{}", null);
+                sandboxed.after(ctx, name, sent, .{
+                    .json = "{}",
+                }, null);
 
-            try settle_refusal(ran, refusable, name);
+            try settle_refusal(ctx, "", ran, refusable, name);
+        }
+
+        /// The compiled-in plugins' share of `hooks_on`.
+        pub fn hooks_on_compiled(
+            ctx: *Ctx,
+            comptime stage: hooks.Stage,
+            name: []const u8,
+            payload: []const u8,
+            refusable: bool,
+        ) Error!void {
+            comptime std.debug.assert(stage == .before or stage == .after);
+            std.debug.assert(name.len > 0);
+
+            const listening = comptime if (stage == .before) hears_before else hears_after;
+
+            inline for (comptime tables.hooks_where(listening)) |index| {
+                const Middleware = registry.hooks[index];
+
+                if (std.mem.eql(u8, Middleware.event, name)) {
+                    const ran = typed_hook(ctx, stage, index, payload);
+                    const owner = comptime tables.hook_owner(index);
+
+                    try settle_refusal(ctx, owner, ran, refusable, name);
+                }
+            }
         }
 
         fn typed_hook(
             ctx: *Ctx,
             comptime stage: hooks.Stage,
-            comptime Middleware: type,
+            comptime index: u32,
             payload: []const u8,
         ) Error!void {
+            const Middleware = registry.hooks[index];
+
             var value = json_module.parse(Middleware.Payload, ctx.arena, payload, .{
                 .ignore_unknown_fields = true,
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
 
             if (stage == .before) {
-                return invoke_hook(ctx, Middleware, .{&value});
+                return invoke_hook(ctx, index, .{&value});
             }
 
-            return invoke_hook(ctx, Middleware, .{ &value, &nothing_of(Middleware) });
+            return invoke_hook(ctx, index, .{ &value, &nothing_of(Middleware) });
         }
 
         /// The empty answer an `after` hook on an event takes beside the payload.
@@ -1481,13 +1908,23 @@ pub fn SDK(comptime registry: Registry) type {
             return std.meta.Child(parameters[2].?);
         }
 
-        fn discard(answer: Error![]const u8) Error!void {
+        fn discard(answer: Error!sandboxed_plugins.Passed) Error!void {
             const changed = try answer;
 
-            std.debug.assert(changed.len <= in_bytes_max);
+            std.debug.assert(changed.bytes().len <= in_bytes_max);
         }
 
-        fn settle_refusal(ran: Error!void, refusable: bool, name: []const u8) Error!void {
+        /// By design an event that cannot be refused (signing out, an administrator signing
+        /// in) goes on when a hook on it fails: the hook's failure is said, in the server's
+        /// log and as a line under the call. Each write the hook made before it failed was a
+        /// whole operation of its own and stays; nothing of the event's own write changes.
+        fn settle_refusal(
+            ctx: *Ctx,
+            owner: []const u8,
+            ran: Error!void,
+            refusable: bool,
+            name: []const u8,
+        ) Error!void {
             std.debug.assert(name.len > 0);
 
             ran catch |err| {
@@ -1496,6 +1933,10 @@ pub fn SDK(comptime registry: Registry) type {
                 }
 
                 std.log.warn("a hook on {s} refused ({t}); it does not stop this one", .{
+                    name,
+                    err,
+                });
+                hook_line(ctx, owner, "A hook on {s} failed ({t}): it cannot stop it", .{
                     name,
                     err,
                 });
@@ -1513,7 +1954,10 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(Operation.name.len > 0);
 
             const input = try stringify(ctx.arena, in);
-            const changed = try sandboxed.before(ctx, Operation.name, input);
+            const answered = try sandboxed.before(ctx, Operation.name, .{
+                .json = input,
+            });
+            const changed = try sandboxed.json_of(ctx.arena, answered, .answer);
 
             return json_module.parse(Operation.In, ctx.arena, changed, .{
                 .allocate = .alloc_always,
@@ -1537,7 +1981,11 @@ pub fn SDK(comptime registry: Registry) type {
             else
                 null;
 
-            try sandboxed.after(ctx, Operation.name, input, output, extended);
+            try sandboxed.after(ctx, Operation.name, .{
+                .json = input,
+            }, .{
+                .json = output,
+            }, extended);
         }
 
         /// Whether any modifier, compiled in or installed, takes values applied as `name`.
@@ -1545,11 +1993,9 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(name.len <= mods.name_len_max);
 
-            inline for (registry.hooks) |Middleware| {
-                if (comptime Middleware.stage == .modify) {
-                    if (mods.matches(Middleware.pattern, name)) {
-                        return true;
-                    }
+            inline for (comptime tables.hooks_where(is_modifier)) |index| {
+                if (mods.matches(registry.hooks[index].pattern, name)) {
+                    return true;
                 }
             }
 
@@ -1558,10 +2004,31 @@ pub fn SDK(comptime registry: Registry) type {
             return sandboxed.hooked(.modify, name);
         }
 
-        /// Runs every modifier whose name takes `name` over the batch, compiled-in plugins
+        /// Runs every modifier whose name takes `name` over `values`, compiled-in plugins
         /// first in their order, then installed ones, each handed what the one before
-        /// answered. Modifiers run as their plugins, reading what they are granted, never
-        /// writing; one that fails changes nothing.
+        /// answered, and answers them as the last left them. Modifiers run as their plugins,
+        /// reading what they are granted, never writing; one that fails refuses the apply.
+        pub fn modify_all(
+            ctx: *Ctx,
+            name: []const u8,
+            comptime Value: type,
+            values: []const Value,
+        ) Error![]const Value {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(values.len <= mods.items_max);
+
+            if (!modified(ctx, name)) {
+                return values;
+            }
+
+            const held = try applied.from_typed(Value, ctx.arena, values);
+            const changed = try modify_held(ctx, name, held);
+
+            return applied.to_typed(Value, ctx.arena, changed);
+        }
+
+        /// `modify_all` for values whose shape comes with the data: what the outer edge
+        /// sent as JSON, a record's document as storage keeps it. They come back in place.
         pub fn modify(ctx: *Ctx, name: []const u8, batch: *mods.Batch) Error!void {
             std.debug.assert(name.len > 0);
             std.debug.assert(batch.items.len <= mods.items_max);
@@ -1570,31 +2037,115 @@ pub fn SDK(comptime registry: Registry) type {
                 return error.Invalid;
             }
 
-            var reading = ctx.*;
-            reading.reads_only = true;
+            if (!modified(ctx, name)) {
+                return;
+            }
 
-            inline for (registry.hooks) |Middleware| {
-                if (comptime Middleware.stage == .modify) {
-                    if (mods.matches(Middleware.pattern, name)) {
-                        try modify_native(&reading, Middleware, batch);
-                    }
+            const held = try applied.from_trees(ctx.arena, batch.items);
+            const changed = try modify_held(ctx, name, held);
+
+            try applied.to_trees(ctx.arena, changed, batch.items);
+        }
+
+        /// The values `held` holds laid out (`server/sandboxed_plugins/applied.zig`) through
+        /// every modifier of `name`; what they are afterwards, held the same way.
+        pub fn modify_held(ctx: *Ctx, name: []const u8, held: []const u8) Error![]const u8 {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(held.len > 0);
+
+            // A computed field's own function is core's to run, through `compute_held`.
+            if (!mods.valid(name, false) or record_computed.reserved(name)) {
+                return error.Invalid;
+            }
+
+            var reading = ctx.*;
+            var current = held;
+
+            reading.reads_only = true;
+            reading.applying = null;
+
+            inline for (comptime tables.hooks_where(is_modifier)) |index| {
+                if (mods.matches(registry.hooks[index].pattern, name)) {
+                    current = try modify_native(&reading, index, current);
                 }
             }
 
-            if (ctx.sandboxed_plugins) |sandboxed| {
-                try modify_sandboxed(&reading, sandboxed, name, batch);
+            const sandboxed = ctx.sandboxed_plugins orelse return current;
+
+            if (!sandboxed.hooked(.modify, name)) {
+                return current;
             }
+
+            return modified_or_refused(ctx, name, sandboxed.modify(&reading, name, current));
         }
 
-        fn modify_native(ctx: *Ctx, comptime Middleware: type, batch: *mods.Batch) Error!void {
-            std.debug.assert(ctx.reads_only);
-            std.debug.assert(Middleware.stage == .modify);
+        /// `compute_held` for values as trees: a record's document as storage keeps it. They
+        /// come back in place.
+        pub fn compute(
+            ctx: *Ctx,
+            owner: []const u8,
+            name: []const u8,
+            batch: *mods.Batch,
+        ) Error!void {
+            std.debug.assert(owner.len > 0);
+            std.debug.assert(batch.items.len <= mods.items_max);
 
-            const owners = registry.hook_owners;
-            const owner = comptime owner_of(registry.hooks, owners, Middleware);
-            const before_modifier = ctx.arena.dupe(std.json.Value, batch.items) catch {
-                return error.OutOfMemory;
-            };
+            if (batch.items.len == 0) {
+                return;
+            }
+
+            const held = try applied.from_trees(ctx.arena, batch.items);
+            const changed = try compute_held(ctx, owner, name, held);
+
+            try applied.to_trees(ctx.arena, changed, batch.items);
+        }
+
+        /// A computed field's values worked out: `owner`'s own function of `name`
+        /// (`computed.<record>.<field>`) over the values `held` holds, compiled in or
+        /// installed, and no other plugin's. It reads, never writes; its error refuses.
+        pub fn compute_held(
+            ctx: *Ctx,
+            owner: []const u8,
+            name: []const u8,
+            held: []const u8,
+        ) Error![]const u8 {
+            std.debug.assert(owner.len > 0);
+            std.debug.assert(held.len > 0);
+
+            if (!record_computed.reserved(name) or !mods.valid(name, false)) {
+                return error.Invalid;
+            }
+
+            var reading = ctx.*;
+
+            reading.reads_only = true;
+            reading.applying = null;
+
+            inline for (comptime tables.hooks_where(is_modifier)) |index| {
+                const own = std.mem.eql(u8, comptime tables.hook_owner(index), owner);
+
+                if (own and std.mem.eql(u8, registry.hooks[index].pattern, name)) {
+                    return modify_native(&reading, index, held);
+                }
+            }
+
+            const sandboxed = ctx.sandboxed_plugins orelse return held;
+
+            return modified_or_refused(
+                ctx,
+                name,
+                sandboxed.compute(&reading, owner, name, held),
+            );
+        }
+
+        /// One compiled-in modifier over the values `current` holds: those that read as its
+        /// type are handed to it as its own structs, and what it leaves them as is laid
+        /// over the values where they lie, as an installed modifier's answer is.
+        fn modify_native(ctx: *Ctx, comptime index: u32, current: []const u8) Error![]const u8 {
+            const owner = comptime tables.hook_owner(index);
+
+            std.debug.assert(ctx.reads_only);
+            std.debug.assert(current.len > 0);
 
             ctx.plugin = owner;
 
@@ -1603,42 +2154,100 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.plugin_code = true;
             defer ctx.plugin_code = was_code;
 
+            const was_handed = ctx.handed_by;
+
+            ctx.handed_by = "";
+            defer ctx.handed_by = was_handed;
+
+            // The modifier works in memory of its own, the values in its type included:
+            // only what it left them as is kept, in the memory the apply works in.
+            var work: plugin_memory.Work = undefined;
+
+            work.begin(ctx);
+
+            const answered = modifier_answer(ctx, index, current);
+
+            work.leave();
+            defer work.end();
+
+            const last = try answered;
+
+            if (last.ptr == current.ptr or !work.own()) {
+                return last;
+            }
+
+            return ctx.arena.dupe(u8, last) catch error.OutOfMemory;
+        }
+
+        /// What the modifier at `index` left the values of `current` as, in `ctx.arena`.
+        fn modifier_answer(
+            ctx: *Ctx,
+            comptime index: u32,
+            current: []const u8,
+        ) Error![]const u8 {
+            const Middleware = registry.hooks[index];
+            const memory = ctx.arena;
+            var standing: applied.Opened = undefined;
+
+            comptime std.debug.assert(Middleware.stage == .modify);
+            std.debug.assert(current.len > 0);
+
+            try standing.init(memory, current);
+
+            const taken = try applied.fitting(Middleware.Value, memory, &standing);
             var wrapped: PluginCtx = .{
                 .inner = ctx,
             };
 
-            Middleware.run(&wrapped, batch) catch |err| {
+            Middleware.run(&wrapped, taken.values) catch |err| {
+                const owner = comptime tables.hook_owner(index);
                 const pattern = Middleware.pattern;
 
                 std.log.warn("plugin {s}: modifier on {s}: {t}", .{ owner, pattern, err });
-                @memcpy(batch.items, before_modifier);
+
+                return err;
+            };
+
+            return applied.answered(Middleware.Value, memory, &standing, taken);
+        }
+
+        /// What the installed modifiers of `name` answered, or the call refused: a modifier
+        /// that ran out of its budget or of memory, trapped or failed in any other way
+        /// never leaves the values as they were without a word. The refusal says which name.
+        fn modified_or_refused(
+            ctx: *Ctx,
+            name: []const u8,
+            answered: Error![]const u8,
+        ) Error![]const u8 {
+            std.debug.assert(name.len > 0);
+
+            return answered catch |err| {
+                std.log.warn("modifiers on {s}: {t}", .{ name, err });
+
+                if (ctx.failure == null) {
+                    ctx.failure = .{
+                        .name = "ModifierFailed",
+                        .status = 409,
+                        .message = modifier_message(ctx.arena, name, err),
+                    };
+                }
+
+                return if (err == error.OutOfMemory) error.OutOfMemory else error.Failed;
             };
         }
 
-        fn modify_sandboxed(
-            ctx: *Ctx,
-            sandboxed: *const sandboxed_plugins.SandboxedPlugins,
-            name: []const u8,
-            batch: *mods.Batch,
-        ) Error!void {
-            std.debug.assert(ctx.reads_only);
+        fn modifier_message(arena: std.mem.Allocator, name: []const u8, err: Error) []const u8 {
             std.debug.assert(name.len > 0);
 
-            if (!sandboxed.hooked(.modify, name)) {
-                return;
-            }
-
-            const input = try stringify(ctx.arena, batch.*);
-            const answer = sandboxed.modify(ctx, name, input) catch |err| {
-                std.log.warn("modifiers on {s}: {t}", .{ name, err });
-                return;
+            const why = switch (err) {
+                error.Unavailable => "it ran out of its time or stopped",
+                error.OutOfMemory => "it ran out of memory",
+                error.Throttled => "it made more calls than it may",
+                else => @errorName(err),
             };
-            const changed = json_module.parse(mods.Batch, ctx.arena, answer, .{
-                .allocate = .alloc_always,
-                .ignore_unknown_fields = true,
-            }) catch return;
 
-            _ = mods.take(batch, changed);
+            return std.fmt.allocPrint(arena, "A modifier of {s} failed: {s}", .{ name, why }) catch
+                "A modifier failed";
         }
 
         /// Every modifier, compiled in then installed: whose it is, the name it takes, why.
@@ -1647,16 +2256,14 @@ pub fn SDK(comptime registry: Registry) type {
 
             var out: std.ArrayList(mods.Modifier) = .empty;
 
-            inline for (registry.hooks) |Middleware| {
-                if (comptime Middleware.stage == .modify) {
-                    const owners = registry.hook_owners;
+            inline for (comptime tables.hooks_where(is_modifier)) |index| {
+                const Middleware = registry.hooks[index];
 
-                    out.append(ctx.arena, .{
-                        .plugin = comptime owner_of(registry.hooks, owners, Middleware),
-                        .name = Middleware.pattern,
-                        .reason = if (@hasDecl(Middleware, "reason")) Middleware.reason else "",
-                    }) catch return error.OutOfMemory;
-                }
+                out.append(ctx.arena, .{
+                    .plugin = comptime tables.hook_owner(index),
+                    .name = Middleware.pattern,
+                    .reason = if (@hasDecl(Middleware, "reason")) Middleware.reason else "",
+                }) catch return error.OutOfMemory;
             }
 
             const sandboxed = ctx.sandboxed_plugins orelse return out.items;
@@ -1709,10 +2316,7 @@ pub fn SDK(comptime registry: Registry) type {
                 .failed => |failed| if (failed.operation_id != open.root) {
                     open.called(ctx, failed.operation_name, true);
                 },
-                .emitted => |emitted| open.emitted(.{
-                    .name = emitted.name,
-                    .subject = emitted.subject,
-                }),
+                .emitted => |emitted| open.emitted(emitted.name, emitted.subject),
             }
         }
 
@@ -1738,6 +2342,44 @@ pub fn SDK(comptime registry: Registry) type {
             if (events.heard_outside(ctx, emitted.name)) {
                 events.queue(ctx, emitted);
             }
+        }
+
+        /// An event a plugin's code emits outside any write (an `on` hook's run, which hears
+        /// what committed): emitted in a write of its own, its `after` hooks run and its
+        /// `on` hooks queued there. Refused or failed, nothing is kept and the log says why.
+        pub fn emit_alone(ctx: *Ctx, name: []const u8, payload: []const u8) void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent == null);
+
+            const refused_before = ctx.event_refusal;
+
+            ctx.event_refusal = null;
+            defer ctx.event_refusal = refused_before;
+
+            var transaction = ctx.db.transaction() catch |err| {
+                std.log.warn("events: {s} not emitted: {t}", .{ name, err });
+                return;
+            };
+
+            emit_event(ctx, .{
+                .operation_id = ctx.allocate_operation_id(),
+                .name = name,
+                .subject = payload,
+            }, true);
+
+            if (ctx.event_refusal) |refused| {
+                transaction.rollback();
+                std.log.warn("events: {s} not emitted: a hook refused it ({t})", .{
+                    name,
+                    refused,
+                });
+                return;
+            }
+
+            transaction.commit() catch |err| {
+                transaction.rollback();
+                std.log.warn("events: {s} not emitted: {t}", .{ name, err });
+            };
         }
 
         /// A write about to commit for a device that may not publish: refused when it
@@ -1769,12 +2411,8 @@ pub fn SDK(comptime registry: Registry) type {
                 sandboxed.event(ctx, event);
             }
 
-            inline for (registry.hooks) |Middleware| {
-                const ends = comptime Middleware.stage == .on and !events.queued(Middleware);
-
-                if (ends) {
-                    _ = run_listener(ctx, Middleware, event);
-                }
+            inline for (comptime tables.hooks_where(hears_ends)) |index| {
+                _ = run_listener(ctx, index, event);
             }
         }
 
@@ -1790,6 +2428,14 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             return queue_answer_json(ctx, name, try stringify(ctx.arena, out));
+        }
+
+        /// Whether an `on` hook hears operation `name`'s answer: only then is it written
+        /// as JSON for the queue.
+        pub fn answer_heard(ctx: *const Ctx, name: []const u8) bool {
+            std.debug.assert(name.len > 0);
+
+            return events.heard_outside(ctx, name);
         }
 
         /// `queue_answer` for an installed operation's answer, JSON already.
@@ -1808,16 +2454,34 @@ pub fn SDK(comptime registry: Registry) type {
             });
         }
 
+        /// `queue_answer` for an installed operation's answer as its plugin handed it over:
+        /// each hook waits with what its own type names of it (`events.queue_passed`).
+        pub fn queue_answer_passed(
+            ctx: *Ctx,
+            name: []const u8,
+            out: sandboxed_plugins.Passed,
+        ) Error!void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent != null);
+
+            if (!events.heard_outside(ctx, name)) {
+                return;
+            }
+
+            events.queue_passed(ctx, name, out);
+        }
+
         /// One `on` hook hearing a queued event: a typed one gets the payload read into its
         /// type (an operation's answer, an event's payload); a failure is logged in the run.
         /// Answers the hook's own words for why it failed; empty when it ran or never fails.
-        pub fn run_listener(ctx: *Ctx, comptime Middleware: type, event: Event) []const u8 {
+        pub fn run_listener(ctx: *Ctx, comptime index: u32, event: Event) []const u8 {
+            const Middleware = registry.hooks[index];
+
             comptime std.debug.assert(Middleware.stage == .on);
             std.debug.assert(ctx.now_ms >= 0);
 
             const running = ctx.plugin;
-            const owners = registry.hook_owners;
-            const owner = comptime owner_of(registry.hooks, owners, Middleware);
+            const owner = comptime tables.hook_owner(index);
 
             if (hook_off(ctx, owner, Middleware)) {
                 return "";
@@ -1833,6 +2497,35 @@ pub fn SDK(comptime registry: Registry) type {
 
             ctx.plugin_code = owner.len > 0;
             defer ctx.plugin_code = was_code;
+
+            // A hook never moves accounts the operation it hooks was handed.
+            const was_handed = ctx.handed_by;
+
+            ctx.handed_by = "";
+            defer ctx.handed_by = was_handed;
+
+            // A plugin's hook works in memory of its own, the payload in its type included;
+            // only its words for a failure are kept.
+            var work: plugin_memory.Work = undefined;
+
+            if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
+                work.begin(ctx);
+            } else {
+                work.stay(ctx);
+            }
+
+            const said = heard(ctx, Middleware, event);
+
+            work.leave();
+            defer work.end();
+
+            return if (said.len > 0 and work.own()) ctx.arena.dupe(u8, said) catch "" else said;
+        }
+
+        /// The hook run on `event`, in `ctx.arena`; its words for a failure.
+        fn heard(ctx: *Ctx, comptime Middleware: type, event: Event) []const u8 {
+            comptime std.debug.assert(Middleware.stage == .on);
+            std.debug.assert(ctx.now_ms >= 0);
 
             if (comptime @hasDecl(Middleware, "Payload")) {
                 std.debug.assert(event == .emitted);
@@ -1904,6 +2597,8 @@ pub fn SDK(comptime registry: Registry) type {
 }
 
 const json_module = @import("lib/json.zig");
+const hook_words = @import("sdk/hook_words.zig");
+const hook_memory = @import("sdk/hook_memory.zig");
 
 /// Whether an `on` hook hears this event: the one it names (`event`), by the operation's
 /// name or the event's, as an installed plugin's hook does.
@@ -1964,6 +2659,15 @@ fn convert(comptime To: type, arena: std.mem.Allocator, from: anytype) Error!To 
                 return convert(To, arena, from orelse return error.Invalid);
             }
 
+            // An object whose keys come with the data (money as `publr.Money` on one side,
+            // `operation.Json` on the other): copied through its JSON.
+            if (comptime free_object(To) or free_object(From)) {
+                return json_module.parse(To, arena, try stringify(arena, from), .{
+                    .allocate = .alloc_always,
+                    .ignore_unknown_fields = true,
+                }) catch error.Invalid;
+            }
+
             var to: To = undefined;
 
             inline for (
@@ -2001,6 +2705,16 @@ fn convert(comptime To: type, arena: std.mem.Allocator, from: anytype) Error!To 
     }
 }
 
+/// Written as an object whose keys come with the data: `publr.Money`, `operation.Json`.
+fn free_object(comptime Type: type) bool {
+    comptime std.debug.assert(@typeInfo(Type) != .void);
+
+    const is_struct = @typeInfo(Type) == .@"struct";
+
+    return is_struct and (@hasDecl(Type, "json_object") or
+        @import("model/contract.zig").is_json_map(Type));
+}
+
 pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
     const text = std.json.Stringify.valueAlloc(arena, value, .{}) catch return error.OutOfMemory;
 
@@ -2031,33 +2745,38 @@ fn hook_off(ctx: *const Ctx, owner: []const u8, comptime Middleware: type) bool 
     return sandboxed.remote_off(owner, target);
 }
 
-fn owner_of(
-    comptime items: []const type,
-    comptime owners: []const []const u8,
-    comptime Item: type,
-) []const u8 {
-    comptime {
-        if (owners.len == 0) {
-            return "";
-        }
+/// A `pre` hook: every operation's, before authorization.
+fn is_pre(comptime Middleware: type) bool {
+    return Middleware.stage == .pre;
+}
 
-        // Each item looked at once.
-        @setEvalBranchQuota(1000 + items.len * 4);
+/// A modifier (`mods.zig`).
+fn is_modifier(comptime Middleware: type) bool {
+    return Middleware.stage == .modify;
+}
 
-        for (items, owners) |candidate, owner| {
-            if (candidate == Item) {
-                return owner;
-            }
-        }
+/// A `before` hook on an event, reading its payload.
+fn hears_before(comptime Middleware: type) bool {
+    return Middleware.stage == .before and @hasDecl(Middleware, "event") and
+        @hasDecl(Middleware, "Payload");
+}
 
-        return "";
-    }
+/// An `after` hook on an event, reading its payload.
+fn hears_after(comptime Middleware: type) bool {
+    return Middleware.stage == .after and @hasDecl(Middleware, "event") and
+        @hasDecl(Middleware, "Payload");
+}
+
+/// An `on` hook naming no event: it hears every operation's end as it happens.
+fn hears_ends(comptime Middleware: type) bool {
+    return Middleware.stage == .on and !@hasDecl(Middleware, "event");
 }
 
 /// Branches the registry's own checks take (roles, namespaces, policies), whatever its size.
 const validation_branches_base: u32 = 100_000;
-/// Branches one operation's checks add at most: its shapes walked once, its name compared
-/// with every other's.
+/// Branches one operation's checks add at most: its shapes and examples walked once, the doc
+/// lines of its text fields read once (`operation.values`), its name compared with every
+/// other's.
 const validation_branches_per_operation: u32 = 512;
 
 fn validate_registry(comptime registry: Registry) void {
@@ -2120,7 +2839,9 @@ fn validate_registry(comptime registry: Registry) void {
             // A hook on an event (`auth.signed_in`) is named for it, not for an operation.
             const targets_operation = (Middleware.stage == .before or
                 Middleware.stage == .after) and !@hasDecl(Middleware, "event");
-            const unknown = targets_operation and find_name(registry, Middleware.operation) == null;
+            const tables = registry_tables.Tables(registry);
+            const unknown = targets_operation and
+                tables.operation_position(Middleware.operation) == null;
 
             if (unknown and !absent_plugin(registry, Middleware.operation)) {
                 @compileError("middleware targets unknown operation: " ++ Middleware.operation);
@@ -2158,18 +2879,7 @@ fn absent_plugin(comptime registry: Registry, comptime name: []const u8) bool {
             return false;
         }
 
-        const target = plugin_of(name);
-
-        for (registry.operations, registry.operation_owners) |Operation, owner| {
-            const namespace = operation.namespace(Operation.name);
-            const core = owner.len == 0 and std.mem.eql(u8, namespace, target);
-
-            if (core or std.mem.eql(u8, owner, target)) {
-                return false;
-            }
-        }
-
-        return true;
+        return !registry_tables.Tables(registry).present(plugin_of(name));
     }
 }
 
@@ -2210,13 +2920,9 @@ fn find_name(comptime registry: Registry, comptime name: []const u8) ?type {
         @compileError("registry has no operations");
     }
 
-    for (registry.operations) |Operation| {
-        if (std.mem.eql(u8, Operation.name, name)) {
-            return Operation;
-        }
-    }
+    const position = registry_tables.Tables(registry).operation_position(name) orelse return null;
 
-    return null;
+    return registry.operations[position];
 }
 
 pub const testing = struct {
@@ -2240,6 +2946,11 @@ pub const testing = struct {
         /// request's calls share theirs.
         scratch_buffer: []u8,
         scratch: scratch.Scratch,
+        call_scratch_buffer: []u8,
+        call_scratch: scratch.Scratch,
+        /// Compiled-in plugins' working memory, as small as the arena a test call gets.
+        plugin_buffer: plugin_memory.Buffer,
+        plugin_memory: plugin_memory.Memory,
 
         pub fn init(harness: *Harness) !void {
             std.debug.assert(harness_arena_bytes > 0);
@@ -2258,6 +2969,22 @@ pub const testing = struct {
                 .fixed = .init(harness.scratch_buffer),
             };
 
+            harness.call_scratch_buffer = try std.testing.allocator.alloc(u8, scratch.call_bytes);
+            errdefer std.testing.allocator.free(harness.call_scratch_buffer);
+
+            harness.call_scratch = .{
+                .fixed = .init(harness.call_scratch_buffer),
+            };
+
+            harness.plugin_buffer = try std.testing.allocator.alignedAlloc(
+                u8,
+                plugin_memory.alignment,
+                harness_arena_bytes,
+            );
+            errdefer std.testing.allocator.free(harness.plugin_buffer);
+
+            harness.plugin_memory.init(harness.plugin_buffer);
+
             const params: AuthState.Options = .{
                 .params = auth_params_test,
             };
@@ -2274,6 +3001,8 @@ pub const testing = struct {
 
             harness.auth.deinit();
             std.testing.allocator.free(harness.scratch_buffer);
+            std.testing.allocator.free(harness.call_scratch_buffer);
+            std.testing.allocator.free(harness.plugin_buffer);
             std.testing.allocator.free(harness.buffer);
             harness.fixture.deinit();
         }
@@ -2292,6 +3021,8 @@ pub const testing = struct {
             );
 
             made.scratch_set_aside = &harness.scratch;
+            made.calls_set_aside = &harness.call_scratch;
+            made.plugins_set_aside = &harness.plugin_memory;
 
             return made;
         }
@@ -2643,11 +3374,35 @@ test "roles: an account calls what its roles grant; one granted only apps never 
 test {
     std.testing.refAllDecls(@This());
     _ = @import("sdk/jobs.zig");
+    _ = @import("sdk/hook_words.zig");
+    _ = @import("sdk/hook_memory.zig");
+    _ = @import("sdk/plugin_memory.zig");
+    _ = @import("sdk/plugin_memory/work.zig");
+    _ = @import("sdk/plugin/decimal.zig");
+    _ = @import("sdk/provider_ref.zig");
     _ = @import("sdk/hook_runs.zig");
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
     _ = @import("sdk/plugin/written_secrets.zig");
     _ = @import("sdk/plugin/prepared_queries.zig");
+    _ = @import("sdk/plugin/wire_json.zig");
+    _ = @import("sdk/plugin/read_memo.zig");
+    _ = @import("sdk/plugin/laid_key.zig");
+    _ = @import("sdk/plugin/guest_memory/runs.zig");
+    _ = @import("sdk/plugin/guest_memory/arena.zig");
+    _ = @import("sdk/plugin/guest_memory/large.zig");
+    _ = @import("sdk/plugin/guest_memory/heap.zig");
+    _ = @import("sdk/plugin/modify_define.zig");
+    _ = @import("sdk/mods.zig");
+    _ = @import("sdk/plugin/json_api.zig");
+    _ = @import("sdk/plugin/shape_wire.zig");
+    _ = @import("server/sandboxed_plugins/described.zig");
+    _ = @import("server/sandboxed_plugins/given.zig");
+    _ = @import("server/sandboxed_plugins/given_typed.zig");
+    _ = @import("server/sandboxed_plugins/laid.zig");
+    _ = @import("server/sandboxed_plugins/laid_typed.zig");
+    _ = @import("server/sandboxed_plugins/transfer.zig");
+    _ = @import("server/sandboxed_plugins/held.zig");
     _ = @import("lib/groq.zig");
     _ = @import("server/plugin_build/check.zig");
     _ = @import("operations/plugin/lifecycle.zig");
@@ -2808,4 +3563,174 @@ test "ctx.plugin: an operation's plugin, a hook's own, kept by a core call" {
     }
 
     try std.testing.expect(!try select.step());
+}
+
+test "a compiled-in plugin's work is in memory of its own, given back as each piece ends" {
+    const Heavy = struct {
+        pub const name = "alpha.heavy";
+        pub const description = "Test operation: a megabyte of working data, a short answer";
+        pub const kind: operation.Kind = .write;
+        pub const In = struct {
+            title: []const u8,
+            refuse: bool = false,
+        };
+        pub const Out = struct {
+            text: []const u8,
+        };
+        pub const example: In = .{
+            .title = "tea",
+        };
+        pub const example_out: Out = .{
+            .text = "TEA! 1048576",
+        };
+
+        pub fn run(ctx: *PluginCtx, in: In, _: *const Grant) Error!Out {
+            std.debug.assert(in.title.len > 0);
+
+            const working = try ctx.alloc(u8, 1 << 20);
+
+            @memset(working, 7);
+
+            if (in.refuse) {
+                return ctx.fail(.TooHeavy, "{title} is too heavy", .{
+                    .title = in.title,
+                });
+            }
+
+            // A step's memory goes before the call ends; what it keeps stays.
+            var step = ctx.scope();
+
+            @memset(try ctx.alloc(u8, 1 << 20), 9);
+
+            const kept = try step.keep(try ctx.print("{d}", .{working.len}));
+
+            step.end();
+
+            return .{
+                .text = try ctx.print("{s} {s}", .{ in.title, kept }),
+            };
+        }
+    };
+    const Louder = struct {
+        pub const stage: hooks.Stage = .before;
+        pub const operation = "alpha.heavy";
+
+        pub fn run(ctx: *PluginCtx, in: *Heavy.In) Error!void {
+            std.debug.assert(in.title.len > 0);
+
+            @memset(try ctx.alloc(u8, 1 << 20), 3);
+            in.title = try ctx.print("{s}!", .{
+                std.ascii.allocUpperString(ctx.arena(), in.title) catch return error.OutOfMemory,
+            });
+        }
+    };
+    const Checked = SDK(.{
+        .operations = &.{Heavy},
+        .operation_owners = &.{"alpha"},
+        .hooks = &.{Louder},
+        .hook_owners = &.{"beta"},
+    });
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.system);
+    const before = harness.fixed.end_index;
+
+    // Each call takes three megabytes of working data: sixteen fit in neither the
+    // request's four nor the plugins' four unless every piece gives its own back.
+    for (0..16) |_| {
+        const answered = try Checked.dispatch(&ctx, Heavy, .{
+            .title = "tea",
+        });
+
+        try std.testing.expectEqualStrings("TEA! 1048576", answered.text);
+        try std.testing.expectEqual(@as(u32, 0), harness.plugin_memory.open);
+    }
+
+    try std.testing.expect(harness.fixed.end_index - before < 64 << 10);
+    try std.testing.expect(harness.plugin_memory.peak_bytes() >= 2 << 20);
+    try std.testing.expect(!plugin_memory.is_work(ctx.arena));
+
+    // A refusal's words, made in the work's memory, are read after it is given back.
+    try std.testing.expectError(error.Failed, Checked.dispatch(&ctx, Heavy, .{
+        .title = "tea",
+        .refuse = true,
+    }));
+    try std.testing.expectEqualStrings("TEA! is too heavy", ctx.failure.?.message);
+    try std.testing.expectEqual(@as(u32, 0), harness.plugin_memory.open);
+}
+
+test "a compiled-in plugin's call names it to its callee, as an installed one's does" {
+    const Asked = struct {
+        pub const name = "beta.asked";
+        pub const description = "Test operation: who called";
+        pub const kind: operation.Kind = .write;
+        pub const In = struct {};
+        pub const Out = struct {
+            from: []const u8,
+        };
+        pub const example: In = .{};
+        pub const example_out: Out = .{
+            .from = "alpha",
+        };
+
+        pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+            std.debug.assert(ctx.plugin_code);
+
+            const view: @import("sdk/plugin/context.zig").HostApi = .{
+                .inner = ctx,
+            };
+            const from = view.caller().from;
+
+            return .{
+                .from = if (from == .plugin) from.plugin else @tagName(from),
+            };
+        }
+    };
+    const Asking = SDK(.{
+        .operations = &.{Asked},
+        .operation_owners = &.{"beta"},
+    });
+    const Ask = struct {
+        pub const name = "alpha.ask";
+        pub const description = "Test operation: call beta from alpha's code";
+        pub const kind: operation.Kind = .write;
+        pub const In = struct {};
+        pub const Out = Asked.Out;
+        pub const example: In = .{};
+        pub const example_out: Out = Asked.example_out;
+
+        pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+            std.debug.assert(ctx.plugin_code);
+
+            return Asking.dispatch(ctx, Asked, .{});
+        }
+    };
+    const Checked = SDK(.{
+        .operations = &.{Ask},
+        .operation_owners = &.{"alpha"},
+    });
+    var harness: testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var ctx = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+        },
+    });
+    const asked = try Checked.dispatch(&ctx, Ask, .{});
+
+    try std.testing.expectEqualStrings("alpha", asked.from);
+    try std.testing.expectEqualStrings("", ctx.called_by);
+
+    // Called by the person, not a plugin's code: the admin.
+    var direct = harness.ctx(.{
+        .user = .{
+            .id = "u_admin",
+        },
+    });
+
+    try std.testing.expectEqualStrings("admin", (try Asking.dispatch(&direct, Asked, .{})).from);
 }

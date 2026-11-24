@@ -7,6 +7,7 @@ pub const tables = [_][]const u8{
     "migrations",
     "users",
     "user_roles",
+    "user_types",
     "roles",
     "role_grants",
     "role_declarations",
@@ -52,8 +53,11 @@ pub const tables = [_][]const u8{
     "plugin_log",
     "job_queue",
     "job_due",
+    "job_due_internal",
     "scheduled_changes",
     "webhook_deliveries",
+    "ledger_accounts",
+    "ledger_transfers",
 };
 
 pub fn apply(connection: *db.Db) db.Error!void {

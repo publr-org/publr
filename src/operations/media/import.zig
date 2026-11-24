@@ -246,7 +246,9 @@ pub fn folder_of(ctx: *Ctx, given: ?[]const u8) Error!?[]const u8 {
     }, .{}) catch return error.OutOfMemory;
     const made = try term.published(ctx, .{
         .taxonomy = "media_folders",
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     std.debug.assert(made.id.len > 0);

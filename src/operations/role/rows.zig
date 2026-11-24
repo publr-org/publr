@@ -115,6 +115,36 @@ pub fn check(row: Row, grants: []const []const u8) Error!void {
     }
 }
 
+/// Refused when `grants` would make a role a type of user gives staff: staff and visitors
+/// are two ladders, and a type's people never reach the admin.
+pub fn refuse_staff_given(ctx: *Ctx, row: Row, grants: []const []const u8) Error!void {
+    std.debug.assert(row.name.len > 0);
+    std.debug.assert(grants.len <= role.grants_max);
+
+    const giver = try @import("../../sdk/user_types.zig").giver_of(ctx, row.name) orelse return;
+
+    if (!sdk.stored_roles.staff_grants(ctx, grants)) {
+        return;
+    }
+
+    return ctx.fail(.{
+        .name = given_by_type.name,
+        .status = given_by_type.status,
+        .message = std.fmt.allocPrint(
+            ctx.arena,
+            "{s} is given by the {s} type; it cannot reach the admin or any operation " ++
+                "but what visitors call",
+            .{ row.label, giver.label },
+        ) catch return error.OutOfMemory,
+    });
+}
+
+pub const given_by_type: sdk.operation.Failure = .{
+    .name = "GivenByType",
+    .status = 409,
+    .message = "A type of user gives this role: it cannot reach the admin",
+};
+
 /// What the trash keeps of a role: its row, which brings its grants, and its holders.
 pub fn roots_of(ctx: *Ctx, name: []const u8) Error![]const Root {
     std.debug.assert(role.valid_name(name));

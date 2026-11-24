@@ -1,6 +1,8 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
+const follows = @import("rest/follows.zig");
+const answer = @import("rest/answer.zig");
 const auth_http = @import("rest/auth.zig");
 const identity_module = @import("rest/identity.zig");
 const http = @import("../lib/http.zig");
@@ -43,6 +45,9 @@ fn call(request: *Request, response: *Response, ctx: *Context) Error!void {
     if (!is_read and !try identity_module.guard(request, response, project, &identity)) {
         return;
     }
+
+    // Unrolled once over every operation: the budget grows with the list.
+    @setEvalBranchQuota(1000 + registry.SDK.operations.len * 8);
 
     inline for (registry.SDK.operations) |Operation| {
         if (std.mem.eql(u8, Operation.name, name)) {
@@ -100,12 +105,25 @@ fn invoke_runtime(
     sdk_ctx.over_api = true;
     sdk_ctx.language.locale = language.speaks(&sdk_ctx) catch "";
 
+    var followed: ?follows.Follows = if (found.kind == .read)
+        follows.start(project, request, ctx.arena)
+    else
+        null;
+
+    if (followed) |*following| {
+        sdk_ctx.reads = following.reads();
+    }
+
     const output = registry.SDK.call_json(&sdk_ctx, name, input) catch |err| {
         return auth_http.respond_error(response, err, &sdk_ctx);
     };
 
+    if (followed) |*following| {
+        try following.tell(response);
+    }
+
     try auth_http.rate_headers(response, &sdk_ctx);
-    try response.set_body(.ok, "application/json", output);
+    try response.set_body(.ok, "application/json", try answer.text(ctx.arena, output));
 }
 
 fn runtime_input(
@@ -168,12 +186,26 @@ fn invoke(
         try response.set_header("X-Publr-Deprecated", text);
     }
 
+    const project = Project.of(ctx);
+    var followed: ?follows.Follows = if (Operation.kind == .read)
+        follows.start(project, request, ctx.arena)
+    else
+        null;
+
+    if (followed) |*following| {
+        sdk_ctx.reads = following.reads();
+    }
+
     const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch |err| {
         return auth_http.respond_error(response, err, &sdk_ctx);
     };
 
+    if (followed) |*following| {
+        try following.tell(response);
+    }
+
     try auth_http.rate_headers(response, &sdk_ctx);
-    try response.json(.ok, out);
+    try response.set_body(.ok, "application/json", try answer.typed(ctx.arena, Operation, out));
 }
 
 fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In {
@@ -290,7 +322,7 @@ test "rest: every operation is reachable under /api/<name>, with the same rules"
     const write_head = "POST /api/record.create HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
         "Content-Length: 0\r\n\r\n";
     const doc = "{\"type\":\"post\"," ++
-        "\"document\":\"{\\\"title\\\":\\\"Via REST\\\",\\\"body\\\":\\\"x\\\"}\"}";
+        "\"document\":{\"title\":\"Via REST\",\"body\":\"x\"}}";
     const denied = try flow.call(write_head, doc);
     try std.testing.expectEqual(@as(u16, 403), denied.status.code());
 
@@ -365,4 +397,8 @@ test "oversized health echo returns HTTP 422 and subsequent requests still work"
     try std.testing.expectEqual(@as(u16, 422), refused.status.code());
     const healthy = try flow.call("GET /api/heartbeat.check HTTP/1.1\r\nHost: h\r\n\r\n", "");
     try std.testing.expectEqual(@as(u16, 200), healthy.status.code());
+}
+
+test {
+    _ = follows;
 }

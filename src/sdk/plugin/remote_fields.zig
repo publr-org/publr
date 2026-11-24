@@ -3,6 +3,7 @@
 //! against the other plugin's declared fields (`plugin_contracts.holds_kind`); an internal
 //! record's own fields get their kinds here too.
 const std = @import("std");
+const Money = @import("../money.zig").Money;
 const plugin_contracts = @import("../../model/plugin_contracts.zig");
 const words = @import("words.zig");
 
@@ -56,7 +57,7 @@ fn holds_of(
             return .datetime;
         }
 
-        if (Plain == std.json.ArrayHashMap(i64)) {
+        if (Plain == Money) {
             return .money;
         }
 
@@ -70,6 +71,10 @@ fn holds_of(
 
         const info = @typeInfo(Plain);
 
+        if (info == .@"struct" and @hasDecl(Plain, "decimal_places")) {
+            return .decimal;
+        }
+
         if (info == .pointer and info.pointer.size == .slice) {
             const Item = info.pointer.child;
 
@@ -80,15 +85,25 @@ fn holds_of(
             if (is_reference(Item)) {
                 return .references;
             }
+
+            if (@typeInfo(Item) == .@"struct" and !@hasDecl(Item, "jsonParse")) {
+                return .rows;
+            }
         }
 
         return switch (info) {
             .int => .integer,
             .float => .number,
             .@"enum" => .choice,
+            .@"struct" => if (@hasDecl(Plain, "jsonParse"))
+                @compileError("remote record " ++ record_name ++ ": field `" ++ name ++
+                    "` reads itself; give its plain fields")
+            else
+                .group,
             else => @compileError("remote record " ++ record_name ++ ": field `" ++ name ++
                 "` is " ++ @typeName(Type) ++ ", which reads no field kind; use text, a number, " ++
-                "bool, publr.Time, a reference, a list of these, or std.json.Value"),
+                "bool, publr.Time, a reference, a struct of fields, a list of these, or " ++
+                "std.json.Value"),
         };
     }
 }
@@ -146,7 +161,7 @@ pub fn kind_of(comptime Type: type) ?[]const u8 {
             .{ []const u8, "string" },
             .{ bool, "boolean" },
             .{ words.Time, "datetime" },
-            .{ std.json.ArrayHashMap(i64), "money" },
+            .{ Money, "money" },
         };
 
         for (plain) |pair| {
@@ -157,6 +172,22 @@ pub fn kind_of(comptime Type: type) ?[]const u8 {
 
         if (is_reference(Type)) {
             return "reference";
+        }
+
+        if (@typeInfo(Type) == .@"struct" and @hasDecl(Type, "decimal_places")) {
+            return "decimal";
+        }
+
+        if (@import("../provider_ref.zig").is_provider_ref(Type)) {
+            return @import("../provider_ref.zig").kind_id;
+        }
+
+        if (@import("../account_ref.zig").is_account(Type)) {
+            return @import("../account_ref.zig").kind_id;
+        }
+
+        if (@import("ledger_define.zig").ref_kind(Type)) |kind| {
+            return kind;
         }
 
         return switch (@typeInfo(Type)) {
@@ -182,7 +213,7 @@ test "an internal record's fields keep the kinds their types say" {
         open: bool = true,
         note: ?[]const u8 = null,
         tags: []const []const u8 = &.{},
-        price: std.json.ArrayHashMap(i64),
+        price: Money,
         extra: struct {
             depth: u32,
         },
@@ -205,7 +236,7 @@ test "a remote record's fields read the kinds their types hold" {
         title: []const u8,
         sku: ?[]const u8 = null,
         stock: u32,
-        price: std.json.ArrayHashMap(i64),
+        price: Money,
         images: []const []const u8,
         extra: std.json.Value,
     };

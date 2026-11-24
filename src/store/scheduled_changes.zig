@@ -10,7 +10,7 @@ pub const Error = db.Error || error{OutOfMemory};
 /// Entries one pass makes: the rest wait for the next.
 pub const take_max: u32 = 64;
 /// Entries one record keeps at most.
-pub const record_max: u32 = 256;
+pub const record_max: u32 = 200;
 
 pub const Entry = struct {
     id: i64 = 0,

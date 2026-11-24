@@ -26,8 +26,11 @@ pub fn plugin_component(arena: std.mem.Allocator, spec: []const u8) Error!?[]con
     const plugin = rest[0..slash];
     const file = rest[slash + 1 ..];
     const name = if (std.mem.endsWith(u8, file, ".publr")) file[0 .. file.len - 6] else file;
+    // A component drawn for each visitor (`Account.dynamic`), as an app's own.
+    const dynamic = std.mem.endsWith(u8, name, ".dynamic");
+    const stem = if (dynamic) name[0 .. name.len - ".dynamic".len] else name;
 
-    if (plugin.len == 0 or name.len == 0 or !std.ascii.isUpper(name[0])) {
+    if (plugin.len == 0 or stem.len == 0 or !std.ascii.isUpper(stem[0])) {
         return error.Unsupported;
     }
 
@@ -37,7 +40,7 @@ pub fn plugin_component(arena: std.mem.Allocator, spec: []const u8) Error!?[]con
         }
     }
 
-    for (name) |char| {
+    for (stem) |char| {
         if (!std.ascii.isAlphanumeric(char)) {
             return error.Unsupported;
         }
@@ -170,10 +173,37 @@ pub fn specs(
     source: []const u8,
     filename: []const u8,
 ) Error![]const []const u8 {
+    return module_specs(syntax, arena, source, filename, .templates);
+}
+
+/// The PJSX components a template imports: `plugin:<plugin>/<Component>.ptsx`, or
+/// `../interactive/<Component>.ptsx` in a plugin's own component.
+pub fn component_specs(
+    comptime syntax: type,
+    arena: std.mem.Allocator,
+    source: []const u8,
+    filename: []const u8,
+) Error![]const []const u8 {
+    return module_specs(syntax, arena, source, filename, .components);
+}
+
+const SpecKind = enum { templates, components };
+
+fn module_specs(
+    comptime syntax: type,
+    arena: std.mem.Allocator,
+    source: []const u8,
+    filename: []const u8,
+    kind: SpecKind,
+) Error![]const []const u8 {
     std.debug.assert(source.len <= 1 << 24);
     std.debug.assert(filename.len > 0);
 
     if (std.mem.endsWith(u8, filename, ".md")) {
+        if (kind == .components) {
+            return &.{};
+        }
+
         const layout = try markdown_page.layout_of(arena, source) orelse return &.{};
         return try arena.dupe([]const u8, &.{layout});
     }
@@ -198,11 +228,7 @@ pub fn specs(
         const literal = statement.source orelse continue;
         const spec = literal.value.string;
 
-        const template = std.mem.endsWith(u8, spec, ".publr") or
-            std.mem.startsWith(u8, spec, plugin_prefix);
-
-        if (!template and !std.mem.endsWith(u8, spec, ".js") and
-            !std.mem.endsWith(u8, spec, ".ts")) continue;
+        if (!wanted(spec, kind)) continue;
 
         if (found.items.len == imports_max) {
             return error.Unsupported;
@@ -212,6 +238,21 @@ pub fn specs(
     }
 
     return found.items;
+}
+
+fn wanted(spec: []const u8, kind: SpecKind) bool {
+    std.debug.assert(spec.len > 0);
+
+    const component = std.mem.endsWith(u8, spec, ".ptsx");
+
+    if (kind == .components) {
+        return component;
+    }
+
+    const template = std.mem.endsWith(u8, spec, ".publr") or
+        std.mem.startsWith(u8, spec, plugin_prefix);
+
+    return template or std.mem.endsWith(u8, spec, ".js") or std.mem.endsWith(u8, spec, ".ts");
 }
 
 fn frontmatter(source: []const u8) ?[]const u8 {
@@ -314,6 +355,16 @@ test "the frontmatter's .publr imports are listed, nothing else" {
     try std.testing.expectEqual(@as(usize, 2), found.len);
     try std.testing.expectEqualStrings("../layouts/base.publr", found[0]);
     try std.testing.expectEqualStrings("../../shared/nav.publr", found[1]);
+
+    const components = try component_specs(
+        @import("pjsx_syntax").template_syntax,
+        arena,
+        source,
+        "index.publr",
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), components.len);
+    try std.testing.expectEqualStrings("../interactive/Disclosure.ptsx", components[0]);
     try std.testing.expectEqual(
         @as(usize, 0),
         (try specs(
@@ -365,6 +416,11 @@ test "a plugin's component is named by its plugin and its capitalized name" {
     try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:cart/mini"));
     try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:Cart/Mini"));
     try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:cart/../X"));
+    try std.testing.expectEqualStrings(
+        "plugin:cart/Basket.dynamic.publr",
+        (try plugin_component(arena, "plugin:cart/Basket.dynamic")).?,
+    );
+    try std.testing.expectError(error.Unsupported, plugin_component(arena, "plugin:cart/.dynamic"));
     try std.testing.expectEqualStrings(
         "plugin:cart/Line.publr",
         try resolve(arena, named, "./Line.publr", "shop"),

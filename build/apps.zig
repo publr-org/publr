@@ -61,6 +61,7 @@ const root_format =
     \\pub const config: publr.model.app.Config = @import("app_zon");
     \\pub const templates = @import("app_templates").files;
     \\pub const assets = @import("app_assets").files;
+    \\pub const translations = @import("app_translations").files;
     \\pub const interactive = @import("app_interactive");
     \\pub const middleware = @import("app_middleware");
     \\pub const style_css = @embedFile("app_style_css");
@@ -112,6 +113,7 @@ fn app_module(
     });
     module.addImport("app_templates", embed.templates(builder, app_dir));
     module.addImport("app_assets", embed.assets(builder, app_dir, interactive.stores));
+    module.addImport("app_translations", embed.translations(builder, app_dir));
     module.addImport("app_interactive", interactive.module);
     module.addImport("app_middleware", middleware(builder, library, app_dir));
     module.addAnonymousImport("app_style_css", .{

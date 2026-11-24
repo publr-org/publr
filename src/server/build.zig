@@ -33,7 +33,17 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     flags.options.apps_dir = apps_adapter.folder.resolve_dir(init.io, flags.options.apps_dir);
 
     const dir = flags.options.apps_dir;
-    var source = apps_adapter.folder.project_apps(init.gpa, init.io, dir, &reason) catch |err| {
+    var application: server.Server = undefined;
+    try application.init(init, db_path);
+    defer application.deinit();
+
+    // A provider slot draws the installed plugins' components too.
+    const slots = try apps_adapter.provider_slots.sources(
+        init.arena.allocator(),
+        application.sandboxed(),
+    );
+    const folder = apps_adapter.folder;
+    var source = folder.project_apps(init.gpa, init.io, dir, &reason, slots) catch |err| {
         report.err_reason(reason.text(), "publr build: the apps do not load: {t}", .{err});
         return 1;
     };
@@ -45,16 +55,14 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return 0;
     }
 
-    var application: server.Server = undefined;
-    try application.init(init, db_path);
-    defer application.deinit();
-
     var project: routes.Project = .{
         .connection = &application.connection,
         .auth = &application.auth,
         .io = init.io,
         .sandboxed_plugins = application.sandboxed(),
         .scratch = &application.scratch,
+        .call_scratch = &application.call_scratch,
+        .plugin_memory = &application.plugin_memory,
         .definitions = &application.definitions,
     };
     const apps = try init.gpa.alloc(apps_adapter.App, source.specs.len);

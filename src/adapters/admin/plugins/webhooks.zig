@@ -105,6 +105,7 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) admi
         .plugins_href = if (detail.mode == .native) back ++ "/built-in" else back,
         .log_href = try std.fmt.allocPrint(arena, "{s}/log", .{own}),
         .webhooks_href = try std.fmt.allocPrint(arena, "{s}/webhooks", .{own}),
+        .ledger_href = try @import("../ledger.zig").tab_href(session, name),
         .webhooks = addresses,
         .deliveries = deliveries,
         .notice = notice,

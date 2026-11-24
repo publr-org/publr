@@ -64,6 +64,9 @@ pub fn run(
         }
     }
 
+    // Set aside once, before the probes copy the context: nested installed calls' memory.
+    _ = try ctx.call_scratch();
+
     var offset: u32 = 0;
 
     // A page of types at a time: as many as the project has.
@@ -84,11 +87,16 @@ pub fn run(
 
             var probing = ctx;
 
+            // What outlives a nested call (the trail's call names) stays in the gate's
+            // arena: the scratch is the nested calls' working memory too, rewound under it.
+            probing.lasting = arena;
             probing.arena = scratch.allocator();
 
             const created = registry.SDK.dispatch(&probing, record.Create, .{
                 .type = summary.handle,
-                .document = "{}",
+                .document = .{
+                    .text = "{}",
+                },
             });
 
             if (try refused(connection, arena, created, "record of", summary.handle)) |failure| {
@@ -123,11 +131,14 @@ fn taxonomies(connection: *db.Db, arena: std.mem.Allocator, ctx: *sdk.Ctx) !?Fai
 
             var probing = ctx.*;
 
+            probing.lasting = arena;
             probing.arena = scratch.allocator();
 
             const created = registry.SDK.dispatch(&probing, term.Create, .{
                 .taxonomy = summary.handle,
-                .document = "{}",
+                .document = .{
+                    .text = "{}",
+                },
             });
 
             if (try refused(connection, arena, created, "term of", summary.handle)) |failure| {

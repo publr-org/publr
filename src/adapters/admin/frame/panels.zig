@@ -18,7 +18,14 @@ pub const Panel = struct {
     operation: []const u8,
     /// The field it is the help of; empty for a box beside the form.
     field: []const u8 = "",
+    /// A provider's piece (`provider_panels.zig`): the provider field a record must hold
+    /// `provider` in to show it; empty for a panel on every record of the type.
+    chosen_by: []const u8 = "",
+    provider: []const u8 = "",
 };
+
+pub const shows = provider_panels.shows;
+const provider_panels = @import("provider_panels.zig");
 
 /// Every panel the viewer may see on a record of `handle`, compiled-in plugins' first.
 pub fn for_type(session: *const Session, handle: []const u8) admin.Error![]const Panel {
@@ -34,12 +41,14 @@ pub fn for_type(session: *const Session, handle: []const u8) admin.Error![]const
             try shown.append(session.arena, .{
                 .plugin = owned.plugin,
                 .type = owned.panel.type,
-                .label = owned.panel.label,
+                .label = try session.declared(owned.panel.label),
                 .operation = owned.panel.operation.name,
                 .field = owned.panel.field,
             });
         }
     }
+
+    try provider_panels.of_type(session, handle, &shown, panels_max);
 
     const sandboxed = session.ctx.sandboxed_plugins orelse return shown.items;
 
@@ -56,7 +65,7 @@ pub fn for_type(session: *const Session, handle: []const u8) admin.Error![]const
                 try shown.append(session.arena, .{
                     .plugin = manifest.name,
                     .type = panel.type,
-                    .label = panel.label,
+                    .label = try session.declared(panel.label),
                     .operation = panel.operation,
                     .field = panel.field,
                 });
@@ -66,6 +75,20 @@ pub fn for_type(session: *const Session, handle: []const u8) admin.Error![]const
 
     return shown.items;
 }
+
+/// The plugin as people read it, in the viewer's language: what "From …" names on its
+/// panels.
+pub fn from_of(session: *const Session, plugin: []const u8) admin.Error![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const summary = labels.summary_of(&session.ctx, plugin);
+    const label = @import("../../../model.zig").plugin_label.of(plugin, summary);
+
+    return if (label.ptr == plugin.ptr) plugin else session.declared(label);
+}
+
+const labels = @import("../../../operations/plugin/labels.zig");
 
 /// The panel `plugin` draws with `operation` on records of `handle`, when the viewer may
 /// see it.
@@ -105,6 +128,10 @@ fn sound(manifest: model.Manifest, panel: model.Panel) bool {
     }
 
     return false;
+}
+
+test {
+    _ = provider_panels;
 }
 
 test "an installed plugin's panel is drawn by one of its own reads" {

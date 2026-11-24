@@ -36,7 +36,7 @@ export type RecordFieldsProps = {
     help: string;
     /** The panels plugins draw under the field as its help, each in the plugin frame and
      * told the field's value as the form holds it, again as it changes. */
-    panels?: Array<{ label: string; plugin: string; src: string; operations: string }>;
+    panels?: Array<{ label: string; plugin: string; from: string; src: string; operations: string }>;
     /** The field's rules written out (or its own hint), beside the help; empty for none. */
     hint: string;
     /** A group or repeater folded away until opened. */
@@ -271,7 +271,8 @@ export function RecordFields({
           required={field.required}
           description={editor.helps[field.name] ?? field.help}
           hint={field.hint}
-          error={editor.problems[field.name] ?? ""}
+          error={field.shape === "group" && (!field.closed || !!editor.opened[field.name]) &&
+            !!editor.groups_refused[field.name] ? "" : editor.problems[field.name] ?? ""}
           aside={<FieldMarkers name={field.name} />}
         >
         {field.shape === "tab" && <PanelTab id={`layout-tab-${field.name}`}

@@ -15,7 +15,7 @@ pub const Part = model.Part;
 /// A plugin's published interface, from its declarations.
 pub fn of(comptime Plugin: type) Interface {
     comptime {
-        @setEvalBranchQuota(200_000);
+        @setEvalBranchQuota(budget_of(Plugin));
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
@@ -25,6 +25,46 @@ pub fn of(comptime Plugin: type) Interface {
             .contracts = contract.owned_of(Plugin),
             .dimensions = @import("plugin/dimensions.zig").declared_of(Plugin),
         };
+    }
+}
+
+/// What reading a plugin's declarations costs the compiler at most: a part for the plugin,
+/// and one more for each thing it declares (a type, a remote, a contract, an operation),
+/// so a plugin declaring more is never cut short.
+const branches_base: u32 = 200_000;
+pub const branches_per_declared: u32 = 20_000;
+
+fn budget_of(comptime Plugin: type) u32 {
+    return branches_base + declared_count(Plugin) * branches_per_declared;
+}
+
+/// How many things a plugin declares: each type, remote, contract, provider, operation,
+/// hook. What the compiler's work on a plugin grows with.
+pub fn declared_count(comptime Plugin: type) u32 {
+    comptime {
+        if (!@hasDecl(Plugin, "options")) {
+            return 0;
+        }
+
+        const Options = @TypeOf(Plugin.options);
+        var declared: u32 = 0;
+
+        std.debug.assert(@typeInfo(Options) == .@"struct");
+
+        for (std.meta.fieldNames(Options)) |name| {
+            // By its type alone: reading a function (`.extend`) would have it compiled.
+            declared += switch (@typeInfo(@FieldType(Options, name))) {
+                .array => |array| array.len,
+                .@"struct" => |shape| if (shape.is_tuple) shape.field_names.len else 0,
+                .pointer => |pointer| if (pointer.size == .slice and pointer.child != u8)
+                    @field(Plugin.options, name).len
+                else
+                    0,
+                else => 0,
+            };
+        }
+
+        return declared;
     }
 }
 
@@ -68,7 +108,7 @@ pub fn contracts(comptime interface: Interface) type {
 /// offers fails the build, unless a plugin it names is not there to say.
 pub fn check(comptime Plugin: type, comptime present: []const Interface) void {
     comptime {
-        @setEvalBranchQuota(200_000);
+        @setEvalBranchQuota(budget_of(Plugin) + present.len * branches_per_declared);
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 

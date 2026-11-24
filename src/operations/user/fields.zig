@@ -9,6 +9,7 @@ const registry = @import("../../server/registry.zig");
 const custom_fields = @import("../custom_fields.zig");
 const document_module = @import("../document/document.zig");
 const user_operations = @import("../user.zig");
+const visitors = @import("visitors.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -177,7 +178,7 @@ pub const Get = struct {
     pub const Out = struct {
         user: user_operations.Summary,
         fields: []const Def,
-        document: []const u8,
+        document: sdk.operation.Json,
     };
     pub const example: In = .{
         .user = "editor@example.com",
@@ -192,7 +193,9 @@ pub const Get = struct {
             .active = true,
         },
         .fields = &.{},
-        .document = "{}",
+        .document = .{
+            .text = "{}",
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The user's id or email",
@@ -208,7 +211,16 @@ pub const Get = struct {
         std.debug.assert(in.user.len <= 64 << 10);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
-        const defs = try definition(ctx, found.user.id, found.user.roles);
+
+        // Through `users.own` alone, another type's account is as if it were not there.
+        visitors.refuse_unread_account(ctx, found.user) catch return error.NotFound;
+
+        // A caller who may not read the custom field groups (a plugin through `users.own`)
+        // gets the account without them.
+        const defs = definition(ctx, found.user.id, found.user.roles) catch |err| switch (err) {
+            error.Denied => &.{},
+            else => return err,
+        };
         const document = try read(ctx, found.user.id, defs);
         const text = std.json.Stringify.valueAlloc(ctx.arena, document, .{}) catch {
             return error.OutOfMemory;
@@ -217,7 +229,9 @@ pub const Get = struct {
         return .{
             .user = user_operations.summary_of(found.user),
             .fields = defs,
-            .document = text,
+            .document = .{
+                .text = text,
+            },
         };
     }
 };
@@ -229,7 +243,7 @@ pub const Validate = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         user: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
     };
     pub const Out = struct {
         valid: bool,
@@ -237,7 +251,9 @@ pub const Validate = struct {
     };
     pub const example: In = .{
         .user = "editor@example.com",
-        .document = "{}",
+        .document = .{
+            .text = "{}",
+        },
     };
     pub const example_out: Out = .{
         .valid = true,
@@ -254,11 +270,11 @@ pub const Validate = struct {
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.caller != .anonymous);
-        std.debug.assert(in.document.len <= 64 << 10);
+        std.debug.assert(in.document.text.len <= 64 << 10);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
         const defs = try definition(ctx, found.user.id, found.user.roles);
-        const checked = try check(ctx, defs, in.document);
+        const checked = try check(ctx, defs, in.document.text);
 
         return .{
             .valid = checked.document != null,
@@ -292,7 +308,9 @@ fn seed_group(ctx: *Ctx, handle: []const u8, role: []const u8) Error!void {
 
     _ = try TestSDK.dispatch(ctx, custom_fields.Create, .{
         .group = handle,
-        .definition = text,
+        .definition = .{
+            .text = text,
+        },
     });
 }
 
@@ -321,7 +339,7 @@ test "get: one namespaced group per applicable custom field group; update writes
     try std.testing.expectEqual(@as(usize, 2), editor.fields.len);
     try std.testing.expectEqualStrings("basic", editor.fields[0].name);
     try std.testing.expectEqualStrings("Group staff", editor.fields[1].label);
-    try std.testing.expectEqualStrings("{}", editor.document);
+    try std.testing.expectEqualStrings("{}", editor.document.text);
     const own = try TestSDK.dispatch(&admin, Get, .{
         .user = admin_id,
     });
@@ -329,12 +347,16 @@ test "get: one namespaced group per applicable custom field group; update writes
 
     const empty: Validate.In = .{
         .user = created.user_id,
-        .document = "{}",
+        .document = .{
+            .text = "{}",
+        },
     };
     try std.testing.expect((try TestSDK.dispatch(&admin, Validate, empty)).valid);
     const blank: Validate.In = .{
         .user = created.user_id,
-        .document = "{\"basic\":{}}",
+        .document = .{
+            .text = "{\"basic\":{}}",
+        },
     };
     const missing = try TestSDK.dispatch(&admin, Validate, blank);
     try std.testing.expect(!missing.valid);
@@ -345,31 +367,37 @@ test "get: one namespaced group per applicable custom field group; update writes
         .user = created.user_id,
         .display_name = "Writer",
         .roles = &.{"editor"},
-        .document = filled,
+        .document = .{
+            .text = filled,
+        },
     };
     _ = try TestSDK.dispatch(&admin, user_operations.Update, update);
     const after = try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"bio\":\"Writes\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"bio\":\"Edits\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after.document.text, "\"bio\":\"Writes\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after.document.text, "\"bio\":\"Edits\"") != null);
 
     var refused = update;
-    refused.document = "{\"basic\":{}}";
+    refused.document = .{
+        .text = "{\"basic\":{}}",
+    };
     const refusal = TestSDK.dispatch(&admin, user_operations.Update, refused);
     try std.testing.expectError(error.Invalid, refusal);
     const kept = try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
     });
-    try std.testing.expectEqualStrings(after.document, kept.document);
+    try std.testing.expectEqualStrings(after.document.text, kept.document.text);
 
     var promoted = update;
     promoted.roles = &.{"admin"};
-    promoted.document = "{\"basic\":{\"bio\":\"Leads\"}}";
+    promoted.document = .{
+        .text = "{\"basic\":{\"bio\":\"Leads\"}}",
+    };
     _ = try TestSDK.dispatch(&admin, user_operations.Update, promoted);
     const as_admin = try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
     });
     try std.testing.expectEqual(@as(usize, 1), as_admin.fields.len);
-    try std.testing.expect(std.mem.indexOf(u8, as_admin.document, "staff") == null);
+    try std.testing.expect(std.mem.indexOf(u8, as_admin.document.text, "staff") == null);
 }

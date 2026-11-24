@@ -1,7 +1,9 @@
 //! `/_publr/toolbar?path=<page>`: what the toolbar a signed-in person sees on the site
 //! offers for that page. The admin, always; the editor of the record the page renders, named
 //! by its type ("Edit Post"), when the route reads one by its slug and the caller can
-//! read it. Nobody signed in, or an account that cannot use the admin: nothing.
+//! read it. Nobody signed in: nothing. An app's visitor (an account that cannot use the
+//! admin) is signed in, so the page's `signedIn` parts keep drawing for them, and is offered
+//! no admin (`admin` empty): no bar.
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -28,6 +30,7 @@ pub const path_len_max: u32 = 1024;
 const Answer = struct {
     signed_in: bool,
     name: []const u8 = "",
+    /// Empty for an app's visitor, who is signed in to the app and shown no bar.
     admin: []const u8 = admin_path,
     /// The admin page that edits what this page shows; null when it shows no one record.
     edit: ?[]const u8 = null,
@@ -54,11 +57,22 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     try response.set_header("Vary", "Cookie");
 
     const project = Project.of(ctx);
-    // On the site's host, when the admin has its own, the member pass and never a session.
-    const identity = if (project.split() and !project.on_admin_host(request))
+    const site_host = project.split() and !project.on_admin_host(request);
+    // On the site's host, when the admin has its own, the bar comes only with the member pass;
+    // a session there is a visitor of the site's apps: signed in, offered no admin.
+    const identity = if (site_host)
         split.member_identity(project, ctx.arena, request)
     else
         identity_module.identify_on_site(request, ctx.arena, project);
+
+    if (site_host and identity.caller.user_id() == null) {
+        const visitor = identity_module.identify_on_site(request, ctx.arena, project);
+
+        return response.json(.ok, Answer{
+            .signed_in = visitor.caller.user_id() != null,
+            .admin = "",
+        });
+    }
 
     if (identity.caller.user_id() == null) {
         return response.json(.ok, Answer{
@@ -71,7 +85,8 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
     // An app's visitor is signed in to the app, not to Publr: no bar, no way to the admin.
     if (!registry.SDK.reaches_admin(&door)) {
         return response.json(.ok, Answer{
-            .signed_in = false,
+            .signed_in = true,
+            .admin = "",
         });
     }
 
@@ -173,4 +188,83 @@ fn entry_query_of(template: *const engine.Template) ?engine.ast.Decl.EntryQuery 
     }
 
     return null;
+}
+
+const testing_users = @import("../../operations/user.zig");
+const testing_roles = @import("../../operations/role.zig");
+const Harness = @import("../apps.zig").Harness;
+
+test "an app's visitor is signed in and offered no admin; staff get the bar; nobody nothing" {
+    var harness: Harness = undefined;
+    try harness.init(.{});
+    defer harness.deinit();
+
+    var system = harness.inner.ctx(.system);
+
+    _ = try registry.SDK.dispatch(&system, testing_roles.Create, .{
+        .name = "shopper",
+        .label = "Shopper",
+    });
+    _ = try registry.SDK.dispatch(&system, testing_users.Create, .{
+        .email = "ada@x.test",
+        .display_name = "Ada",
+        .roles = &.{"shopper"},
+        .password = "correct horse battery",
+    });
+    _ = try registry.SDK.dispatch(&system, testing_users.Create, .{
+        .email = "ed@x.test",
+        .display_name = "Ed",
+        .roles = &.{"editor"},
+        .password = "correct horse battery",
+    });
+
+    const nobody = try ask(&harness, "");
+
+    try std.testing.expect(has(nobody.body, "\"signed_in\":false"));
+
+    const visitor = try ask(&harness, try session(&harness, "ada@x.test"));
+
+    try std.testing.expect(has(visitor.body, "\"signed_in\":true"));
+    try std.testing.expect(has(visitor.body, "\"admin\":\"\""));
+
+    const staff = try ask(&harness, try session(&harness, "ed@x.test"));
+
+    try std.testing.expect(has(staff.body, "\"signed_in\":true"));
+    try std.testing.expect(has(staff.body, "/admin\""));
+    try std.testing.expect(!has(staff.body, "\"admin\":\"\""));
+}
+
+fn session(harness: *Harness, email: []const u8) ![]const u8 {
+    std.debug.assert(email.len > 0);
+
+    const body = try std.fmt.allocPrint(
+        harness.arena_state.allocator(),
+        "{{\"email\":\"{s}\",\"password\":\"correct horse battery\"}}",
+        .{email},
+    );
+    const signed = try harness.flow.call(
+        "POST /api/auth/sign-in HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\n" ++
+            "Content-Type: application/json\r\nContent-Length: 0\r\n\r\n",
+        body,
+    );
+    const set_cookie = signed.header("Set-Cookie").?;
+
+    return set_cookie[0..std.mem.indexOfScalar(u8, set_cookie, ';').?];
+}
+
+fn ask(harness: *Harness, cookie: []const u8) !Response {
+    std.debug.assert(cookie.len <= 4096);
+
+    const head = try harness.flow.head(
+        "GET " ++ toolbar_path ++ "?path=/ HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n",
+        .{cookie},
+    );
+
+    return harness.flow.call(head, "");
+}
+
+fn has(text: []const u8, needle: []const u8) bool {
+    std.debug.assert(needle.len > 0);
+
+    return std.mem.indexOf(u8, text, needle) != null;
 }

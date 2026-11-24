@@ -78,9 +78,31 @@ pub fn files_in(init: std.process.Init, dir: []const u8) ![]const doc_reader.Fil
     defer walker.deinit();
 
     var files: std.ArrayList(doc_reader.File) = .empty;
+    // A folder below the plugin's own holding a `main.zig` is another plugin (a test's
+    // probe beside the plugin): none of its files are this plugin's.
+    var nested: std.ArrayList([]const u8) = .empty;
+
+    while (try walker.next(init.io)) |entry| {
+        if (entry.kind != .file) {
+            continue;
+        }
+
+        const parent = std.fs.path.dirname(entry.path) orelse "";
+
+        if (parent.len > 0 and std.mem.eql(u8, entry.basename, "main.zig")) {
+            try nested.append(arena, try arena.dupe(u8, parent));
+        }
+    }
+
+    walker.deinit();
+    walker = try root.walk(arena);
 
     while (try walker.next(init.io)) |entry| {
         if (entry.kind != .file or !doc_reader.read_file(entry.path)) {
+            continue;
+        }
+
+        if (inside_any(entry.path, nested.items)) {
             continue;
         }
 
@@ -102,6 +124,30 @@ pub fn files_in(init: std.process.Init, dir: []const u8) ![]const doc_reader.Fil
     }
 
     return files.items;
+}
+
+/// Whether `path` is under one of `dirs`.
+fn inside_any(path: []const u8, dirs: []const []const u8) bool {
+    std.debug.assert(path.len > 0);
+
+    for (dirs) |dir| {
+        const under = path.len > dir.len and std.mem.startsWith(u8, path, dir) and
+            std.fs.path.isSep(path[dir.len]);
+
+        if (under) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+test "plugin check: a nested plugin's files are not the plugin's" {
+    const nested = [_][]const u8{"e2e/plugins/probe"};
+
+    try std.testing.expect(inside_any("e2e/plugins/probe/main.zig", &nested));
+    try std.testing.expect(!inside_any("e2e/plugins/probe_two/main.zig", &nested));
+    try std.testing.expect(!inside_any("main.zig", &nested));
 }
 
 test "plugin check: a prepared query that does not read, where it is" {

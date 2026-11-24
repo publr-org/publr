@@ -44,27 +44,7 @@ pub fn add(
     const pjsx_host = builder.dependency("pjsx", .{
         .target = builder.graph.host,
     });
-    const tool = builder.addExecutable(.{
-        .name = "pjsx_gen",
-        .root_module = builder.createModule(.{
-            .root_source_file = builder.path("scripts/pjsx_gen.zig"),
-            .target = builder.graph.host,
-            .optimize = .debug,
-            .imports = &.{
-                .{
-                    .name = "pjsx",
-                    .module = pjsx_host.module("pjsx"),
-                },
-                // Only `Shape` is read here, so the render runtime is not needed.
-                .{
-                    .name = "request",
-                    .module = builder.createModule(.{
-                        .root_source_file = builder.path("ui/request.zig"),
-                    }),
-                },
-            },
-        }),
-    });
+    const tool = lowering_tool(builder);
     const run = builder.addRunArtifact(tool);
     const components = repository.path(builder, components_dir);
     const icons = repository.path(builder, icons_dir);
@@ -255,4 +235,52 @@ fn declare_inputs(
             });
         }
     }
+}
+
+/// `scripts/pjsx_gen.zig` for the machine building: the lowering the build runs.
+pub fn lowering_tool(builder: *std.Build) *std.Build.Step.Compile {
+    std.debug.assert(builder.root.sub_path.len == 0);
+
+    const pjsx_host = builder.dependency("pjsx", .{
+        .target = builder.graph.host,
+    });
+
+    return builder.addExecutable(.{
+        .name = "pjsx_gen",
+        .root_module = builder.createModule(.{
+            .root_source_file = builder.path("scripts/pjsx_gen.zig"),
+            .target = builder.graph.host,
+            .optimize = .debug,
+            .imports = &.{
+                .{
+                    .name = "pjsx",
+                    .module = pjsx_host.module("pjsx"),
+                },
+                // Only `Shape` is read here, so the render runtime is not needed.
+                .{
+                    .name = "request",
+                    .module = builder.createModule(.{
+                        .root_source_file = builder.path("ui/request.zig"),
+                    }),
+                },
+            },
+        }),
+    });
+}
+
+/// The fixture apps' interactive components (`<dir>/interactive`) rendered as JavaScript,
+/// as bytecode: what core's tests hold the Zig lowering's render to.
+pub fn script_render(builder: *std.Build, dir: []const u8) std.Build.LazyPath {
+    std.debug.assert(dir.len > 0);
+
+    const run = builder.addRunArtifact(lowering_tool(builder));
+
+    run.addArgs(&.{ "--engine", "--script" });
+    run.addDirectoryArg(builder.path(dir));
+    run.addArg(repository.path(builder, components_dir));
+    run.addArg(repository.path(builder, icons_dir));
+
+    const out = run.addOutputDirectoryArg("script");
+
+    return bytecode(builder, out.path(builder, "render.js"));
 }

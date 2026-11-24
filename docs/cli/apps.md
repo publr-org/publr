@@ -11,7 +11,8 @@ folder: plain segments, no `..`, no hidden files.
 
 ## `files`
 
-Every file of every app, sorted, with its size.
+Every file of every app, sorted, with its size, a page of 200 at a time: `--after <next>`
+continues it. `--prefix www/design/` keeps the paths starting with it.
 
 ## `read`
 

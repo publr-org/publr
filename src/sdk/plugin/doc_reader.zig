@@ -3,6 +3,7 @@
 //! what they document (`operations.answer.In.page`), so comptime finds a field's words by
 //! `@typeName`. The same reader serves the compiled-in build and `publr plugin build`.
 const std = @import("std");
+const marks = @import("../../model/i18n/marks.zig");
 const Ast = std.zig.Ast;
 const doc_imports = @import("doc_imports.zig");
 
@@ -43,9 +44,11 @@ pub const Source = struct {
 
 const prepared_queries = @import("prepared_queries.zig");
 
-/// Whether a file is read: Zig, and the GROQ files a query embeds.
+/// Whether a file is read: Zig, the GROQ files a query embeds, and the views whose marked
+/// messages the docs module lists (`.ptsx`, `.ts`, `.publr`).
 pub fn read_file(path: []const u8) bool {
-    return std.mem.endsWith(u8, path, ".zig") or std.mem.endsWith(u8, path, ".groq");
+    return std.mem.endsWith(u8, path, ".zig") or std.mem.endsWith(u8, path, ".groq") or
+        marks.wanted(path);
 }
 
 /// Every doc comment in a plugin's files and the secrets its strings write, as the Zig source
@@ -73,7 +76,7 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
 
         var found: std.ArrayList(checks.Problem) = .empty;
 
-        try read(arena, try file_key(arena, file.path), file.text, &entries);
+        try read_among(arena, try file_key(arena, file.path), file.text, files, &entries);
         try written_secrets.read(arena, file.text, &written);
         try checks.check(arena, file.path, file.text, &found);
         try failures.read(arena, file.path, file.text);
@@ -102,6 +105,7 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
     const words = try generated(arena, entries.items);
     const secrets = try written_secrets.source(arena, written.items);
     const prepared = try prepared_queries.source(arena, queries.items);
+    const messages = try messages_source(arena, files);
     var warned: std.ArrayList(u8) = .empty;
 
     // The warnings ride along to the plugin's page: its manifest reads them from here.
@@ -122,10 +126,73 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
     try warned.appendSlice(arena, "};\n");
 
     return .{
-        .source = try std.mem.concat(arena, u8, &.{ words, secrets, prepared, warned.items }),
+        .source = try std.mem.concat(arena, u8, &.{
+            words,
+            secrets,
+            prepared,
+            messages,
+            warned.items,
+        }),
         .problems = problems.items,
         .queries = queries.items,
     };
+}
+
+/// Every message the plugin marks for translators, `[context, id]` each once: what a
+/// language's coverage of its words is counted against.
+fn messages_source(arena: std.mem.Allocator, files: []const File) ![]const u8 {
+    std.debug.assert(files.len <= files_max);
+
+    var found: std.ArrayList(marks.Message) = .empty;
+    var out: std.ArrayList(u8) = .empty;
+
+    for (files) |file| {
+        if (marks.wanted(file.path)) {
+            try marks.scan(arena, file.path, file.text, "", &found);
+        }
+    }
+
+    try out.appendSlice(arena, "\npub const messages = [_][2][]const u8{\n");
+
+    // The plugin's own name for people, the opening of its `main.zig`'s `//!`.
+    if (label_in(files)) |label| {
+        try out.print(arena, "    .{{ \"\", \"{f}\" }},\n", .{std.zig.fmtString(label)});
+    }
+
+    for (found.items) |message| {
+        try out.print(arena, "    .{{ \"{f}\", \"{f}\" }},\n", .{
+            std.zig.fmtString(message.context),
+            std.zig.fmtString(message.id),
+        });
+    }
+
+    try out.appendSlice(arena, "};\n");
+
+    std.debug.assert(out.items.len > 0);
+
+    return out.items;
+}
+
+/// The label `main.zig`'s first `//!` line opens with, when it opens with one.
+fn label_in(files: []const File) ?[]const u8 {
+    std.debug.assert(files.len <= files_max);
+
+    const unnamed = "-";
+
+    for (files) |file| {
+        if (!std.mem.eql(u8, file.path, "main.zig")) {
+            continue;
+        }
+
+        const start = std.mem.indexOf(u8, file.text, "//!") orelse return null;
+        const end = std.mem.indexOfScalarPos(u8, file.text, start, '\n') orelse file.text.len;
+        const first = std.mem.trim(u8, file.text[start + 3 .. end], " ");
+        const label = @import("../../model/plugin_label.zig").of(unnamed, first);
+
+        return if (label.ptr == unnamed.ptr) null else label;
+    }
+
+    return null;
 }
 
 /// Whether any problem is an error: warnings never stop a build or an install.
@@ -167,6 +234,18 @@ pub fn read(
     text: [:0]const u8,
     out: *std.ArrayList(Entry),
 ) !void {
+    return read_among(arena, key, text, &.{}, out);
+}
+
+/// `read`, with the plugin's other files at hand: a hook list another file holds
+/// (`.hooks = place.hooks ++ money.hooks`) is read from there.
+pub fn read_among(
+    arena: std.mem.Allocator,
+    key: []const u8,
+    text: [:0]const u8,
+    files: []const File,
+    out: *std.ArrayList(Entry),
+) !void {
     std.debug.assert(key.len > 0 and key.len <= key_len_max);
     std.debug.assert(text.len < std.math.maxInt(u32));
 
@@ -184,7 +263,7 @@ pub fn read(
 
     try collect(arena, &tree, tree.rootDecls(), key, out);
     try collect_definitions(arena, &tree, file_words, out);
-    try collect_hooks(arena, &tree, key, out);
+    try collect_hooks(arena, &tree, key, files, out);
 }
 
 /// The members' own words, then those of every container nested under them.
@@ -260,6 +339,11 @@ fn collect_definitions(
             continue;
         }
 
+        // A ledger's words and each of its accounts': `ledger`, `ledger.<account>`.
+        if (try ledger_words(arena, tree, node, init, file_words, out)) {
+            continue;
+        }
+
         const verb = defined_name(tree, init, "operation.define") orelse continue;
         const words = try member_doc(arena, tree, node) orelse file_words orelse continue;
         const key = try std.fmt.allocPrint(arena, "operation:{s}", .{verb});
@@ -278,6 +362,48 @@ fn collect_definitions(
             }
         }
     }
+}
+
+/// `publr.ledger.define(struct { ... }, ...)`: the declaration's `///` under `ledger`, each
+/// account field's under `ledger.<name>`. False for any other call.
+fn ledger_words(
+    arena: std.mem.Allocator,
+    tree: *const Ast,
+    node: Ast.Node.Index,
+    init: Ast.Node.Index,
+    file_words: ?[]const u8,
+    out: *std.ArrayList(Entry),
+) !bool {
+    std.debug.assert(tree.errors.len == 0);
+    std.debug.assert(@backingInt(init) < tree.nodes.len);
+
+    var call_buffer: [1]Ast.Node.Index = undefined;
+    const call = tree.fullCall(&call_buffer, init) orelse return false;
+
+    if (!std.mem.endsWith(u8, node_source(tree, call.ast.fn_expr), "ledger.define")) {
+        return false;
+    }
+
+    if (try member_doc(arena, tree, node) orelse file_words) |words| {
+        try add(arena, out, "ledger", words);
+    }
+
+    if (call.ast.params.len == 0) {
+        return true;
+    }
+
+    var buffer: [2]Ast.Node.Index = undefined;
+    const accounts = declared_value(tree, call.ast.params[0]);
+    const container = tree.fullContainerDecl(&buffer, accounts) orelse return true;
+
+    for (container.ast.members) |member| {
+        const name = name_of(tree, member) orelse continue;
+        const words = try member_doc(arena, tree, member) orelse continue;
+
+        try add(arena, out, try std.fmt.allocPrint(arena, "ledger.{s}", .{name}), words);
+    }
+
+    return true;
 }
 
 /// The `///` of the file's function a name stands for; null for anything else.
@@ -299,12 +425,22 @@ fn function_doc(arena: std.mem.Allocator, tree: *const Ast, node: Ast.Node.Index
     return member_doc(arena, tree, function);
 }
 
+/// One hook in a `.hooks` list, with the file it is written in: its run function's words are
+/// found there.
+const Listed = struct {
+    tree: *const Ast,
+    key: []const u8,
+    node: Ast.Node.Index,
+};
+
 /// A hook's or modifier's reason, its `run` function's `///`, filed under `hook:<position>` in
-/// `publr.plugin.define`'s `.hooks`, written there or in the constant it names.
+/// `publr.plugin.define`'s `.hooks`, written there, in a constant it names, or in another
+/// file's constant (`place.hooks`).
 fn collect_hooks(
     arena: std.mem.Allocator,
     tree: *const Ast,
     key: []const u8,
+    files: []const File,
     out: *std.ArrayList(Entry),
 ) !void {
     std.debug.assert(tree.errors.len == 0);
@@ -313,35 +449,55 @@ fn collect_hooks(
     for (0..tree.nodes.len) |index| {
         const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
         const hooks = option_of(tree, node, "plugin.define", "hooks") orelse continue;
-        const list = declared_value(tree, hooks);
-        var buffer: [2]Ast.Node.Index = undefined;
-        const array = tree.fullArrayInit(&buffer, unwrapped(tree, list)) orelse return;
+        var elements: std.ArrayList(Listed) = .empty;
+        const at: Listed = .{
+            .tree = tree,
+            .key = key,
+            .node = hooks,
+        };
 
-        for (array.ast.elements, 0..) |element, position| {
-            const run = run_of(tree, element) orelse continue;
+        if (!try hook_elements(arena, files, at, &elements, 0)) {
+            return;
+        }
+
+        for (elements.items, 0..) |element, position| {
             const hook_key = try std.fmt.allocPrint(arena, "hook:{d}", .{position});
 
-            if (try imported_member(arena, tree, key, run)) |target| {
-                try out.append(arena, .{
-                    .key = hook_key,
-                    .text = "",
-                    .alias = target,
-                });
-                continue;
-            }
-
-            if (tree.nodeTag(run) != .identifier) {
-                continue;
-            }
-
-            const function = root_named(tree, tree.tokenSlice(tree.nodeMainToken(run)));
-            const words = try member_doc(arena, tree, function orelse continue) orelse continue;
-
-            try add(arena, out, hook_key, words);
+            try hook_words(arena, element, hook_key, out);
         }
 
         return;
     }
+}
+
+/// The words of one listed hook, its run function's, under `hook_key`.
+fn hook_words(
+    arena: std.mem.Allocator,
+    element: Listed,
+    hook_key: []const u8,
+    out: *std.ArrayList(Entry),
+) !void {
+    const tree = element.tree;
+    const run = run_of(tree, element.node) orelse return;
+
+    std.debug.assert(hook_key.len > 0);
+
+    if (try imported_member(arena, tree, element.key, run)) |target| {
+        return out.append(arena, .{
+            .key = hook_key,
+            .text = "",
+            .alias = target,
+        });
+    }
+
+    if (tree.nodeTag(run) != .identifier) {
+        return;
+    }
+
+    const function = root_named(tree, tree.tokenSlice(tree.nodeMainToken(run))) orelse return;
+    const words = try member_doc(arena, tree, function) orelse return;
+
+    try add(arena, out, hook_key, words);
 }
 
 /// `Shout.run`, where the file says `const Shout = @import("hooks/shout.zig")`: the key its
@@ -376,17 +532,36 @@ fn imported_member(
 }
 
 /// The function a hook names, its last argument: `publr.before(Target, run)`, `after`, `on`,
-/// `publr.modify("name", run)`.
+/// `publr.modify("name", run)`, `publr.modify_all("name", run)`; and the hook
+/// `publr.hook.about("type", hook)` narrows, read through it.
 fn run_of(tree: *const Ast, node: Ast.Node.Index) ?Ast.Node.Index {
     std.debug.assert(@backingInt(node) < tree.nodes.len);
 
     var call_buffer: [1]Ast.Node.Index = undefined;
-    const call = tree.fullCall(&call_buffer, node) orelse return null;
-    const function = node_source(tree, call.ast.fn_expr);
-    const shapes = [_][]const u8{ "publr.before", "publr.after", "publr.on", "publr.modify" };
+    var call = tree.fullCall(&call_buffer, node) orelse return null;
+    var function = node_source(tree, call.ast.fn_expr);
+    const shapes = [_][]const u8{
+        "publr.before",
+        "publr.after",
+        "publr.on",
+        "publr.modify",
+        "publr.modify_all",
+    };
 
     if (call.ast.params.len != 2) {
         return null;
+    }
+
+    // Narrowed to one type: the hook is the call it wraps, written there or named.
+    if (std.mem.endsWith(u8, function, "hook.about")) {
+        const narrowed = declared_value(tree, call.ast.params[1]);
+
+        call = tree.fullCall(&call_buffer, narrowed) orelse return null;
+        function = node_source(tree, call.ast.fn_expr);
+
+        if (call.ast.params.len != 2) {
+            return null;
+        }
     }
 
     for (shapes) |shape| {
@@ -442,6 +617,111 @@ fn declared_value(tree: *const Ast, node: Ast.Node.Index) Ast.Node.Index {
     const declaration = tree.fullVarDecl(declared) orelse return node;
 
     return declaration.ast.init_node.unwrap() orelse node;
+}
+
+/// The hooks a `.hooks` value lists, in order: a list written out, a constant naming one,
+/// another file's constant (`place.hooks`), or lists joined with `++`, at any depth. False
+/// when part of it cannot be read (a list a function builds): no hook of it is given words
+/// then, rather than words at the wrong places, and the sandboxed build fails naming them.
+fn hook_elements(
+    arena: std.mem.Allocator,
+    files: []const File,
+    at: Listed,
+    out: *std.ArrayList(Listed),
+    depth: u32,
+) !bool {
+    const tree = at.tree;
+
+    std.debug.assert(@backingInt(at.node) < tree.nodes.len);
+
+    if (depth > 16) {
+        return false;
+    }
+
+    const value = unwrapped(tree, declared_value(tree, at.node));
+
+    if (tree.nodeTag(value) == .array_cat) {
+        const sides = tree.nodeData(value).node_and_node;
+
+        inline for (.{ sides[0], sides[1] }) |side| {
+            var each = at;
+
+            each.node = side;
+
+            if (!try hook_elements(arena, files, each, out, depth + 1)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    if (tree.nodeTag(value) == .field_access) {
+        const elsewhere = try other_file_constant(arena, files, at.key, tree, value) orelse
+            return false;
+
+        return hook_elements(arena, files, elsewhere, out, depth + 1);
+    }
+
+    var buffer: [2]Ast.Node.Index = undefined;
+    const array = tree.fullArrayInit(&buffer, value) orelse return false;
+
+    for (array.ast.elements) |element| {
+        var each = at;
+
+        each.node = element;
+        try out.append(arena, each);
+    }
+
+    return true;
+}
+
+/// `place.hooks`, where the file says `const place = @import("place.zig")`: that constant's
+/// value in that file; null when it is not one of the plugin's files or has no such constant.
+fn other_file_constant(
+    arena: std.mem.Allocator,
+    files: []const File,
+    key: []const u8,
+    tree: *const Ast,
+    node: Ast.Node.Index,
+) !?Listed {
+    std.debug.assert(key.len > 0);
+    std.debug.assert(tree.nodeTag(node) == .field_access);
+
+    const written = node_source(tree, node);
+    const dot = std.mem.lastIndexOfScalar(u8, written, '.') orelse return null;
+    const member = written[dot + 1 ..];
+    const target = try imported_member(arena, tree, key, node) orelse return null;
+    const file_key_of = target[0 .. target.len - member.len - 1];
+
+    for (files) |file| {
+        if (!std.mem.endsWith(u8, file.path, ".zig")) {
+            continue;
+        }
+
+        if (!std.mem.eql(u8, try file_key(arena, file.path), file_key_of)) {
+            continue;
+        }
+
+        const parsed = try arena.create(Ast);
+
+        parsed.* = try Ast.parse(arena, file.text, .{});
+
+        if (parsed.errors.len > 0) {
+            return null;
+        }
+
+        const declared = root_named(parsed, member) orelse return null;
+        const declaration = parsed.fullVarDecl(declared) orelse return null;
+
+        return .{
+            .tree = parsed,
+            .key = file_key_of,
+            .node = declaration.ast.init_node.unwrap() orelse return null,
+        };
+    }
+
+    return null;
 }
 
 /// `&.{ ... }` as its `.{ ... }`.
@@ -844,7 +1124,7 @@ test "an operation's words filed under its name" {
     }
 }
 
-test "a hook's reason is its run function's words, by its place in .hooks" {
+test "a hook's reason is its run function's words, by its place in .hooks, lists joined too" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -862,11 +1142,10 @@ test "a hook's reason is its run function's words, by its place in .hooks" {
         \\const hooks = .{
         \\    publr.after(Record, announce),
         \\    publr.before(Record, quiet),
-        \\    publr.on(Recorded, thank),
         \\};
         \\
         \\pub const plugin = publr.plugin.define(manifest, .{
-        \\    .hooks = hooks,
+        \\    .hooks = hooks ++ .{publr.on(Recorded, thank)},
         \\});
         \\
     ;
@@ -913,6 +1192,50 @@ test "a file without words, one that does not parse, and the generated source" {
     try std.testing.expect(std.mem.indexOf(u8, written, "pub fn get(") != null);
 }
 
+test "a hook narrowed to a type and a modifier of a whole batch take their functions' words" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const text =
+        \\const publr = @import("publr");
+        \\
+        \\/// Shows a product's stock beside it.
+        \\fn stock(ctx: *publr.Ctx, in: *In, out: *const Out) publr.Error!void {}
+        \\
+        \\/// Prices every charge at once.
+        \\fn price_all(ctx: *publr.Ctx, charges: []Charge) publr.Error!void {}
+        \\
+        \\/// Checks a product before it is kept.
+        \\fn check(ctx: *publr.Ctx, in: *In) publr.Error!void {}
+        \\
+        \\const checked = publr.before(Create, check);
+        \\
+        \\pub const plugin = publr.plugin.define(manifest, .{
+        \\    .hooks = .{
+        \\        publr.hook.about("shop.product", publr.after(List, stock)),
+        \\        publr.modify_all("orders.charge", price_all),
+        \\        publr.hook.about("shop.product", checked),
+        \\    },
+        \\});
+        \\
+    ;
+    var entries: std.ArrayList(Entry) = .empty;
+
+    try read(arena, "main", text, &entries);
+
+    var found: [3]?[]const u8 = @splat(null);
+
+    for (entries.items) |entry| {
+        if (std.mem.startsWith(u8, entry.key, "hook:")) {
+            found[try std.fmt.parseInt(u32, entry.key[5..], 10)] = entry.text;
+        }
+    }
+
+    try std.testing.expectEqualStrings("Shows a product's stock beside it.", found[0].?);
+    try std.testing.expectEqualStrings("Prices every charge at once.", found[1].?);
+    try std.testing.expectEqualStrings("Checks a product before it is kept.", found[2].?);
+}
+
 test "a hook listed in main whose function is in another file takes that function's words" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
@@ -939,4 +1262,64 @@ test "a hook listed in main whose function is in another file takes that functio
     try std.testing.expect(std.mem.indexOf(u8, written, "pub const @\"hook:0\" = " ++
         ".{ \"Keeps every note in capitals\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, written, "hooks.shout.run") != null);
+}
+
+test "hooks listed from two other files' constants take their run functions' words, in order" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const files = [_]File{
+        .{
+            .path = "main.zig",
+            .text =
+            \\const place = @import("place.zig");
+            \\const money = @import("parts/money.zig");
+            \\pub const plugin = publr.plugin.define(manifest, .{
+            \\    .hooks = place.hooks ++ money.hooks ++ .{publr.on(Paid, thank)},
+            \\});
+            \\/// Thanks the buyer
+            \\fn thank() void {}
+            \\
+            ,
+        },
+        .{
+            .path = "place.zig",
+            .text =
+            \\pub const hooks = .{ publr.before(Trash, guard), publr.after(Place, note) };
+            \\/// Keeps placed orders out of the trash
+            \\fn guard() void {}
+            \\/// Notes each order placed
+            \\fn note() void {}
+            \\
+            ,
+        },
+        .{
+            .path = "parts/money.zig",
+            .text =
+            \\const Column = @import("column.zig");
+            \\pub const hooks = &.{publr.after(List, Column.run)};
+            \\
+            ,
+        },
+        .{
+            .path = "parts/column.zig",
+            .text =
+            \\/// Adds the money column
+            \\pub fn run() void {}
+            \\
+            ,
+        },
+    };
+    const read_source = try source_of(arena, &files);
+    const written = read_source.source;
+    const expected = [_][]const u8{
+        "pub const @\"hook:0\" = .{ \"Keeps placed orders out of the trash\"",
+        "pub const @\"hook:1\" = .{ \"Notes each order placed\"",
+        "pub const @\"hook:2\" = .{ \"Adds the money column\"",
+        "pub const @\"hook:3\" = .{ \"Thanks the buyer\"",
+    };
+
+    for (expected) |line| {
+        try std.testing.expect(std.mem.indexOf(u8, written, line) != null);
+    }
 }

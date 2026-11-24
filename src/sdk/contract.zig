@@ -5,7 +5,9 @@
 //! checks each against the part's shapes. The owner never names providers: it lists the
 //! enabled ones, in the administrator's order, with `publr.providers(ctx, Contract, .{})`.
 const std = @import("std");
+const wire_json = @import("plugin/wire_json.zig");
 const plugin_define = @import("plugin/define.zig");
+const guest = @import("plugin/guest.zig");
 const sdk = @import("../sdk.zig");
 const shapes = @import("../model/contract.zig");
 const store = @import("../store.zig");
@@ -31,7 +33,14 @@ pub fn define(comptime options: anytype) type {
         const Options = @TypeOf(options);
 
         for (std.meta.fieldNames(Options)) |given| {
-            const known = [_][]const u8{ "name", "operations", "optional", "component" };
+            const known = [_][]const u8{
+                "name",
+                "operations",
+                "optional",
+                "component",
+                "with",
+                "at_install",
+            };
 
             if (!in_list(&known, given)) {
                 @compileError("contract: no option `." ++ given ++ "`");
@@ -64,19 +73,53 @@ pub fn define(comptime options: anytype) type {
             }
         }
 
+        const at_install: []const u8 = if (@hasField(Options, "at_install"))
+            @tagName(options.at_install)
+        else
+            "";
+
+        if (at_install.len > 0) {
+            if (!@hasField(@TypeOf(options.operations), at_install)) {
+                @compileError("contract " ++ name ++ ": `.at_install` names a required part");
+            }
+
+            const Asked = @field(options.operations, at_install).In;
+            _ = @as(Asked, .{});
+        }
+
+        const component_given: Component = if (@hasField(Options, "component"))
+            options.component
+        else
+            .none;
+
+        if (@hasField(Options, "with") and component_given == .none) {
+            @compileError("contract " ++ name ++ ": `.with` is what the owner's slot hands " ++
+                "its providers' components; the contract takes no `.component`");
+        }
+
+        if (@hasField(Options, "with") and @typeInfo(options.with) != .@"struct") {
+            @compileError("contract " ++ name ++ ": `.with` is a struct, one field per " ++
+                "attribute the slot hands over");
+        }
+
         return struct {
             pub const publr_contract_definition = true;
             pub const contract_name = name;
+            /// The part answered at install, kept as each provider's defaults; empty for none.
+            pub const install_part = at_install;
             /// Defined here, in Zig: its owner calls it with these types.
             pub const owner: []const u8 = "";
             pub const operations = options.operations;
             pub const optional_parts = optional;
-            pub const component: Component = if (@hasField(Options, "component"))
-                options.component
+            pub const component: Component = component_given;
+            /// What the owner's slot hands the chosen provider's component, as data: each
+            /// field an attribute of `<ProviderSlot>`; none when the contract leaves it open.
+            pub const with: []const shapes.Node = if (@hasField(Options, "with"))
+                shapes.describe(options.with)
             else
-                .none;
+                &.{};
             /// Each part with its shapes as data, as a published interface carries them.
-            pub const parts = parts_of(options.operations, optional);
+            pub const parts = parts_of(options.operations, optional, at_install);
 
             /// The part's `In` and `Out`, required or optional.
             pub fn Shape(comptime part: []const u8) type {
@@ -91,12 +134,19 @@ pub fn define(comptime options: anytype) type {
     }
 }
 
-fn parts_of(comptime operations: anytype, comptime optional: anytype) []const PublishedPart {
+fn parts_of(
+    comptime operations: anytype,
+    comptime optional: anytype,
+    comptime at_install: []const u8,
+) []const PublishedPart {
     comptime {
         var list: []const PublishedPart = &.{};
 
         for (std.meta.fieldNames(@TypeOf(operations))) |part| {
-            list = list ++ &[_]PublishedPart{part_of(@field(operations, part), part, true)};
+            var made = part_of(@field(operations, part), part, true);
+
+            made.at_install = std.mem.eql(u8, part, at_install);
+            list = list ++ &[_]PublishedPart{made};
         }
 
         for (std.meta.fieldNames(@TypeOf(optional))) |part| {
@@ -142,7 +192,13 @@ pub fn published(comptime owner_name: []const u8, comptime data: published_model
             pub const contract_name = data.name;
             pub const owner = owner_name;
             pub const component: Component = data.component;
+            pub const with: []const shapes.Node = data.with;
             pub const parts = data.parts;
+            pub const install_part: []const u8 = for (data.parts) |part| {
+                if (part.at_install) {
+                    break part.name;
+                }
+            } else "";
 
             pub fn Shape(comptime part: []const u8) type {
                 @compileError("contract " ++ data.name ++ " is " ++ owner_name ++ "'s: its " ++
@@ -208,6 +264,7 @@ pub fn owned_of(comptime Plugin: type) []const published_model.Contract {
                 .name = Contract.contract_name,
                 .parts = Contract.parts,
                 .component = Contract.component,
+                .with = Contract.with,
             }};
         }
 
@@ -284,7 +341,7 @@ fn checked(comptime Plugin: type, comptime given: anytype) Registered {
 
         if (!complete) {
             @compileError("plugin " ++ plugin ++ ": a provider is " ++
-                "`.{ .contract, .name, .operations = .{ ... } }`");
+                "`.{ .contract, .name, .label, .operations = .{ ... } }`");
         }
 
         const Contract = given.contract;
@@ -330,6 +387,10 @@ fn checked(comptime Plugin: type, comptime given: anytype) Registered {
         }
 
         const component: []const u8 = if (@hasField(Given, "component")) given.component else "";
+        const panel: []const u8 = if (@hasField(Given, "panel"))
+            panel_of(Plugin, label, given.panel)
+        else
+            "";
 
         if (Contract.component == .none and component.len > 0) {
             @compileError(label ++ ": the contract takes no `.component`");
@@ -342,10 +403,34 @@ fn checked(comptime Plugin: type, comptime given: anytype) Registered {
         return .{
             .contract = Contract.contract_name,
             .name = given.name,
+            .label = if (@hasField(Given, "label")) given.label else "",
             .plugin = plugin,
             .parts = parts,
             .component = component,
+            .panel = panel,
+            .with = Contract.with,
+            .at_install = Contract.install_part,
         };
+    }
+}
+
+/// A provider's `.panel`: one of the plugin's own reads, taking `record` and `base` and
+/// answering `html`, as any panel's.
+fn panel_of(comptime Plugin: type, comptime label: []const u8, comptime Given: type) []const u8 {
+    comptime {
+        std.debug.assert(label.len > 0);
+
+        const Operation = own_operation(Plugin, Given) orelse
+            @compileError(label ++ ": `.panel` is one of the plugin's own `.operations`");
+        const drawn = Operation.kind == .read and @hasField(Operation.In, "record") and
+            @hasField(Operation.Out, "html");
+
+        if (!drawn) {
+            @compileError(label ++ ": `.panel` is a read taking `record` and `base`, " ++
+                "answering `html`");
+        }
+
+        return Operation.name;
     }
 }
 
@@ -377,7 +462,8 @@ fn listed_dependency(comptime Plugin: type, comptime owner: []const u8) bool {
     }
 }
 
-/// The provider accepts everything the contract sends and gives everything it reads.
+/// The provider takes what it uses of what the contract sends (each field it declares is one
+/// the contract sends, of the same kind) and gives everything the contract reads.
 fn fits(comptime label: []const u8, comptime part: PublishedPart, comptime Operation: type) void {
     comptime {
         @setEvalBranchQuota(200_000);
@@ -387,7 +473,7 @@ fn fits(comptime label: []const u8, comptime part: PublishedPart, comptime Opera
         const read = part.output;
         const given = shapes.describe(Operation.Out);
 
-        if (shapes.check_input(sent, accepted)) |problem| {
+        if (shapes.check_provider_input(sent, accepted)) |problem| {
             @compileError(label ++ ": takes " ++ misfit(problem, sent, accepted));
         }
 
@@ -431,10 +517,7 @@ pub fn choice_of(ctx: *sdk.Ctx, contract: []const u8) sdk.Error!Choice {
     const key = try setting_key(ctx.arena, contract);
     const text = try store.settings.get(ctx.db, ctx.arena, key) orelse return .{};
 
-    return std.json.parseFromSliceLeaky(Choice, ctx.arena, text, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch .{};
+    return wire_json.parse(Choice, ctx.arena, text, .{}) catch .{};
 }
 
 /// Every provider of `contract`, compiled in or installed, in the administrator's order
@@ -624,6 +707,50 @@ pub fn Provider(comptime Contract: type) type {
             return call_part(ctx, Contract.Shape(@tagName(part)), operation, in);
         }
 
+        /// What the provider answered at install (the contract's `.at_install` part), as
+        /// kept since: its defaults, the same until it updates.
+        pub fn answers(
+            self: Self,
+            ctx: anytype,
+        ) sdk.Error!Contract.Shape(Contract.install_part).Out {
+            comptime {
+                if (Contract.install_part.len == 0) {
+                    @compileError("contract " ++ Contract.contract_name ++ " has no part " ++
+                        "answered at install (`.at_install`)");
+                }
+            }
+
+            const Out = Contract.Shape(Contract.install_part).Out;
+            const core = @TypeOf(ctx) == *sdk.Ctx;
+            const memory = if (core) ctx.arena else ctx.arena();
+            const asked: Answers.In = .{
+                .contract = Contract.contract_name,
+                .provider = self.registered.name,
+            };
+
+            // An installed plugin gets the answer laid out as its own `Out`: no text read there.
+            if (comptime !core and guest.mode == .sandboxed) laid: {
+                const base = @import("plugin/queue.zig").base_of(ctx);
+                const Got = struct {
+                    answers: Out,
+                };
+
+                // A modifier's reads are noted and answered together, as JSON.
+                if (base.reads != null) {
+                    break :laid;
+                }
+
+                return (try base.read_shaped(Answers.In, Got, Answers.name, &asked)).answers;
+            }
+
+            const kept = if (core)
+                try @import("../server/registry.zig").SDK.dispatch(ctx, Answers, asked)
+            else
+                try ctx.call(Answers, asked);
+
+            return kept.answers.as(Out, memory) catch error.Invalid;
+        }
+
         pub fn optional(
             self: Self,
             comptime part: @TypeOf(.enum_literal),
@@ -662,20 +789,27 @@ fn call_part(
     std.debug.assert(operation.len > 0);
 
     const core = @TypeOf(ctx) == *sdk.Ctx;
-    const memory = if (core) ctx.arena else ctx.arena();
-    const input = std.json.Stringify.valueAlloc(memory, in, .{}) catch return error.OutOfMemory;
-    const output = if (core)
-        try @import("../server/registry.zig").SDK.call_json(ctx, operation, input)
-    else
-        try ctx.call_json(operation, input);
 
-    return std.json.parseFromSliceLeaky(Shape.Out, memory, output, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch error.Invalid;
+    // An installed plugin hands the part its input as it lies and gets the answer laid out:
+    // no text written or read in the plugin.
+    if (comptime !core and @hasDecl(@typeInfo(@TypeOf(ctx)).pointer.child, "call_shaped")) {
+        return ctx.call_shaped(Shape.In, Shape.Out, operation, &in);
+    }
+
+    if (comptime !core) {
+        return ctx.call_named(Shape.Out, operation, in);
+    }
+
+    const memory = ctx.arena;
+
+    const input = wire_json.stringify(memory, in) catch return error.OutOfMemory;
+    const output = try @import("../server/registry.zig").SDK.call_json(ctx, operation, input);
+
+    return wire_json.parse(Shape.Out, memory, output, .{}) catch error.Invalid;
 }
 
 pub const List = @import("../operations/provider.zig").List;
+pub const Answers = @import("../operations/provider/answers.zig").Answers;
 
 test "a contract names its parts, required and optional" {
     const Send = struct {
@@ -723,4 +857,59 @@ test "a contract names its parts, required and optional" {
     try std.testing.expect(provider.operation_of("receipt") == null);
     try std.testing.expect(provider.has_all(&.{"send"}));
     try std.testing.expect(!provider.has_all(&.{"receipt"}));
+}
+
+/// An app's plugins with the plugins providing the contracts they reach: a provider of a
+/// contract a listed plugin owns (a payment method of `payments`) works in the app as its
+/// owner does, without the app naming it, and so do the providers of the contracts that
+/// provider owns in turn (the country plugin of `tax`, a provider of `orders`), at any depth.
+pub fn with_providers(
+    ctx: *const sdk.Ctx,
+    plugins: []const []const u8,
+) error{OutOfMemory}![]const []const u8 {
+    std.debug.assert(plugins.len <= 1 << 10);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    const registry = @import("../server/registry.zig");
+    var list: std.ArrayList([]const u8) = .empty;
+
+    try list.appendSlice(ctx.arena, plugins);
+
+    // Each pass adds the providers of what the last one reached; a pass adding none ends it.
+    var before: usize = 0;
+
+    while (before != list.items.len) {
+        before = list.items.len;
+
+        for (registry.providers) |provider| {
+            try add_provider(ctx.arena, &list, provider.contract, provider.plugin);
+        }
+
+        if (ctx.sandboxed_plugins) |sandboxed| {
+            for (sandboxed.manifests()) |manifest| {
+                for (manifest.providers) |provider| {
+                    try add_provider(ctx.arena, &list, provider.contract, manifest.name);
+                }
+            }
+        }
+    }
+
+    return list.items;
+}
+
+fn add_provider(
+    arena: std.mem.Allocator,
+    list: *std.ArrayList([]const u8),
+    contract: []const u8,
+    plugin: []const u8,
+) error{OutOfMemory}!void {
+    std.debug.assert(contract.len > 0);
+
+    const dot = std.mem.indexOfScalar(u8, contract, '.') orelse return;
+
+    if (plugin.len == 0 or !in_list(list.items, contract[0..dot]) or in_list(list.items, plugin)) {
+        return;
+    }
+
+    try list.append(arena, plugin);
 }

@@ -30,11 +30,14 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         .plugin_states = &application.plugin_states,
         .files = application.files_of(),
         .scratch = &application.scratch,
+        .call_scratch = &application.call_scratch,
+        .plugin_memory = &application.plugin_memory,
         .definitions = &application.definitions,
         .languages = &application.languages,
     };
 
     project.outside = try outside_of(init.arena.allocator(), args);
+    project.on_copy = @import("project.zig").copy_of_environment();
 
     var clock: queued_jobs.Clock = .{};
     var loaded = try store.sandboxed_plugins.stamp(&application.connection);
@@ -50,7 +53,7 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
             try application.sandboxed_plugins.load_all(&application.connection);
         }
 
-        queued_jobs.tick(&project, init.gpa, &clock, sdk.context.wall_clock_ms(init.io));
+        queued_jobs.tick(&project, init.gpa, &clock, project.now_ms());
 
         try std.Io.sleep(init.io, .fromMilliseconds(pause_ms), .awake);
     }

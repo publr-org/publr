@@ -7,6 +7,7 @@ const deps = @import("../../lib/deps.zig");
 const changes = @import("changes.zig");
 const content_type = @import("../../model/content_type.zig");
 const records = @import("../../store/records.zig");
+const key_page = @import("../../model/key_page.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -37,16 +38,19 @@ pub const Impact = struct {
         \\Signed-in users may call it. Nothing is written. An empty list, as in the example,
         \\means no build has recorded the keys yet (a fresh install, or apps that render
         \\live); after `publr build` a post's page answers, for instance, `{ "name":
-        \\"www:/posts/hello", "keys": ["record:<id>", "type:post", "records"] }`.
+        \\"www:/posts/hello", "keys": ["record:<id>", "type:post", "records"] }`. The
+        \\artifacts a page at a time, in the order of their names: `next` continues it.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         type: []const u8,
         id: ?[]const u8 = null,
+        after: []const u8 = "",
     };
     pub const Out = struct {
         keys: []const []const u8,
         artifacts: []const Artifact,
+        next: []const u8 = "",
     };
     pub const example: In = .{
         .type = "post",
@@ -59,11 +63,13 @@ pub const Impact = struct {
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = "The record type's handle",
         .id = "The record; omitted for one that does not exist yet",
+        .after = "The page after this artifact: the `next` the last page answered",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .keys = "The keys a change raises, in the order they are raised",
         .artifacts = "Every artifact that recorded one of the keys, once, by name, with the " ++
             "keys it recorded",
+        .next = "The next page's `after`; empty after the last",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -108,9 +114,18 @@ pub const Impact = struct {
 
         std.debug.assert(keys.len == 2 or keys.len == 3);
 
+        const names = try ctx.arena.alloc([]const u8, artifacts.items.len);
+
+        for (artifacts.items, names) |artifact, *artifact_name| {
+            artifact_name.* = artifact.name;
+        }
+
+        const page = key_page.window(names, in.after, sdk.operation.page_limit_max);
+
         return .{
             .keys = keys,
-            .artifacts = artifacts.items,
+            .artifacts = artifacts.items[page.start..page.end],
+            .next = page.next,
         };
     }
 };

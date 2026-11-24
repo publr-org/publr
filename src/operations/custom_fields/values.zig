@@ -35,14 +35,16 @@ pub const Values = struct {
         group: ?[]const u8 = null,
     };
     pub const Out = struct {
-        values: []const u8,
+        values: sdk.operation.Json,
     };
     pub const example: In = .{
         .user = "admin@example.com",
         .group = "sampler",
     };
     pub const example_out: Out = .{
-        .values = example_values,
+        .values = .{
+            .text = example_values,
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The account's id or email",
@@ -67,7 +69,9 @@ pub const Values = struct {
         };
 
         return .{
-            .values = try sdk.stringify(ctx.arena, values),
+            .values = .{
+                .text = try sdk.stringify(ctx.arena, values),
+            },
         };
     }
 };
@@ -84,18 +88,26 @@ pub const SaveValues = struct {
     pub const In = struct {
         user: []const u8,
         group: ?[]const u8 = null,
-        values: []const u8,
+        values: sdk.operation.Json,
+
+        /// A field a plugin hands over holding nothing is `null` here, which clears it;
+        /// left out, it would keep what it held.
+        pub const absent_is_null = true;
     };
     pub const Out = struct {
-        values: []const u8,
+        values: sdk.operation.Json,
     };
     pub const example: In = .{
         .user = "admin@example.com",
         .group = "sampler",
-        .values = example_values,
+        .values = .{
+            .text = example_values,
+        },
     };
     pub const example_out: Out = .{
-        .values = example_values,
+        .values = .{
+            .text = example_values,
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .user = "The account's id or email",
@@ -110,7 +122,7 @@ pub const SaveValues = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.values.len > user_fields.document_bytes_max) {
+        if (in.values.text.len > user_fields.document_bytes_max) {
             return error.Invalid;
         }
 
@@ -127,7 +139,7 @@ pub const SaveValues = struct {
                 return error.OutOfMemory;
             };
         var document = try user_fields.read(ctx, found.user.id, defs);
-        const given = json.parse(Value, ctx.arena, in.values, .{}) catch return error.Invalid;
+        const given = json.parse(Value, ctx.arena, in.values.text, .{}) catch return error.Invalid;
 
         if (given != .object) {
             return error.Invalid;
@@ -153,7 +165,9 @@ pub const SaveValues = struct {
         try user_fields.write(ctx, found.user.id, defs, try sdk.stringify(ctx.arena, document));
 
         return .{
-            .values = try sdk.stringify(ctx.arena, group),
+            .values = .{
+                .text = try sdk.stringify(ctx.arena, group),
+            },
         };
     }
 };
@@ -284,7 +298,9 @@ test "a plugin's own group read and written by field, other groups kept and refu
 
         _ = try registry.SDK.dispatch(&system, custom_fields.Create, .{
             .group = handle,
-            .definition = text,
+            .definition = .{
+                .text = text,
+            },
         });
     }
 
@@ -294,12 +310,16 @@ test "a plugin's own group read and written by field, other groups kept and refu
     var transaction = try ctx.db.transaction();
     _ = try registry.SDK.dispatch(&ctx, SaveValues, .{
         .user = admin_id,
-        .values = "{\"points\":120,\"tier\":\"gold\"}",
+        .values = .{
+            .text = "{\"points\":120,\"tier\":\"gold\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&ctx, SaveValues, .{
         .user = admin_id,
         .group = "loyalty",
-        .values = "{\"points\":130}",
+        .values = .{
+            .text = "{\"points\":130}",
+        },
     });
     try transaction.commit();
 
@@ -310,7 +330,7 @@ test "a plugin's own group read and written by field, other groups kept and refu
         points: ?i64 = null,
         tier: ?[]const u8 = null,
     };
-    const kept = try std.json.parseFromSliceLeaky(Points, ctx.arena, read.values, .{});
+    const kept = try std.json.parseFromSliceLeaky(Points, ctx.arena, read.values.text, .{});
 
     try std.testing.expectEqual(@as(?i64, 130), kept.points);
     try std.testing.expectEqualStrings("gold", kept.tier.?);

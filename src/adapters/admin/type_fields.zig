@@ -173,6 +173,10 @@ fn render_picker(session: *Session, handle: []const u8, def: Def, parent: []cons
     var cards: std.ArrayList(KindCard) = .empty;
 
     for (known_of(session)) |text| {
+        if (text.code_only) {
+            continue;
+        }
+
         if (parent.len > 0 and model.field.is_layout(text.id)) {
             continue;
         }

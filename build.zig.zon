@@ -14,6 +14,7 @@
         .publr_zig = .{ .path = "../lib/zig" },
         .publr_ai = .{ .path = "../lib/ai" },
         .publr_text = .{ .path = "../lib/text" },
+        .publr_api = .{ .path = "../lib/api" },
         // Build-time: the PJSX compiler lowers ui/ and the design system to Zig; the JIT
         // compiles their classes to the admin stylesheet and merges class stacks at render.
         .pjsx = .{ .path = "../pjsx" },

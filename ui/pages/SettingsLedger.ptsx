@@ -1,0 +1,103 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { LedgerAccounts } from "../components/LedgerAccounts.ptsx";
+import { LedgerFilters } from "../components/LedgerFilters.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type SettingsLedgerProps = {
+  /** This page. */
+  ledger_href: string;
+  /** Runs the full check. */
+  check_href: string;
+  /** Each unit's books: in balance, or the difference. */
+  units: Array<{ unit: string; in_balance: boolean; difference: string }>;
+  /** The full check ran: `ok`, `off` (something differs), or empty when it did not. */
+  checked: string;
+  /** How many accounts' totals differ from their transfers, when it ran. */
+  differing: string;
+  plugins: Array<{ value: string; selected: boolean }>;
+  unit: string;
+  holder: string;
+  accounts: Array<{
+    href: string;
+    label: string;
+    plugin: string;
+    holder: string;
+    holder_href: string;
+    unit: string;
+    balance: string;
+    held: string;
+    available: string;
+    closed: boolean;
+  }>;
+  filtered: boolean;
+  next_href: string;
+};
+
+/** Settings › Ledger: whether each unit's books balance, the full check, and every plugin's
+ * accounts, read only. */
+export function SettingsLedger({ ledger_href, check_href, units, checked, differing, plugins, unit, holder, accounts, filtered, next_href }: SettingsLedgerProps) {
+  return (
+    <IndexPage
+      title={Publr.t("Ledger")}
+      description={Publr.t("Every plugin's accounts and whether the books balance. Read only: plugins move money through their own operations.")}
+      actions={
+        <Button href={check_href} hierarchy="secondary">
+          {Publr.t("Check")}
+        </Button>
+      }
+      meta={
+        units.length > 0 && (
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+            {units.map((line) => (
+              <div class="flex items-center gap-2">
+                <Text as="span" variant="label-sm-strong">{line.unit}</Text>
+                {line.in_balance ? (
+                  <Status tone="success">{Publr.t("In balance")}</Status>
+                ) : (
+                  <Status tone="error">{Publr.t("Off by {amount}", { amount: line.difference })}</Status>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      }
+      notice={
+        checked !== "" &&
+        (checked === "ok" ? (
+          <Callout tone="success" title={Publr.t("The books balance")}>
+            {Publr.t("Every account's totals are what its transfers add up to, and every unit sums to zero.")}
+          </Callout>
+        ) : (
+          <Callout tone="error" title={Publr.t("The books do not balance")}>
+            {Publr.t("{count} accounts differ from their transfers. Only a bug causes this: report it.", { count: differing })}
+          </Callout>
+        ))
+      }
+      filters={<LedgerFilters action={ledger_href} plugins={plugins} unit={unit} holder={holder} />}
+      empty={
+        accounts.length === 0 && (
+          <Empty>
+            <EmptyTitle>{filtered ? Publr.t("No accounts match") : Publr.t("No accounts yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("Plugins open ledger accounts when they first move something: store credit, points, what a shop is owed.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        next_href !== "" && (
+          <Button href={next_href} hierarchy="secondary" size="sm">
+            {Publr.t("Next")}
+          </Button>
+        )
+      }
+    >
+      <LedgerAccounts plugins accounts={accounts} />
+    </IndexPage>
+  );
+}

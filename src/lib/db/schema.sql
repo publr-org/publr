@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at                 INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS user_types (
+    user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_type TEXT NOT NULL,
+    PRIMARY KEY (user_id, user_type)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS user_types_user_type ON user_types(user_type, user_id);
+
 CREATE TABLE IF NOT EXISTS user_roles (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role    TEXT NOT NULL,
@@ -477,6 +485,9 @@ CREATE TABLE IF NOT EXISTS internal_records (
 CREATE INDEX IF NOT EXISTS internal_records_scope
     ON internal_records(plugin, app, kind, created_at);
 
+CREATE INDEX IF NOT EXISTS internal_records_walk
+    ON internal_records(plugin, app, kind, id);
+
 CREATE TABLE IF NOT EXISTS internal_record_values (
     record TEXT NOT NULL REFERENCES internal_records(id) ON DELETE CASCADE,
     field  TEXT NOT NULL,
@@ -613,6 +624,14 @@ CREATE TABLE IF NOT EXISTS job_due (
     PRIMARY KEY (plugin, name, record)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS job_due_internal (
+    plugin TEXT NOT NULL,
+    name   TEXT NOT NULL,
+    record TEXT NOT NULL REFERENCES internal_records(id) ON DELETE CASCADE,
+    moment INTEGER NOT NULL,
+    PRIMARY KEY (plugin, name, record)
+) STRICT;
+
 -- What people scheduled for a record: any number, each a transition (`publish` on 5 Nov at
 -- 9:00) or, for a live record, its changes published: the fields it changed (`changes`, a JSON
 -- object) and what it holds back then, each on a base (`base_id`: another one it builds on,
@@ -655,3 +674,64 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 CREATE INDEX IF NOT EXISTS webhook_deliveries_plugin ON webhook_deliveries (plugin, id);
 CREATE INDEX IF NOT EXISTS webhook_deliveries_seen
     ON webhook_deliveries (plugin, name, delivery_id) WHERE delivery_id != '';
+
+-- The double-entry ledger: accounts, each one unit for one owner plugin, and the transfers
+-- between them, never changed or removed. Totals change in place in the write that moves
+-- them; a maker's own id is kept once, so a retry is one indexed read.
+CREATE TABLE IF NOT EXISTS ledger_accounts (
+    id              TEXT PRIMARY KEY,
+    owner           TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    holder_kind     TEXT NOT NULL DEFAULT '',
+    holder          TEXT NOT NULL DEFAULT '',
+    key             TEXT NOT NULL DEFAULT '',
+    unit            TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    limit_kept      TEXT NOT NULL,
+    debits_posted   INTEGER NOT NULL DEFAULT 0,
+    credits_posted  INTEGER NOT NULL DEFAULT 0,
+    debits_pending  INTEGER NOT NULL DEFAULT 0,
+    credits_pending INTEGER NOT NULL DEFAULT 0,
+    closed          INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL,
+    UNIQUE (owner, name, holder_kind, holder, key, unit)
+) STRICT;
+CREATE INDEX IF NOT EXISTS ledger_accounts_holder ON ledger_accounts (holder) WHERE holder != '';
+CREATE INDEX IF NOT EXISTS ledger_accounts_unit ON ledger_accounts (unit, owner);
+
+CREATE TABLE IF NOT EXISTS ledger_transfers (
+    id           TEXT PRIMARY KEY,
+    maker        TEXT NOT NULL,
+    maker_id     TEXT NOT NULL,
+    leg          INTEGER NOT NULL DEFAULT 0,
+    made_for     TEXT NOT NULL DEFAULT '',
+    action       TEXT NOT NULL,
+    debit        TEXT NOT NULL REFERENCES ledger_accounts(id),
+    credit       TEXT NOT NULL REFERENCES ledger_accounts(id),
+    unit         TEXT NOT NULL,
+    amount       INTEGER NOT NULL CHECK (amount > 0),
+    reason       TEXT NOT NULL,
+    hold         TEXT NOT NULL DEFAULT '',
+    reverses     TEXT NOT NULL DEFAULT '',
+    pair         TEXT NOT NULL DEFAULT '',
+    rate         INTEGER NOT NULL DEFAULT 0,
+    source       TEXT NOT NULL DEFAULT '',
+    chain        TEXT NOT NULL,
+    about        TEXT NOT NULL DEFAULT '',
+    detail       TEXT NOT NULL DEFAULT '',
+    author       TEXT NOT NULL,
+    expires_at   INTEGER,
+    happened_at  INTEGER NOT NULL,
+    posted_at    INTEGER NOT NULL,
+    debit_after  INTEGER NOT NULL,
+    credit_after INTEGER NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS ledger_transfers_maker
+    ON ledger_transfers (maker, maker_id, leg) WHERE maker_id != '';
+CREATE UNIQUE INDEX IF NOT EXISTS ledger_transfers_hold ON ledger_transfers (hold) WHERE hold != '';
+CREATE INDEX IF NOT EXISTS ledger_transfers_debit ON ledger_transfers (debit, id);
+CREATE INDEX IF NOT EXISTS ledger_transfers_credit ON ledger_transfers (credit, id);
+CREATE INDEX IF NOT EXISTS ledger_transfers_about ON ledger_transfers (about, id) WHERE about != '';
+CREATE INDEX IF NOT EXISTS ledger_transfers_detail ON ledger_transfers (detail) WHERE detail != '';
+CREATE INDEX IF NOT EXISTS ledger_transfers_reverses
+    ON ledger_transfers (reverses) WHERE reverses != '';

@@ -38,23 +38,44 @@ Every operation is reachable at `/api/<name>`, its whole name (`/api/record.list
 CLI names it (`publr --help` lists them, `publr <namespace> <verb> --help` documents
 each with its input and output). Read operations answer `GET` with the input as
 query parameters; write operations take `POST` with the input as a JSON body.
-The response body is the operation's output as JSON, exactly what the CLI
-prints. Signed-in requests carry the session cookie; writes also carry
-`X-Csrf-Token`.
+The response body is `{ "result", "meta" }`: `result` the operation's output, what the CLI
+prints, and `meta` what is about the call itself. Signed-in requests carry the session
+cookie; writes also carry `X-Csrf-Token`.
+
+```
+{ "result": { "operations": [ … ] }, "meta": { "next": "record.list" } }
+```
+
+Every list in an input or an output holds at most 200 items. An operation whose list may
+hold more answers a page at a time: it takes `after`, and `meta.next` is what the next
+page's `after` is, empty after the last. The CLI prints every page; a client asks again
+with `after` until `next` is empty. Publr's own clients read this shape through one library
+each: `Publr.send(operation, input)` in the browser (`Publr.answered` with `meta`,
+`Publr.pages` for every page), and `lib/api` (`publr.api_client` in plugins) in Zig.
 
 ```
 GET  /api/record.list?type=post&status=published&limit=20
-POST /api/record.create        {"type":"post","document":"{\"title\":\"Hello\"}"}
+POST /api/record.create        {"type":"post","document":{"title":"Hello"}}
 POST /api/record.transition    {"id":"…","transition":"publish"}
 GET  /api/content_type.get?type=post
 GET  /api/record.referrers?id=…
 GET  /api/term.tree?taxonomy=topics
-POST /api/term.create          {"taxonomy":"topics","document":"{\"name\":\"Engineering\"}","parent":"…"}
+POST /api/term.create          {"taxonomy":"topics","document":{"name":"Engineering"},"parent":"…"}
 ```
+
+A record, a list or a map in an input or an answer is the value itself (`"document":
+{"title":"Hello"}`), never text holding JSON. On the command line and in a `GET`'s query a
+value is written as JSON text (`--document '{"title":"Hello"}'`).
 
 Plugins' operations appear the same way, `<plugin>.<verb>` (`POST /api/newsletter.subscribe`).
 Unknown operations answer `404 { "error": "NotFound", … }`; `GET` on a write operation
 answers `405`.
+
+A read sent with `X-Publr-Follow: 1` answers what it read too: `X-Publr-Follows`, the change
+log's keys joined with commas, and `X-Publr-Revision`, the log's revision before it read.
+`GET /admin/live?since=<revision>&keys=<keys>` (signed in) answers
+`{ "revision", "changed" }`: whether any of them changed since, never what. The admin's
+plugin pages follow their reads this way.
 
 ## The apps
 
@@ -152,6 +173,8 @@ session cookie, and then needs no CSRF token. The token comes from signing in by
 | `GET /auth/<provider>` | starts signing in with a provider a plugin declares (`?next=` a path on this site to land on): keeps `state` and a PKCE verifier in the `publr_auth` cookie for ten minutes and redirects to the provider; `404` for a provider not offered |
 | `GET /auth/<provider>/callback` | where the provider sends the browser back: checks `state` against the cookie, asks the plugin who the code stands for, signs that account in (`identity.sign_in`) or links the identity to the signed-in account (`identity.link`), and redirects to `next`; anything refused lands on `/admin/login?identity=refused` |
 | `POST /api/auth/set-password` | body `{ "token", "password" }` from a set-password link; activates the account, returns `{ "user_id" }`; `404` when the token is wrong, used or expired |
+| `POST /api/auth/sign-up` | body `{ "app", "user_type", "email", "display_name", "language" }`: a visitor's own account of a user type that allows it, on an app it opens; emails a set-password link to the type's page there, in `language` (optional, the page's); `{ "sent": true }` either way; `429` after a few from one address or for one email |
+| `POST /api/auth/reset` | body `{ "app", "email", "language" }`: emails an account of a user type that opens the app a link to set a new password; `{ "sent": true }` either way; `429` as sign-up |
 
 How accounts, sessions and set-password links work is in
 [Authentication](auth.md).

@@ -3,9 +3,11 @@
 //! The provider the remote checks are tested with: `shelf.item` records (a title, a SKU),
 //! `shelf count` counts them, `shelf restock` says one came back (`shelf.restocked`), and
 //! an internal `shelf.bin` keeps how many of an item a bin holds. `labels` needs it as it
-//! is; `stocktake` works with it when it fits.
+//! is; `stocktake` works with it when it fits. Its own `after` hook on `shelf restock`
+//! refuses the SKU `KEPT`, whoever calls.
 const std = @import("std");
 const publr = @import("publr");
+const kept = @import("kept.zig");
 
 const manifest: publr.Manifest = .{
     .name = "shelf",
@@ -106,6 +108,18 @@ fn restock(ctx: *publr.Ctx, in: RestockIn) publr.Error!RestockOut {
         return error.Invalid;
     }
 
+    // Refused by the operation itself, in its own words.
+    if (std.mem.eql(u8, in.sku, "NONE")) {
+        const said = std.fmt.allocPrint(ctx.arena(), "No item has the SKU {s}", .{in.sku}) catch {
+            return error.OutOfMemory;
+        };
+
+        return ctx.refuse(&.{.{
+            .field = "sku",
+            .message = said,
+        }});
+    }
+
     ctx.emit(Restocked, .{
         .sku = in.sku,
     });
@@ -119,4 +133,5 @@ pub const plugin = publr.plugin.define(manifest, .{
     .records = &.{ Items, Bins },
     .operations = &.{ Count, Restock },
     .events = &.{Restocked},
+    .hooks = kept.hooks,
 });

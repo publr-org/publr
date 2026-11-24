@@ -63,7 +63,8 @@ pub const Begin = struct {
         .token = "The device's token, for `/api/cli`; shown once",
         .prompt = "What the person asked last",
         .pictures = "The pictures that came with it: keys of chat pictures",
-        .history = "The turns before: `user` asks and `assistant` answers, in order",
+        .history = "The turns before, the last 200: `user` asks and `assistant` answers, " ++
+            "in order",
         .scope = "The device's scope",
         .provider = "Who answers",
         .model = "The model, empty for the provider's default",
@@ -89,12 +90,15 @@ pub const Begin = struct {
         try conversations.set_device(ctx.db, row.id, created.device.id);
 
         const said = try history_of(ctx, row);
+        const before = said[0 .. said.len - 1];
+        // The most recent turns, a page of them: a longer chat's start is left out.
+        const kept = before.len - @min(before.len, sdk.operation.page_limit_max);
 
         return .{
             .token = try ctx.arena.dupe(u8, created.token_text()),
             .prompt = said[said.len - 1].text,
             .pictures = said[said.len - 1].pictures,
-            .history = said[0 .. said.len - 1],
+            .history = before[kept..],
             .scope = row.scope,
             .provider = row.provider,
             .model = row.model,
@@ -401,10 +405,12 @@ test "a turn: begun once as the person's device, its steps, stopped, finished, a
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
     const bob_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "bob@example.com",
         .display_name = "Bob",
+        .roles = &.{"editor"},
     });
     const ada_id = ada_account.user_id;
     var ada = harness.ctx(.{

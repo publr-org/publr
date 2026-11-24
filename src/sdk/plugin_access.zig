@@ -26,6 +26,12 @@ pub const Access = struct {
     /// What it uses of other plugins (`.remotes`): a remote record is read with only the
     /// fields it lists.
     remotes: []const plugin_contracts.Used = &.{},
+    /// The operations providers registered for the contracts it owns: it calls them as their
+    /// contract's owner, though it knows none of the plugins that provide them.
+    provided: []const []const u8 = &.{},
+    /// The contracts it owns: it sets the order of their providers and which are off
+    /// (`provider.set` refuses another contract).
+    contracts: []const []const u8 = &.{},
 
     /// The key as granted now; null when it is off.
     pub fn held_of(access: *const Access, key: []const u8) ?*const permission.Held {
@@ -91,6 +97,14 @@ fn decided(
         return Grant.allow_all;
     }
 
+    if (permission.contains(access.provided, operation_name)) {
+        return Grant.allow_all;
+    }
+
+    if (access.contracts.len > 0 and std.mem.eql(u8, operation_name, "provider.set")) {
+        return Grant.allow_all;
+    }
+
     const own_type = if (request.type_id) |type_id|
         permission.contains(access.own_types, type_id)
     else
@@ -102,7 +116,7 @@ fn decided(
         };
     }
 
-    const entry = naming(operation_name) orelse return own_or_deny(
+    const entry = naming(access, operation_name) orelse return own_or_deny(
         access,
         request,
     );
@@ -110,7 +124,7 @@ fn decided(
     const granted = switch (entry.narrowing) {
         .records => try records_grant(arena, access, entry, request, "records"),
         .taxonomies => try records_grant(arena, access, entry, request, "terms"),
-        .none, .domains => plain_grant(access, entry),
+        .none, .domains, .plugins => plain_grant(access, entry),
     };
 
     // A call naming a type out of reach is refused here, so asking whether it may is exact.
@@ -126,7 +140,7 @@ fn decided(
 /// A key that names nothing: on or off; one taking `.private` (media) keeps private files out
 /// of reach without it.
 fn plain_grant(access: *const Access, entry: *const permission.Permission) Grant {
-    std.debug.assert(entry.narrowing == .none or entry.narrowing == .domains);
+    std.debug.assert(entry.narrowing != .records and entry.narrowing != .taxonomies);
     std.debug.assert(entry.key.len > 0);
 
     const held = access.held_of(entry.key) orelse return Grant.deny;
@@ -263,21 +277,35 @@ fn concat(
 pub fn names_operation(operation_name: []const u8) bool {
     std.debug.assert(operation_name.len > 0);
 
-    return naming(operation_name) != null;
+    const nothing: Access = .{
+        .own_types = &.{},
+    };
+
+    return naming(&nothing, operation_name) != null;
 }
 
 /// The permission whose operations name `operation_name`, if any.
-fn naming(operation_name: []const u8) ?*const permission.Permission {
+/// The permission that opens `operation_name` to the plugin: one it holds when several name
+/// it (`users.write` and the narrower `users.own`), else the first.
+fn naming(access: *const Access, operation_name: []const u8) ?*const permission.Permission {
     std.debug.assert(operation_name.len > 0);
     std.debug.assert(permission.core.len > 0);
 
+    var first: ?*const permission.Permission = null;
+
     for (&permission.core) |*entry| {
-        if (permission.contains(entry.operations, operation_name)) {
+        if (!permission.contains(entry.operations, operation_name)) {
+            continue;
+        }
+
+        if (access.held_of(entry.key) != null) {
             return entry;
         }
+
+        first = first orelse entry;
     }
 
-    return null;
+    return first;
 }
 
 /// Whether `operation_name` is in the plugin's own namespace: `<name>.*`.
@@ -498,4 +526,29 @@ test "an exact plugin call needs both its grant and a declared parent" {
 
     access.held = &.{};
     try std.testing.expect(!(try grant(arena, "child", &access, request)).allows());
+}
+
+test "a contract's owner calls the parts its providers registered, and nothing else of theirs" {
+    var arena_state = std.heap.ArenaAllocator.init(testing_arena);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var access: Access = .{
+        .own_types = &.{},
+    };
+    const request: Request = .{
+        .operation_name = "bank_transfer.start",
+    };
+    try std.testing.expect(!(try grant(arena, "payments", &access, request)).allows());
+    access.provided = &.{"bank_transfer.start"};
+    try std.testing.expect((try grant(arena, "payments", &access, request)).allows());
+    try std.testing.expect(!(try grant(arena, "payments", &access, .{
+        .operation_name = "bank_transfer.erase",
+    })).allows());
+
+    const set: Request = .{
+        .operation_name = "provider.set",
+    };
+    try std.testing.expect(!(try grant(arena, "payments", &access, set)).allows());
+    access.contracts = &.{"payments.method"};
+    try std.testing.expect((try grant(arena, "payments", &access, set)).allows());
 }

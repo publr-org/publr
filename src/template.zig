@@ -22,6 +22,7 @@ pub const Prop = render.Prop;
 pub const Renderer = render.Renderer;
 pub const PjsxRender = render.PjsxRender;
 pub const PjsxPage = render.PjsxPage;
+pub const Held = @import("template/held.zig").Held;
 pub const Route = routes.Route;
 pub const RouteKind = routes.RouteKind;
 pub const Match = routes.Match;
@@ -437,6 +438,7 @@ test {
     _ = @import("template/components.zig");
     _ = @import("template/expression.zig");
     _ = @import("template/frontmatter.zig");
+    _ = @import("template/held.zig");
     _ = @import("template/markup.zig");
     _ = @import("template/javascript/vm.zig");
 }

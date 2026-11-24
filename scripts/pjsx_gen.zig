@@ -20,6 +20,7 @@ const pjsx = @import("pjsx");
 const request = @import("request");
 const layouts = @import("pjsx_gen/layouts.zig");
 const installed = @import("pjsx_gen/installed.zig");
+const script = @import("pjsx_gen/script.zig");
 
 const Module = pjsx.compiler.ModuleIR;
 /// Stands for the render runtime's node while the request's fields are read.
@@ -59,6 +60,10 @@ const Set = struct {
     /// admin's build.
     own: std.ArrayList([]const u8) = .empty,
     plugin: bool = false,
+    /// `--script`: the render as JavaScript, for a host with no compiler.
+    script: bool = false,
+    /// How many modules the ui folder itself holds: the components a page may place.
+    placeable: u32 = 0,
 
     fn compile(set: *Set, source: []const u8, label: []const u8) !void {
         std.debug.assert(label.len > 0);
@@ -158,6 +163,13 @@ fn run(init: std.process.Init) !u8 {
         first = args.next() orelse return usage();
     }
 
+    // The render as JavaScript, beside the browser's stores, for a host with no compiler.
+    given.script = std.mem.eql(u8, first, "--script");
+
+    if (given.script) {
+        first = args.next() orelse return usage();
+    }
+
     // The admin's build: every design-system component, for installed plugins' views.
     given.all_components = std.mem.eql(u8, first, "--all-components");
 
@@ -206,6 +218,9 @@ pub const Args = struct {
     /// binary draws them for installed plugins. An app's build compiles what it reaches, so its
     /// stylesheet carries only those.
     all_components: bool = false,
+    /// The render as JavaScript (`render.js`) and the components a page may place
+    /// (`components.json`), beside the stores and the classes: no Zig.
+    script: bool = false,
 };
 
 /// The lowering: `zig build`'s, through `main`, and `publr plugin build`'s, in its process.
@@ -234,6 +249,7 @@ pub fn generate(arena: std.mem.Allocator, io: std.Io, given: Args) !void {
         .io = io,
         .engine = given.engine and !given.plugin,
         .plugin = given.plugin,
+        .script = given.script,
         .components_dir_path = given.components_dir,
         .components_dir = try cwd.openDir(io, given.components_dir, .{
             .iterate = true,
@@ -243,6 +259,7 @@ pub fn generate(arena: std.mem.Allocator, io: std.Io, given: Args) !void {
 
     try index_components(&set);
     try compile_ui(&set, given.ui_dir, .admin);
+    set.placeable = @intCast(set.modules.items.len);
 
     if (set.modules.items.len == 0) {
         return report(error.NoModules, given.ui_dir);
@@ -420,6 +437,12 @@ fn compile_imports(set: *Set) !void {
                 continue;
             }
 
+            // A plugin's view placing one of its interactive components
+            // (`../interactive/AddressBook.ptsx`): compiled from beside the view.
+            if (try compile_beside(set, module.filename, import.source)) {
+                continue;
+            }
+
             const path = set.components.get(stem) orelse {
                 std.debug.print("pjsx_gen: {s} imports \"{s}\", which is neither a view " ++
                     "nor a design-system component\n", .{ module.component.name, import.source });
@@ -430,6 +453,45 @@ fn compile_imports(set: *Set) !void {
             try compile_component(set, stem, path);
         }
     }
+}
+
+/// The module `source` names relative to the one at `importer` (`../interactive/X.ptsx`),
+/// compiled; false when it is no file of the plugin's `interactive/`.
+fn compile_beside(set: *Set, importer: []const u8, source: []const u8) !bool {
+    std.debug.assert(importer.len > 0);
+    std.debug.assert(source.len > 0);
+
+    const relative = std.mem.startsWith(u8, source, "./") or std.mem.startsWith(u8, source, "../");
+
+    if (!relative or !std.mem.endsWith(u8, source, ".ptsx")) {
+        return false;
+    }
+
+    const dir = std.fs.path.dirname(importer) orelse ".";
+    const path = try std.fs.path.resolve(set.arena, &.{ dir, source });
+    const folder = std.fs.path.basename(std.fs.path.dirname(path) orelse "");
+
+    if (!std.mem.eql(u8, folder, "interactive")) {
+        return false;
+    }
+
+    const limit: std.Io.Limit = .limited(file_bytes_max);
+    const cwd = std.Io.Dir.cwd();
+    const text = cwd.readFileAlloc(set.io, path, set.arena, limit) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
+
+    try set.compile(text, path);
+
+    // The plugin's own, as its views are: lowered with them, its store in theirs.
+    if (set.plugin) {
+        const added = set.modules.items[set.modules.items.len - 1];
+
+        try set.own.append(set.arena, added.component.name);
+    }
+
+    return true;
 }
 
 /// One design-system component, marked for the audit outline.
@@ -742,6 +804,10 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
         return;
     }
 
+    if (set.script) {
+        return lower_script(set, program, out_dir);
+    }
+
     for (set.modules.items) |module| {
         const name = module.component.name;
         const code = program.lower(arena, name) catch |err| return report(err, name);
@@ -785,6 +851,31 @@ fn lower(set: *Set, out_dir: std.Io.Dir) !void {
     try out_dir.writeFile(set.io, .{
         .sub_path = "expressions.js",
         .data = program.serverFile(arena) catch |err| return report(err, "expressions.js"),
+    });
+}
+
+/// `--script`: the render as JavaScript, the browser's stores, the classes and the
+/// components a page may place, for a host with no compiler.
+fn lower_script(set: *Set, program: pjsx.targets.zig.Program, out_dir: std.Io.Dir) !void {
+    std.debug.assert(set.script);
+    std.debug.assert(set.placeable > 0);
+
+    const arena = set.arena;
+    const render = pjsx.targets.render_js.programFile(arena, program) catch |err| {
+        return report(err, "render.js");
+    };
+    var browser: std.Io.Writer.Allocating = .init(arena);
+
+    try browser.writer.writeAll("import \"./class-book.js\";\n");
+    try browser_imports(set, &browser.writer, null, "./");
+    try shared_helpers(set, &browser.writer, null);
+    try browser.writer.writeAll(try program.storesFile(arena));
+    try script.write(set.io, out_dir, .{
+        .arena = arena,
+        .render = render,
+        .browser = browser.written(),
+        .classes = program.classesFile(arena) catch |err| return report(err, "classes.txt"),
+        .placeable = set.modules.items[0..set.placeable],
     });
 }
 
@@ -931,7 +1022,7 @@ fn write_scopes(set: *Set, named: []const Named, out: *std.Io.Writer) !void {
         try out.writeAll(" } = (() => {\n");
 
         for (shared_of(set, first.stem).?.component.declarations) |declaration| {
-            if (!declaration.store_bound and !std.ascii.isUpper(declaration.name[0])) {
+            if (declaration.shared()) {
                 try out.print("{s}\n", .{declaration.code});
             }
         }
@@ -954,7 +1045,7 @@ fn helper_in(module: *const Module, name: []const u8) bool {
 
     for (module.component.declarations) |declaration| {
         if (std.mem.eql(u8, declaration.name, name)) {
-            return !declaration.store_bound and !std.ascii.isUpper(name[0]);
+            return declaration.shared();
         }
     }
 
@@ -1059,6 +1150,12 @@ fn browser_imports(
     std.debug.assert(set.modules.items.len <= modules_max);
 
     var seen: std.StringHashMapUnmanaged([]const u8) = .empty;
+
+    // A plugin's views: their `ctx` in the browser (`Publr.ctx`) is made by the operations
+    // runtime, which must have run before any of their stores starts.
+    if (kept != null) {
+        try writer.print("import \"{s}publr-operations.js\";\n", .{prefix});
+    }
 
     for (set.modules.items) |module| {
         if (!is_kept(kept, module.component.name)) {

@@ -64,19 +64,25 @@ pub fn update(
             @import("../../operations/taxonomy.zig").Update,
             .{
                 .taxonomy = handle,
-                .definition = definition,
+                .definition = .{
+                    .text = definition,
+                },
                 .drop_content = drop,
             },
         );
     } else if (spaces.of(session) == .custom) {
         _ = try registry.SDK.dispatch(&session.ctx, custom.Update, .{
             .group = handle,
-            .definition = definition,
+            .definition = .{
+                .text = definition,
+            },
         });
     } else {
         _ = try registry.SDK.dispatch(&session.ctx, types.Update, .{
             .type = handle,
-            .definition = definition,
+            .definition = .{
+                .text = definition,
+            },
             .drop_content = drop,
         });
     }
@@ -100,7 +106,9 @@ pub fn problems(
     const handle = session.request.param("handle") orelse return error.OutOfMemory;
     const report = registry.SDK.dispatch(&session.ctx, custom.Validate, .{
         .group = handle,
-        .definition = definition,
+        .definition = .{
+            .text = definition,
+        },
     }) catch |failure| {
         if (failure == error.OutOfMemory) {
             return error.OutOfMemory;

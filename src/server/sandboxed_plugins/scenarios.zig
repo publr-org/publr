@@ -598,8 +598,10 @@ test "a grant's flags: without .publish a plugin's write waits, with it it goes 
     var system = scenario.ctx(.system);
 
     _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
-        .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
-            "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+        .definition = .{
+            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
+                "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+        },
     });
 
     const path = try std.mem.replaceOwned(
@@ -686,8 +688,10 @@ test "an installed plugin destroys from its .destructive operation, for an admin
     var system = scenario.ctx(.system);
 
     _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
-        .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
-            "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+        .definition = .{
+            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
+                "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
+        },
     });
 
     const path = try std.mem.replaceOwned(
@@ -1231,7 +1235,7 @@ test "a plugin that inserts at the front of a list keeps every entry" {
 }
 
 /// Answers one request on `server` with a plain 200, whatever was asked.
-fn answer_once(io: std.Io, server: *std.Io.net.Server) void {
+pub fn answer_once(io: std.Io, server: *std.Io.net.Server) void {
     std.debug.assert(courier_bytes.len > 0);
 
     const stream = server.accept(io) catch return;

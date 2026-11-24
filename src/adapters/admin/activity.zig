@@ -40,7 +40,7 @@ pub fn show_activity(
             .who = try who_of(session.arena, item.actor, known),
             .operation = item.operation,
             .what = try changed_text(session.arena, item.units, item.calls),
-            .input = item.input,
+            .input = if (item.input) |input| input.text else "",
             .lines = try lines_of(session.arena, item.lines),
             .json = try json_of(session.arena, item),
         };
@@ -86,7 +86,7 @@ pub fn show_errors(
                 from,
                 said,
             }),
-            .input = item.input,
+            .input = if (item.input) |input| input.text else "",
             .lines = try lines_of(session.arena, item.lines),
             .json = try json_of(session.arena, item),
         };
@@ -198,9 +198,10 @@ fn json_of(arena: std.mem.Allocator, item: anytype) admin.Error![]const u8 {
     inline for (fields) |field_name| {
         const value = @field(item, field_name);
         const as_json: std.json.Value = if (comptime std.mem.eql(u8, field_name, "input"))
-            std.json.parseFromSliceLeaky(std.json.Value, arena, value, .{}) catch .{
-                .string = value,
-            }
+            if (value) |input|
+                std.json.parseFromSliceLeaky(std.json.Value, arena, input.text, .{}) catch .null
+            else
+                .null
         else
             try value_of(arena, value);
 
@@ -300,11 +301,13 @@ test "activity pages: what was done and what was refused, read only" {
     _ = try registry.SDK.dispatch(&system, users.Create, .{
         .email = "bob@example.com",
         .display_name = "Bob",
+        .roles = &.{"editor"},
         .password = "hunter2hunter2",
     });
     const refused = registry.SDK.dispatch(&system, users.Create, .{
         .email = "not an email",
         .display_name = "Nobody",
+        .roles = &.{"editor"},
     });
     try std.testing.expect(std.meta.isError(refused));
 

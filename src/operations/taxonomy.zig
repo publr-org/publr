@@ -59,14 +59,16 @@ pub const Create = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
-        definition: []const u8,
+        definition: sdk.operation.Json,
     };
     pub const Out = struct {
         id: []const u8,
         handle: []const u8,
     };
     pub const example: In = .{
-        .definition = new_definition,
+        .definition = .{
+            .text = new_definition,
+        },
     };
     pub const example_out: Out = .{
         .id = example_id,
@@ -83,11 +85,11 @@ pub const Create = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.definition.len > content_type.definition_bytes_max + 1) {
+        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
             return error.Invalid;
         }
 
-        const row = try definition.create(ctx, in.definition);
+        const row = try definition.create(ctx, in.definition.text);
 
         return .{
             .id = row.id,
@@ -109,7 +111,7 @@ pub const Update = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         taxonomy: []const u8,
-        definition: []const u8,
+        definition: sdk.operation.Json,
         drop_content: bool = false,
     };
     pub const Out = struct {
@@ -120,7 +122,9 @@ pub const Update = struct {
     };
     pub const example: In = .{
         .taxonomy = "topics",
-        .definition = example_definition,
+        .definition = .{
+            .text = example_definition,
+        },
     };
     pub const example_out: Out = .{
         .id = example_id,
@@ -147,9 +151,10 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        try refuse_flattening(ctx, in.taxonomy, in.definition);
+        try refuse_flattening(ctx, in.taxonomy, in.definition.text);
 
-        const updated = try definition.update(ctx, in.taxonomy, in.definition, in.drop_content);
+        const text = in.definition.text;
+        const updated = try definition.update(ctx, in.taxonomy, text, in.drop_content);
 
         return .{
             .id = updated.id,
@@ -339,15 +344,17 @@ pub const Validate = struct {
     pub const description = "Check a JSON definition and list every problem without saving";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
-        definition: []const u8,
+        definition: sdk.operation.Json,
     };
     pub const Out = struct {
         valid: bool,
         problems: []const Problem,
     };
     pub const example: In = .{
-        .definition = "{\"handle\":\"topics\",\"name\":\"Topics\",\"kind\":\"settings\"," ++
-            "\"fields\":[]}",
+        .definition = .{
+            .text = "{\"handle\":\"topics\",\"name\":\"Topics\",\"kind\":\"settings\"," ++
+                "\"fields\":[]}",
+        },
     };
     pub const example_out: Out = .{
         .valid = false,
@@ -362,11 +369,11 @@ pub const Validate = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
 
-        if (in.definition.len > content_type.definition_bytes_max + 1) {
+        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
             return error.Invalid;
         }
 
-        const report = try definition.validate(ctx, in.definition);
+        const report = try definition.validate(ctx, in.definition.text);
 
         return .{
             .valid = report.valid,
@@ -400,13 +407,17 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     var anon = harness.ctx(.anonymous);
 
     const created = try SDK.dispatch(&admin, Create, .{
-        .definition = example_definition,
+        .definition = .{
+            .text = example_definition,
+        },
     });
     try std.testing.expectEqualStrings("topics", created.handle);
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&editor, Create, .{
-            .definition = example_definition,
+            .definition = .{
+                .text = example_definition,
+            },
         }),
     );
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, List, .{}));
@@ -423,14 +434,18 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     const with_url = try SDK.dispatch(&admin, Validate, Validate.example);
     try std.testing.expect(!with_url.valid);
     const settings_kind = SDK.dispatch(&admin, Create, .{
-        .definition = "{\"handle\":\"tags\",\"name\":\"Tags\",\"kind\":\"settings\",\"fields\":[]}",
+        .definition = .{
+            .text = "{\"handle\":\"tags\",\"name\":\"Tags\",\"kind\":\"settings\",\"fields\":[]}",
+        },
     });
     try std.testing.expectError(error.Invalid, settings_kind);
     const nested_terms = SDK.dispatch(&admin, Create, .{
-        .definition =
-        \\{"handle":"tags","name":"Tags","fields":[{"name":"topics","label":"Topics",
-        \\"kind":"terms","options":{"taxonomy":"topics"}}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"tags","name":"Tags","fields":[{"name":"topics","label":"Topics",
+            \\"kind":"terms","options":{"taxonomy":"topics"}}]}
+            ,
+        },
     });
     try std.testing.expectError(error.Invalid, nested_terms);
 
@@ -442,7 +457,9 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     ;
     const updated = try SDK.dispatch(&admin, Update, .{
         .taxonomy = "topics",
-        .definition = renamed,
+        .definition = .{
+            .text = renamed,
+        },
     });
     try std.testing.expectEqual(@as(u32, 0), updated.terms_rewritten);
     try std.testing.expectEqualStrings(

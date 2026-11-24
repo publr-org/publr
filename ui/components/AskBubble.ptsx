@@ -232,17 +232,7 @@ const keyed = (event: KeyboardEvent) => {
   }
 };
 
-const post = async (operation: string, body: unknown) => {
-  const response = await fetch(Publr.url(`/api/${operation}`), {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
-    body: JSON.stringify(body),
-  });
-  const answer = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
-  return answer;
-};
+const post = (operation: string, body: unknown): Promise<any> => Publr.send(operation, body);
 
 /** The words go: a reply to the conversation in the corner, or a new one asked here. */
 export const send = async () => {
@@ -344,10 +334,7 @@ const refresh = async () => {
   }
   reading = true;
   try {
-    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
-    const response = await fetch(address, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(`${response.status}`);
-    apply(await response.json());
+    apply(await Publr.send("ai.conversation", { id: state.id, after }));
     state.note = "";
   } catch {
     state.note = Publr.t("Lost touch with the server; trying again…");
@@ -494,10 +481,7 @@ const resume = async () => {
   if (saved.id === "" || saved.chat === "") return;
   followed = saved.followed;
   try {
-    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(saved.id)}`);
-    const response = await fetch(address, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(`${response.status}`);
-    const read = await response.json();
+    const read: any = await Publr.send("ai.conversation", { id: saved.id });
     const prompt = `${read.conversation.prompt}`;
     const mark = prompt.lastIndexOf(asked_on_mark);
     state.id = saved.id;

@@ -72,7 +72,9 @@ pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
         error.NotFound => {
             _ = try registry.SDK.dispatch(ctx, custom_fields.Create, .{
                 .group = def.handle,
-                .definition = wanted,
+                .definition = .{
+                    .text = wanted,
+                },
             });
 
             return;
@@ -88,7 +90,9 @@ pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
     _ = try registry.SDK.dispatch(ctx, custom_fields.Update, .{
         .group = def.handle,
-        .definition = wanted,
+        .definition = .{
+            .text = wanted,
+        },
     });
 }
 
@@ -139,14 +143,18 @@ pub fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
         _ = try registry.SDK.dispatch(ctx, types.Update, .{
             .type = def.handle,
-            .definition = wanted,
+            .definition = .{
+                .text = wanted,
+            },
         });
 
         return;
     }
 
     _ = try registry.SDK.dispatch(ctx, types.Create, .{
-        .definition = wanted,
+        .definition = .{
+            .text = wanted,
+        },
     });
 }
 
@@ -190,14 +198,18 @@ pub fn apply_taxonomy(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
         _ = try registry.SDK.dispatch(ctx, taxonomies.Update, .{
             .taxonomy = def.handle,
-            .definition = wanted,
+            .definition = .{
+                .text = wanted,
+            },
         });
 
         return;
     }
 
     _ = try registry.SDK.dispatch(ctx, taxonomies.Create, .{
-        .definition = wanted,
+        .definition = .{
+            .text = wanted,
+        },
     });
 }
 
@@ -359,7 +371,9 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     ;
     _ = try registry.SDK.dispatch(&admin, types.Update, .{
         .type = "greeting",
-        .definition = with_extra,
+        .definition = .{
+            .text = with_extra,
+        },
     });
     const extended = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "greeting",
@@ -377,7 +391,9 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     ;
     _ = try registry.SDK.dispatch(&admin, types.Update, .{
         .type = "greeting",
-        .definition = tampered,
+        .definition = .{
+            .text = tampered,
+        },
     });
     const still = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "greeting",
@@ -388,7 +404,9 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     arranged.group.presentation.labels = .beside;
     _ = try registry.SDK.dispatch(&admin, types.Update, .{
         .type = "greeting",
-        .definition = try content_type.encode(admin.arena, arranged),
+        .definition = .{
+            .text = try content_type.encode(admin.arena, arranged),
+        },
     });
 
     try apply(&system, &declared_greeting);
@@ -404,7 +422,9 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
         \\ "fields":[{"name":"title","label":"T","kind":"string"}]}
     ;
     const refused = registry.SDK.dispatch(&admin, types.Create, .{
-        .definition = by_hand,
+        .definition = .{
+            .text = by_hand,
+        },
     });
     try std.testing.expectError(error.Invalid, refused);
 }

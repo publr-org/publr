@@ -52,7 +52,9 @@ pub fn build(builder: *std.Build) void {
         .fmt = &fmt_check.step,
     });
 
-    sandboxed_plugins.add_step(builder, exe, from.plugins_dir, from.native);
+    const shipped = sandboxed_plugins.add_step(builder, exe, from.plugins_dir, from.native);
+
+    @import("build/scale.zig").add_step(builder, target, optimize, from, shipped);
     vendors.add_import_step(builder);
     vendors.add_cache_check_step(builder);
 }

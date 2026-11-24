@@ -13,6 +13,15 @@ pub const Quote = struct {
     };
 };
 
+/// Asked once when a carrier is installed: what it carries, kept as its defaults.
+pub const Facts = struct {
+    pub const In = struct {};
+    pub const Out = struct {
+        /// What the carrier carries
+        carries: []const u8,
+    };
+};
+
 pub const Track = struct {
     pub const In = struct {
         /// The carrier's parcel number
@@ -26,7 +35,9 @@ pub const Track = struct {
 
 pub const carrier = publr.contract.define(.{
     .name = "parcels.carrier",
+    .at_install = .facts,
     .operations = .{
+        .facts = Facts,
         .quote = Quote,
     },
     .optional = .{

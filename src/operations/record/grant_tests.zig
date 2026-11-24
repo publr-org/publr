@@ -22,7 +22,9 @@ pub fn seed_posts_and_notes(system: *sdk.Ctx) !void {
 
     for ([_]model.content_type.Def{ model.content_type.test_post, note }) |def| {
         _ = try SDK.dispatch(system, types.Create, .{
-            .definition = try model.content_type.encode(system.arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(system.arena, def),
+            },
         });
     }
 
@@ -36,7 +38,9 @@ pub fn seed_posts_and_notes(system: *sdk.Ctx) !void {
 
             const created = try SDK.dispatch(system, record.Create, .{
                 .type = handle,
-                .document = document,
+                .document = .{
+                    .text = document,
+                },
             });
 
             if (std.mem.eql(u8, status, "published")) {
@@ -202,7 +206,9 @@ test "records.read without .drafts reads the live copy, never a record's pending
 
     _ = try SDK.dispatch(&system, record.Save, .{
         .id = id,
-        .document = "{\"title\":\"Post unpublished edit\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Post unpublished edit\",\"body\":\"x\"}",
+        },
     });
 
     const held = [_]Held{.{
@@ -230,7 +236,7 @@ test "records.read without .drafts reads the live copy, never a record's pending
     });
 
     try std.testing.expectEqualStrings("Post published", listed.records[0].title);
-    try std.testing.expect(std.mem.indexOf(u8, listed.documents[0], "unpublished") == null);
+    try std.testing.expect(std.mem.indexOf(u8, listed.documents[0].text, "unpublished") == null);
 }
 
 /// Topics (public) and Desk notes (private), each with a draft and a live term.
@@ -238,7 +244,9 @@ pub fn seed_taxonomies(system: *sdk.Ctx) !void {
     std.debug.assert(system.caller == .system);
 
     _ = try SDK.dispatch(system, taxonomy.Create, .{
-        .definition = taxonomy.example_definition,
+        .definition = .{
+            .text = taxonomy.example_definition,
+        },
     });
 
     const private = try std.mem.replaceOwned(
@@ -252,7 +260,9 @@ pub fn seed_taxonomies(system: *sdk.Ctx) !void {
     std.debug.assert(!std.mem.eql(u8, private, taxonomy.example_definition));
 
     _ = try SDK.dispatch(system, taxonomy.Create, .{
-        .definition = private,
+        .definition = .{
+            .text = private,
+        },
     });
 
     for ([_][]const u8{ "topics", "desk" }) |handle| {
@@ -265,7 +275,9 @@ pub fn seed_taxonomies(system: *sdk.Ctx) !void {
 
             const in: term.Create.In = .{
                 .taxonomy = handle,
-                .document = document,
+                .document = .{
+                    .text = document,
+                },
             };
 
             _ = if (std.mem.eql(u8, status, "draft"))

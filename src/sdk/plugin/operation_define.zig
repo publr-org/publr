@@ -173,7 +173,9 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
 
 /// Whether the ready answer lets this caller through. Administrators pass every answer,
 /// except through an app's address, where they are signed-in people like any other.
-pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool) bool {
+/// `plugin_code` is whether a plugin's code made the call: an installed plugin (the caller is
+/// the plugin) or a compiled-in one (the caller is still whoever the request is for).
+pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool, plugin_code: bool) bool {
     std.debug.assert(@backingInt(caller) <= @backingInt(sdk.Caller.plugin));
     std.debug.assert(@backingInt(answer) <= @backingInt(Answer.plugin_calls));
 
@@ -189,7 +191,7 @@ pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool) bool {
                 break true;
             }
         } else false,
-        .plugin_calls => caller == .plugin,
+        .plugin_calls => caller == .plugin or plugin_code,
     };
 }
 
@@ -620,11 +622,14 @@ test "ready answers" {
         },
     };
 
-    try std.testing.expect(admits(.signed_in, editor, true));
-    try std.testing.expect(!admits(.signed_in, .anonymous, true));
+    try std.testing.expect(admits(.signed_in, editor, true, false));
+    try std.testing.expect(!admits(.signed_in, .anonymous, true, false));
     try std.testing.expect(admits(.{
         .roles = &.{"editor"},
-    }, editor, false));
-    try std.testing.expect(!admits(.plugin_calls, admin, true));
-    try std.testing.expect(admits(.plugin_calls, admin, false));
+    }, editor, false, false));
+    try std.testing.expect(!admits(.plugin_calls, admin, true, false));
+    try std.testing.expect(admits(.plugin_calls, admin, false, false));
+    // A compiled-in plugin's code calling for a visitor: the caller is the visitor.
+    try std.testing.expect(!admits(.plugin_calls, .anonymous, true, false));
+    try std.testing.expect(admits(.plugin_calls, .anonymous, true, true));
 }

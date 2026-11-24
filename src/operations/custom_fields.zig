@@ -112,12 +112,14 @@ pub const Validate = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         group: []const u8,
-        definition: []const u8,
+        definition: sdk.operation.Json,
     };
     pub const Out = types.Validate.Out;
     pub const example: In = .{
         .group = "user",
-        .definition = example_definition,
+        .definition = .{
+            .text = example_definition,
+        },
     };
     pub const example_out: Out = .{
         .valid = true,
@@ -127,7 +129,7 @@ pub const Validate = struct {
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
 
-        if (in.definition.len > store.settings.value_len_max) {
+        if (in.definition.text.len > store.settings.value_len_max) {
             return error.Invalid;
         }
 
@@ -139,7 +141,7 @@ pub const Validate = struct {
             return checked;
         }
 
-        const def = try model.content_type.decode(ctx.arena, in.definition);
+        const def = try model.content_type.decode(ctx.arena, in.definition.text);
         try valid_handle(in.group);
 
         const invalid = def.kind != .component or def.public or def.system or
@@ -193,7 +195,7 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        const def = try model.content_type.decode(ctx.arena, in.definition);
+        const def = try model.content_type.decode(ctx.arena, in.definition.text);
         var canonical = definition(in.group);
         canonical.name = def.name;
         canonical.fields = def.fields;
@@ -296,8 +298,10 @@ pub const Create = struct {
     pub const Out = Update.Out;
     pub const example: In = .{
         .group = "profile",
-        .definition = "{\"handle\":\"profile\",\"name\":\"Profile\"," ++
-            "\"kind\":\"component\",\"fields\":[]}",
+        .definition = .{
+            .text = "{\"handle\":\"profile\",\"name\":\"Profile\"," ++
+                "\"kind\":\"component\",\"fields\":[]}",
+        },
     };
     pub const example_out: Out = .{
         .definition = .{
@@ -384,8 +388,13 @@ fn valid_location(ctx: *const sdk.Ctx, groups: model.field.conditions.Set) sdk.E
 
     for (groups) |group| {
         for (group.rules) |rule| {
+            // A group placed on records names `content` and the types (`products.product`),
+            // which need not be there yet: a plugin places on another it is compatible with.
             const accepted = if (std.mem.eql(u8, rule.field, "destination"))
-                std.meta.stringToEnum(Destination, rule.value) != null
+                std.meta.stringToEnum(Destination, rule.value) != null or
+                    std.mem.eql(u8, rule.value, "content")
+            else if (std.mem.eql(u8, rule.field, "type"))
+                rule.value.len > 0 and rule.value.len <= model.content_type.handle_len_max
             else if (std.mem.eql(u8, rule.field, "role"))
                 try sdk.stored_roles.exists(ctx, rule.value)
             else if (std.mem.eql(u8, rule.field, "media_type"))

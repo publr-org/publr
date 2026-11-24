@@ -35,7 +35,7 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
   return (
     <Document title={title}>
       <SkipLink target="main">{Publr.t("Skip to content")}</SkipLink>
-      <div class="flex h-dvh overflow-hidden">
+      <div class={["flex", Publr.request.admin.grows ? "" : "h-dvh overflow-hidden"]}>
         <div id="admin-nav" popover="auto" class="contents" data-part="admin-nav">
         {Publr.request.session.email !== "" && !Publr.request.admin.framed && (
         <nav aria-label={Publr.t("Sections")} class="flex w-14 shrink-0 flex-col items-center bg-rail text-rail-foreground">
@@ -157,7 +157,9 @@ export function Chrome({ title, parents = [], focus = false, children }: ChromeP
           tabindex="-1"
           data-sheet={!focus && !Publr.request.admin.framed && Publr.request.admin.sidebar ? "beside" : "alone"}
           class={[
-            "flex min-w-0 flex-1 flex-col overflow-y-auto bg-card outline-none",
+            "flex min-w-0 flex-1 flex-col bg-card outline-none",
+            // In a plugin's frame the frame grows to the page; elsewhere the sheet scrolls.
+            Publr.request.admin.grows ? "" : "overflow-y-auto",
             // What sticks in the sheet sticks under its top bar, which a framed page has not.
             Publr.request.admin.framed ? "[--sheet-top:0px]" : "[--sheet-top:3.5rem]",
           ]}

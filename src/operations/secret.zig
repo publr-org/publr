@@ -27,11 +27,17 @@ pub const namespace: sdk.operation.Namespace = .{
     \\here, kept sealed
     \\with the project's key: `PUBLR_SECRET_KEY`, else `secret.key` beside the database.
     \\A value is never answered back. `PUBLR_SECRET_KEY` and
-    \\`PUBLR_SECRETS_FROM_ENVIRONMENT` are never a secret's name. Administrators only.
+    \\`PUBLR_SECRETS_FROM_ENVIRONMENT` are never a secret's name. Administrators only,
+    \\but for `secret.digest`: a plugin's code hashing text that holds its own secrets
+    \\(a gateway's signature), the value filled in by core.
     ,
 };
 
-pub const operations = [_]type{ List, Set, Remove };
+pub const operations = [_]type{ List, Set, Remove, Digest };
+
+/// A hash of text holding a plugin's secrets, made by core: `secret_digest.zig`.
+pub const Digest = digest.Digest;
+const digest = @import("secret_digest.zig");
 
 /// Where the project's key is: `PUBLR_SECRET_KEY`.
 pub const key_variable = "PUBLR_SECRET_KEY";

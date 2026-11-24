@@ -10,6 +10,7 @@ pub const sync = @import("media/sync.zig");
 pub const import = @import("media/import.zig");
 pub const view = @import("media/view.zig");
 pub const read = @import("media/read.zig");
+pub const made = @import("media/made.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "media",
@@ -42,7 +43,7 @@ pub const Sync = sync.Sync;
 pub const Read = read.Read;
 
 pub const operations = [_]type{ Upload, Add, List, Sync } ++ import.operations ++ edit.operations ++
-    serve.operations ++ view.operations ++ read.operations;
+    serve.operations ++ view.operations ++ read.operations ++ made.operations;
 
 pub const bootstrap = library.bootstrap;
 
@@ -77,11 +78,15 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
 
     const photos = try term.published(&system, .{
         .taxonomy = "media_folders",
-        .document = "{\"name\":\"Photos\"}",
+        .document = .{
+            .text = "{\"name\":\"Photos\"}",
+        },
     });
     const trips = try term.published(&system, .{
         .taxonomy = "media_folders",
-        .document = "{\"name\":\"Trips\"}",
+        .document = .{
+            .text = "{\"name\":\"Trips\"}",
+        },
         .parent = photos.id,
     });
     const png = try encode.sample_png(std.testing.allocator, 8, 4);

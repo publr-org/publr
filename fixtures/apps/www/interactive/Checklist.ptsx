@@ -1,0 +1,45 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+
+export type ChecklistItem = {
+  label: string;
+  done: boolean;
+};
+
+export type ChecklistProps = {
+  title?: string;
+  note?: string;
+  items?: ChecklistItem[];
+};
+
+export function Checklist({ title = "Before you ship", note = "", items = [] }: ChecklistProps) {
+  const state = Publr.reactive({
+    open: true,
+    picked: "",
+  });
+
+  const toggle = () => {
+    state.open = !state.open;
+  };
+  const pick = (event: Event) => {
+    state.picked = (event.currentTarget as HTMLElement).dataset.label ?? "";
+  };
+
+  return (
+    <section class="grid gap-3">
+      <h2 class="text-lg font-semibold">{title}</h2>
+      {note !== "" ? <p class="text-sm text-muted">{note}</p> : null}
+      <Button hierarchy="secondary" onClick={toggle}>
+        {Publr.t("Show or hide")}
+      </Button>
+      <ul hidden={!state.open}>
+        {items.map((item) => (
+          <li class={item.done ? "line-through" : ""} data-label={item.label} onClick={pick}>
+            {item.label}
+          </li>
+        ))}
+      </ul>
+      <p hidden={state.picked === ""}>{state.picked}</p>
+    </section>
+  );
+}

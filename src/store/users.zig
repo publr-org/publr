@@ -4,6 +4,7 @@ const next_id = @import("next_id.zig");
 const account = @import("../model/account.zig");
 const db = @import("../lib/db.zig");
 const user_roles = @import("user_roles.zig");
+const user_types = @import("user_types.zig");
 
 pub const id_len = ids.len;
 pub const email_len_max = account.email_len_max;
@@ -24,6 +25,8 @@ pub const User = struct {
     roles: []const []const u8,
     created_at: i64,
     active: bool,
+    /// The types of user plugins register (`customer`) the account holds; none for staff alone.
+    user_types: []const []const u8 = &.{},
 };
 
 pub const Credentials = struct {
@@ -246,10 +249,21 @@ pub const Window = struct {
     /// A field stored on the accounts to order by (`loyalty.points`), `-` in front for
     /// descending; accounts without it last. Empty: oldest first.
     sort: []const u8 = "",
+    /// Whose accounts: a type's (`customer`), or staff's when empty.
+    user_type: []const u8 = "",
+    /// The roles the types of user give, a JSON list: an account holding a type and none
+    /// but these is not staff.
+    type_roles: []const u8 = "[]",
 };
 
-const matching = " WHERE ?1 = '' OR instr(lower(display_name), lower(?1)) > 0 OR " ++
-    "instr(lower(email), lower(?1)) > 0";
+const staff = "(NOT EXISTS (SELECT 1 FROM user_types WHERE user_types.user_id = users.id) " ++
+    "OR EXISTS (SELECT 1 FROM user_roles WHERE user_roles.user_id = users.id " ++
+    "AND user_roles.role NOT IN (SELECT value FROM json_each(?6))))";
+const of_type = "EXISTS (SELECT 1 FROM user_types WHERE user_types.user_id = users.id " ++
+    "AND user_types.user_type = ?5)";
+const matching = " WHERE (CASE WHEN ?5 = '' THEN " ++ staff ++ " ELSE " ++ of_type ++
+    " END) AND (?1 = '' OR " ++
+    "instr(lower(display_name), lower(?1)) > 0 OR instr(lower(email), lower(?1)) > 0)";
 
 pub fn page(connection: *db.Db, arena: std.mem.Allocator, window: Window) db.Error![]User {
     std.debug.assert(window.limit > 0 and window.limit <= list_max);
@@ -273,10 +287,9 @@ pub fn page(connection: *db.Db, arena: std.mem.Allocator, window: Window) db.Err
     try select.bind_text(1, window.query);
     try select.bind_int(2, window.limit);
     try select.bind_int(3, window.offset);
-
-    if (sort.len > 0) {
-        try select.bind_text(4, sort);
-    }
+    try select.bind_text(4, sort);
+    try select.bind_text(5, window.user_type);
+    try select.bind_text(6, window.type_roles);
 
     var users: std.ArrayList(User) = .empty;
 
@@ -289,15 +302,17 @@ pub fn page(connection: *db.Db, arena: std.mem.Allocator, window: Window) db.Err
     return users.items;
 }
 
-/// How many accounts `query` matches, as `page` reads them.
-pub fn count_matching(connection: *db.Db, query: []const u8) db.Error!u32 {
-    std.debug.assert(query.len <= 256);
+/// How many accounts the window's query and type match, as `page` reads them.
+pub fn count_matching(connection: *db.Db, window: Window) db.Error!u32 {
+    std.debug.assert(window.query.len <= 256);
     std.debug.assert(connection.transaction_depth <= 8);
 
     var select = try connection.prepare("SELECT count(*) FROM users" ++ matching);
     defer select.finalize();
 
-    try select.bind_text(1, query);
+    try select.bind_text(1, window.query);
+    try select.bind_text(5, window.user_type);
+    try select.bind_text(6, window.type_roles);
 
     std.debug.assert(try select.step());
 
@@ -348,6 +363,7 @@ fn read_row(
             .roles = try user_roles.of(connection, arena, columns.id),
             .created_at = columns.created_at,
             .active = columns.password_hash != null or columns.linked == 1,
+            .user_types = try user_types.of(connection, arena, columns.id),
         },
         .password_hash = columns.password_hash,
     };
@@ -398,8 +414,14 @@ test "insert, count, find by email/id, list; emails are unique" {
         .limit = 10,
     });
     try std.testing.expectEqual(@as(usize, 1), users.len);
-    try std.testing.expectEqual(1, try count_matching(&fixture.connection, "ADA@"));
-    try std.testing.expectEqual(0, try count_matching(&fixture.connection, "grace"));
+    try std.testing.expectEqual(1, try count_matching(&fixture.connection, .{
+        .query = "ADA@",
+        .limit = 10,
+    }));
+    try std.testing.expectEqual(0, try count_matching(&fixture.connection, .{
+        .query = "grace",
+        .limit = 10,
+    }));
     try std.testing.expectEqual(0, (try page(&fixture.connection, arena, .{
         .offset = 1,
         .limit = 10,

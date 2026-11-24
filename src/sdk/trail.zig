@@ -21,11 +21,43 @@ pub const Line = struct {
     text: []const u8,
 };
 
-/// An event emitted during the call, by name, with its payload.
+/// An event emitted during the call, by name, with what its payload names.
 pub const Emitted = struct {
     name: []const u8,
-    subject: []const u8,
+    /// The payload's first field when it is text (`{"user":"u_1"}` names `u_1`); empty for
+    /// any other payload. The payload itself is never kept: a call that emits thousands of
+    /// events keeps a name and an id for each.
+    key: []const u8,
 };
+
+/// What a JSON payload names: its first field, when that is text. Read from the text where
+/// it lies; `arena` takes only a key or a value written with escapes.
+pub fn named_by(arena: std.mem.Allocator, subject: []const u8) []const u8 {
+    std.debug.assert(subject.len <= std.math.maxInt(u32));
+
+    if (subject.len == 0 or subject[0] != '{') {
+        return "";
+    }
+
+    var nesting: [512]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&nesting);
+    var scanner = std.json.Scanner.initCompleteInput(fixed.allocator(), subject);
+
+    if ((scanner.next() catch return "") != .object_begin) {
+        return "";
+    }
+
+    const field = scanner.nextAlloc(arena, .alloc_if_needed) catch return "";
+
+    if (field != .string and field != .allocated_string) {
+        return "";
+    }
+
+    return switch (scanner.nextAlloc(arena, .alloc_if_needed) catch return "") {
+        .string, .allocated_string => |text| text,
+        else => "",
+    };
+}
 
 /// A unit a write changed, as an `after` hook on it said (`plugin:shelf`): `at`, how many
 /// events the trail held when that write started, keeps it in order among them.
@@ -174,14 +206,17 @@ pub const Trail = struct {
         }
     }
 
-    pub fn emitted(trail: *Trail, event: Emitted) void {
-        std.debug.assert(event.name.len > 0);
+    /// An event emitted with payload `subject` (JSON): its name and what the payload names
+    /// are kept, copied here.
+    pub fn emitted(trail: *Trail, name: []const u8, subject: []const u8) void {
+        std.debug.assert(name.len > 0);
         std.debug.assert(trail.root != 0);
 
         if (trail.events.items.len < events_max) {
+            const key = named_by(trail.arena, subject);
             const kept: Emitted = .{
-                .name = trail.arena.dupe(u8, event.name) catch return,
-                .subject = trail.arena.dupe(u8, event.subject) catch return,
+                .name = trail.arena.dupe(u8, name) catch return,
+                .key = if (key.len > 0) trail.arena.dupe(u8, key) catch return else "",
             };
 
             trail.events.append(trail.arena, kept) catch return;
@@ -288,4 +323,29 @@ test "lines: bounded per call, the rest counted, long ones cut at a character" {
 inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
     const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
     return @ptrCast(&copies);
+}
+
+test "what a payload names is its first field's text, read without building the payload" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const named = named_by(arena, "{\"user\":\"u_1\",\"more\":[1,2]}");
+
+    try std.testing.expectEqualStrings("u_1", named);
+    try std.testing.expectEqualStrings("a\"b", named_by(arena, "{\"id\":\"a\\\"b\"}"));
+
+    const unnamed = [_][]const u8{
+        "",
+        "{}",
+        "[\"x\"]",
+        "{\"id\":7}",
+        "{\"id\":{\"a\":\"b\"}}",
+        "{\"id\"",
+        "x",
+    };
+
+    for (unnamed) |none| {
+        try std.testing.expectEqualStrings("", named_by(arena, none));
+    }
 }

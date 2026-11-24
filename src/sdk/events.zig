@@ -10,9 +10,12 @@ const hook_runs = @import("hook_runs.zig");
 const Ctx = sdk.Ctx;
 const Event = sdk.Event;
 const Emitted = Event.Emitted;
+const Passed = sdk.sandboxed_plugins.Passed;
 
 pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
     return struct {
+        const tables = @import("registry_tables.zig").Tables(registry);
+
         /// Whether a compiled-in hook is an `on` hook on an event, heard from the queue.
         pub fn queued(comptime Middleware: type) bool {
             return Middleware.stage == .on and @hasDecl(Middleware, "event");
@@ -26,26 +29,52 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(emitted.name.len > 0);
             std.debug.assert(emitted.operation_id != 0);
 
-            queue_hooks(ctx, emitted) catch |err| {
+            queue_hooks(ctx, emitted, .{
+                .json = emitted.subject,
+            }) catch |err| {
                 ctx.dependency_failure = true;
                 std.log.warn("events: {s} not queued: {t}", .{ emitted.name, err });
             };
         }
 
-        fn queue_hooks(ctx: *Ctx, emitted: Emitted) job_queue.Error!void {
+        /// `queue` for an installed operation's answer as its plugin handed it over: each
+        /// installed hook waits with the fields its own type names, read where the answer
+        /// lies; the whole answer is written as JSON only for a compiled-in hook.
+        pub fn queue_passed(ctx: *Ctx, name: []const u8, answer: Passed) void {
+            std.debug.assert(name.len > 0);
+            std.debug.assert(ctx.parent != null);
+
+            queue_hooks(ctx, .{
+                .operation_id = ctx.parent.?,
+                .name = name,
+                .subject = "",
+            }, answer) catch |err| {
+                ctx.dependency_failure = true;
+                std.log.warn("events: {s} not queued: {t}", .{ name, err });
+            };
+        }
+
+        const QueueError = job_queue.Error || sdk.Error;
+
+        fn queue_hooks(ctx: *Ctx, emitted: Emitted, payload: Passed) QueueError!void {
             std.debug.assert(emitted.name.len > 0);
 
             const event: Event = .{
                 .emitted = emitted,
             };
+            var whole: ?[]const u8 = if (payload == .json) payload.json else null;
 
-            inline for (registry.hooks, 0..) |Middleware, index| {
-                const listens = comptime queued(Middleware);
+            inline for (comptime tables.hooks_where(queued)) |index| {
+                const Middleware = registry.hooks[index];
 
-                if (listens and sdk.hears(Middleware, event)) {
+                if (sdk.hears(Middleware, event)) {
                     const ordinal = ordinal_of(index, event);
 
-                    try queue_one(ctx, comptime owner_at(index), ordinal, emitted);
+                    if (whole == null) {
+                        whole = try ctx.sandboxed_plugins.?.json_of(ctx.arena, payload, .answer);
+                    }
+
+                    try queue_one(ctx, comptime owner_at(index), ordinal, emitted.name, whole.?);
                 }
             }
 
@@ -54,7 +83,17 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 return error.OutOfMemory;
 
             for (hooks) |hook| {
-                try queue_one(ctx, hook.plugin, hook.ordinal, emitted);
+                const name = emitted.name;
+                const taken = sandboxed.on_input(ctx.arena, hook, name, payload) catch |err| {
+                    if (err == error.OutOfMemory) {
+                        return error.OutOfMemory;
+                    }
+
+                    try not_run(ctx, hook.plugin, hook.ordinal, emitted.name, not_read);
+                    continue;
+                };
+
+                try queue_one(ctx, hook.plugin, hook.ordinal, emitted.name, taken);
             }
         }
 
@@ -64,43 +103,62 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             ctx: *Ctx,
             plugin: []const u8,
             ordinal: u32,
-            emitted: Emitted,
+            name: []const u8,
+            subject: []const u8,
         ) job_queue.Error!void {
             std.debug.assert(plugin.len > 0);
-            std.debug.assert(emitted.subject.len > 0);
+            std.debug.assert(subject.len > 0);
 
-            const job: job_queue.Queued = .{
+            if (subject.len > job_queue.input_bytes_max) {
+                return not_run(ctx, plugin, ordinal, name, too_large);
+            }
+
+            return job_queue.push(ctx.db, .{
                 .plugin = plugin,
-                .name = try hook_runs.name_of(ctx.arena, emitted.name, ordinal),
-                .input = emitted.subject,
+                .name = try hook_runs.name_of(ctx.arena, name, ordinal),
+                .input = subject,
                 .due_at_ms = ctx.now_ms,
                 .now_ms = ctx.now_ms,
                 .language = ctx.language_queued(),
-            };
-
-            if (emitted.subject.len <= job_queue.input_bytes_max) {
-                return job_queue.push(ctx.db, job);
-            }
-
-            var kept = job;
-
-            kept.input = "null";
-            std.log.warn("events: {s} is over 64 KiB; its hook is not run", .{emitted.name});
-
-            return job_queue.push_failed(ctx.db, kept, too_large);
+            });
         }
 
-        const too_large = "Not run: its event is over 64 KiB";
+        /// A hook that cannot hear the event: its run is kept failed, saying why, where
+        /// its plugin's runs are listed, and the server's log says it too. Never left out
+        /// without a word.
+        fn not_run(
+            ctx: *Ctx,
+            plugin: []const u8,
+            ordinal: u32,
+            name: []const u8,
+            why: []const u8,
+        ) job_queue.Error!void {
+            std.debug.assert(plugin.len > 0);
+            std.debug.assert(why.len > 0);
+
+            std.log.warn("events: {s}'s hook on {s} is not run: {s}", .{ plugin, name, why });
+
+            return job_queue.push_failed(ctx.db, .{
+                .plugin = plugin,
+                .name = try hook_runs.name_of(ctx.arena, name, ordinal),
+                .input = "null",
+                .due_at_ms = ctx.now_ms,
+                .now_ms = ctx.now_ms,
+                .language = ctx.language_queued(),
+            }, why);
+        }
+
+        const too_large = "Not run: what it takes of the event is over 64 KiB. A hook that " ++
+            "names only the fields it reads waits with those alone";
+        const not_read = "Not run: the event does not read as the type the hook takes";
 
         /// Whether an `on` hook, compiled in or installed, names the event.
         pub fn heard_outside(ctx: *const Ctx, name: []const u8) bool {
             std.debug.assert(name.len > 0);
             std.debug.assert(registry.hooks.len <= sdk.hooks.hooks_max);
 
-            inline for (registry.hooks) |Middleware| {
-                const listens = comptime queued(Middleware);
-
-                if (listens and std.mem.eql(u8, Middleware.event, name)) {
+            inline for (comptime tables.hooks_where(queued)) |index| {
+                if (std.mem.eql(u8, registry.hooks[index].event, name)) {
                     return true;
                 }
             }
@@ -151,13 +209,13 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
                 .emitted = emitted,
             };
 
-            inline for (registry.hooks, 0..) |Middleware, index| {
-                const listens = comptime queued(Middleware);
+            inline for (comptime tables.hooks_where(queued)) |index| {
+                const Middleware = registry.hooks[index];
                 const owner = comptime owner_at(index);
 
-                if (listens and std.mem.eql(u8, owner, plugin) and sdk.hears(Middleware, event)) {
+                if (std.mem.eql(u8, owner, plugin) and sdk.hears(Middleware, event)) {
                     if (ordinal_of(index, event) == target.ordinal) {
-                        return run_compiled(ctx, Middleware, owner, job, event) catch
+                        return run_compiled(ctx, index, owner, job, event) catch
                             "OutOfMemory";
                     }
                 }
@@ -174,12 +232,12 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
 
         fn run_compiled(
             ctx: *Ctx,
-            comptime Middleware: type,
+            comptime index: u32,
             comptime plugin: []const u8,
             job: []const u8,
             event: Event,
         ) error{OutOfMemory}![]const u8 {
-            comptime std.debug.assert(Middleware.stage == .on);
+            comptime std.debug.assert(registry.hooks[index].stage == .on);
             std.debug.assert(job.len > 0);
 
             const authoring = ctx.job;
@@ -190,7 +248,7 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
 
             ctx.failure = null;
 
-            return SDK.run_listener(ctx, Middleware, event);
+            return SDK.run_listener(ctx, index, event);
         }
 
         fn run_installed(
@@ -248,8 +306,9 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(event == .emitted);
 
             var ordinal: u32 = 0;
+            const first = comptime first_of_owner(index);
 
-            inline for (registry.hooks[0..index], 0..) |Earlier, earlier_index| {
+            inline for (registry.hooks[first..index], first..) |Earlier, earlier_index| {
                 const listens = comptime queued(Earlier);
                 const same = comptime std.mem.eql(u8, owner_at(earlier_index), owner_at(index));
 
@@ -259,6 +318,26 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             }
 
             return ordinal;
+        }
+
+        /// Where the run of hooks holding the one at `index` begins: a plugin's hooks are listed
+        /// together.
+        fn first_of_owner(comptime index: u32) u32 {
+            comptime {
+                @setEvalBranchQuota(1000 + index * 64);
+
+                std.debug.assert(index < registry.hooks.len);
+
+                var first = index;
+
+                while (first > 0 and std.mem.eql(u8, owner_at(first - 1), owner_at(index))) {
+                    first -= 1;
+                }
+
+                std.debug.assert(first <= index);
+
+                return first;
+            }
         }
     };
 }

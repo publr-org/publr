@@ -1,0 +1,64 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Field } from "@publr/ui/Field.ptsx";
+import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { NativeSelect } from "@publr/ui/NativeSelect.ptsx";
+
+export type LedgerFiltersProps = {
+  /** The list the filters narrow. */
+  action: string;
+  /** The plugins to pick from (Settings › Ledger); empty draws no plugin filter. */
+  plugins?: Array<{ value: string; selected: boolean }>;
+  /** The account names to pick from, in words. */
+  names?: Array<{ value: string; label: string; selected: boolean }>;
+  unit: string;
+  /** The holder searched for: a person's email or a record's id. */
+  holder: string;
+};
+
+/** What narrows a list of ledger accounts: plugin, account name, unit and holder, applied by
+ * a plain form so the address keeps them. */
+export function LedgerFilters({ action, plugins = [], names = [], unit, holder }: LedgerFiltersProps) {
+  return (
+    <form method="get" action={action} class="flex w-full flex-wrap items-end gap-3">
+      {plugins.length > 0 && (
+        <Field classes="w-full sm:w-44">
+          <FieldLabel htmlFor="ledger-plugin">{Publr.t("Plugin")}</FieldLabel>
+          <NativeSelect id="ledger-plugin" name="plugin" size="sm">
+            <option value="">{Publr.t("All plugins")}</option>
+            {plugins.map((plugin) => (
+              <option value={plugin.value} selected={plugin.selected}>
+                {plugin.value}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+      )}
+      {names.length > 0 && (
+        <Field classes="w-full sm:w-48">
+          <FieldLabel htmlFor="ledger-name">{Publr.t("Account")}</FieldLabel>
+          <NativeSelect id="ledger-name" name="name" size="sm">
+            <option value="">{Publr.t("All accounts")}</option>
+            {names.map((name) => (
+              <option value={name.value} selected={name.selected}>
+                {name.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+      )}
+      <Field classes="w-full sm:w-32">
+        <FieldLabel htmlFor="ledger-unit">{Publr.t("Unit")}</FieldLabel>
+        <Input id="ledger-unit" name="unit" value={unit} placeholder="PLN" size="sm" />
+      </Field>
+      <Field classes="w-full sm:w-56">
+        <FieldLabel htmlFor="ledger-holder">{Publr.t("Holder")}</FieldLabel>
+        <Input id="ledger-holder" name="holder" value={holder} placeholder={Publr.t("Email or record id")} size="sm" />
+      </Field>
+      <Button type="submit" hierarchy="secondary" size="sm">
+        {Publr.t("Filter")}
+      </Button>
+    </form>
+  );
+}

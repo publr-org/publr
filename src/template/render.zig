@@ -12,6 +12,7 @@ const time = @import("../lib/time.zig");
 const javascript = @import("javascript/vm.zig");
 const address = @import("../model/app/address.zig");
 const runtime = @import("runtime");
+const held_module = @import("held.zig");
 
 const Expr = ast.Expr;
 const Node = ast.Node;
@@ -51,11 +52,12 @@ pub fn escape(writer: *std.Io.Writer, text: []const u8) !void {
     }
 }
 
-/// A prop as a call site supplies it: by name, a string or null.
+/// A prop as a call site supplies it: by name, a string or null. A list or an object the
+/// page's script made reaches a component drawn by JavaScript as its JSON (`json`).
 pub const Prop = struct {
     name: []const u8,
     value: ?[]const u8,
-    kind: enum { string, number, boolean } = .string,
+    kind: enum { string, number, boolean, json } = .string,
 };
 
 /// What a PJSX component draws with besides its props: the app's class book
@@ -65,17 +67,24 @@ pub const PjsxPage = struct {
     translator: ?*const anyopaque = null,
     /// The catalogue as the script the render's engine reads; empty for English.
     catalogue: []const u8 = "",
+    /// What the page keeps while it is drawn (a component program's script heap); null
+    /// for a component drawn alone.
+    held: ?*held_module.Held = null,
 };
 
-/// A PJSX component the renderer can call: the lowered module's `render`, wrapped to
-/// take props by name.
-pub const PjsxRender = *const fn (
-    writer: *std.Io.Writer,
-    arena: std.mem.Allocator,
-    props: []const Prop,
-    children: ?[]const u8,
-    page: PjsxPage,
-) anyerror!void;
+/// A PJSX component the renderer can call: the lowered module's `render` wrapped to take
+/// props by name, or its render as JavaScript (`ui/scripted.zig`), `context` saying which.
+pub const PjsxRender = struct {
+    context: ?*const anyopaque = null,
+    draw: *const fn (
+        context: ?*const anyopaque,
+        writer: *std.Io.Writer,
+        arena: std.mem.Allocator,
+        props: []const Prop,
+        children: ?[]const u8,
+        page: PjsxPage,
+    ) anyerror!void,
+};
 
 pub fn Renderer(comptime Ctx: type) type {
     return struct {
@@ -86,6 +95,7 @@ pub fn Renderer(comptime Ctx: type) type {
             templates: []const Template,
             vm: ?*javascript.VM = null,
             entries: std.ArrayList(Ctx.Entry) = .empty,
+            held: held_module.Held = .{},
         };
         pub const JavaScriptProp = struct {
             name: []const u8,
@@ -210,6 +220,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 .templates = renderer.templates,
             };
             defer if (execution.vm) |vm| vm.deinit();
+            defer execution.held.release();
             return renderer.render_at(writer, index, ctx, props, 0, &execution) catch |err| {
                 if (execution.vm) |vm| {
                     if (@hasDecl(Ctx, "report_javascript_error") and vm.failure.len > 0) {
@@ -252,7 +263,7 @@ pub fn Renderer(comptime Ctx: type) type {
 
             if (page.javascript != null) {
                 try Bridge.begin(renderer, &frame);
-            } else try Bridge.native_props(renderer, &frame);
+            } else try Bridge.native_props(renderer, &frame, .entries);
 
             for (page.decls) |decl| {
                 if (decl.when) |when| {
@@ -672,13 +683,14 @@ pub fn Renderer(comptime Ctx: type) type {
                 .entries = evaluated.entries,
                 .javascript = evaluated.javascript,
             };
-            try Bridge.native_props(renderer, &bridge_frame);
+            try Bridge.native_props(renderer, &bridge_frame, .json);
             const props = bridge_frame.props;
             const page = try pjsx_page(frame);
             const children = call.children orelse {
                 const component = renderer.pjsx[call.component];
+                const arena = renderer.arena;
 
-                return component(writer, renderer.arena, props.values, null, page);
+                return component.draw(component.context, writer, arena, props.values, null, page);
             };
             var buffer: std.Io.Writer.Allocating = .init(renderer.arena);
 
@@ -687,14 +699,19 @@ pub fn Renderer(comptime Ctx: type) type {
             try renderer.nested(&buffer.writer, frame, children);
             const rendered = buffer.written();
 
-            try renderer.pjsx[call.component](writer, renderer.arena, props.values, rendered, page);
+            const component = renderer.pjsx[call.component];
+            const values = props.values;
+
+            try component.draw(component.context, writer, renderer.arena, values, rendered, page);
         }
 
         fn pjsx_page(frame: *const Frame) !PjsxPage {
             std.debug.assert(frame.depth < compile.nesting_max);
             std.debug.assert(frame.template.rel.len > 0);
 
-            var page: PjsxPage = .{};
+            var page: PjsxPage = .{
+                .held = &frame.execution.held,
+            };
 
             if (@hasDecl(Ctx, "class_book")) {
                 page.classes = frame.ctx.class_book();
@@ -758,6 +775,10 @@ pub fn Renderer(comptime Ctx: type) type {
 
             if (use.deferred) {
                 try writer.writeAll(" defer");
+            }
+
+            if (use.follow) {
+                try writer.writeAll(" follow");
             }
 
             if (use.prerender) {

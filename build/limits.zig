@@ -8,7 +8,7 @@ const diagnostic = @import("diagnostic.zig");
 
 pub const Limits = struct {
     /// Fields a type holds at one level (a group or repeater holds as many again inside).
-    type_fields_max: u32 = 256,
+    type_fields_max: u32 = 200,
     /// Values one entry holds, every field and every repeater item's together.
     entry_values_max: u32 = 2000,
     /// One entry's document, as saved.
@@ -25,7 +25,7 @@ pub fn from(builder: *std.Build) Limits {
         .type_fields_max = builder.option(
             u32,
             "type-fields-max",
-            "Fields a type holds at one level (default: 256)",
+            "Fields a type holds at one level (default and most: 200)",
         ) orelse defaults.type_fields_max,
         .entry_values_max = builder.option(
             u32,
@@ -50,8 +50,8 @@ pub fn from(builder: *std.Build) Limits {
 }
 
 fn check(limits: Limits) void {
-    if (limits.type_fields_max < 16 or limits.type_fields_max > 4096) {
-        diagnostic.fail("-Dtype-fields-max is 16 to 4096", .{});
+    if (limits.type_fields_max < 16 or limits.type_fields_max > 200) {
+        diagnostic.fail("-Dtype-fields-max is 16 to 200, a page", .{});
     }
 
     if (limits.entry_values_max < 256 or limits.entry_values_max > 65536) {

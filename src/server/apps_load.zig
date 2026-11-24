@@ -6,7 +6,10 @@ const http = @import("../lib/http.zig");
 const report = @import("../lib/report.zig");
 const apps_adapter = @import("../adapters/apps.zig");
 const operator = @import("operator.zig");
+const sdk = @import("../sdk.zig");
 const Project = @import("project.zig").Project;
+
+const SandboxedPlugins = sdk.sandboxed_plugins.SandboxedPlugins;
 
 pub const route = "/_publr/apps/load";
 
@@ -16,7 +19,7 @@ const Answer = struct {
     @"error": ?[]const u8 = null,
 };
 
-pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8) !u8 {
+pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const u8) !u8 {
     std.debug.assert(db_path.len > 0);
 
     const named = parse(args) orelse {
@@ -24,6 +27,16 @@ pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8
         return 2;
     };
     const arena = init.arena.allocator();
+    // The apps' interactive components built before the apps load, here: the server links no
+    // compiler.
+    const built_in = apps_adapter.folder.resolve_dir(init.io, if (named.len > 0)
+        named
+    else
+        apps_adapter.spec.public_dir);
+
+    if (!try @import("apps_interactive.zig").build(init, db_path, built_in)) {
+        return 1;
+    }
 
     if (try operator.find(init.io, arena, db_path)) |session| {
         if (named.len > 0) {
@@ -42,8 +55,14 @@ pub fn run(init: std.process.Init, db_path: []const u8, args: []const []const u8
         named
     else
         apps_adapter.spec.public_dir);
+    // The installed plugins' components, as `serve` reads them: an app imports them too.
+    const application = try init.gpa.create(@import("../server.zig").Server);
+    defer init.gpa.destroy(application);
 
-    return print(init, try check_here(init, dir), "");
+    try application.init(init, db_path);
+    defer application.deinit();
+
+    return print(init, try check_here(init, dir, application.sandboxed()), "");
 }
 
 /// The folder `--apps` names, empty when none is named; null for anything else.
@@ -66,6 +85,8 @@ fn parse(args: []const []const u8) ?[]const u8 {
 pub const Checker = struct {
     init: std.process.Init,
     dir: []const u8 = "",
+    /// The installed plugins, whose components the apps import as `serve` reads them.
+    sandboxed: ?*const SandboxedPlugins = null,
 
     pub fn folder(checker: *Checker) @import("../sdk/context.zig").AppsFolder {
         const named = apps_adapter.spec.public_dir;
@@ -86,19 +107,28 @@ pub const Checker = struct {
 
         std.debug.assert(checker.dir.len > 0);
 
-        const answer = check_here(checker.init, checker.dir) catch |err| return @errorName(err);
+        const answer = check_here(checker.init, checker.dir, checker.sandboxed) catch |err| {
+            return @errorName(err);
+        };
 
         return answer.@"error";
     }
 };
 
-/// With no server: the apps read and compiled as `serve` would, nothing swapped.
-fn check_here(init: std.process.Init, dir: []const u8) !Answer {
+/// With no server: the apps read and compiled as `serve` would, the installed plugins'
+/// components and providers included, nothing swapped.
+fn check_here(
+    init: std.process.Init,
+    dir: []const u8,
+    sandboxed: ?*const SandboxedPlugins,
+) !Answer {
     std.debug.assert(dir.len > 0);
 
     const arena = init.arena.allocator();
     var reason: report.Reason = .{};
-    var source = apps_adapter.folder.project_apps(init.gpa, init.io, dir, &reason) catch |err| {
+    const folder = apps_adapter.folder;
+    const slots = try apps_adapter.provider_slots.sources(arena, sandboxed);
+    var source = folder.project_apps(init.gpa, init.io, dir, &reason, slots) catch |err| {
         const why = if (reason.len > 0) reason.text() else @errorName(err);
 
         return .{

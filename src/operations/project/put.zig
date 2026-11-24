@@ -23,7 +23,7 @@ pub const units_max: u32 = 10_000;
 pub const Unit = struct {
     kind: []const u8,
     id: []const u8,
-    rows: []const u8,
+    rows: sdk.operation.Json,
 };
 
 /// A unit put, and what became of it: `added`, `replaced`, `removed` or `unchanged`.
@@ -62,16 +62,26 @@ pub const Put = struct {
     pub const answer: ?operation_define.Answer = .plugin_calls;
     pub const In = struct {
         units: []const Unit = &.{},
+
+        pub const bulk_limits = .{
+            .units = units_max,
+        };
     };
     pub const Out = struct {
         put: []const Done,
+
+        pub const bulk_limits = .{
+            .put = units_max,
+        };
     };
     pub const example: In = .{
         .units = &.{.{
             .kind = "record",
             .id = record_operations.example_draft_id,
-            .rows = "{\"records\":[{\"id\":\"c3d4e5f60718293a4b5c6d7e\",\"status\":" ++
-                "\"published\"}],\"record_values\":[]}",
+            .rows = .{
+                .text = "{\"records\":[{\"id\":\"c3d4e5f60718293a4b5c6d7e\",\"status\":" ++
+                    "\"published\"}],\"record_values\":[]}",
+            },
         }},
     };
     pub const example_out: Out = .{
@@ -109,7 +119,7 @@ pub const Put = struct {
         for (in.units, kinds, results) |unit, unit_kind, *result| {
             const shape = stored_rows.shape_of(unit_kind);
 
-            result.* = try stored_rows.put(ctx.db, ctx.arena, shape, unit.id, unit.rows);
+            result.* = try stored_rows.put(ctx.db, ctx.arena, shape, unit.id, unit.rows.text);
         }
 
         // Types put in this call are read afresh; everything is in place before anything
@@ -179,7 +189,8 @@ fn landing(ctx: *Ctx, kind: stored_rows.Kind, id: []const u8) Error!Before {
 }
 
 /// What follows a unit written: records and terms land as a person's change; an internal
-/// record raises its keys where it was and where it is, as any write to one does.
+/// record raises its own keys and every key of its collection where it was and where it is:
+/// a move does not say which values it was found by.
 fn landed(ctx: *Ctx, id: []const u8, before: Before) Error!void {
     std.debug.assert(id.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -193,13 +204,17 @@ fn landed(ctx: *Ctx, id: []const u8, before: Before) Error!void {
             for ([_]?store.internal_records.Owner{ was, now }) |each| {
                 const collection = each orelse continue;
 
-                changes.internal_changed(ctx, collection.plugin, collection.kind, id) catch |err| {
-                    if (err == error.OutOfMemory) {
-                        return error.OutOfMemory;
-                    }
+                for ([_]?[]const u8{ id, null }) |which| {
+                    const plugin = collection.plugin;
 
-                    ctx.dependency_failure = true;
-                };
+                    changes.internal_changed(ctx, plugin, collection.kind, which) catch |err| {
+                        if (err == error.OutOfMemory) {
+                            return error.OutOfMemory;
+                        }
+
+                        ctx.dependency_failure = true;
+                    };
+                }
             }
         },
         .none => {},

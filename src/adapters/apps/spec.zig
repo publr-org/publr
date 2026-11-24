@@ -34,14 +34,23 @@ pub const Spec = struct {
     plugins: ?[]const []const u8,
     templates: []const File,
     assets: []const File,
+    /// Its own words' translations, `i18n/<locale>.po`, by file name (`pl.po`): `Publr.t` in
+    /// its templates reads them, the app its own domain.
+    translations: []const File = &.{},
     tokens: jit.Theme,
     /// The typefaces every page links before its stylesheet (`app.zon`'s `.fonts`).
     fonts: []const model_app.Font = &.{},
     style_css: []const u8,
     interactive_classes: []const u8,
+    /// The browser modules of the plugins' interactive components it places, among its assets:
+    /// loaded on every page that holds an interactive component, after its own stores.
+    interactive_modules: []const []const u8 = &.{},
     pjsx_components: []const engine.PjsxComponent,
     pjsx_renders: []const engine.PjsxRender,
     middleware: ?middleware.Middleware,
+    /// Whether a template leaves a provider slot (`<ProviderSlot>`): the app is loaded again
+    /// when plugins change, as what the slot draws may have.
+    slotted: bool = false,
 };
 
 /// Every compiled-in app, in the order of their folders' names.
@@ -102,6 +111,7 @@ fn spec_of(comptime App: type) Spec {
             .plugins = config.plugins,
             .templates = files_of(App.templates),
             .assets = files_of(App.assets),
+            .translations = files_of(App.translations),
             .tokens = jit.extendTheme(jit.default_theme, .{
                 .tokens = tokens_of(config.tokens),
             }),
@@ -340,7 +350,9 @@ fn renders_of(
         var renders: [decls.len]engine.PjsxRender = undefined;
 
         for (decls, 0..) |decl_name, index| {
-            renders[index] = &Thunk(@field(Interactive, decl_name), expressions).render;
+            renders[index] = .{
+                .draw = &Thunk(@field(Interactive, decl_name), expressions).render,
+            };
         }
 
         const final = renders;
@@ -365,6 +377,7 @@ fn is_string_prop(comptime name: []const u8, comptime Field: type) bool {
 fn Thunk(comptime Component: type, comptime expressions: []const u8) type {
     return struct {
         fn render(
+            context: ?*const anyopaque,
             writer: *std.Io.Writer,
             arena: std.mem.Allocator,
             props: []const engine.Prop,
@@ -373,6 +386,7 @@ fn Thunk(comptime Component: type, comptime expressions: []const u8) type {
         ) anyerror!void {
             std.debug.assert(props.len <= engine.props_max);
             std.debug.assert(@hasDecl(Component, "render"));
+            std.debug.assert(context == null);
 
             var filled: Component.Props = .{};
 

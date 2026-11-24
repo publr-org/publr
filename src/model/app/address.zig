@@ -490,3 +490,54 @@ test "an app's address: under the project's for a path, before its host for a su
     try std.testing.expectEqualStrings("localhost", domain_of("http://localhost:8080"));
     try std.testing.expectEqualStrings("", domain_of("nothing"));
 }
+
+/// Where an app answers, from the site's origin (`https://example.com`) and its mount:
+/// `https://example.com/shop`, or `https://shop.example.com` for a subdomain.
+pub fn app_address(
+    arena: std.mem.Allocator,
+    origin: []const u8,
+    mount: Mount,
+) error{OutOfMemory}![]const u8 {
+    std.debug.assert(valid_mount(mount));
+    std.debug.assert(origin.len > 0);
+
+    const scheme_end = std.mem.indexOf(u8, origin, "://") orelse return arena.dupe(u8, origin);
+
+    return switch (mount) {
+        .path => std.mem.concat(arena, u8, &.{ origin, base_path(mount) }),
+        .subdomain => |name| std.mem.concat(arena, u8, &.{
+            origin[0 .. scheme_end + 3],
+            name,
+            ".",
+            origin[scheme_end + 3 ..],
+        }),
+    };
+}
+
+test "an app's address: its mount under the site's origin" {
+    var buffer: [512]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+    const arena = fixed.allocator();
+
+    try std.testing.expectEqualStrings("https://example.com/shop", try app_address(
+        arena,
+        "https://example.com",
+        .{
+            .path = "/shop",
+        },
+    ));
+    try std.testing.expectEqualStrings("https://example.com", try app_address(
+        arena,
+        "https://example.com",
+        .{
+            .path = "/",
+        },
+    ));
+    try std.testing.expectEqualStrings("https://shop.example.com", try app_address(
+        arena,
+        "https://example.com",
+        .{
+            .subdomain = "shop",
+        },
+    ));
+}

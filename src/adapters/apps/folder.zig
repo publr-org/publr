@@ -11,13 +11,19 @@ const registry = @import("../../server/registry.zig");
 const report = @import("../../lib/report.zig");
 const spec_module = @import("spec.zig");
 const imported = @import("imported.zig");
+const provider_slots = @import("provider_slots.zig");
+const interactive_module = @import("interactive.zig");
 
 const Spec = spec_module.Spec;
 const File = spec_module.File;
 
 const zon_bytes_max: u32 = 1 << 20;
 const template_bytes_max: u32 = 4 << 20;
-const templates_max: u32 = 4096;
+pub const templates_max: u32 = 4096;
+/// Where an app keeps its own words' translations, one PO file per language.
+pub const i18n_dir = "i18n";
+/// The most languages one app translates its words into.
+const translations_max: u32 = 64;
 
 /// The specs read, and the memory they live in, until the next load replaces them.
 pub const Loaded = struct {
@@ -62,19 +68,19 @@ pub const Apps = struct {
     }
 };
 
+/// `slots`: what each `<ProviderSlot>` draws from, the installed plugins' providers and
+/// components among them when the caller has them loaded.
 pub fn project_apps(
     gpa: std.mem.Allocator,
     io: std.Io,
     dir: []const u8,
     reason: *report.Reason,
+    slots: provider_slots.Sources,
 ) !Apps {
     std.debug.assert(dir.len > 0);
 
-    const loaded = try read(gpa, io, dir, reason) orelse {
-        return .{
-            .loaded = null,
-            .specs = spec_module.all,
-        };
+    const loaded = try read(gpa, io, dir, reason, slots) orelse {
+        return compiled_in(gpa, io, slots);
     };
 
     std.debug.assert(loaded.specs.len > 0);
@@ -85,6 +91,109 @@ pub fn project_apps(
     };
 }
 
+/// The binary's own apps, a `<ProviderSlot>` in one drawn with `slots` (the build's check
+/// drew them with the compiled-in providers only).
+fn compiled_in(gpa: std.mem.Allocator, io: std.Io, slots: provider_slots.Sources) !Apps {
+    std.debug.assert(spec_module.all.len <= spec_module.apps_max);
+
+    const joins = any_slot(spec_module.all) or any_plugin_import(spec_module.all);
+
+    if (!joins and slots.interactive.len == 0) {
+        return .{
+            .loaded = null,
+            .specs = spec_module.all,
+        };
+    }
+
+    var loaded: Loaded = .{
+        .arena = .init(gpa),
+        .specs = &.{},
+    };
+    errdefer loaded.arena.deinit();
+
+    loaded.specs = try slotted(loaded.arena.allocator(), io, spec_module.all, slots);
+
+    return .{
+        .loaded = loaded,
+        .specs = loaded.specs,
+    };
+}
+
+/// `specs` with every `<ProviderSlot>` drawn from `slots`, in `arena`.
+pub fn slotted(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    specs: []const Spec,
+    slots: provider_slots.Sources,
+) ![]const Spec {
+    std.debug.assert(specs.len <= spec_module.apps_max);
+
+    const out = try arena.dupe(Spec, specs);
+
+    for (out) |*spec| {
+        spec.slotted = slotted_in(spec.templates);
+        spec.templates = try imported.with_imported(
+            arena,
+            io,
+            spec_module.public_dir,
+            spec.folder,
+            spec.templates,
+            templates_max,
+            slots,
+            spec.plugins,
+            null,
+        );
+        try interactive_module.add(arena, spec, slots.interactive, null);
+    }
+
+    std.debug.assert(out.len == specs.len);
+
+    return out;
+}
+
+/// Whether a template of any of `specs` leaves a provider slot.
+pub fn any_slot(specs: []const Spec) bool {
+    std.debug.assert(specs.len <= spec_module.apps_max);
+
+    for (specs) |spec| {
+        if (slotted_in(spec.templates)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether a template of any of `specs` may import a plugin's component
+/// (`plugin:<plugin>/<Component>`), which joins the app from the plugins present.
+fn any_plugin_import(specs: []const Spec) bool {
+    std.debug.assert(specs.len <= spec_module.apps_max);
+
+    for (specs) |spec| {
+        for (spec.templates) |template| {
+            if (std.mem.indexOf(u8, template.data, "'plugin:") != null or
+                std.mem.indexOf(u8, template.data, "\"plugin:") != null)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+fn slotted_in(templates: []const File) bool {
+    std.debug.assert(templates.len <= templates_max);
+
+    for (templates) |template| {
+        if (std.mem.indexOf(u8, template.data, "<ProviderSlot") != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// The apps under `dir`, or null when it holds none: the binary's own are served then. A
 /// problem (an `app.zon` that does not parse, a mount taken twice) names the app in `reason`.
 pub fn read(
@@ -92,6 +201,7 @@ pub fn read(
     io: std.Io,
     dir: []const u8,
     reason: *report.Reason,
+    slots: provider_slots.Sources,
 ) !?Loaded {
     std.debug.assert(dir.len > 0);
 
@@ -109,7 +219,7 @@ pub fn read(
     const specs = try arena.alloc(Spec, folders.len);
 
     for (folders, specs) |folder, *spec| {
-        spec.* = try read_app(arena, io, dir, folder, reason);
+        spec.* = try read_app(arena, io, dir, folder, reason, slots);
     }
 
     try check_all(specs, reason);
@@ -158,6 +268,7 @@ fn read_app(
     dir: []const u8,
     folder: []const u8,
     reason: *report.Reason,
+    slots: provider_slots.Sources,
 ) !Spec {
     std.debug.assert(folder.len > 0);
 
@@ -181,6 +292,7 @@ fn read_app(
     }
 
     const tokens = try arena.alloc(jit.Token, config.tokens.len);
+    const own = try read_templates(arena, io, app_dir);
 
     for (config.tokens, 0..) |token, index| {
         tokens[index] = .{
@@ -189,7 +301,7 @@ fn read_app(
         };
     }
 
-    return .{
+    var spec: Spec = .{
         .name = name,
         .label = model_app.label_of(name, config.label),
         .folder = folder,
@@ -201,12 +313,14 @@ fn read_app(
             io,
             dir,
             folder,
-            try read_templates(arena, io, app_dir),
+            own,
             templates_max,
-            registry.plugin_components,
+            slots,
             config.plugins,
+            reason,
         ),
         .assets = if (compiled) |built| built.assets else spec_module.common_assets,
+        .translations = try read_translations(arena, io, app_dir),
         .tokens = try jit.extendThemeRuntime(arena, jit.default_theme, .{
             .tokens = tokens,
         }),
@@ -216,7 +330,19 @@ fn read_app(
         .pjsx_components = if (compiled) |built| built.pjsx_components else &.{},
         .pjsx_renders = if (compiled) |built| built.pjsx_renders else &.{},
         .middleware = if (compiled) |built| built.middleware else null,
+        .slotted = slotted_in(own),
     };
+
+    // Its own interactive components, built from its folder, when the build has none of it.
+    if (compiled == null) {
+        if (try interactive_module.read_own(arena, io, app_dir, name, reason)) |built| {
+            try interactive_module.add(arena, &spec, &.{built}, reason);
+        }
+    }
+
+    try interactive_module.add(arena, &spec, slots.interactive, reason);
+
+    return spec;
 }
 
 fn read_config(
@@ -256,16 +382,10 @@ fn refuse_compiled_parts(
 
     const cwd = std.Io.Dir.cwd();
     const middleware = try std.fs.path.join(arena, &.{ app_dir, "middleware.zig" });
-    const interactive = try std.fs.path.join(arena, &.{ app_dir, "interactive" });
 
     if (cwd.access(io, middleware, .{})) |_| {
         reason.set("[{s}] middleware.zig needs a build of Publr; a plugin's request hook " ++
             "will replace it", .{name});
-        return error.InvalidApp;
-    } else |_| {}
-
-    if (cwd.access(io, interactive, .{})) |_| {
-        reason.set("[{s}] interactive/ components need a build of Publr for now", .{name});
         return error.InvalidApp;
     } else |_| {}
 }
@@ -285,7 +405,8 @@ fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]
 
     while (try walker.next(io)) |entry| {
         const top = entry.path[0 .. std.mem.indexOfScalar(u8, entry.path, '/') orelse 0];
-        const skipped = std.mem.eql(u8, top, "public") or std.mem.eql(u8, top, "interactive");
+        const skipped = std.mem.eql(u8, top, "public") or std.mem.eql(u8, top, "interactive") or
+            std.mem.eql(u8, top, interactive_module.built_dir);
 
         if (entry.kind != .file or top.len == 0 or skipped) {
             continue;
@@ -308,6 +429,44 @@ fn read_templates(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]
     std.mem.sort(File, files.items, {}, file_less_than);
 
     std.debug.assert(files.items.len <= templates_max);
+
+    return files.items;
+}
+
+/// `i18n/<locale>.po` under the app, by file name (`pl.po`); none without the folder.
+fn read_translations(arena: std.mem.Allocator, io: std.Io, app_dir: []const u8) ![]const File {
+    std.debug.assert(app_dir.len > 0);
+
+    const path = try std.fs.path.join(arena, &.{ app_dir, i18n_dir });
+    var root = std.Io.Dir.cwd().openDir(io, path, .{
+        .iterate = true,
+    }) catch |err| switch (err) {
+        error.FileNotFound => return &.{},
+        else => |other| return other,
+    };
+    defer root.close(io);
+
+    var files: std.ArrayList(File) = .empty;
+    var iterator = root.iterate();
+
+    while (try iterator.next(io)) |entry| {
+        const po = entry.kind == .file and std.mem.endsWith(u8, entry.name, ".po");
+
+        if (!po or files.items.len == translations_max) {
+            continue;
+        }
+
+        const data = try root.readFileAlloc(io, entry.name, arena, .limited(template_bytes_max));
+
+        try files.append(arena, .{
+            .path = try arena.dupe(u8, entry.name),
+            .data = data,
+        });
+    }
+
+    std.mem.sort(File, files.items, {}, file_less_than);
+
+    std.debug.assert(files.items.len <= translations_max);
 
     return files.items;
 }
@@ -397,7 +556,7 @@ test "an app is known by its `.name`, whatever its folder; two of one name are r
 
     const root = try scratch.dir.realPathFileAlloc(io, "apps", gpa);
     defer gpa.free(root);
-    var loaded = (try read(gpa, io, root, &reason)).?;
+    var loaded = (try read(gpa, io, root, &reason, .{})).?;
 
     try std.testing.expectEqual(1, loaded.specs.len);
     try std.testing.expectEqualStrings("www", loaded.specs[0].name);
@@ -410,6 +569,6 @@ test "an app is known by its `.name`, whatever its folder; two of one name are r
         .sub_path = "apps/copy/app.zon",
         .data = again,
     });
-    try std.testing.expectError(error.InvalidApp, read(gpa, io, root, &reason));
+    try std.testing.expectError(error.InvalidApp, read(gpa, io, root, &reason, .{}));
     try std.testing.expect(std.mem.indexOf(u8, reason.text(), "copy and site-2024") != null);
 }

@@ -55,7 +55,7 @@ pub const Query = struct {
     pub const In = struct {
         query: []const u8,
         /// `$name` values, a JSON object.
-        params: []const u8 = "{}",
+        params: sdk.operation.Json = .object,
         perspective: Perspective = .all,
         /// Records in the trash too.
         trashed: bool = false,
@@ -68,7 +68,9 @@ pub const Query = struct {
     };
     pub const example: In = .{
         .query = "*[_type == \"post\" && slug == $slug][0]{ title }",
-        .params = "{\"slug\":\"hello-world\"}",
+        .params = .{
+            .text = "{\"slug\":\"hello-world\"}",
+        },
     };
     pub const example_out: Out = .{
         .result = .{
@@ -89,7 +91,7 @@ pub const Query = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        if (in.query.len == 0 or in.query.len > 16 << 10 or in.params.len > 64 << 10) {
+        if (in.query.len == 0 or in.query.len > 16 << 10 or in.params.text.len > 64 << 10) {
             return error.Invalid;
         }
 
@@ -97,7 +99,7 @@ pub const Query = struct {
         ctx.depends_on(changes.all_records_key);
 
         const arena = ctx.arena;
-        const params = try params_of(arena, in.params);
+        const params = try params_of(arena, in.params.text);
         var source = try source_of(ctx, granted, in.perspective);
 
         source.trashed = in.trashed and source.live == null;
@@ -356,14 +358,10 @@ fn internal_of(
         const reached = ctx.plugin.len > 0 and
             (own or try internal_operations.reaches_other(ctx, each.owner, collection.kind, false));
 
+        // What a query reads of a collection it reaches is noted where it is read
+        // (`internal.get`, `internal.find`): a record by id, the records holding an indexed
+        // value, else the collection. One it does not read is no dependency.
         if (reached) {
-            var buffer: [changes.key_len_max]u8 = undefined;
-            const key = changes.internal_key(&buffer, each.owner, collection.kind, null) catch {
-                return error.Invalid;
-            };
-
-            // A page drawn for the built site that queries depends on what it may reach.
-            ctx.depends_on(key);
             readable.append(arena, .{
                 .handle = handle,
                 .owner = each.owner,

@@ -313,7 +313,7 @@ pub const SaveVersion = struct {
     pub const In = struct {
         id: []const u8,
         version: i64,
-        document: []const u8,
+        document: sdk.operation.Json,
     };
     pub const Out = struct {
         /// Whether a draft is kept on it.
@@ -322,7 +322,9 @@ pub const SaveVersion = struct {
     pub const example: In = .{
         .id = record_operations.example_scheduled_id,
         .version = 1,
-        .document = "{\"title\":\"Back to normal\"}",
+        .document = .{
+            .text = "{\"title\":\"Back to normal\"}",
+        },
     };
     pub const example_out: Out = .{
         .changed = true,
@@ -355,7 +357,7 @@ pub const SaveVersion = struct {
 
         const at = try projected(ctx, record.row, record.def, found.entries, entry.id);
         const json = @import("../../lib/json.zig");
-        const edited = json.parse(Value, ctx.arena, in.document, .{
+        const edited = json.parse(Value, ctx.arena, in.document.text, .{
             .allocate = .alloc_always,
         }) catch return error.Invalid;
 

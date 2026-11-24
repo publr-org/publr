@@ -175,7 +175,7 @@ fn entry_at(visit: Visit, handle: []const u8, slug: []const u8) !?PageContext.En
         .id = listed.records[0].id,
         .purpose = .edit,
     }) catch return null;
-    const document = try parsed(visit.arena, got.document);
+    const document = try parsed(visit.arena, got.document.text);
 
     return try entry_of(visit.arena, handle, got.record.id, slug, got.record.title, document);
 }
@@ -215,7 +215,7 @@ fn own_entry(
             return null;
         }
 
-        base = try parsed(visit.arena, got.document);
+        base = try parsed(visit.arena, got.document.text);
         title = got.record.title;
         saved_slug = got.record.slug;
     }

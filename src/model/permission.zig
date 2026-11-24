@@ -9,7 +9,7 @@ pub const operations_max: u32 = 32;
 pub const Tier = enum { low, medium, high };
 
 /// What a key's request may name to narrow it: content types, taxonomies, or domains.
-pub const Narrowing = enum { none, records, taxonomies, domains };
+pub const Narrowing = enum { none, records, taxonomies, domains, plugins };
 
 /// A yes/no option on a grant, each a switch in the admin.
 pub const Flag = enum { drafts, private, internal, publish };
@@ -34,6 +34,9 @@ pub const Permission = struct {
     /// The events it lets a plugin emit beside its own, by prefix: `messaging.` for every
     /// message (`publr.messaging.Email`).
     events: []const []const u8 = &.{},
+    /// Its operations carry the plugin's secrets out (`{secret:NAME}`): a plugin declaring
+    /// secrets asks for one such key, and they are set under its request.
+    sends_secrets: bool = false,
 };
 
 /// One permission as asked for or as granted: the key, the flags as booleans, the content
@@ -44,6 +47,8 @@ pub const Held = struct {
     records: []const []const u8 = &.{},
     taxonomies: []const []const u8 = &.{},
     domains: []const []const u8 = &.{},
+    /// `ledger.read`'s: the plugins whose accounts it reads.
+    plugins: []const []const u8 = &.{},
     drafts: bool = false,
     private: bool = false,
     internal: bool = false,
@@ -109,8 +114,21 @@ pub const always = [_][]const u8{
     "heartbeat.check",      "project.status",            "status.list",
     "internal.create",      "internal.get",              "internal.save",
     "internal.find_one",    "internal.find",             "internal.delete",
-    "mod.changed",          "mod.apply",                 "ai.progress",
+    "internal.create_many", "internal.save_many",        "mod.changed",
+    "internal.count",       "mod.apply",                 "ai.progress",
     "custom_fields.values", "custom_fields.save_values", "provider.list",
+    "money.text",           "money.texts",               "money.main",
+    "money.read",           "provider.answers",          "project.time_zone",
+    "link.sign",            "link.verify",               "messaging.feedback",
+    "messaging.render",     "media.write_part",          "media.make",
+    "media.made",           "project.clock",             "project.random",
+    "plugin.labels",        "ledger.open",               "ledger.transfer",
+    "ledger.hold",          "ledger.post_hold",          "ledger.void_hold",
+    "ledger.chain",         "ledger.reverse",            "ledger.convert",
+    "ledger.close",         "ledger.reopen",             "ledger.balance",
+    "ledger.history",       "ledger.find",               "ledger.totals",
+    "ledger.get",           "ledger.accounts",           "ledger.account",
+    "internal.sum",         "internal.holds_until",      "secret.digest",
 };
 
 /// The record operations a plugin reaches on its own content types without asking.
@@ -304,6 +322,23 @@ pub const core = [_]Permission{
             "user.create",
             "user.update",
             "user.delete",
+            "user.add_type",
+            "user.remove_type",
+        },
+    },
+    .{
+        .key = "users.own",
+        .sentence = "Read, create and change accounts of its own user types, and give " ++
+            "or take its types on any account",
+        .tier = .medium,
+        .operations = &.{
+            "user.list",
+            "user.get",
+            "user.create",
+            "user.update",
+            "user.delete",
+            "user.add_type",
+            "user.remove_type",
         },
     },
     .{
@@ -325,6 +360,14 @@ pub const core = [_]Permission{
         .tier = .high,
         .narrowing = .domains,
         .operations = &.{ "http.fetch", "http.stream", "http.read" },
+        .sends_secrets = true,
+    },
+    .{
+        .key = "mail.send",
+        .sentence = "Send email through the mail servers it is given",
+        .tier = .high,
+        .operations = &.{"mail.send"},
+        .sends_secrets = true,
     },
     .{
         .key = "media.read",
@@ -354,10 +397,28 @@ pub const core = [_]Permission{
         },
     },
     .{
+        .key = "request.read",
+        .sentence = "Read the query parameters and cookies it names, where visitors came " ++
+            "from and landed, and their address",
+        .tier = .medium,
+        .operations = &.{"request.read"},
+    },
+    .{
+        .key = "request.redirect",
+        .sentence = "Send visitors on from the site's addresses under the prefixes it names",
+        .tier = .medium,
+    },
+    .{
         .key = "messaging.send",
         .sentence = "Send emails, text messages and notifications",
         .tier = .medium,
-        .events = &.{"messaging."},
+        .events = &.{ "messaging.email", "messaging.sms", "messaging.push" },
+    },
+    .{
+        .key = "ledger.read",
+        .sentence = "Read the ledger accounts of the plugins it names",
+        .tier = .medium,
+        .narrowing = .plugins,
     },
 };
 
@@ -366,20 +427,21 @@ pub const core = [_]Permission{
 /// types handed to another, the project's secrets, a person's conversations with a model.
 /// No grant reaches them.
 pub const never = [_][]const u8{
-    "user.sign_in",       "user.sign_out",              "user.set_password", "user.password_link",
-    "sign_on.configure",  "sign_on.status",             "sign_on.redeem",    "identity.sign_in",
-    "identity.configure", "identity.status",            "identity.link",     "identity.unlink",
-    "identity.list",      "identity.providers",         "project.init",      "role.list",
-    "view.list",          "view.get",                   "view.create",       "view.update",
-    "view.delete",        "project.move_app",           "activity.list",     "errors.list",
-    "secret.list",        "secret.set",                 "secret.remove",     "ai.ask",
-    "ai.conversation",    "ai.conversations",           "ai.stop",           "ai.begin",
-    "ai.step",            "ai.finish",                  "ai.draft",          "user.language",
-    "user.set_language",  "project.set_admin_language", "user.columns",      "user.set_columns",
-    "ai.transcribe",      "view.default",               "view.save_default", "mod.list",
-    "view.reset_default", "role.get",                   "role.create",       "role.update",
-    "role.reset",         "project.set_time_zone",      "job.schedule",      "role.remove",
-    "record.markers",     "record.help",
+    "user.sign_in",      "user.sign_out",      "user.set_password",  "user.password_link",
+    "user.sign_up",      "user.request_reset", "sign_on.configure",  "sign_on.status",
+    "sign_on.redeem",    "identity.sign_in",   "identity.configure", "identity.status",
+    "identity.link",     "identity.unlink",    "identity.list",      "identity.providers",
+    "project.init",      "role.list",          "view.list",          "view.get",
+    "view.create",       "view.update",        "view.delete",        "project.move_app",
+    "activity.list",     "errors.list",        "secret.list",        "secret.set",
+    "secret.remove",     "ai.ask",             "ai.conversation",    "ai.conversations",
+    "ai.stop",           "ai.begin",           "ai.step",            "ai.finish",
+    "ai.draft",          "user.language",      "user.set_language",  "project.set_admin_language",
+    "user.columns",      "user.set_columns",   "ai.transcribe",      "view.default",
+    "view.save_default", "mod.list",           "view.reset_default", "role.get",
+    "role.create",       "role.update",        "role.reset",         "project.set_time_zone",
+    "job.schedule",      "role.remove",        "record.markers",     "record.help",
+    "project.set_clock",
 };
 
 /// The core permission `key` stands for, or null when it names none.

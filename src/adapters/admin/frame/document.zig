@@ -82,6 +82,13 @@ pub fn write(
         try write_bridge(writer, view);
 
         if (stores.len > 0) {
+            // The view's `ctx` first (`Publr.ctx`, from the bridge): registering a store
+            // hydrates the roots already drawn, a whole page's own on `<html>` among them,
+            // before the page's own scripts load.
+            const admin_at = std.mem.indexOf(u8, stores, "/admin/") orelse 0;
+
+            try writer.print("<script type=\"module\" src=\"{s}/admin/publr-operations.js\">" ++
+                "</script>", .{stores[0..admin_at]});
             try writer.print("<script type=\"module\" src=\"{s}\"></script>", .{stores});
         }
 
@@ -266,6 +273,10 @@ test "an installed plugin's stores load after the bridge, before the page's own 
     const bridge_end = std.mem.indexOf(u8, text, ");</script>").?;
     const admin_own = std.mem.indexOf(u8, text, "src=\"/admin/stores.js\"").?;
 
+    const operations = std.mem.indexOf(u8, text, "src=\"/admin/publr-operations.js\"").?;
+
+    try std.testing.expect(bridge_end < operations);
+    try std.testing.expect(operations < own);
     try std.testing.expect(bridge_end < own);
     try std.testing.expect(own < admin_own);
 }

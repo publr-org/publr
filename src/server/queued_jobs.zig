@@ -27,6 +27,11 @@ pub fn tick(project: *const Project, gpa: std.mem.Allocator, clock: *Clock, now_
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(now_ms >= 0);
 
+    // A test site's clock moved back (`project.set_clock`): look again from its time.
+    if (clock.next_ms > now_ms + look_ms or clock.repeat_next_ms > now_ms + repeat_ms) {
+        clock.* = .{};
+    }
+
     // Kept `on` hook runs and installed plugins' jobs wait here too, whatever is compiled in.
     if (now_ms < clock.next_ms) {
         return;
@@ -131,7 +136,9 @@ fn make_scheduled(ctx: *sdk.Ctx, one: store.scheduled_changes.Entry) anyerror!vo
 
     _ = try registry.SDK.dispatch(ctx, record.Publish, .{
         .id = one.record_id,
-        .changes = if (one.changes.len > 0) one.changes else null,
+        .changes = if (one.changes.len > 0) .{
+            .text = one.changes,
+        } else null,
         .held_back = one.held_back,
     });
 }
@@ -212,7 +219,9 @@ test "scheduled moves and changes are shown on the record, then made as their pe
     });
     const created = try registry.SDK.dispatch(&person, record.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Later\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Later\",\"body\":\"x\"}",
+        },
     });
     const at = person.now_ms + 60_000;
 
@@ -255,7 +264,9 @@ test "scheduled moves and changes are shown on the record, then made as their pe
     // Live, its changes scheduled: the title kept in the entry, the pending copy cleared.
     _ = try registry.SDK.dispatch(&person, record.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Deal\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Deal\",\"body\":\"x\"}",
+        },
     });
 
     const later = at + 60_000;
@@ -276,7 +287,9 @@ test "scheduled moves and changes are shown on the record, then made as their pe
     // Meanwhile the body is fixed and published: the deal leaves it.
     _ = try registry.SDK.dispatch(&person, record.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Later\",\"body\":\"fixed\"}",
+        .document = .{
+            .text = "{\"title\":\"Later\",\"body\":\"fixed\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&person, record.Publish, .{
         .id = created.id,
@@ -288,14 +301,16 @@ test "scheduled moves and changes are shown on the record, then made as their pe
         .id = created.id,
     });
 
-    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"title\":\"Deal\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, after.document, "\"body\":\"fixed\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after.document.text, "\"title\":\"Deal\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after.document.text, "\"body\":\"fixed\"") != null);
 
     // Stacked: A sets the title on what is live; B, on top of A, puts it back. Another
     // title on what is live clashes with A. B published now takes A with it.
     _ = try registry.SDK.dispatch(&person, record.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Deal 2\",\"body\":\"fixed\"}",
+        .document = .{
+            .text = "{\"title\":\"Deal 2\",\"body\":\"fixed\"}",
+        },
     });
 
     const first = try registry.SDK.dispatch(&person, record.TransitionAt, .{
@@ -307,7 +322,9 @@ test "scheduled moves and changes are shown on the record, then made as their pe
     _ = try registry.SDK.dispatch(&person, record.SaveVersion, .{
         .id = created.id,
         .version = first.entry,
-        .document = "{\"title\":\"Back\",\"body\":\"fixed\"}",
+        .document = .{
+            .text = "{\"title\":\"Back\",\"body\":\"fixed\"}",
+        },
     });
 
     const second = try registry.SDK.dispatch(&person, record.TransitionAt, .{
@@ -327,12 +344,16 @@ test "scheduled moves and changes are shown on the record, then made as their pe
         .version = second.entry,
     });
 
-    try std.testing.expect(std.mem.indexOf(u8, as_first.document, "Deal 2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, as_second.document, "\"title\":\"Back\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, as_first.document.text, "Deal 2") != null);
+    const second_text = as_second.document.text;
+
+    try std.testing.expect(std.mem.indexOf(u8, second_text, "\"title\":\"Back\"") != null);
 
     _ = try registry.SDK.dispatch(&person, record.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Clash\",\"body\":\"fixed\"}",
+        .document = .{
+            .text = "{\"title\":\"Clash\",\"body\":\"fixed\"}",
+        },
     });
     const clashing = registry.SDK.dispatch(&person, record.TransitionAt, .{
         .id = created.id,
@@ -355,6 +376,8 @@ test "scheduled moves and changes are shown on the record, then made as their pe
         .purpose = .edit,
     });
 
-    try std.testing.expect(std.mem.indexOf(u8, squashed.document, "\"title\":\"Back\"") != null);
+    const squashed_text = squashed.document.text;
+
+    try std.testing.expect(std.mem.indexOf(u8, squashed_text, "\"title\":\"Back\"") != null);
     try std.testing.expectEqual(0, squashed.scheduled.len);
 }

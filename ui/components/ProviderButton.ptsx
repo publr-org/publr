@@ -1,0 +1,25 @@
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+
+export type ProviderButtonProps = {
+  provider: {
+    label: string;
+    /** The provider's mark: one SVG path on a 24 by 24 canvas, drawn in the text colour. */
+    icon: string;
+    href: string;
+  };
+  /** Just signed out: the one way back in, "Sign in again". */
+  again?: boolean;
+};
+
+/** "Continue with <provider>" on the login pages. */
+export function ProviderButton({ provider, again = false }: ProviderButtonProps) {
+  return (
+    <Button href={provider.href} hierarchy={again ? "primary" : "secondary"} size="lg" classes="w-full">
+      <svg viewBox="0 0 24 24" class="size-4 shrink-0" fill="currentColor" aria-hidden="true">
+        <path d={provider.icon} />
+      </svg>
+      {again ? Publr.t("Sign in again") : Publr.t("Continue with {provider}", { provider: provider.label })}
+    </Button>
+  );
+}

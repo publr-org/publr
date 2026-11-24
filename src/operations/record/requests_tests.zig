@@ -42,7 +42,9 @@ test "a contributor asks; what goes live waits for someone who may publish" {
     var editor = person(&harness, "u_ed", "editor");
     const created = try SDK.dispatch(&writer, record.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Hello\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Hello\",\"body\":\"x\"}",
+        },
     });
 
     // Nothing visitors see changes: archiving a draft and back moves at once.
@@ -96,7 +98,9 @@ test "a contributor asks; what goes live waits for someone who may publish" {
     // Changes to a live record wait too, published by `publish` or declined.
     _ = try SDK.dispatch(&writer, record.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+        },
     });
     const changes = try SDK.dispatch(&writer, record.Transition, .{
         .id = created.id,

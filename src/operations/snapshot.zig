@@ -34,7 +34,7 @@ pub const Item = struct {
     /// The document's title; empty where it has none.
     title: []const u8 = "",
     /// The document; in a list, only when asked for.
-    document: []const u8,
+    document: ?sdk.operation.Json = null,
 };
 
 const example_id = "a1b2c3d4e5f60718293a4b5c";
@@ -43,7 +43,9 @@ const example_item: Item = .{
     .kind = "revision",
     .at = 1789650000000,
     .by = "3f9c1e0a5b7d2c4e6f8a9b0c",
-    .document = "{\"title\":\"Hello, world\",\"body\":\"<p>First post.</p>\"}",
+    .document = .{
+        .text = "{\"title\":\"Hello, world\",\"body\":\"<p>First post.</p>\"}",
+    },
 };
 
 pub const List = struct {
@@ -112,7 +114,9 @@ pub const List = struct {
                 .at = found.at,
                 .by = found.by,
                 .title = found.title,
-                .document = found.document,
+                .document = if (in.documents) .{
+                    .text = try readable(ctx, type_row.def.fields, found.document),
+                } else null,
             };
         }
 
@@ -148,9 +152,19 @@ pub const Get = struct {
         }
 
         const row = try access.load(ctx, in.id, granted) orelse return error.NotFound;
-        const found = try snapshot.get(ctx.db, ctx.arena, row.id, in.seq);
+        const type_row = try record.domain.definition.find(ctx, row.type) orelse {
+            return error.NotFound;
+        };
+        const found = try snapshot.get(ctx.db, ctx.arena, row.id, in.seq) orelse {
+            return error.NotFound;
+        };
+        var item = item_of(found);
 
-        return item_of(found orelse return error.NotFound);
+        item.document = .{
+            .text = try readable(ctx, type_row.def.fields, found.document),
+        };
+
+        return item;
     }
 };
 
@@ -245,7 +259,9 @@ pub const Restore = struct {
         const record_operations = @import("record.zig");
         const saved = try registry.SDK.dispatch(ctx, record_operations.Save, .{
             .id = row.id,
-            .document = item.document,
+            .document = .{
+                .text = item.document,
+            },
             .expected_version = in.expected_version,
         });
 
@@ -294,6 +310,25 @@ pub const Prune = struct {
     }
 };
 
+/// A snapshot's document as the caller reads it: a field they may not read left out.
+fn readable(ctx: *Ctx, fields: []const model.field.Def, text: []const u8) Error![]const u8 {
+    std.debug.assert(fields.len <= model.field.fields_max);
+
+    const visibility = @import("document/visibility.zig");
+
+    if (text.len == 0 or !visibility.any_hidden(fields)) {
+        return text;
+    }
+
+    var parsed = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, text, .{}) catch {
+        return error.Invalid;
+    };
+
+    visibility.strip(ctx, fields, &parsed);
+
+    return std.json.Stringify.valueAlloc(ctx.arena, parsed, .{}) catch error.OutOfMemory;
+}
+
 fn item_of(row: snapshot.Row) Item {
     std.debug.assert(row.seq >= 1);
     std.debug.assert(row.kind.len > 0);
@@ -303,7 +338,9 @@ fn item_of(row: snapshot.Row) Item {
         .kind = row.kind,
         .at = row.at,
         .by = row.by,
-        .document = row.document,
+        .document = .{
+            .text = row.document,
+        },
     };
 }
 

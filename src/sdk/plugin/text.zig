@@ -80,6 +80,32 @@ pub fn decode_uri_component(
     return library.decode_uri_component(ctx.arena(), text);
 }
 
+/// The value of `name` in an address's query string (`method=new&page=2`), decoded, `+` read as
+/// a space; null when it is absent, empty or malformed. For a plugin page's `query`.
+pub fn query_param(ctx: anytype, query: []const u8, name: []const u8) Error!?[]const u8 {
+    std.debug.assert(name.len > 0);
+
+    var pairs = std.mem.splitScalar(u8, query, '&');
+
+    while (pairs.next()) |pair| {
+        const equals_at = std.mem.indexOfScalar(u8, pair, '=') orelse continue;
+
+        if (!std.mem.eql(u8, pair[0..equals_at], name)) {
+            continue;
+        }
+
+        const spaced = try library.replace_all(ctx.arena(), pair[equals_at + 1 ..], "+", " ");
+        const value = library.decode_uri_component(ctx.arena(), spaced) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Malformed => return null,
+        };
+
+        return if (value.len == 0) null else value;
+    }
+
+    return null;
+}
+
 test "publr.text takes ctx where it makes text" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -98,6 +124,11 @@ test "publr.text takes ctx where it makes text" {
     try std.testing.expectEqualStrings("ada@example.com", try lower(&ctx, "Ada@Example.com"));
     try std.testing.expect(starts_with("admin-ada", "admin"));
     try std.testing.expect(!equals("a", "b"));
+    const method = try query_param(&ctx, "a=1&method=new", "method");
+    try std.testing.expectEqualStrings("new", method.?);
+    try std.testing.expectEqualStrings("a b/c", (try query_param(&ctx, "q=a+b%2Fc", "q")).?);
+    try std.testing.expect(try query_param(&ctx, "q=", "q") == null);
+    try std.testing.expect(try query_param(&ctx, "q=%zz", "q") == null);
 
     const pieces = try split(&ctx, "tea, coffee, milk", ", ");
 

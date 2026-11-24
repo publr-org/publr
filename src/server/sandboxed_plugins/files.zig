@@ -66,6 +66,18 @@ pub const Files = struct {
         return files.dir.readFileAlloc(files.io, name, gpa, .limited(sandboxed_plugin.bytes_max));
     }
 
+    /// How long the stored module `hash` is, in bytes; 0 when it is not there.
+    pub fn bytes_of(files: *const Files, hash: []const u8) u64 {
+        std.debug.assert(hash.len == hash_len);
+        std.debug.assert(valid_hash(hash));
+
+        var name_buffer: [hash_len + 5]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buffer, "{s}.wasm", .{hash}) catch unreachable;
+        const stat = files.dir.statFile(files.io, name, .{}) catch return 0;
+
+        return stat.size;
+    }
+
     /// Stores `bytes` under their hash, once; answers the hash. A module already there is
     /// marked as just written, so a sweep leaves it alone while the install commits.
     pub fn store(files: *const Files, bytes: []const u8, hash_out: *[hash_len]u8) !void {

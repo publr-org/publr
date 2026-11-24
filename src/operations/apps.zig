@@ -6,6 +6,7 @@ const std = @import("std");
 const sdk = @import("../sdk.zig");
 const trash = @import("trash.zig");
 const file_path = @import("../model/app/file_path.zig");
+const key_page = @import("../model/key_page.zig");
 const file_content = @import("../model/app/file_content.zig");
 
 const Ctx = sdk.Ctx;
@@ -67,11 +68,18 @@ pub const Entry = struct {
 pub const Files = struct {
     pub const name = "apps.files";
     pub const description = "Every file of the project's apps";
-    pub const details = "Administrators only. Paths are `<app>/<path>`, sorted.";
+    pub const details =
+        \\Administrators only. Paths are `<app>/<path>`, sorted, a page at a time: `next`
+        \\continues it. `prefix` keeps those whose paths start with it.
+    ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        prefix: []const u8 = "",
+        after: []const u8 = "",
+    };
     pub const Out = struct {
         files: []const Entry,
+        next: []const u8 = "",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -86,12 +94,20 @@ pub const Files = struct {
             },
         },
     };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .prefix = "Only paths starting with it (`www/design/`); every path when left out",
+        .after = "The page after this path: the `next` the last page answered",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .files = "Up to 4096 files",
+        .files = "Of the first 4096 files found",
+        .next = "The next page's `after`; empty after the last",
     };
 
-    pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
+        if (in.prefix.len > file_path.len_max or in.after.len > file_path.len_max) {
+            return error.Invalid;
+        }
+
         var root = open_root(ctx, try folder_of(ctx), false) catch |err| {
             return if (err == error.NotFound) .{
                 .files = &.{},
@@ -104,7 +120,9 @@ pub const Files = struct {
         defer walker.deinit();
 
         while (walker.next(ctx.io) catch return error.Unavailable) |item| {
-            if (item.kind != .file or !file_path.valid(item.path)) {
+            const wanted = std.mem.startsWith(u8, item.path, in.prefix);
+
+            if (item.kind != .file or !file_path.valid(item.path) or !wanted) {
                 continue;
             }
 
@@ -112,12 +130,11 @@ pub const Files = struct {
                 break;
             }
 
-            const stat = root.statFile(ctx.io, item.path, .{}) catch continue;
             const path = ctx.arena.dupe(u8, item.path) catch return error.OutOfMemory;
 
             found.append(ctx.arena, .{
                 .path = path,
-                .bytes = stat.size,
+                .bytes = 0,
             }) catch {
                 return error.OutOfMemory;
             };
@@ -126,8 +143,27 @@ pub const Files = struct {
         std.mem.sort(Entry, found.items, {}, earlier);
         std.debug.assert(found.items.len <= files_max);
 
+        const paths = ctx.arena.alloc([]const u8, found.items.len) catch {
+            return error.OutOfMemory;
+        };
+
+        for (found.items, paths) |entry, *path| {
+            path.* = entry.path;
+        }
+
+        const page = key_page.window(paths, in.after, sdk.operation.page_limit_max);
+        const files = found.items[page.start..page.end];
+
+        // Only the page's files are looked at for their size.
+        for (files) |*entry| {
+            const stat = root.statFile(ctx.io, entry.path, .{}) catch continue;
+
+            entry.bytes = stat.size;
+        }
+
         return .{
-            .files = found.items,
+            .files = files,
+            .next = page.next,
         };
     }
 

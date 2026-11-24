@@ -48,13 +48,17 @@ test "activity: a field group and a type by their handles, from the write's inpu
 
     _ = try SDK.dispatch(&system, custom_fields.Create, .{
         .group = "profile",
-        .definition = "{\"handle\":\"profile\",\"name\":\"Profile\",\"kind\":\"component\"," ++
-            "\"fields\":[]}",
+        .definition = .{
+            .text = "{\"handle\":\"profile\",\"name\":\"Profile\",\"kind\":\"component\"," ++
+                "\"fields\":[]}",
+        },
     });
     try expect_units(&.{"field_group:profile"}, try units_of(&system, "custom_fields.create"));
 
     const note = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = note_definition,
+        .definition = .{
+            .text = note_definition,
+        },
     });
 
     try expect_units(&.{"content_type:note"}, try units_of(&system, "content_type.create"));
@@ -75,11 +79,15 @@ test "activity: project.put lists what it put in its order, before what landing 
     try SDK.bootstrap(&system);
 
     const note = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = note_definition,
+        .definition = .{
+            .text = note_definition,
+        },
     });
     const created = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
-        .document = "{\"title\":\"One\"}",
+        .document = .{
+            .text = "{\"title\":\"One\"}",
+        },
     });
     _ = try SDK.dispatch(&system, record.Publish, .{
         .id = created.id,
@@ -109,12 +117,16 @@ test "activity: project.put lists what it put in its order, before what landing 
             .{
                 .kind = "record",
                 .id = created.id,
-                .rows = "{}",
+                .rows = .{
+                    .text = "{}",
+                },
             },
             .{
                 .kind = "content_type",
                 .id = note.id,
-                .rows = "{}",
+                .rows = .{
+                    .text = "{}",
+                },
             },
         },
     });
@@ -124,12 +136,16 @@ test "activity: project.put lists what it put in its order, before what landing 
             .{
                 .kind = "content_type",
                 .id = note.id,
-                .rows = type_rows,
+                .rows = .{
+                    .text = type_rows,
+                },
             },
             .{
                 .kind = "record",
                 .id = created.id,
-                .rows = record_rows,
+                .rows = .{
+                    .text = record_rows,
+                },
             },
         },
     });
@@ -149,19 +165,25 @@ test "activity: a record's own writes and a move over many, each record by its i
     try SDK.bootstrap(&system);
 
     _ = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = note_definition,
+        .definition = .{
+            .text = note_definition,
+        },
     });
 
     const one = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
-        .document = "{\"title\":\"One\"}",
+        .document = .{
+            .text = "{\"title\":\"One\"}",
+        },
     });
     _ = try SDK.dispatch(&system, record.Publish, .{
         .id = one.id,
     });
     const two = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Two\"}",
+        .document = .{
+            .text = "{\"title\":\"Two\"}",
+        },
     });
     const one_unit = try std.fmt.allocPrint(system.arena, "record:{s}", .{one.id});
     const two_unit = try std.fmt.allocPrint(system.arena, "record:{s}", .{two.id});
@@ -171,7 +193,9 @@ test "activity: a record's own writes and a move over many, each record by its i
     // A save that changes nothing names nothing; one that parks an edit names the record.
     const same = try SDK.dispatch(&system, record.Save, .{
         .id = one.id,
-        .document = "{\"title\":\"One\"}",
+        .document = .{
+            .text = "{\"title\":\"One\"}",
+        },
     });
 
     try std.testing.expectEqualStrings("unchanged", same.outcome);
@@ -179,7 +203,9 @@ test "activity: a record's own writes and a move over many, each record by its i
 
     const parked = try SDK.dispatch(&system, record.Save, .{
         .id = one.id,
-        .document = "{\"title\":\"One, edited\"}",
+        .document = .{
+            .text = "{\"title\":\"One, edited\"}",
+        },
     });
 
     try std.testing.expectEqualStrings("changes_saved", parked.outcome);

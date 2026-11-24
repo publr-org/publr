@@ -125,6 +125,10 @@ export const state = Publr.reactive({
   markers: [] as Array<{ field: string; label: string; group: string; tone: string; dimension: string; code: string; current: string; href: string }>,
   /** What the last refused save said, under each top-level field by its name. */
   problems: {} as Record<string, string>,
+  /** The same, each part of a group by its own path (`parcel.weight`), drawn beside the part. */
+  part_problems: {} as Record<string, string>,
+  /** The groups with a refused part, by name: their problem is drawn beside the part. */
+  groups_refused: {} as Record<string, boolean>,
   /** The help plugins give top-level fields for the values as they stand, by name; a field
    * not here shows its type's help. */
   helps: {} as Record<string, string>,
@@ -146,6 +150,23 @@ const problems_by_field = (list: Array<{ field: string; message: string }>) => {
     if (field !== "" && !(field in by_field)) by_field[field] = problem.message;
   }
   return by_field;
+};
+
+/** Each refused part of a group by its path (`parcel.weight`, what lies under it there too),
+ * the first problem it has, and the groups holding one; a list's items stay under their field. */
+const tell_parts = (list: Array<{ field: string; message: string }>) => {
+  const by_path: Record<string, string> = {};
+  const groups: Record<string, boolean> = {};
+  for (const problem of list) {
+    if (problem.field.includes("[")) continue;
+    const [group, part] = problem.field.split(".");
+    if (part === undefined) continue;
+    const path = `${group}.${part}`;
+    if (!(path in by_path)) by_path[path] = problem.message;
+    groups[group] = true;
+  }
+  state.part_problems = by_path;
+  state.groups_refused = groups;
 };
 
 /** The form's own fields, not values of the entry. */
@@ -515,6 +536,7 @@ const save = mutation(async () => {
     problems?: Array<{ field: string; message: string }>;
   };
   state.problems = problems_by_field(answer.problems ?? []);
+  tell_parts(answer.problems ?? []);
   tell_problems(answer.problems ?? []);
   if (!answer.saved) throw new Error(answer.reason ?? Publr.t("Cannot save yet"));
   if (disposed) return false;
@@ -993,6 +1015,7 @@ export function RecordEditor({
   state.markers = markers;
   state.helps = helps_by_field(helps);
   state.problems = problems_by_field(problems.map((problem) => ({ field: problem.code, message: problem.text })));
+  tell_parts(problems.map((problem) => ({ field: problem.code, message: problem.text })));
 
   return (
     <div

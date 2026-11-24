@@ -281,6 +281,7 @@ fn sign_in(harness: *Harness) ![]const u8 {
     _ = try registry.SDK.dispatch(&system, testing_users.Create, .{
         .email = "ed@x.test",
         .display_name = "Ed",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
 
@@ -431,6 +432,45 @@ test "an administrator reaches the site with a pass that shows the toolbar and n
     try std.testing.expect(has(on_admin.body, "\"authenticated\":true"));
 }
 
+test "a visitor signed in on the site's host is signed in, offered no admin" {
+    var harness: Harness = undefined;
+    try split_harness(&harness);
+    defer harness.deinit();
+
+    var system = harness.inner.ctx(.system);
+
+    _ = try registry.SDK.dispatch(&system, @import("../operations/role.zig").Create, .{
+        .name = "shopper",
+        .label = "Shopper",
+    });
+    _ = try registry.SDK.dispatch(&system, testing_users.Create, .{
+        .email = "ada@x.test",
+        .display_name = "Ada",
+        .roles = &.{"shopper"},
+        .password = "correct horse battery",
+    });
+
+    const signed = try harness.flow.call(
+        "POST /api/auth/sign-in HTTP/1.1\r\nHost: " ++ site_host ++ "\r\n" ++
+            "Origin: https://" ++ site_host ++ "\r\nContent-Type: application/json\r\n" ++
+            "Content-Length: 0\r\n\r\n",
+        "{\"email\":\"ada@x.test\",\"password\":\"correct horse battery\"}",
+    );
+    const set_cookie = signed.header("Set-Cookie").?;
+    const arena = harness.arena_state.allocator();
+    const cookie_line = try std.fmt.allocPrint(arena, "Cookie: {s}\r\n", .{
+        set_cookie[0..std.mem.indexOfScalar(u8, set_cookie, ';').?],
+    });
+    const bar = try get(&harness, site_host, "/_publr/toolbar?path=/", cookie_line);
+
+    try std.testing.expect(has(bar.body, "\"signed_in\":true"));
+    try std.testing.expect(has(bar.body, "\"admin\":\"\""));
+
+    const nobody = try get(&harness, site_host, "/_publr/toolbar?path=/", "");
+
+    try std.testing.expect(has(nobody.body, "\"signed_in\":false"));
+}
+
 test "a forged pass keeps nothing" {
     var harness: Harness = undefined;
     try split_harness(&harness);
@@ -464,6 +504,7 @@ test "an admin on a shared host answers under its own path, its cookies kept the
     _ = try registry.SDK.dispatch(&system, testing_users.Create, .{
         .email = "ed@x.test",
         .display_name = "Ed",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
 

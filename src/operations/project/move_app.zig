@@ -148,7 +148,9 @@ test "move_app hands an app's types to another, or makes them Global; admins onl
 
     for ([_]Def{ stock, page }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = try model.content_type.encode(system.arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(system.arena, def),
+            },
         });
     }
 

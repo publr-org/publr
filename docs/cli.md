@@ -148,7 +148,7 @@ publr [--as-admin | --as <who>] seed --type <type> --file <path> [--publish]
 ```
 
 Makes a record of the type from every document in the file: a JSON array of objects, or one
-object a line. It sends them in calls of `record create_many`, 250 at a time (fewer when
+object a line. It sends them in calls of `record create_many`, 200 at a time (fewer when
 they pass 512 KiB together), printing how many are in. Each call is all or nothing; a refused one stops the seed and says which document. Who
 runs it goes with every call.
 
@@ -288,9 +288,10 @@ runnable example.
 | Namespace | What it covers |
 |---|---|
 | [`heartbeat`](cli/heartbeat.md) | Liveness and version checks |
-| [`project`](cli/project.md) | The installation itself: `project init`, and what a change rebuilds |
+| [`project`](cli/project.md) | The installation itself: `project init`, what a change rebuilds, and a test site's clock |
 | [`user`](cli/user.md) | Accounts, roles, passwords and signing in |
 | [`role`](cli/role.md) | The roles, what each lets its accounts call, and changing them |
+| [`user_type`](cli/user_type.md) | Types of user plugins register, and the apps each may sign in to |
 | [`identity`](cli/identity.md) | Signing in with a provider: which accounts, and whether sign-up is open |
 | [`device`](cli/device.md) | Agents and tools acting for an account, signed in by link |
 | [`apps`](cli/apps.md) | The project's apps as files, for agents with no file system |
@@ -302,9 +303,12 @@ runnable example.
 | [`status`](cli/status.md) | The lifecycle states a record can be in |
 | [`job`](cli/job.md) | The work plugins queued, waiting or failed |
 | [`operation`](cli/operation.md) | Every operation, as its code declares it and as this site overrides it |
+| [`event`](cli/event.md) | The events plugins declare, with their payloads and the hooks on them |
 | [`snapshot`](cli/snapshot.md) | Frozen copies of records: revisions and other archives |
 | [`view`](cli/view.md) | Views of the content list: saved by name, and the default each type starts at |
 | [`rail`](cli/rail.md) | The pages a person pins to their rail |
+| [`money`](cli/money.md) | Amounts written as the site writes them |
+| [`ledger`](cli/ledger.md) | The double-entry ledger plugins keep, read only: accounts, history, totals, the check |
 | [`mod`](cli/mod.md) | Values plugins change: applied under a name, modified by whoever hooks it |
 | [`ai`](cli/ai.md) | Conversations with a model: a person asks, an agent builds as their device |
 | [`secret`](cli/secret.md) | Secrets plugins name but never hold: API keys, set by an administrator |
@@ -313,6 +317,7 @@ runnable example.
 | [`health`](cli/health.md) | Site Health: broken references to review case by case |
 | [`design`](cli/design.md) | An app's design system and moodboard |
 | [`http`](cli/http.md) | Requests a plugin sends out, its secrets filled in as they leave |
+| [`mail`](cli/mail.md) | Email a plugin hands to a mail server over SMTP |
 | [`update`](cli/update.md) | Updating this site's Publr to a newer release, and stepping back; `db check`, `backups`, `restore` |
 | [`activity`](cli/activity.md) | What was done: every completed write, kept forever |
 | [`errors`](cli/activity.md) | What was refused or failed, kept forever |

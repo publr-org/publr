@@ -37,7 +37,9 @@ pub fn of(session: *admin.Session, filters: Filters) Error!?Offer {
 /// filter by, a field meaning something within one type only.
 pub fn across_types() Offer {
     return .{
-        .query = "{}",
+        .query = .{
+            .text = "{}",
+        },
         .layer = "core",
         .everyone = false,
         .title_field = "",
@@ -93,9 +95,9 @@ pub const across_default_columns = [_][]const u8{ "type", "slug", "status", "upd
 
 /// The view the offer starts at.
 pub fn start(arena: std.mem.Allocator, offer: Offer) Filters {
-    std.debug.assert(offer.query.len > 0);
+    std.debug.assert(offer.query.text.len > 0);
 
-    return model.view.decode(arena, offer.query) catch .{};
+    return model.view.decode(arena, offer.query.text) catch .{};
 }
 
 /// The view with only what the type offers: clauses on fields it filters by, with their

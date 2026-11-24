@@ -1,11 +1,17 @@
 //! The plugin SDK inside the sandbox: `SandboxApi`, the same calls a native plugin makes, with
-//! every call proxied to the host as JSON, and the exports the host drives the plugin with.
+//! every call proxied to the host, its values handed over as they lie (`shape_wire.zig`), and
+//! the exports the host drives the plugin with.
 //! A plugin never writes `export fn`: `Exports(Plugin)` generates them from its declarations.
 const std = @import("std");
 const mods = @import("../mods.zig");
 const builtin = @import("builtin");
 const wire = @import("wire.zig");
-const json = @import("../../lib/json.zig");
+const read_memo = @import("read_memo.zig");
+const modify_define = @import("modify_define.zig");
+const shape_wire = @import("shape_wire.zig");
+const shape_parts = @import("shape_parts.zig");
+const laid_key = @import("laid_key.zig");
+const free_value = @import("../free_value.zig");
 const Caller = @import("../caller.zig").Caller;
 const Grant = @import("../grant.zig").Grant;
 const contract = @import("../plugin.zig");
@@ -32,24 +38,19 @@ else
 
 pub const Mode = enum { native, sandboxed };
 
-const allocator = std.heap.wasm_allocator;
+const guest_memory = @import("guest_memory.zig");
+const walks_guest = @import("walks/guest.zig");
 
-extern "env" fn publr_call(
-    name_ptr: [*]const u8,
-    name_len: u32,
-    in_ptr: [*]const u8,
-    in_len: u32,
-    result: *wire.Result,
-) u32;
-extern "env" fn publr_emit(
-    name_ptr: [*]const u8,
-    name_len: u32,
-    payload_ptr: [*]const u8,
-    payload_len: u32,
-) void;
+const allocator = guest_memory.heap;
+
+extern "env" fn publr_call_shaped(call: *const shape_wire.Call, sizes: *[2]u32) u32;
+extern "env" fn publr_shaped_take(block: u32, table: u32) u32;
+extern "env" fn publr_item(index: u32, status: u32) void;
+extern "env" fn publr_emit(sent: *const shape_wire.Sent) void;
+extern "env" fn publr_undo() void;
 extern "env" fn publr_granted(key_ptr: [*]const u8, key_len: u32) u32;
 extern "env" fn publr_grant_domains(key_ptr: [*]const u8, key_len: u32, result: *wire.Result) u32;
-extern "env" fn publr_enqueue(ptr: [*]const u8, len: u32) u32;
+extern "env" fn publr_enqueue(sent: *const shape_wire.Sent) u32;
 extern "env" fn publr_log_at(level: u32, ptr: [*]const u8, len: u32) void;
 extern "env" fn publr_problem(
     field_ptr: [*]const u8,
@@ -65,18 +66,16 @@ extern "env" fn publr_refuse(
     status: u32,
 ) void;
 
-const parse_options: std.json.ParseOptions = .{
-    .ignore_unknown_fields = true,
-    .allocate = .alloc_always,
-};
-
-/// What a sandboxed plugin reaches Publr through: every call a JSON message to the host.
+/// What a sandboxed plugin reaches Publr through: every call a message to the host, its
+/// values in the plugin's own structs.
 pub const SandboxApi = struct {
     arena_allocator: std.mem.Allocator,
     now_at_ms: i64,
     name: []const u8,
     on_behalf_of: ?[]const u8,
     visitor_id: []const u8 = "",
+    /// The language the call speaks, as the host said.
+    language_code: []const u8 = "",
     /// Who is calling, as the host sees it.
     facts: wire.Caller = .{},
     /// The `Fails:` of the operation running, for the status of a refusal.
@@ -85,6 +84,8 @@ pub const SandboxApi = struct {
     reads: ?*mod_reads.Reads = null,
     /// The refusal the last call came back with, by name; empty for none.
     last_failure: []const u8 = "",
+    /// Set while a read operation runs: the reads it made, answered again without the host.
+    memo: ?*read_memo.Memo = null,
 
     /// The plugin itself, acting for the account that made the call when there is one.
     pub fn caller(self: *const SandboxApi) caller_view.View {
@@ -136,16 +137,43 @@ pub const SandboxApi = struct {
             @compileError("a repeating or `.due` job runs on its own; it is never queued");
         }
 
-        const text = std.json.Stringify.valueAlloc(self.arena_allocator, .{
-            .name = Job.verb,
-            .in = in,
-            .due_ms = at.ms,
-        }, .{}) catch return error.OutOfMemory;
-        const code = publr_enqueue(text.ptr, @intCast(text.len));
+        // The input goes as it lies: the host writes it down for the queue.
+        const Input = if (Job.Input == void) struct {} else Job.Input;
+        const input: Input = if (comptime Job.Input == void) .{} else in;
+        var parts = try self.sent(Input, Job.verb, &input);
+
+        parts.due_ms = at.ms;
+
+        const code = publr_enqueue(&parts);
 
         if (code != wire.ok) {
             return wire.error_of(code);
         }
+    }
+
+    /// Where `value` and its description are, for the host to read it under `name`.
+    fn sent(
+        self: *SandboxApi,
+        comptime Shape: type,
+        name: []const u8,
+        value: *const Shape,
+    ) Error!shape_wire.Sent {
+        const described = comptime shape_wire.describe(Shape);
+        var table: std.ArrayList(shape_wire.Entry) = .empty;
+
+        std.debug.assert(name.len > 0);
+
+        try shape_parts.table_of(Shape, self.arena_allocator, value, &table);
+
+        return .{
+            .name = @intCast(@intFromPtr(name.ptr)),
+            .name_len = @intCast(name.len),
+            .root = @intCast(@intFromPtr(value)),
+            .asked = @intCast(@intFromPtr(described.ptr)),
+            .asked_len = described.len,
+            .table = @intCast(@intFromPtr(table.items.ptr)),
+            .table_len = @intCast(table.items.len),
+        };
     }
 
     /// What the administrator granted for a request: whether the key is on, and its flags.
@@ -197,12 +225,91 @@ pub const SandboxApi = struct {
         return domains.items;
     }
 
+    /// Inside a computed field's function: the value it answers holds until `time`, and is
+    /// worked out again then whatever else happens (a sale ends). The earliest one counts.
+    pub fn holds_until(self: *SandboxApi, time: words.Time) Error!void {
+        std.debug.assert(self.name.len > 0);
+        std.debug.assert(time.ms > 0);
+
+        _ = try self.call(@import("../../operations/internal.zig").HoldsUntil, .{
+            .until_ms = time.ms,
+        });
+    }
+
     pub fn now(self: *const SandboxApi) words.Time {
         std.debug.assert(self.now_at_ms >= 0);
         std.debug.assert(self.name.len > 0);
 
         return .{
             .ms = self.now_at_ms,
+        };
+    }
+
+    /// A link a person opens without signing in, for one purpose (`intent`, the plugin's
+    /// own word) and one subject, until `expires` (null: until revoked): its `token`, and
+    /// its `path` (`/_links/<token>`, which runs the plugin's operation named `intent`).
+    pub fn sign(
+        self: *SandboxApi,
+        intent: []const u8,
+        subject: []const u8,
+        expires: ?words.Time,
+    ) Error!@import("../../operations/link.zig").Sign.Out {
+        std.debug.assert(intent.len > 0);
+
+        return self.call(@import("../../operations/link.zig").Sign, .{
+            .intent = intent,
+            .subject = subject,
+            .expires_at = if (expires) |time| time.ms else 0,
+        });
+    }
+
+    /// A file the plugin makes, written in pieces (`write`) and kept with `done` as a file of
+    /// one of its own media types (`type_handle`, `kind` `media`): see `files_api.zig`.
+    pub fn make_file(
+        self: *SandboxApi,
+        type_handle: []const u8,
+        filename: []const u8,
+    ) @import("files_api.zig").Making(SandboxApi) {
+        std.debug.assert(type_handle.len > 0);
+
+        return @import("files_api.zig").Making(SandboxApi).begin(self, type_handle, filename);
+    }
+
+    /// The subject a link's token was signed for, when it is good for `intent`; not found
+    /// otherwise (another purpose, past its time, revoked).
+    pub fn verify(self: *SandboxApi, intent: []const u8, token: []const u8) Error![]const u8 {
+        std.debug.assert(intent.len > 0);
+
+        const read = try self.call(@import("../../operations/link.zig").Verify, .{
+            .intent = intent,
+            .token = token,
+        });
+
+        return read.subject;
+    }
+
+    /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
+    /// Fills `buffer` (at most 64 bytes) from the host's cryptographic source.
+    pub fn random(self: *SandboxApi, buffer: []u8) Error!void {
+        std.debug.assert(buffer.len > 0);
+        std.debug.assert(self.name.len > 0);
+
+        const random_operation = @import("../../operations/random.zig");
+        const answered = try self.call(random_operation.Random, .{
+            .bytes = @intCast(buffer.len),
+        });
+
+        return random_operation.fill(buffer, answered.hex);
+    }
+
+    pub fn time_zone(self: *SandboxApi) Error!words.TimeZone {
+        std.debug.assert(self.name.len > 0);
+
+        const answered = try self.call(@import("../../operations/job.zig").TimeZone, .{});
+
+        return .{
+            .name = answered.name,
+            .rule = answered.rule,
         };
     }
 
@@ -228,10 +335,14 @@ pub const SandboxApi = struct {
 
     /// Text for people, each `{name}` filled from `values`. Installed plugins' catalogues
     /// reach the host with the package's files; until then the source text.
+    /// Text in the call's language, from the host's catalogues as a compiled-in plugin's
+    /// `ctx.t` reads them; the source text where no language pack has it.
     pub fn t(self: *const SandboxApi, comptime text: []const u8, values: anytype) []const u8 {
         comptime std.debug.assert(text.len > 0);
 
-        return words.filled(self.arena_allocator, text, values) catch text;
+        const said = translated(self.arena_allocator, text, "", null) orelse text;
+
+        return filled_in(self.arena_allocator, said, values) catch said;
     }
 
     pub fn tn(
@@ -243,11 +354,31 @@ pub const SandboxApi = struct {
     ) []const u8 {
         comptime std.debug.assert(one.len > 0 and many.len > 0);
 
-        if (count == 1) {
-            return words.filled(self.arena_allocator, one, values) catch one;
+        const source = if (count == 1) one else many;
+        const said = translated(self.arena_allocator, one, many, count) orelse source;
+
+        return filled_in(self.arena_allocator, said, values) catch said;
+    }
+
+    /// Words marked where they were written (`publr.t`, `ctx.t`) and kept as written: a
+    /// label another plugin registered or stored (a line's work, `To send`), in the
+    /// caller's language when shown. The text itself where no language pack has it.
+    pub fn translate(self: *const SandboxApi, text: []const u8) []const u8 {
+        std.debug.assert(self.name.len > 0);
+
+        if (text.len == 0) {
+            return text;
         }
 
-        return words.filled(self.arena_allocator, many, values) catch many;
+        return translated(self.arena_allocator, text, "", null) orelse text;
+    }
+
+    /// The language the call speaks (`pl`, `en`): what `t` answers in.
+    pub fn language(self: *const SandboxApi) []const u8 {
+        std.debug.assert(self.name.len > 0);
+        std.debug.assert(self.now_at_ms >= 0);
+
+        return self.language_code;
     }
 
     /// Text for one person, in their own language (`ctx.locale(person)`): the source text
@@ -281,6 +412,99 @@ pub const SandboxApi = struct {
         }
     };
 
+    /// Memory of its own for one step of an operation. From here until `end`, everything the
+    /// call allocates and reads (`ctx.arena()`, records, answers) is in the scope's memory, and
+    /// `end` gives all of it back: an operation then takes the memory of its largest step, never
+    /// the sum of its steps. Nothing made inside may be used after `end`; a number or an enum
+    /// is carried out by value, anything else is copied into memory taken before the scope.
+    ///
+    ///     var step = ctx.scope();
+    ///     defer step.end();
+    ///
+    /// `leave` goes back to the operation's memory while what the scope holds stays readable
+    /// until `end`: for something read once and used across later steps.
+    pub fn scope(self: *SandboxApi) Scope {
+        const outer = self.arena_allocator;
+
+        std.debug.assert(self.name.len > 0);
+
+        const held = outer.create(guest_memory.Arena) catch {
+            // No room even for that: the step works in the operation's memory.
+            return .{
+                .api = self,
+                .outer = outer,
+                .memory = null,
+                .walks_mark = walks_guest.depth(),
+            };
+        };
+
+        held.* = guest_memory.arena();
+        self.arena_allocator = held.allocator();
+
+        return .{
+            .api = self,
+            .outer = outer,
+            .memory = held,
+            .walks_mark = walks_guest.depth(),
+        };
+    }
+
+    pub const Scope = struct {
+        api: *SandboxApi,
+        outer: std.mem.Allocator,
+        memory: ?*guest_memory.Arena,
+        inside: bool = true,
+        /// Walks open when the scope began: those opened inside it go with it.
+        walks_mark: u32,
+
+        /// Back to the memory the call had before the scope; what the scope holds stays.
+        pub fn leave(self: *Scope) void {
+            if (!self.inside or self.memory == null) {
+                return;
+            }
+
+            walks_guest.leave_above(self.api, self.walks_mark);
+
+            // Scopes nest: one opened inside this one has ended.
+            std.debug.assert(self.api.arena_allocator.ptr == @as(*anyopaque, self.memory.?));
+
+            self.inside = false;
+            self.api.arena_allocator = self.outer;
+        }
+
+        /// `text` copied into the memory the call had before the scope: what a step carries out
+        /// when it is more than a number.
+        pub fn keep(self: *Scope, text: []const u8) error{OutOfMemory}![]const u8 {
+            return self.outer.dupe(u8, text);
+        }
+
+        /// Everything the scope holds is given back.
+        pub fn end(self: *Scope) void {
+            self.leave();
+            walks_guest.end_above(self.api, self.walks_mark);
+            // Ended once: walks opened after this never go with it.
+            self.walks_mark = std.math.maxInt(u32);
+
+            const held = self.memory orelse return;
+            const api = self.api;
+
+            std.debug.assert(!self.inside);
+
+            // The reads remembered inside are forgotten: their answers go with the memory.
+            if (api.memo) |memo| {
+                memo.drop(held);
+            }
+
+            // A refusal's name outlives the step that met it.
+            if (api.last_failure.len > 0) {
+                api.last_failure = self.outer.dupe(u8, api.last_failure) catch "";
+            }
+
+            held.deinit();
+            self.memory = null;
+        }
+    };
+
     pub fn arena(self: *const SandboxApi) std.mem.Allocator {
         std.debug.assert(self.now_at_ms >= 0);
         std.debug.assert(self.name.len > 0);
@@ -291,29 +515,56 @@ pub const SandboxApi = struct {
     /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any
     /// plugin) and answers what they made of it; with none, the value as it went.
     pub fn mod(self: *SandboxApi, comptime name: []const u8, value: anytype) Error!@TypeOf(value) {
+        const changed = try self.mod_all(name, @TypeOf(value), &.{value});
+
+        std.debug.assert(changed.len == 1);
+
+        return changed[0];
+    }
+
+    /// `mod` for many values at once: a cart's lines, an order's charges. Each modifier
+    /// hears them in batches with its reads made together for all, so the cost is one call
+    /// per batch, never one per value. Answers them in the same order.
+    pub fn mod_all(
+        self: *SandboxApi,
+        comptime name: []const u8,
+        comptime Value: type,
+        values: []const Value,
+    ) Error![]const Value {
         comptime {
             if (!mods.valid(name, false)) {
                 @compileError("`" ++ name ++ "` is no mod name: dotted parts of a-z, 0-9 and _");
             }
         }
 
-        const Value = @TypeOf(value);
-        const values: []const Value = &.{value};
         const memory = self.arena();
-        const text = std.json.Stringify.valueAlloc(memory, values, .{}) catch {
-            return error.OutOfMemory;
-        };
-        const answered = try self.call(mods.Apply, .{
-            .name = name,
-            .values = text,
-        });
+        const changed = memory.alloc(Value, values.len) catch return error.OutOfMemory;
+        var start: usize = 0;
 
-        const changed = std.json.parseFromSliceLeaky([]const Value, memory, answered.values, .{
-            .ignore_unknown_fields = true,
-            .allocate = .alloc_always,
-        }) catch return value;
+        while (start < values.len) {
+            const end = @min(values.len, start + mods.items_max);
+            const batch = values[start..end];
+            // The values go as they lie and come back as they lie: no text written or read here.
+            const Sent = struct {
+                name: []const u8,
+                values: []const Value,
+            };
+            const Got = struct {
+                values: []const Value,
+            };
+            const answered = try self.call_shaped(Sent, Got, mods.Apply.name, &.{
+                .name = name,
+                .values = batch,
+            });
+            const made = answered.values;
 
-        return if (changed.len == 1) changed[0] else value;
+            @memcpy(changed[start..end], if (made.len == batch.len) made else batch);
+            start = end;
+        }
+
+        std.debug.assert(changed.len == values.len);
+
+        return changed;
     }
 
     /// Runs `Operation` in the host as this plugin, with its grants: `error.Denied` when an
@@ -340,45 +591,156 @@ pub const SandboxApi = struct {
             return reads.answer(Operation.Out, operation_name, in);
         }
 
-        const input = std.json.Stringify.valueAlloc(self.arena_allocator, in, .{}) catch {
-            return error.OutOfMemory;
-        };
-        const output = try self.call_json(operation_name, input);
+        const read = comptime @hasDecl(Operation, "kind") and Operation.kind == .read;
 
-        return json.parse(Operation.Out, self.arena_allocator, output, parse_options) catch {
-            return error.Invalid;
-        };
+        if (comptime !read) {
+            // What it writes may change what was read: the call's reads are asked again.
+            if (self.memo) |memo| {
+                memo.forget();
+            }
+
+            return self.call_shaped(Operation.In, Operation.Out, operation_name, &in);
+        }
+
+        return self.read_shaped(Operation.In, Operation.Out, operation_name, &in);
     }
 
-    /// Calls an operation in the host by name, JSON in and out, as this plugin.
-    pub fn call_json(self: *SandboxApi, name: []const u8, input: []const u8) Error![]const u8 {
+    /// A read, answered from what this call read already when nothing was written since:
+    /// inside one call no one else writes.
+    pub fn read_shaped(
+        self: *SandboxApi,
+        comptime In: type,
+        comptime Out: type,
+        name: []const u8,
+        in: *const In,
+    ) Error!Out {
         std.debug.assert(name.len > 0);
-        std.debug.assert(self.reads == null);
 
-        var result: wire.Result = .{
-            .ptr = 0,
-            .len = 0,
+        const memo = self.memo orelse return self.call_shaped(In, Out, name, in);
+        // What was asked, as bytes that are the same for the same value: read where it
+        // lies, nothing built.
+        const input = laid_key.of(self.arena_allocator, in.*) catch return error.OutOfMemory;
+
+        if (memo.find(Out, name, input)) |answered| {
+            self.last_failure = "";
+            return answered;
+        }
+
+        const out = try self.call_shaped(In, Out, name, in);
+
+        try memo.keep(self.arena_allocator, Out, name, input, out);
+
+        return out;
+    }
+
+    /// Calls `name` with `in` in this module's own layout, the answer laid out by the host as
+    /// an `Out`: no text written or read here.
+    pub fn call_shaped(
+        self: *SandboxApi,
+        comptime In: type,
+        comptime Out: type,
+        name: []const u8,
+        in: *const In,
+    ) Error!Out {
+        std.debug.assert(name.len > 0);
+
+        comptime {
+            if (@typeInfo(Out) != .@"struct") {
+                @compileError("an operation answers a struct, not " ++ @typeName(Out));
+            }
+        }
+
+        const memory = self.arena_allocator;
+        const asked = comptime shape_wire.describe(In);
+        const answer = comptime shape_wire.describe(Out);
+        var table: std.ArrayList(shape_wire.Entry) = .empty;
+
+        try shape_parts.table_of(In, memory, in, &table);
+
+        var sizes: [2]u32 = .{ 0, 0 };
+        const call_parts: shape_wire.Call = .{
+            .name = @intCast(@intFromPtr(name.ptr)),
+            .name_len = @intCast(name.len),
+            .root = @intCast(@intFromPtr(in)),
+            .asked = @intCast(@intFromPtr(asked.ptr)),
+            .asked_len = asked.len,
+            .table = @intCast(@intFromPtr(table.items.ptr)),
+            .table_len = @intCast(table.items.len),
+            .answer = @intCast(@intFromPtr(answer.ptr)),
+            .answer_len = answer.len,
         };
-        const status = publr_call(name.ptr, name.len, input.ptr, @intCast(input.len), &result);
+        const status = publr_call_shaped(&call_parts, &sizes);
 
         self.last_failure = "";
 
         if (status != wire.ok) {
-            // A refusal comes back with its name, for `failure()`.
-            if (status == wire.code_of(error.Failed) and result.len > 0) {
-                const named = take(result);
-                defer allocator.free(named);
-
-                self.last_failure = self.arena_allocator.dupe(u8, named) catch "";
-            }
-
-            return wire.error_of(status);
+            return self.refused(status, sizes[0]);
         }
 
-        const output = take(result);
-        defer allocator.free(output);
+        return self.taken(Out, sizes);
+    }
 
-        return self.arena_allocator.dupe(u8, output) catch error.OutOfMemory;
+    /// A refusal, its name kept for `failure()` when the host sent one.
+    fn refused(self: *SandboxApi, status: u32, len: u32) Error {
+        std.debug.assert(status != wire.ok);
+
+        if (status == wire.code_of(error.Failed) and len > 0) {
+            const named = self.arena_allocator.alloc(u8, len) catch return error.OutOfMemory;
+
+            if (publr_shaped_take(@intCast(@intFromPtr(named.ptr)), 0) == wire.ok) {
+                self.last_failure = named;
+            }
+        }
+
+        return wire.error_of(status);
+    }
+
+    /// The answer waiting in the host, written into room made in the call's arena.
+    fn taken(self: *SandboxApi, comptime Out: type, sizes: [2]u32) Error!Out {
+        std.debug.assert(self.name.len > 0);
+
+        return taken_as(Out, self.arena_allocator, sizes);
+    }
+
+    /// Calls an operation by a name known only when it runs (a contract's provider), `in`
+    /// as it lies, the answer laid out as an `Out`.
+    pub fn call_named(
+        self: *SandboxApi,
+        comptime Out: type,
+        name: []const u8,
+        in: anytype,
+    ) Error!Out {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(self.reads == null);
+
+        return self.call_shaped(@TypeOf(in), Out, name, &in);
+    }
+
+    /// Calls an operation by name with a value whose shape comes with the data, and answers
+    /// one: for a caller that learns what to send only when it runs.
+    pub fn call_value(
+        self: *SandboxApi,
+        name: []const u8,
+        input: free_value.Value,
+    ) Error!free_value.Value {
+        const Json = operation_contract.Json;
+        const Free = struct {
+            value: Json,
+
+            pub const publr_form = .inner;
+        };
+
+        std.debug.assert(name.len > 0);
+
+        const answered = try self.call_shaped(Free, Free, name, &.{
+            .value = .{
+                .bytes = input.bytes,
+            },
+        });
+
+        return .{
+            .bytes = answered.value.bytes,
+        };
     }
 
     /// Which refusal the last `call` came back with as `error.Failed`, or the plugin's own
@@ -389,8 +751,8 @@ pub const SandboxApi = struct {
         return self.last_failure;
     }
 
-    /// Emits an event made with `publr.event.define`, its payload as JSON: the host runs its
-    /// `after` hooks inside the write and queues it for the `on` hooks.
+    /// Emits an event made with `publr.event.define`, its payload as it lies: the host runs
+    /// its `after` hooks inside the write and queues it for the `on` hooks.
     pub fn emit(self: *SandboxApi, comptime Event: type, payload: Event.Payload) void {
         std.debug.assert(self.name.len > 0);
         comptime std.debug.assert(@hasDecl(Event, "publr_event_definition"));
@@ -400,10 +762,9 @@ pub const SandboxApi = struct {
         else
             std.fmt.allocPrint(self.arena_allocator, "{s}.{s}", .{ self.name, Event.verb }) catch
                 return;
-        const arena_memory = self.arena_allocator;
-        const text = std.json.Stringify.valueAlloc(arena_memory, payload, .{}) catch return;
+        const parts = self.sent(Event.Payload, name, &payload) catch return;
 
-        publr_emit(name.ptr, @intCast(name.len), text.ptr, @intCast(text.len));
+        publr_emit(&parts);
     }
 
     /// Refuses the call in the plugin's own words: `return ctx.fail(.NotEnoughStock, "Only
@@ -464,6 +825,83 @@ pub const SandboxApi = struct {
     }
 };
 
+extern "env" fn publr_translate(asked: *const wire.Message, result: *wire.Result) u32;
+
+/// One message in the call's language, as the host's catalogues have it; null for English
+/// or a message no language pack has.
+fn translated(
+    arena: std.mem.Allocator,
+    id: []const u8,
+    plural: []const u8,
+    count: ?u64,
+) ?[]const u8 {
+    std.debug.assert(id.len > 0);
+
+    const asked = wire.Message.of("", id, plural, if (count) |number|
+        @as(?f64, @floatFromInt(number))
+    else
+        null);
+    var result: wire.Result = .{
+        .ptr = 0,
+        .len = 0,
+    };
+
+    if (publr_translate(&asked, &result) != wire.ok) {
+        return null;
+    }
+
+    const told = take(result);
+    defer allocator.free(told);
+
+    if (told.len == 0) {
+        return null;
+    }
+
+    return arena.dupe(u8, told) catch null;
+}
+
+/// `text` with each `{name}` of `values` filled, as `words.filled` does for a text known at
+/// build time.
+fn filled_in(
+    arena: std.mem.Allocator,
+    text: []const u8,
+    values: anytype,
+) error{OutOfMemory}![]const u8 {
+    std.debug.assert(text.len < 1 << 24);
+
+    var out: []const u8 = text;
+
+    inline for (comptime std.meta.fieldNames(@TypeOf(values))) |field_name| {
+        const hole = "{" ++ field_name ++ "}";
+        const value = try words.shown(arena, @field(values, field_name));
+
+        out = try std.mem.replaceOwned(u8, arena, out, hole, value);
+    }
+
+    return out;
+}
+
+/// The value waiting in the host, written into room made in `memory`: `sizes` is what the
+/// host said it takes.
+pub fn taken_as(comptime Out: type, memory: std.mem.Allocator, sizes: [2]u32) Error!Out {
+    std.debug.assert(sizes[0] >= @sizeOf(Out));
+
+    const block = memory.alignedAlloc(u8, .@"16", sizes[0]) catch return error.OutOfMemory;
+    const table = memory.alloc(shape_wire.Entry, sizes[1]) catch return error.OutOfMemory;
+    const block_at: u32 = @intCast(@intFromPtr(block.ptr));
+
+    if (publr_shaped_take(block_at, @intCast(@intFromPtr(table.ptr))) != wire.ok) {
+        return error.Invalid;
+    }
+
+    const out: *Out = @ptrCast(@alignCast(block.ptr));
+    var next: u32 = 0;
+
+    try shape_parts.fill(Out, out, table, &next);
+
+    return out.*;
+}
+
 pub fn take(result: wire.Result) []u8 {
     std.debug.assert(result.ptr != 0 or result.len == 0);
 
@@ -490,8 +928,14 @@ pub fn export_all(comptime Plugin: type) void {
         @export(&Generated.free, .{
             .name = "publr_free",
         });
-        @export(&Generated.invoke, .{
-            .name = "publr_invoke",
+        @export(&Generated.shape, .{
+            .name = "publr_shape",
+        });
+        @export(&Generated.invoke_shaped, .{
+            .name = "publr_invoke_shaped",
+        });
+        @export(&Generated.invoke_batch, .{
+            .name = "publr_invoke_batch",
         });
         @export(&Generated.manifest, .{
             .name = "publr_manifest",
@@ -508,6 +952,8 @@ pub fn export_all(comptime Plugin: type) void {
 /// The exports a plugin's module gives the host: memory for the host to write into, and one
 /// entry point for every operation and hook, numbered in manifest order.
 pub fn Exports(comptime Plugin: type) type {
+    comptime @import("sandboxed.zig").every_hook_has_words(Plugin);
+
     const entries = contract.runtime_entries(Plugin);
 
     return struct {
@@ -541,7 +987,7 @@ pub fn Exports(comptime Plugin: type) type {
             const result: *wire.Result = @ptrFromInt(result_ptr);
             var output: std.Io.Writer.Allocating = .init(allocator);
 
-            var arena_state = std.heap.ArenaAllocator.init(allocator);
+            var arena_state = guest_memory.arena();
             defer arena_state.deinit();
 
             plugin_manifest.write(Plugin, arena_state.allocator(), &output.writer) catch {
@@ -586,27 +1032,119 @@ pub fn Exports(comptime Plugin: type) type {
             return wire.ok;
         }
 
-        pub fn invoke(entry: u32, in_ptr: u32, in_len: u32, result_ptr: u32) callconv(.c) u32 {
+        /// `publr_shape(entry, which, result)`: how entry `entry`'s envelope (`which` 0) is
+        /// laid out in this build, for the host to write its input in.
+        pub fn shape(entry: u32, which: u32, result_ptr: u32) callconv(.c) u32 {
             std.debug.assert(result_ptr != 0);
-            std.debug.assert(in_ptr != 0 or in_len == 0);
+            std.debug.assert(which == 0);
 
             const result: *wire.Result = @ptrFromInt(result_ptr);
-            var arena_state = std.heap.ArenaAllocator.init(allocator);
-            defer arena_state.deinit();
-
-            result.* = .{
-                .ptr = 0,
-                .len = 0,
-            };
-
-            const input = take(.{
-                .ptr = in_ptr,
-                .len = in_len,
-            });
 
             inline for (entries, 0..) |item, index| {
                 if (entry == index) {
-                    run(item, input, result, arena_state.allocator()) catch |err| {
+                    const text = comptime shape_wire.describe(EnvelopeOf(item));
+
+                    result.* = .{
+                        .ptr = @intCast(@intFromPtr(text.ptr)),
+                        .len = text.len,
+                    };
+
+                    return wire.ok;
+                }
+            }
+
+            return wire.code_of(error.NotFound);
+        }
+
+        /// What entry `item` takes, laid out: its own input inside what every entry reads
+        /// around it (`wire.Envelope`).
+        fn EnvelopeOf(comptime item: contract.Entry) type {
+            const field_kind = @import("field_kind_define.zig");
+            const declared = item.declaration;
+
+            return switch (item.stage) {
+                .operation => wire.Envelope(declared.In, wire.None),
+                .before => wire.Envelope(contract.HookIn(declared), wire.None),
+                .after => wire.Envelope(contract.HookIn(declared), contract.HookOut(declared)),
+                .event => wire.Envelope(declared.Payload, wire.None),
+                // A modifier takes its values as its own type: only the fields it declares.
+                .modify => wire.Envelope(modify_define.Items(declared.Value), wire.None),
+                .job => JobEnvelope(declared),
+                .rule_values => wire.Envelope(wire.None, wire.None),
+                .rule_matches => wire.Envelope(
+                    @import("location_rule_define.zig").Asked,
+                    wire.None,
+                ),
+                .kind_validate, .kind_text => wire.Envelope(field_kind.Stored, wire.None),
+                .kind_editor, .dimension_options => wire.Envelope(field_kind.Drawn, wire.None),
+            };
+        }
+
+        /// A job's envelope: one type however often it is named.
+        fn JobEnvelope(comptime Job: type) type {
+            comptime std.debug.assert(job_define.is_job(Job));
+
+            return wire.Envelope(JobIn(Job), wire.None);
+        }
+
+        /// What a job's envelope carries as its input: nothing, the record a `.due` job is
+        /// about, or the job's own input.
+        fn JobIn(comptime Job: type) type {
+            comptime std.debug.assert(job_define.is_job(Job));
+
+            if (Job.Input == void) {
+                return wire.None;
+            }
+
+            return if (Job.due_on != null) job_define.DueInput else Job.Input;
+        }
+
+        /// `publr_invoke_batch(entry, items, count)`: entry `entry` run once for each of the
+        /// envelopes the host laid out, in order, in one call: a hook core fires for many
+        /// items at once. Each run has memory of its own, given back before the next, and
+        /// tells the host how it ended (`publr_item`) before the next begins.
+        pub fn invoke_batch(entry: u32, items: u32, count: u32) callconv(.c) u32 {
+            std.debug.assert(items != 0);
+            std.debug.assert(count > 0);
+
+            const start: [*]const shape_wire.Item = @ptrFromInt(items);
+
+            for (start[0..count], 0..) |item, index| {
+                const status = invoke_shaped(entry, item.block, item.table, item.count);
+
+                publr_item(@intCast(index), status);
+            }
+
+            return wire.ok;
+        }
+
+        /// `publr_invoke_shaped(entry, block, table, count)`: entry `entry` run with its
+        /// envelope laid out at `block` by the host; its answer handed back by `publr_answer`.
+        pub fn invoke_shaped(entry: u32, block: u32, table: u32, count: u32) callconv(.c) u32 {
+            std.debug.assert(block != 0);
+            std.debug.assert(table != 0 or count == 0);
+
+            var arena_state = guest_memory.arena();
+            defer arena_state.deinit();
+
+            // Walks the entry left open go with it, before its memory.
+            const walks_mark = walks_guest.depth();
+            defer walks_guest.end_above(null, walks_mark);
+
+            const start: [*]const shape_wire.Entry = @ptrFromInt(@max(table, 8));
+            const laid = if (count == 0) &[_]shape_wire.Entry{} else start[0..count];
+
+            inline for (entries, 0..) |item, index| {
+                if (entry == index) {
+                    const Shape = EnvelopeOf(item);
+                    const envelope: *Shape = @ptrFromInt(block);
+                    var next: u32 = 0;
+
+                    shape_parts.fill(Shape, envelope, laid, &next) catch |err| {
+                        return wire.code_of(err);
+                    };
+
+                    run(item, envelope, arena_state.allocator()) catch |err| {
                         return wire.code_of(err);
                     };
 
@@ -619,152 +1157,206 @@ pub fn Exports(comptime Plugin: type) type {
 
         fn run(
             comptime item: contract.Entry,
-            input: []const u8,
-            result: *wire.Result,
+            envelope: *EnvelopeOf(item),
             arena: std.mem.Allocator,
         ) Error!void {
+            const declared = item.declaration;
+
             return switch (item.stage) {
-                .operation => run_operation(item.declaration, input, result, arena),
-                .before, .modify => run_before(item.declaration, input, result, arena),
-                .after => run_after(item.declaration, input, result, arena),
-                .event => run_event(item.declaration, input, arena),
-                .job => run_job(item.declaration, input, arena),
-                .rule_values => run_rule_values(item.declaration, input, result, arena),
-                .rule_matches => run_rule_matches(item.declaration, input, result, arena),
-                .kind_validate => run_kind_validate(item.declaration, input, result, arena),
-                .kind_text => run_kind_text(item.declaration, input, result, arena),
-                .kind_editor => run_kind_editor(item.declaration, input, result, arena),
-                .dimension_options => run_dimension_options(
-                    item.declaration,
-                    input,
-                    result,
-                    arena,
-                ),
+                .operation => run_operation(declared, envelope, arena),
+                .before, .after, .event => run_hook(item, envelope, arena),
+                .modify => run_modify(declared, envelope, arena),
+                .job => run_job(declared, envelope.*, arena),
+                .rule_values, .rule_matches => run_rule(item, envelope, arena),
+                .kind_validate, .kind_text => run_kind(item, envelope, arena),
+                .kind_editor, .dimension_options => run_drawn(item, envelope, arena),
             };
         }
 
-        /// A dimension's `.options` view drawn whole for the field panel's frame, under the
-        /// `base` asked; the value the field holds comes with the caller's view.
-        fn run_dimension_options(
-            comptime Declaration: type,
-            input: []const u8,
-            result: *wire.Result,
+        /// A hook run on an envelope the host laid out; a `before` answers its input as it
+        /// left it, an `after` on a list read the fields it added to the rows.
+        fn run_hook(
+            comptime item: contract.Entry,
+            envelope: *EnvelopeOf(item),
             arena: std.mem.Allocator,
         ) Error!void {
-            const field = Declaration.dimension.api.field;
+            var ctx = context(arena, envelope.*);
 
-            if (comptime !field.drawn) {
-                return error.NotFound;
+            switch (comptime item.stage) {
+                .before => {
+                    try item.declaration.run(&ctx, &envelope.in);
+                    try hand_back(@TypeOf(envelope.in), arena, &envelope.in);
+                },
+                .after => {
+                    var out = envelope.out orelse return error.Invalid;
+
+                    if (comptime !@hasField(@TypeOf(out), "extended")) {
+                        return item.declaration.run(&ctx, &envelope.in, &out);
+                    }
+
+                    const Extended = @import("../extended.zig").Extended;
+
+                    out.extended = try Extended.start(arena, &plugin_name);
+                    try item.declaration.run(&ctx, &envelope.in, &out);
+                    try out.extended.seal();
+                    try hand_back(Extended, arena, &out.extended);
+                },
+                .event => try item.declaration.run(&ctx, envelope.in),
+                else => unreachable,
+            }
+        }
+
+        /// A modifier run over values the host laid out as its own type; it answers them as
+        /// it left them, for the host to lay over the owner's.
+        fn run_modify(
+            comptime Modifier: type,
+            envelope: *wire.Envelope(modify_define.Items(Modifier.Value), wire.None),
+            arena: std.mem.Allocator,
+        ) Error!void {
+            var ctx = context(arena, envelope.*);
+
+            std.debug.assert(envelope.in.items.len <= mods.items_max);
+
+            const items = envelope.in.items;
+
+            if (comptime Modifier.whole) {
+                try modify_define.run_all(Modifier.Value, Modifier.run_one, &ctx, items);
+            } else {
+                try modify_define.run_values(Modifier.Value, Modifier.run_one, &ctx, items);
             }
 
-            const Shape = wire.Envelope(@import("field_kind_define.zig").Drawn, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
-            const views = @import("views.zig");
-            const html = try views.render(&ctx, envelope.in.base, field.view, .{});
-
-            try reply(html, result);
+            try hand_back(@TypeOf(envelope.in), arena, &envelope.in);
         }
 
-        /// A field kind's `.editor` view drawn whole for its frame, under the `base` asked;
-        /// the value, its problems and the field's options come with the caller's view.
-        fn run_kind_editor(
-            comptime Definition: type,
-            input: []const u8,
-            result: *wire.Result,
+        fn run_operation(
+            comptime Operation: type,
+            envelope: *wire.Envelope(Operation.In, wire.None),
             arena: std.mem.Allocator,
         ) Error!void {
-            const field_kind = @import("field_kind_define.zig");
+            var ctx = context(arena, envelope.*);
+            var memo: read_memo.Memo = .{
+                .home = arena,
+            };
 
-            if (comptime !@hasField(@TypeOf(Definition.given), "editor")) {
-                return error.NotFound;
+            ctx.failures = comptime words.failures_of(Operation);
+            ctx.memo = &memo;
+
+            try lists_fit(&ctx, Operation.In, &envelope.in, .input);
+
+            const out = try Operation.run(&ctx, envelope.in, &Grant.allow_all);
+
+            try lists_fit(&ctx, Operation.Out, &out, .output);
+            try hand_back(Operation.Out, arena, &out);
+        }
+
+        /// Every list of an input or an answer within its limit, as core holds a compiled-in
+        /// operation's (`operation/lists.zig`): an input past it is refused, named at the
+        /// list; an answer past it fails the call, the operation's own fault.
+        fn lists_fit(
+            ctx: *SandboxApi,
+            comptime Value: type,
+            value: *const Value,
+            comptime side: enum { input, output },
+        ) Error!void {
+            const over = operation_contract.lists.over_limit(Value, value) orelse return;
+            const message = std.fmt.allocPrint(ctx.arena(), switch (side) {
+                .input => "At most {d}",
+                .output => "The answer holds more than {d} here: answer it a page at a time",
+            }, .{over.limit}) catch return error.OutOfMemory;
+
+            std.debug.assert(over.path.len > 0);
+
+            return ctx.refuse(&.{.{
+                .field = over.path,
+                .message = message,
+            }});
+        }
+
+        /// A location rule's dropdown values, or whether it matches the account or file
+        /// being edited.
+        fn run_rule(
+            comptime item: contract.Entry,
+            envelope: *EnvelopeOf(item),
+            arena: std.mem.Allocator,
+        ) Error!void {
+            const rule = item.declaration.rule;
+            var ctx = context(arena, envelope.*);
+
+            if (comptime item.stage == .rule_values) {
+                const values = try rule.values(&ctx);
+
+                return hand_back(@TypeOf(values), arena, &values);
             }
 
-            const Shape = wire.Envelope(field_kind.Drawn, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
-            const views = @import("views.zig");
-            const html = try views.render(&ctx, envelope.in.base, Definition.given.editor, .{});
+            const matches: bool = try rule.matches(&ctx, envelope.in.target, envelope.in.rule);
 
-            try reply(html, result);
+            return hand_back(bool, arena, &matches);
         }
 
-        /// A field kind's `.validate` over one stored value: the problems it finds.
-        fn run_kind_validate(
-            comptime Definition: type,
-            input: []const u8,
-            result: *wire.Result,
+        /// A field kind's `.validate` over one stored value (the problems it finds), or how
+        /// the value reads, by its `.text`.
+        fn run_kind(
+            comptime item: contract.Entry,
+            envelope: *EnvelopeOf(item),
             arena: std.mem.Allocator,
         ) Error!void {
             const field_kind = @import("field_kind_define.zig");
-            const Shape = wire.Envelope(field_kind.Stored, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
+            const Definition = item.declaration;
+            var ctx = context(arena, envelope.*);
 
-            try reply(field_kind.problems_of(Definition, arena, envelope.in.value), result);
-        }
+            if (comptime item.stage == .kind_validate) {
+                const problems = field_kind.problems_stored(Definition, arena, envelope.in);
 
-        /// How a field kind's value reads, by its `.text`.
-        fn run_kind_text(
-            comptime Definition: type,
-            input: []const u8,
-            result: *wire.Result,
-            arena: std.mem.Allocator,
-        ) Error!void {
-            const field_kind = @import("field_kind_define.zig");
+                return hand_back([]const []const u8, arena, &problems);
+            }
 
             if (comptime !@hasField(@TypeOf(Definition.given), "text")) {
                 return error.NotFound;
             }
 
-            const Shape = wire.Envelope(field_kind.Stored, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
+            const parsed = field_kind.stored_as(Definition.Shape, arena, envelope.in) catch {
                 return error.Invalid;
             };
-            var ctx = context(arena, envelope);
-            const parsed = field_kind.decoded(Definition.Shape, arena, envelope.in.value) catch {
-                return error.Invalid;
-            };
+            const text: []const u8 = try Definition.given.text(&ctx, parsed);
 
-            try reply(try Definition.given.text(&ctx, parsed), result);
+            return hand_back([]const u8, arena, &text);
         }
 
-        /// A location rule's dropdown values.
-        fn run_rule_values(
-            comptime Rule: type,
-            input: []const u8,
-            result: *wire.Result,
+        /// A field kind's `.editor` view, or a dimension's `.options` view, drawn whole for
+        /// its frame under the `base` asked; what the view shows comes with the caller's view.
+        fn run_drawn(
+            comptime item: contract.Entry,
+            envelope: *EnvelopeOf(item),
             arena: std.mem.Allocator,
         ) Error!void {
-            const Shape = wire.Envelope(struct {}, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
+            const views = @import("views.zig");
+            const declared = item.declaration;
+            var ctx = context(arena, envelope.*);
 
-            try reply(try Rule.rule.values(&ctx), result);
-        }
+            if (comptime item.stage == .dimension_options) {
+                const field = declared.dimension.api.field;
 
-        /// Whether a location rule matches the account or file being edited.
-        fn run_rule_matches(
-            comptime Rule: type,
-            input: []const u8,
-            result: *wire.Result,
-            arena: std.mem.Allocator,
-        ) Error!void {
-            const Asked = @import("location_rule_define.zig").Asked;
-            const Shape = wire.Envelope(Asked, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
+                if (comptime !field.drawn) {
+                    return error.NotFound;
+                }
 
-            try reply(try Rule.rule.matches(&ctx, envelope.in.target, envelope.in.rule), result);
+                const html: []const u8 = try views.render(&ctx, envelope.in.base, field.view, .{});
+
+                return hand_back([]const u8, arena, &html);
+            }
+
+            if (comptime !@hasField(@TypeOf(declared.given), "editor")) {
+                return error.NotFound;
+            }
+
+            const html: []const u8 = try views.render(
+                &ctx,
+                envelope.in.base,
+                declared.given.editor,
+                .{},
+            );
+
+            return hand_back([]const u8, arena, &html);
         }
 
         fn context(arena: std.mem.Allocator, envelope: anytype) SandboxApi {
@@ -777,106 +1369,19 @@ pub fn Exports(comptime Plugin: type) type {
                 .name = Plugin.manifest.name,
                 .on_behalf_of = envelope.on_behalf_of,
                 .visitor_id = envelope.visitor,
+                .language_code = envelope.language,
                 .facts = envelope.caller,
             };
         }
 
-        fn run_operation(
-            comptime Operation: type,
-            input: []const u8,
-            result: *wire.Result,
-            arena: std.mem.Allocator,
-        ) Error!void {
-            const Shape = wire.Envelope(Operation.In, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
-
-            ctx.failures = comptime words.failures_of(Operation);
-
-            const out = try Operation.run(&ctx, envelope.in, &Grant.allow_all);
-
-            try reply(out, result);
-        }
-
-        fn run_before(
-            comptime Middleware: type,
-            input: []const u8,
-            result: *wire.Result,
-            arena: std.mem.Allocator,
-        ) Error!void {
-            const In = contract.HookIn(Middleware);
-            const Shape = wire.Envelope(In, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
-            var in = envelope.in;
-
-            try Middleware.run(&ctx, &in);
-            try reply(in, result);
-        }
-
-        fn run_after(
-            comptime Middleware: type,
-            input: []const u8,
-            result: *wire.Result,
-            arena: std.mem.Allocator,
-        ) Error!void {
-            const In = contract.HookIn(Middleware);
-            const Shape = wire.Envelope(In, contract.HookOut(Middleware));
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
-            var in = envelope.in;
-            var out = envelope.out orelse return error.Invalid;
-
-            // A list read's rows extended by this hook, answered back for the host to add
-            // under the plugin's name.
-            if (comptime @hasField(@TypeOf(out), "extended")) {
-                out.extended = try @import("../extended.zig").Extended.start(arena, &plugin_name);
-            }
-
-            try Middleware.run(&ctx, &in, &out);
-
-            if (comptime @hasField(@TypeOf(out), "extended")) {
-                try reply(out.extended, result);
-            }
-        }
-
-        fn run_event(
-            comptime Middleware: type,
-            input: []const u8,
-            arena: std.mem.Allocator,
-        ) Error!void {
-            // The event's payload, or the operation's answer, read into the hook's type.
-            const Shape = wire.Envelope(Middleware.Payload, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
-            var ctx = context(arena, envelope);
-
-            return Middleware.run(&ctx, envelope.in);
-        }
-
         /// A queued job: its input, and whether this is its last attempt, when `.on_failure`
         /// hears why it failed.
-        fn run_job(comptime Job: type, input: []const u8, arena: std.mem.Allocator) Error!void {
-            comptime std.debug.assert(job_define.is_job(Job));
-
+        fn run_job(
+            comptime Job: type,
+            envelope: JobEnvelope(Job),
+            arena: std.mem.Allocator,
+        ) Error!void {
             const due = comptime Job.due_on != null;
-            const In = if (Job.Input == void)
-                struct {}
-            else if (due)
-                job_define.DueInput
-            else
-                Job.Input;
-            const Shape = wire.Envelope(In, struct {});
-            const envelope = json.parse(Shape, arena, input, parse_options) catch {
-                return error.Invalid;
-            };
             var base = context(arena, envelope);
             var ctx: queue.Queue(SandboxApi) = .{
                 .base = &base,
@@ -896,6 +1401,9 @@ pub fn Exports(comptime Plugin: type) type {
             ran catch |err| {
                 // A conflict ends the job: `.on_conflict` hears it now, the host keeps it.
                 if (err == error.Conflict and comptime @TypeOf(Job.on_conflict) != @TypeOf(null)) {
+                    // What the run wrote is undone; what `.on_conflict` writes is kept.
+                    publr_undo();
+
                     if (comptime Job.Input == void) {
                         Job.on_conflict(&ctx);
                     } else {
@@ -906,6 +1414,8 @@ pub fn Exports(comptime Plugin: type) type {
                 }
 
                 if (envelope.last and comptime @TypeOf(Job.on_failure) != @TypeOf(null)) {
+                    publr_undo();
+
                     if (comptime Job.Input == void) {
                         Job.on_failure(&ctx, err);
                     } else {
@@ -919,17 +1429,32 @@ pub fn Exports(comptime Plugin: type) type {
     };
 }
 
-fn reply(value: anytype, result: *wire.Result) Error!void {
-    const output = std.json.Stringify.valueAlloc(allocator, value, .{}) catch {
-        return error.OutOfMemory;
-    };
+/// An entry's answer handed to the host in this module's own layout, while it is still here.
+fn hand_back(comptime Out: type, arena: std.mem.Allocator, out: *const Out) Error!void {
+    const text = comptime shape_wire.describe(Out);
+    var table: std.ArrayList(shape_wire.Entry) = .empty;
 
-    std.debug.assert(output.len <= std.math.maxInt(u32));
+    std.debug.assert(text.len > 0);
 
-    result.* = .{
-        .ptr = @intCast(@intFromPtr(output.ptr)),
-        .len = @intCast(output.len),
-    };
+    try shape_parts.table_of(Out, arena, out, &table);
 
-    std.debug.assert(result.ptr != 0);
+    const status = publr_answer(
+        text.ptr,
+        text.len,
+        @intCast(@intFromPtr(out)),
+        @intCast(@intFromPtr(table.items.ptr)),
+        @intCast(table.items.len),
+    );
+
+    if (status != wire.ok) {
+        return wire.error_of(status);
+    }
 }
+
+extern "env" fn publr_answer(
+    description_ptr: [*]const u8,
+    description_len: u32,
+    root: u32,
+    table_ptr: u32,
+    table_len: u32,
+) u32;

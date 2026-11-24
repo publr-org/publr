@@ -30,7 +30,7 @@ pub fn chosen(arena: std.mem.Allocator, form: *const Form, def: Def) admin.Error
     var out = def;
 
     out.editor = if (visual) "visual" else "form";
-    out.editor_config = "{}";
+    out.editor_config = .{};
 
     const named = form.text("editor_field") orelse "";
     const first = for (def.fields) |candidate| {
@@ -40,10 +40,8 @@ pub fn chosen(arena: std.mem.Allocator, form: *const Form, def: Def) admin.Error
     } else "";
 
     if (visual and named.len > 0 and !std.mem.eql(u8, named, first)) {
-        out.editor_config = std.json.Stringify.valueAlloc(arena, .{
+        out.editor_config = .{
             .field = named,
-        }, .{}) catch {
-            return error.OutOfMemory;
         };
     }
 
@@ -170,7 +168,7 @@ test "a visual type gets a Title and a Body when it has none, and only then" {
     try std.testing.expectEqual(@as(usize, 3), ready.fields.len);
     try std.testing.expectEqualStrings("title", ready.fields[0].name);
     try std.testing.expectEqualStrings("body", ready.fields[2].name);
-    try std.testing.expect(model.editor.field_of(ready.editor, "{}", ready.fields) != null);
+    try std.testing.expect(model.editor.field_of(ready.editor, .{}, ready.fields) != null);
 
     var rich = bare;
 

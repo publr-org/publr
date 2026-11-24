@@ -71,7 +71,9 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
     }) |invalid| {
         try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Update, .{
             .group = "user",
-            .definition = invalid,
+            .definition = .{
+                .text = invalid,
+            },
         }));
     }
 
@@ -85,7 +87,9 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
         Update,
         .{
             .group = "user",
-            .definition = cleared,
+            .definition = .{
+                .text = cleared,
+            },
         },
     );
     try std.testing.expectEqual(
@@ -211,6 +215,8 @@ test "existing destination groups keep their location when opened as named group
     }};
     try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Update, .{
         .group = "user",
-        .definition = try model.content_type.encode(system.arena, invalid),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, invalid),
+        },
     }));
 }

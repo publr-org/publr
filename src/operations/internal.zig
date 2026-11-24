@@ -9,6 +9,8 @@ const registry = @import("../server/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
 const changes = @import("project/changes.zig");
+const rules = @import("internal/rules.zig");
+const computed = @import("internal/computed.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -29,7 +31,9 @@ pub const namespace: sdk.operation.Namespace = .{
     \\by. No statuses, drafts, revisions or search; `version` guards a stale write. From a
     \\plugin's code they reach that plugin's records in the request's app only. With no
     \\plugin running, an administrator names `plugin` (and `app`, the project's own when
-    \\left out). An append-only collection refuses `save` and `delete`.
+    \\left out). An append-only collection refuses `save` and `delete`. Every write runs the
+    \\collection's field rules as content's: bounds and shapes, a unique value (another
+    \\record holding it is a conflict), a provider field naming an installed provider.
     ,
 };
 
@@ -39,7 +43,7 @@ pub const example_document = "{\"name\":\"Ada\",\"count\":1}";
 pub const Item = struct {
     id: []const u8,
     version: i64,
-    document: []const u8,
+    document: sdk.operation.Json,
     created_at: i64,
     updated_at: i64,
 };
@@ -47,21 +51,43 @@ pub const Item = struct {
 const example_item: Item = .{
     .id = example_id,
     .version = 1,
-    .document = example_document,
+    .document = .{
+        .text = example_document,
+    },
     .created_at = 1767225600000,
     .updated_at = 1767225600000,
 };
 
-pub const operations = [_]type{ Create, Get, Save, FindOne, Find, Delete };
+pub const operations = [_]type{
+    Create,
+    CreateMany,
+    Get,
+    Save,
+    SaveMany,
+    FindOne,
+    Find,
+    Count,
+    Delete,
+    computed_operations.Sum,
+    computed_operations.HoldsUntil,
+};
+
+pub const Sum = computed_operations.Sum;
+pub const HoldsUntil = computed_operations.HoldsUntil;
+const computed_operations = @import("internal/computed_operations.zig");
 
 pub const Create = struct {
     pub const name = "internal.create";
     pub const description = "Keep a new internal record";
-    pub const details = "The document is a JSON object; its declared fields are indexed.";
+    pub const details =
+        \\The document is a JSON object; its declared fields are indexed. A value breaking its
+        \\field's rules is refused beside the field; a unique value another record of the
+        \\collection holds is a conflict.
+    ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         kind: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
@@ -72,7 +98,9 @@ pub const Create = struct {
     pub const example: In = .{
         .plugin = "greeter",
         .kind = "visit",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     };
     pub const example_out: Out = .{
         .id = example_id,
@@ -86,12 +114,22 @@ pub const Create = struct {
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        return created(ctx, in, granted, true);
+    }
+
+    /// The record made; its computed values worked out now when `compute`, else by the
+    /// caller with others (`create_many`).
+    fn created(ctx: *Ctx, in: In, granted: *const Grant, compute: bool) Error!Out {
         std.debug.assert(granted.allows());
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, true);
-        const given = try object_of(ctx, in.document);
+        const given = try object_of(ctx, in.document.text);
         const scope = target.scope;
-        const id = try records.insert(ctx.db, ctx.io, ctx.arena, scope, in.document, ctx.now_ms);
+
+        try rules.check(ctx, target.collection, scope, given, null, null);
+
+        const document = in.document.text;
+        const id = try records.insert(ctx.db, ctx.io, ctx.arena, scope, document, ctx.now_ms);
 
         // Records meant to vanish go as new ones come: no cleanup job, no trash step.
         if (target.collection.expires) |expires| {
@@ -105,12 +143,123 @@ pub const Create = struct {
             }
         }
 
-        try index(ctx, target.collection, id, given);
+        try index(ctx, scope, target.collection, id, given);
         try changed(ctx, Created, scope, id);
+
+        if (compute) {
+            try computed.written(ctx, scope, target.collection, id, document);
+        }
+
+        // A job following one of its times (`.due`) is queued at it.
+        try SDK.jobs.follow(ctx, id);
 
         return .{
             .id = id,
             .version = 1,
+        };
+    }
+};
+
+/// The most records one `create_many` or `save_many` call takes: a page, as `find` reads.
+pub const many_max: u32 = sdk.operation.page_limit_max;
+
+pub const CreateMany = struct {
+    pub const name = "internal.create_many";
+    pub const description = "Keep many new internal records of one collection at once";
+    pub const details =
+        \\Each document is kept as `internal.create` keeps one, its field rules and events
+        \\included, in one call: up to 200. All or nothing: one refused refuses them all,
+        \\named `documents.<index>`. Answers the ids in the documents' order.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const In = struct {
+        kind: []const u8,
+        documents: []const sdk.operation.Json,
+        plugin: ?[]const u8 = null,
+        app: ?[]const u8 = null,
+    };
+    pub const Out = struct {
+        ids: []const []const u8,
+    };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+        .documents = &.{.{
+            .text = example_document,
+        }},
+    };
+    pub const example_out: Out = .{
+        .ids = &.{example_id},
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .kind = "The collection, as the plugin declares it",
+        .documents = "The records, JSON objects, at most 200",
+        .plugin = "Whose records, when no plugin is running",
+        .app = "Which app's, when no plugin is running; the project's own when left out",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+
+        if (in.documents.len > many_max) {
+            return ctx.refuse(&.{.{
+                .field = "documents",
+                .message = "At most 200 records a call",
+            }});
+        }
+
+        const ids = ctx.arena.alloc([]const u8, in.documents.len) catch return error.OutOfMemory;
+        const kept = ctx.arena;
+        const scratch = try ctx.scratch();
+
+        // Each record made in the request's scratch, given back once made: only its id
+        // stays. A refused one keeps its scratch, where its problems are.
+        for (in.documents, ids, 0..) |document, *id, place| {
+            const begun = scratch.mark();
+
+            ctx.arena = scratch.allocator();
+
+            const made = Create.created(ctx, .{
+                .kind = in.kind,
+                .document = document,
+                .plugin = in.plugin,
+                .app = in.app,
+            }, granted, false) catch |err| {
+                ctx.arena = kept;
+                return refused_at(ctx, err, "documents", place);
+            };
+
+            ctx.arena = kept;
+            id.* = kept.dupe(u8, made.id) catch return error.OutOfMemory;
+            scratch.rewind(begun);
+        }
+
+        std.debug.assert(ids.len == in.documents.len);
+
+        try written_together(ctx, in.plugin, in.app, in.kind, ids);
+
+        if (SDK.bulk.hooked(ctx, Create)) {
+            const inputs = kept.alloc(Create.In, ids.len) catch return error.OutOfMemory;
+            const outputs = kept.alloc(Create.Out, ids.len) catch return error.OutOfMemory;
+
+            for (in.documents, ids, inputs, outputs) |document, id, *input, *output| {
+                input.* = .{
+                    .kind = in.kind,
+                    .document = document,
+                    .plugin = in.plugin,
+                    .app = in.app,
+                };
+                output.* = .{
+                    .id = id,
+                    .version = 1,
+                };
+            }
+
+            try heard_after(ctx, Create, inputs, outputs, "documents");
+        }
+
+        return .{
+            .ids = ids,
         };
     }
 };
@@ -146,27 +295,38 @@ pub const Get = struct {
 
         try drawn(ctx, target, in.id);
 
-        const row = try records.get(ctx.db, ctx.arena, target.scope, in.id) orelse {
-            return error.NotFound;
+        var row = [_]records.Row{
+            try records.get(ctx.db, ctx.arena, target.scope, in.id) orelse {
+                return error.NotFound;
+            },
         };
 
-        return item_of(row);
+        try computed.freshen(ctx, target.scope, target.collection, &row);
+
+        return item_of(ctx, target.collection, row[0]);
     }
 };
+
+/// Fields one `internal.save` may empty.
+pub const clear_max: u32 = 64;
 
 pub const Save = struct {
     pub const name = "internal.save";
     pub const description = "Write fields of an internal record";
     pub const details =
         \\The fields the document gives replace the record's; the others keep their values.
-        \\`expected_version` refuses a stale write. Refused on an append-only collection.
+        \\`clear` names fields to empty: each is taken out of the record, so an optional
+        \\field holds nothing again; a required one refuses the write by its rules.
+        \\`expected_version` refuses a stale write. Refused on an append-only collection. The
+        \\record as written runs its fields' rules, as `internal.create` does.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         kind: []const u8,
         id: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
         expected_version: ?i64 = null,
+        clear: []const []const u8 = &.{},
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
@@ -177,7 +337,9 @@ pub const Save = struct {
         .plugin = "greeter",
         .kind = "visit",
         .id = example_id,
-        .document = "{\"count\":2}",
+        .document = .{
+            .text = "{\"count\":2}",
+        },
     };
     pub const example_out: Out = .{
         .version = 2,
@@ -187,11 +349,18 @@ pub const Save = struct {
         .id = "The record",
         .document = "The fields to write, a JSON object",
         .expected_version = "The `version` you read; refuse if it changed",
+        .clear = "Fields to empty, by name: taken out of the record",
         .plugin = "Whose records, when no plugin is running",
         .app = "Which app's, when no plugin is running",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        return saved(ctx, in, granted, true);
+    }
+
+    /// The record written; its computed values worked out now when `compute`, else by the
+    /// caller with others (`save_many`).
+    fn saved(ctx: *Ctx, in: In, granted: *const Grant, compute: bool) Error!Out {
         std.debug.assert(granted.allows());
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, true);
@@ -200,7 +369,7 @@ pub const Save = struct {
             return error.Invalid;
         }
 
-        const given = try object_of(ctx, in.document);
+        const given = try object_of(ctx, in.document.text);
         const row = try records.get(ctx.db, ctx.arena, target.scope, in.id) orelse {
             return error.NotFound;
         };
@@ -208,7 +377,20 @@ pub const Save = struct {
         var fields = given.object.iterator();
 
         while (fields.next()) |field| {
+            // Worked out after the write, whatever the caller sent for it.
+            if (model.internal_record.computes(target.collection, field.key_ptr.*)) {
+                continue;
+            }
+
             try merged.object.put(ctx.arena, field.key_ptr.*, field.value_ptr.*);
+        }
+
+        if (in.clear.len > clear_max) {
+            return error.Invalid;
+        }
+
+        for (in.clear) |cleared| {
+            _ = merged.object.orderedRemove(cleared);
         }
 
         const text = std.json.Stringify.valueAlloc(ctx.arena, merged, .{}) catch {
@@ -219,17 +401,203 @@ pub const Save = struct {
             return error.Invalid;
         }
 
+        const before = if (target.collection.rules.len > 0)
+            try object_of(ctx, row.document)
+        else
+            null;
+
+        try rules.check(ctx, target.collection, target.scope, merged, before, in.id);
+
         const expected = in.expected_version;
         const version = try records.update(ctx.db, target.scope, in.id, text, expected, ctx.now_ms);
 
-        try index(ctx, target.collection, in.id, merged);
+        try index(ctx, target.scope, target.collection, in.id, merged);
         try changed(ctx, Saved, target.scope, in.id);
+
+        if (compute) {
+            try computed.written(ctx, target.scope, target.collection, in.id, text);
+        }
+
+        // A time it holds moved: the job following it moves too.
+        try SDK.jobs.follow(ctx, in.id);
 
         return .{
             .version = version,
         };
     }
 };
+
+pub const SaveMany = struct {
+    pub const name = "internal.save_many";
+    pub const description = "Write fields of many internal records of one collection at once";
+    pub const details =
+        \\Each record is written as `internal.save` writes one, in one call: up to 200. All
+        \\or nothing: one refused refuses them all, named `records.<index>`.
+    ;
+    pub const kind: sdk.operation.Kind = .write;
+    pub const Written = struct {
+        id: []const u8,
+        document: sdk.operation.Json,
+    };
+    pub const In = struct {
+        kind: []const u8,
+        records: []const Written,
+        plugin: ?[]const u8 = null,
+        app: ?[]const u8 = null,
+    };
+    pub const Out = struct {
+        saved: u32,
+    };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+        .records = &.{.{
+            .id = example_id,
+            .document = .{
+                .text = "{\"count\":2}",
+            },
+        }},
+    };
+    pub const example_out: Out = .{
+        .saved = 1,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .kind = "The collection",
+        .records = "Each record by id with the fields to write, at most 200",
+        .plugin = "Whose records, when no plugin is running",
+        .app = "Which app's, when no plugin is running",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+
+        if (in.records.len > many_max) {
+            return ctx.refuse(&.{.{
+                .field = "records",
+                .message = "At most 200 records a call",
+            }});
+        }
+
+        const kept = ctx.arena;
+        const scratch = try ctx.scratch();
+        const outputs = kept.alloc(Save.Out, in.records.len) catch return error.OutOfMemory;
+
+        for (in.records, 0..) |record, place| {
+            const begun = scratch.mark();
+
+            ctx.arena = scratch.allocator();
+
+            const saved = Save.saved(ctx, .{
+                .kind = in.kind,
+                .id = record.id,
+                .document = record.document,
+                .plugin = in.plugin,
+                .app = in.app,
+            }, granted, false) catch |err| {
+                ctx.arena = kept;
+                return refused_at(ctx, err, "records", place);
+            };
+
+            ctx.arena = kept;
+            outputs[place] = .{
+                .version = saved.version,
+            };
+            scratch.rewind(begun);
+        }
+
+        std.debug.assert(in.records.len <= many_max);
+
+        const ids = kept.alloc([]const u8, in.records.len) catch return error.OutOfMemory;
+
+        for (in.records, ids) |record, *id| {
+            id.* = record.id;
+        }
+
+        try written_together(ctx, in.plugin, in.app, in.kind, ids);
+
+        if (SDK.bulk.hooked(ctx, Save)) {
+            const inputs = kept.alloc(Save.In, outputs.len) catch return error.OutOfMemory;
+
+            for (in.records, inputs) |record, *input| {
+                input.* = .{
+                    .kind = in.kind,
+                    .id = record.id,
+                    .document = record.document,
+                    .plugin = in.plugin,
+                    .app = in.app,
+                };
+            }
+
+            try heard_after(ctx, Save, inputs, outputs, "records");
+        }
+
+        return .{
+            .saved = @intCast(in.records.len),
+        };
+    }
+};
+
+/// The `after` hooks on `Operation` (a record's `.validate` among them) over every record
+/// a write of many wrote: each installed plugin's hook is entered once for all of them. The
+/// first record a hook refuses refuses the call, named at its place under `<list>.<index>`.
+fn heard_after(
+    ctx: *Ctx,
+    comptime Operation: type,
+    inputs: []const Operation.In,
+    outputs: []const Operation.Out,
+    comptime list: []const u8,
+) Error!void {
+    std.debug.assert(inputs.len == outputs.len);
+    std.debug.assert(inputs.len <= many_max);
+
+    const refused = ctx.arena.alloc(?[]const u8, inputs.len) catch return error.OutOfMemory;
+
+    @memset(refused, null);
+    try SDK.bulk.after_each(ctx, Operation, inputs, outputs, refused);
+
+    for (refused, 0..) |reason, place| {
+        const why = reason orelse continue;
+        const field = std.fmt.allocPrint(ctx.arena, list ++ ".{d}", .{place}) catch {
+            return error.OutOfMemory;
+        };
+
+        const problems = ctx.arena.alloc(sdk.operation.Problem, 1) catch {
+            return error.OutOfMemory;
+        };
+
+        problems[0] = .{
+            .field = field,
+            .message = why,
+        };
+
+        return ctx.refuse(problems);
+    }
+}
+
+fn refused_at(ctx: *Ctx, err: Error, comptime list: []const u8, place: u64) Error {
+    std.debug.assert(place < many_max);
+
+    if (err != error.Invalid or ctx.problems.len == 0) {
+        return err;
+    }
+
+    const inner = ctx.problems;
+    const problems = ctx.arena.alloc(sdk.operation.Problem, inner.len) catch {
+        return error.OutOfMemory;
+    };
+
+    for (inner, problems) |problem, *one| {
+        one.* = .{
+            .field = std.fmt.allocPrint(ctx.arena, list ++ ".{d}.{s}", .{
+                place,
+                problem.field,
+            }) catch return error.OutOfMemory,
+            .message = problem.message,
+        };
+    }
+
+    return ctx.refuse(problems);
+}
 
 pub const FindOne = struct {
     pub const name = "internal.find_one";
@@ -268,17 +636,20 @@ pub const FindOne = struct {
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
 
-        try drawn(ctx, target, null);
-
         const match = try match_of(target.collection, in.field, in.value);
+
+        try drawn_matched(ctx, target, match);
+
         const rows = try records.list(ctx.db, ctx.arena, target.scope, match, 2, 0);
 
         if (rows.len > 1) {
             return error.Conflict;
         }
 
+        try computed.freshen(ctx, target.scope, target.collection, rows);
+
         return .{
-            .record = if (rows.len == 1) item_of(rows[0]) else null,
+            .record = if (rows.len == 1) try item_of(ctx, target.collection, rows[0]) else null,
         };
     }
 };
@@ -286,7 +657,16 @@ pub const FindOne = struct {
 pub const Find = struct {
     pub const name = "internal.find";
     pub const description = "A page of internal records, newest first";
-    pub const details = "With `field` and `value`, only those whose indexed field holds it.";
+    pub const details =
+        \\With `field` and `value`, only those whose indexed field holds it. `oldest` turns
+        \\the order round: the order they were made in. `fields` names the fields of each
+        \\document to answer, the others left out: a list that shows two fields reads two.
+        \\With `ids` (up to 200), the records of those ids instead of a page, in the order
+        \\named, one that is not there left out: many records by id are one read.
+        \\With `after`, a walk's page: the records after that id in id order, which is the order
+        \\they were made in (`""` for the first page). Each page is found from the index, so a
+        \\walk over a long list costs the same a page; `offset` is not given with it.
+    ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         kind: []const u8,
@@ -294,6 +674,10 @@ pub const Find = struct {
         value: ?[]const u8 = null,
         limit: u32 = 50,
         offset: u32 = 0,
+        oldest: bool = false,
+        after: ?[]const u8 = null,
+        fields: []const []const u8 = &.{},
+        ids: []const []const u8 = &.{},
         plugin: ?[]const u8 = null,
         app: ?[]const u8 = null,
     };
@@ -313,9 +697,16 @@ pub const Find = struct {
         .value = "The value it holds, as text",
         .limit = "Page size, up to 200",
         .offset = "Records to skip",
+        .oldest = "The oldest first, instead of the newest",
+        .after = "A walk's page: the records after this id (`\"\"` for the first)",
+        .fields = "The fields of each document to answer; every field when none is named",
+        .ids = "The records of these ids, up to 200, instead of a page",
         .plugin = "Whose records, when no plugin is running",
         .app = "Which app's, when no plugin is running",
     };
+
+    /// The most fields one page names.
+    pub const fields_max: u32 = 64;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -328,28 +719,156 @@ pub const Find = struct {
         }
 
         const paired = (in.field == null) == (in.value == null);
+        const by_id = in.ids.len > 0;
 
-        if (!paired) {
+        if (!paired or in.fields.len > fields_max or in.ids.len > many_max) {
+            return error.Invalid;
+        }
+
+        // By id or by a field: never both.
+        if (by_id and in.field != null) {
+            return error.Invalid;
+        }
+
+        // A walk continues from a record, never from a count of them.
+        if (in.after) |after| {
+            if (by_id or in.offset > 0 or after.len > records.id_bytes_max) {
+                return error.Invalid;
+            }
+        }
+
+        const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
+
+        const match = try matching(target.collection, in.field, in.value);
+
+        if (by_id) {
+            for (in.ids) |id| {
+                try drawn(ctx, target, id);
+            }
+        } else {
+            try drawn_matched(ctx, target, match);
+        }
+
+        const rows = if (by_id)
+            try records_named(ctx, target.scope, in.ids)
+        else
+            try records.listed(ctx.db, ctx.arena, target.scope, match, .{
+                .limit = in.limit,
+                .offset = in.offset,
+                .oldest = in.oldest,
+                .after = in.after,
+            });
+
+        try computed.freshen(ctx, target.scope, target.collection, rows);
+
+        const items = ctx.arena.alloc(Item, rows.len) catch return error.OutOfMemory;
+
+        for (rows, items) |row, *target_item| {
+            target_item.* = try item_of(ctx, target.collection, row);
+
+            if (in.fields.len > 0) {
+                target_item.document.text = try only(ctx, target_item.document.text, in.fields);
+            }
+        }
+
+        return .{
+            .records = items,
+        };
+    }
+};
+
+/// The scope's records of `ids`, in the order named; an id with no record there is left out.
+fn records_named(ctx: *Ctx, scope: records.Scope, ids: []const []const u8) Error![]records.Row {
+    std.debug.assert(ids.len > 0);
+    std.debug.assert(ids.len <= many_max);
+
+    const rows = ctx.arena.alloc(records.Row, ids.len) catch return error.OutOfMemory;
+    var found: u32 = 0;
+
+    for (ids) |id| {
+        if (id.len == 0 or id.len > 64) {
+            continue;
+        }
+
+        if (try records.get(ctx.db, ctx.arena, scope, id)) |row| {
+            rows[found] = row;
+            found += 1;
+        }
+    }
+
+    return rows[0..found];
+}
+
+pub fn matching(
+    collection: Collection,
+    field: ?[]const u8,
+    value: ?[]const u8,
+) Error!?records.Match {
+    std.debug.assert((field == null) == (value == null));
+
+    return if (field) |named| try match_of(collection, named, value.?) else null;
+}
+
+/// `document` with only its fields named in `fields`.
+fn only(ctx: *const Ctx, document: []const u8, fields: []const []const u8) Error![]const u8 {
+    std.debug.assert(fields.len > 0);
+    std.debug.assert(fields.len <= Find.fields_max);
+
+    return model.json_fields.only(ctx.arena, document, fields);
+}
+
+pub const Count = struct {
+    pub const name = "internal.count";
+    pub const description = "How many internal records a collection holds";
+    pub const details =
+        \\With `field` and `value`, how many whose indexed field holds it. Counted from the
+        \\index: no record is read, so a list can say how many there are beside the page it
+        \\shows. Changes nothing.
+    ;
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {
+        kind: []const u8,
+        field: ?[]const u8 = null,
+        value: ?[]const u8 = null,
+        plugin: ?[]const u8 = null,
+        app: ?[]const u8 = null,
+    };
+    pub const Out = struct {
+        count: u64,
+    };
+    pub const example: In = .{
+        .plugin = "greeter",
+        .kind = "visit",
+    };
+    pub const example_out: Out = .{
+        .count = 1,
+    };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .kind = "The collection",
+        .field = "An indexed field to filter on",
+        .value = "The value it holds, as text",
+        .plugin = "Whose records, when no plugin is running",
+        .app = "Which app's, when no plugin is running",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .count = "How many records match",
+    };
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+
+        if ((in.field == null) != (in.value == null)) {
             return error.Invalid;
         }
 
         const target = try scope_of(ctx, in.plugin, in.app, in.kind, false);
 
-        try drawn(ctx, target, null);
+        const match = try matching(target.collection, in.field, in.value);
 
-        const match = if (in.field) |field|
-            try match_of(target.collection, field, in.value.?)
-        else
-            null;
-        const rows = try records.list(ctx.db, ctx.arena, target.scope, match, in.limit, in.offset);
-        const items = ctx.arena.alloc(Item, rows.len) catch return error.OutOfMemory;
-
-        for (rows, items) |row, *target_item| {
-            target_item.* = item_of(row);
-        }
+        try drawn_matched(ctx, target, match);
 
         return .{
-            .records = items,
+            .count = try records.count(ctx.db, target.scope, match),
         };
     }
 };
@@ -392,11 +911,15 @@ pub const Delete = struct {
             return error.Invalid;
         }
 
+        const before = try store.internal_record_values.values_of(ctx.db, ctx.arena, in.id);
+
         try store.internal_record_values.replace(ctx.db, in.id, &.{});
+        raised_matched(ctx, target.scope, before, &.{});
 
         const deleted = try records.delete(ctx.db, target.scope, in.id);
 
         try changed(ctx, Deleted, target.scope, in.id);
+        try computed.forget(ctx, target.scope, target.collection, in.id);
 
         return .{
             .deleted = deleted,
@@ -404,7 +927,7 @@ pub const Delete = struct {
     }
 };
 
-const Target = struct {
+pub const Target = struct {
     scope: Scope,
     collection: Collection,
 };
@@ -442,7 +965,7 @@ fn raised(ctx: *Ctx, scope: Scope, id: ?[]const u8) void {
 
 /// What a page being drawn for the built site read: the record (`id`) and whatever takes
 /// every record of its collection away, or the collection it looked records up in.
-fn drawn(ctx: *Ctx, target: Target, id: ?[]const u8) Error!void {
+pub fn drawn(ctx: *Ctx, target: Target, id: ?[]const u8) Error!void {
     std.debug.assert(target.scope.plugin.len > 0);
     std.debug.assert(target.scope.kind.len > 0);
 
@@ -464,6 +987,65 @@ fn drawn(ctx: *Ctx, target: Target, id: ?[]const u8) Error!void {
 
         ctx.depends_on(key);
     }
+}
+
+/// What a list read: by an indexed value, the records holding it
+/// (`internal:<plugin>/<kind>/<field>=<value>`) and whatever takes every record away; else
+/// the whole collection. A cart's lines read this way change with that cart's lines only.
+pub fn drawn_matched(ctx: *Ctx, target: Target, match: ?records.Match) Error!void {
+    std.debug.assert(target.scope.plugin.len > 0);
+    std.debug.assert(target.scope.kind.len > 0);
+
+    if (ctx.reads == null) {
+        return;
+    }
+
+    const wanted = match orelse return drawn(ctx, target, null);
+    var buffer: [changes.key_len_max]u8 = undefined;
+    const scope = target.scope;
+    const matched = changes.internal_match_key(&buffer, scope.plugin, scope.kind, .{
+        .field = wanted.field,
+        .value = wanted.value,
+    }) catch return error.Invalid;
+
+    ctx.depends_on(matched);
+
+    const all = changes.internal_every;
+    const every = changes.internal_key(&buffer, scope.plugin, scope.kind, all) catch {
+        return error.Invalid;
+    };
+
+    ctx.depends_on(every);
+}
+
+/// The values a record is found by, before and after a write: each raised, so what looked
+/// records up by either hears of it. One that cannot be raised fails the write.
+fn raised_matched(
+    ctx: *Ctx,
+    scope: Scope,
+    before: []const store.internal_record_values.Value,
+    after: []const store.internal_record_values.Value,
+) void {
+    std.debug.assert(before.len <= model.internal_record.indexed_max);
+    std.debug.assert(after.len <= model.internal_record.indexed_max);
+
+    var matched: [2 * changes.matched_max]changes.Matched = undefined;
+    var count: u32 = 0;
+
+    for ([_][]const store.internal_record_values.Value{ before, after }) |values| {
+        for (values) |value| {
+            matched[count] = .{
+                .field = value.field,
+                .value = value.value,
+            };
+            count += 1;
+        }
+    }
+
+    changes.internal_matched(ctx, scope.plugin, scope.kind, matched[0..count]) catch |err| {
+        std.log.debug("internal records: values not raised: {s}", .{@errorName(err)});
+        ctx.dependency_failure = true;
+    };
 }
 
 /// What core's internal-record events carry.
@@ -490,7 +1072,7 @@ pub const Deleted = event_define(.{
 
 const event_define = @import("../sdk/plugin/hook_define.zig").event;
 
-fn scope_of(
+pub fn scope_of(
     ctx: *Ctx,
     plugin: ?[]const u8,
     app: ?[]const u8,
@@ -584,9 +1166,17 @@ fn object_of(ctx: *Ctx, text: []const u8) Error!Value {
 }
 
 /// What the record is found by: each indexed field it holds as text, an integer or a flag.
-fn index(ctx: *Ctx, collection: Collection, id: []const u8, document: Value) Error!void {
+fn index(
+    ctx: *Ctx,
+    scope: Scope,
+    collection: Collection,
+    id: []const u8,
+    document: Value,
+) Error!void {
     std.debug.assert(document == .object);
     std.debug.assert(collection.indexed.len <= model.internal_record.indexed_max);
+
+    const before = try store.internal_record_values.values_of(ctx.db, ctx.arena, id);
 
     var values: [model.internal_record.indexed_max]store.internal_record_values.Value = undefined;
     var count: u32 = 0;
@@ -603,6 +1193,7 @@ fn index(ctx: *Ctx, collection: Collection, id: []const u8, document: Value) Err
     }
 
     try store.internal_record_values.replace(ctx.db, id, values[0..count]);
+    raised_matched(ctx, scope, before, values[0..count]);
 }
 
 fn match_of(collection: Collection, field: []const u8, value: []const u8) Error!records.Match {
@@ -622,14 +1213,32 @@ fn match_of(collection: Collection, field: []const u8, value: []const u8) Error!
     };
 }
 
-fn item_of(row: records.Row) Item {
+/// A record as the caller reads it: a field it may not read (`.visibility`) left out.
+fn item_of(ctx: *const Ctx, collection: Collection, row: records.Row) Error!Item {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.version > 0);
+
+    var document = row.document;
+    const visibility = @import("document/visibility.zig");
+
+    if (visibility.any_hidden(collection.rules)) {
+        const text = row.document;
+        var parsed = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, text, .{}) catch {
+            return error.Invalid;
+        };
+
+        visibility.strip(ctx, collection.rules, &parsed);
+        document = std.json.Stringify.valueAlloc(ctx.arena, parsed, .{}) catch {
+            return error.OutOfMemory;
+        };
+    }
 
     return .{
         .id = row.id,
         .version = row.version,
-        .document = row.document,
+        .document = .{
+            .text = document,
+        },
         .created_at = row.created_at,
         .updated_at = row.updated_at,
     };
@@ -712,18 +1321,24 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
 
     const first = try SDK.dispatch(&greeter, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Ada\",\"count\":1}",
+        .document = .{
+            .text = "{\"name\":\"Ada\",\"count\":1}",
+        },
     });
     _ = try SDK.dispatch(&greeter, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Bob\"}",
+        .document = .{
+            .text = "{\"name\":\"Bob\"}",
+        },
     });
 
     var in_shop = greeter;
     in_shop.app = "shop";
     _ = try SDK.dispatch(&in_shop, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Ada\"}",
+        .document = .{
+            .text = "{\"name\":\"Ada\"}",
+        },
     });
 
     const found = (try SDK.dispatch(&greeter, FindOne, .{
@@ -736,7 +1351,9 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
     const saved = try SDK.dispatch(&greeter, Save, .{
         .kind = "visit",
         .id = first.id,
-        .document = "{\"count\":2}",
+        .document = .{
+            .text = "{\"count\":2}",
+        },
         .expected_version = 1,
     });
     try std.testing.expectEqual(@as(i64, 2), saved.version);
@@ -745,13 +1362,15 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
         .kind = "visit",
         .id = first.id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"Ada\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"count\":2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"Ada\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"count\":2") != null);
 
     const stale = SDK.dispatch(&greeter, Save, .{
         .kind = "visit",
         .id = first.id,
-        .document = "{\"count\":3}",
+        .document = .{
+            .text = "{\"count\":3}",
+        },
         .expected_version = 1,
     });
     try std.testing.expectError(error.Conflict, stale);
@@ -772,6 +1391,33 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
     });
     try std.testing.expectError(error.Invalid, unindexed);
 
+    // The oldest first, only the fields asked for, and how many without reading any.
+    const oldest = try SDK.dispatch(&greeter, Find, .{
+        .kind = "visit",
+        .limit = 1,
+        .oldest = true,
+        .fields = &.{"name"},
+    });
+    try std.testing.expectEqualStrings(first.id, oldest.records[0].id);
+    try std.testing.expectEqualStrings("{\"name\":\"Ada\"}", oldest.records[0].document.text);
+
+    const counted = try SDK.dispatch(&greeter, Count, .{
+        .kind = "visit",
+    });
+    try std.testing.expectEqual(@as(u64, 2), counted.count);
+
+    const counted_by = try SDK.dispatch(&greeter, Count, .{
+        .kind = "visit",
+        .field = "name",
+        .value = "Bob",
+    });
+    try std.testing.expectEqual(@as(u64, 1), counted_by.count);
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&greeter, Count, .{
+        .kind = "visit",
+        .field = "count",
+        .value = "2",
+    }));
+
     const deleted = try SDK.dispatch(&greeter, Delete, .{
         .kind = "visit",
         .id = first.id,
@@ -785,6 +1431,50 @@ test "internal records: a plugin's own, in its app, found by an indexed field" {
     try std.testing.expectError(error.NotFound, gone);
 }
 
+test "internal records: a save empties the fields it is told to clear, and keeps the rest" {
+    var project: Project = undefined;
+    try project.init();
+    defer project.deinit();
+
+    var greeter = project.ctx(.anonymous);
+    greeter.plugin = "greeter";
+
+    const made = try SDK.dispatch(&greeter, Create, .{
+        .kind = "visit",
+        .document = .{
+            .text = "{\"name\":\"Ada\",\"count\":4}",
+        },
+    });
+
+    _ = try SDK.dispatch(&greeter, Save, .{
+        .kind = "visit",
+        .id = made.id,
+        .document = .{
+            .text = "{}",
+        },
+        .clear = &.{ "count", "never_there" },
+    });
+
+    const got = try SDK.dispatch(&greeter, Get, .{
+        .kind = "visit",
+        .id = made.id,
+    });
+
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"Ada\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "count") == null);
+
+    const names: [clear_max + 1][]const u8 = @splat("name");
+
+    try std.testing.expectError(error.Invalid, SDK.dispatch(&greeter, Save, .{
+        .kind = "visit",
+        .id = made.id,
+        .document = .{
+            .text = "{}",
+        },
+        .clear = &names,
+    }));
+}
+
 test "internal records: nobody else's, and with no plugin running only for those who may" {
     var project: Project = undefined;
     try project.init();
@@ -794,7 +1484,9 @@ test "internal records: nobody else's, and with no plugin running only for those
     greeter.plugin = "greeter";
     _ = try SDK.dispatch(&greeter, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Ada\"}",
+        .document = .{
+            .text = "{\"name\":\"Ada\"}",
+        },
     });
 
     const named_other = SDK.dispatch(&greeter, Find, .{
@@ -846,23 +1538,31 @@ test "internal records in GROQ: the plugin's own, in its app, and nobody else's"
     greeter.plugin = "greeter";
     _ = try SDK.dispatch(&greeter, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Ada\",\"count\":1}",
+        .document = .{
+            .text = "{\"name\":\"Ada\",\"count\":1}",
+        },
     });
     _ = try SDK.dispatch(&greeter, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Bob\",\"count\":2}",
+        .document = .{
+            .text = "{\"name\":\"Bob\",\"count\":2}",
+        },
     });
 
     var in_shop = greeter;
     in_shop.app = "shop";
     _ = try SDK.dispatch(&in_shop, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Ada\"}",
+        .document = .{
+            .text = "{\"name\":\"Ada\"}",
+        },
     });
 
     const named = try SDK.dispatch(&greeter, Query, .{
         .query = "*[_type == \"greeter.visit\" && name == $name]{ name, count }",
-        .params = "{\"name\":\"Ada\"}",
+        .params = .{
+            .text = "{\"name\":\"Ada\"}",
+        },
     });
     try std.testing.expectEqualStrings("[{\"name\":\"Ada\",\"count\":1}]", named.result.text);
 
@@ -952,7 +1652,9 @@ test "internal records: a write raises its keys, and a page's read names them" {
     const start = (try raised_since(&greeter, 0)).revision;
     const made = try SDK.dispatch(&greeter, Create, .{
         .kind = "visit",
-        .document = "{\"name\":\"Ada\"}",
+        .document = .{
+            .text = "{\"name\":\"Ada\"}",
+        },
     });
     const record_key = try std.fmt.allocPrint(greeter.arena, "internal:greeter/visit/{s}", .{
         made.id,
@@ -965,7 +1667,9 @@ test "internal records: a write raises its keys, and a page's read names them" {
     _ = try SDK.dispatch(&greeter, Save, .{
         .kind = "visit",
         .id = made.id,
-        .document = "{\"count\":2}",
+        .document = .{
+            .text = "{\"count\":2}",
+        },
     });
     try std.testing.expect((try raised_since(&greeter, created.revision)).revision >
         created.revision);
@@ -1003,4 +1707,27 @@ test "internal records: a write raises its keys, and a page's read names them" {
         .id = made.id,
     });
     try std.testing.expect(has_key((try raised_since(&greeter, saved)).keys, record_key));
+}
+
+/// The computed values of records a call wrote many of, worked out together after them, a
+/// few at a time: one call to their plugin for every few records, not one each.
+fn written_together(
+    ctx: *Ctx,
+    plugin: ?[]const u8,
+    app: ?[]const u8,
+    kind: []const u8,
+    ids: []const []const u8,
+) Error!void {
+    std.debug.assert(kind.len > 0);
+    std.debug.assert(ids.len <= many_max);
+
+    const target = try scope_of(ctx, plugin, app, kind, true);
+
+    if (target.collection.computed.len == 0 or ids.len == 0) {
+        return;
+    }
+
+    const rows = try records_named(ctx, target.scope, ids);
+
+    try computed.written_many(ctx, target.scope, target.collection, rows);
 }

@@ -9,6 +9,7 @@ const files = @import("lib/files.zig");
 
 pub const sandboxed_plugins = @import("server/sandboxed_plugins.zig");
 const SandboxHost = sandboxed_plugins.Host;
+const counted = @import("server/sandboxed_plugins/counted.zig");
 const PluginStates = @import("server/plugin_states.zig").States;
 const Languages = @import("server/languages.zig").Languages;
 pub const gate = if (builtin.os.tag == .wasi) void else @import("server/gate.zig");
@@ -32,11 +33,53 @@ pub const Server = struct {
     /// requests run one at a time, and each loop gives back what it took.
     scratch_buffer: []u8,
     scratch: sdk.Scratch,
+    /// Nested installed calls' working memory, made here once as the loops' is.
+    call_scratch_buffer: []u8,
+    call_scratch: sdk.Scratch,
+    /// Compiled-in plugins' working memory (`sdk/plugin_memory.zig`), made here once.
+    plugin_buffer: sdk.plugin_memory.Buffer,
+    plugin_memory: sdk.plugin_memory.Memory,
     definitions: sdk.DefinitionCache,
     /// The admin's languages: a catalogue per language the plugins translate it into.
     languages: Languages,
     /// The rate limits every request's calls count against (`sdk/limits.zig`).
     limits: sdk.limits.Limits,
+
+    /// The working memory every request shares, made once: the loops' scratch, the nested
+    /// calls' and the compiled-in plugins' own.
+    fn reserve_working(server: *Server, gpa: std.mem.Allocator) !void {
+        std.debug.assert(sdk.scratch.bytes_default > 0);
+        std.debug.assert(sdk.plugin_memory.bytes % sdk.plugin_memory.page_bytes == 0);
+
+        server.scratch_buffer = try gpa.alloc(u8, sdk.scratch.bytes_default);
+        errdefer gpa.free(server.scratch_buffer);
+
+        server.scratch = .{
+            .fixed = .init(server.scratch_buffer),
+        };
+
+        server.call_scratch_buffer = try gpa.alloc(u8, sdk.scratch.call_bytes);
+        errdefer gpa.free(server.call_scratch_buffer);
+
+        server.call_scratch = .{
+            .fixed = .init(server.call_scratch_buffer),
+        };
+
+        server.plugin_buffer = try gpa.alignedAlloc(
+            u8,
+            sdk.plugin_memory.alignment,
+            sdk.plugin_memory.bytes,
+        );
+        server.plugin_memory.init(server.plugin_buffer);
+    }
+
+    fn release_working(server: *Server) void {
+        std.debug.assert(server.scratch_buffer.len == sdk.scratch.bytes_default);
+
+        server.gpa.free(server.scratch_buffer);
+        server.gpa.free(server.call_scratch_buffer);
+        server.gpa.free(server.plugin_buffer);
+    }
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
         std.debug.assert(db_path.len > 0);
@@ -48,12 +91,8 @@ pub const Server = struct {
         server.heap = try reserve_heap(process.gpa);
         errdefer release_heap(process.gpa, server.heap);
 
-        server.scratch_buffer = try process.gpa.alloc(u8, sdk.scratch.bytes_default);
-        errdefer process.gpa.free(server.scratch_buffer);
-
-        server.scratch = .{
-            .fixed = .init(server.scratch_buffer),
-        };
+        try server.reserve_working(process.gpa);
+        errdefer server.release_working();
         server.definitions = .{};
 
         try server.languages.init(process.gpa);
@@ -61,6 +100,8 @@ pub const Server = struct {
 
         server.runtime = try db.Runtime.init(.{
             .heap = server.heap,
+            // SQLite's memory counted only for an operator reading the counters.
+            .count_memory = counted.asked(process.environ_map.get(counted.variable)),
         });
         errdefer server.runtime.deinit();
 
@@ -103,6 +144,9 @@ pub const Server = struct {
 
         // Their translations join the catalogues each time they load.
         server.sandboxed_plugins.languages = &server.languages;
+        server.sandboxed_plugins.counted.on = counted.asked(
+            process.environ_map.get(counted.variable),
+        );
 
         try server.sandboxed_plugins.load_all(&server.connection);
 
@@ -155,7 +199,7 @@ pub const Server = struct {
     /// What every context this server makes carries: the installed plugins, or none.
     pub fn sandboxed(server: *Server) ?*const sdk.sandboxed_plugins.SandboxedPlugins {
         std.debug.assert(server.runtime.open_count == 1);
-        std.debug.assert(server.sandboxed_plugins.heap.len == sandboxed_plugins.heap_bytes);
+        std.debug.assert(server.sandboxed_plugins.heap.len >= sandboxed_plugins.heap_bytes);
 
         return server.sandboxed_plugins.sandboxed_plugins();
     }
@@ -196,7 +240,7 @@ pub const Server = struct {
 
         server.media.close();
         server.languages.deinit();
-        server.gpa.free(server.scratch_buffer);
+        server.release_working();
         server.auth.deinit();
         server.connection.close();
         server.runtime.deinit();

@@ -51,12 +51,11 @@ fn post(ctx: *publr.Ctx, in: PostIn) publr.Error!PostOut {
         return error.Invalid;
     }
 
-    const document = std.json.Stringify.valueAlloc(ctx.arena(), .{
-        .title = in.title,
-    }, .{}) catch return error.OutOfMemory;
     const created = try ctx.call(record.Create, .{
         .type = "note",
-        .document = document,
+        .document = publr.sdk.operation.Json.of(ctx.arena(), .{
+            .title = in.title,
+        }) catch return error.OutOfMemory,
     });
     const moved = try ctx.call(record.Transition, .{
         .id = created.id,

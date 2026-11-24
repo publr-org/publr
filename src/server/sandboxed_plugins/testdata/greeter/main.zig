@@ -210,13 +210,11 @@ fn greet(ctx: *publr.Ctx, in: GreetIn) publr.Error!GreetOut {
     const note = .{
         .note = in.note,
     };
-    const document = std.json.Stringify.valueAlloc(ctx.arena(), note, .{}) catch {
-        return error.OutOfMemory;
-    };
-
     _ = try ctx.call(record.Create, .{
         .type = "greeter.salutation",
-        .document = document,
+        .document = publr.sdk.operation.Json.of(ctx.arena(), note) catch {
+            return error.OutOfMemory;
+        },
     });
 
     return count(ctx);

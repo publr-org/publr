@@ -46,7 +46,8 @@ pub const Item = struct {
     actor: []const u8,
     app: []const u8,
     operation: []const u8,
-    input: []const u8,
+    /// The call's input, its secrets masked; null when it had none.
+    input: ?sdk.operation.Json,
     units: []const []const u8,
     calls: []const []const u8,
     /// What plugins logged during the call, in order.
@@ -84,7 +85,9 @@ pub const List = struct {
             .actor = "u_admin",
             .app = "",
             .operation = "plugin.enable",
-            .input = "{\"names\":[\"greeter\"]}",
+            .input = .{
+                .text = "{\"names\":[\"greeter\"]}",
+            },
             .units = &.{"plugin:greeter"},
             .calls = &.{},
         }},
@@ -133,7 +136,7 @@ pub const List = struct {
                 .actor = row.actor,
                 .app = row.app,
                 .operation = row.operation,
-                .input = row.input,
+                .input = try input_of(ctx, row.input),
                 .units = try names_of(ctx, row.units),
                 .calls = try names_of(ctx, row.calls),
                 .lines = try lines_for(ctx, logged, .activity, row.id),
@@ -485,6 +488,27 @@ fn append_failure(ctx: *Ctx, entry: *const Entry) Error!sdk.trail.Logged {
     };
 }
 
+/// A logged input as a value: null when the call had none, the mark as text when the
+/// whole input was masked.
+pub fn input_of(ctx: *Ctx, logged: []const u8) Error!?sdk.operation.Json {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(logged.len <= std.math.maxInt(u32));
+
+    if (logged.len == 0) {
+        return null;
+    }
+
+    if (logged[0] == '{' or logged[0] == '[') {
+        return .{
+            .text = logged,
+        };
+    }
+
+    return .{
+        .text = try sdk.stringify(ctx.arena, logged),
+    };
+}
+
 fn masked_input(ctx: *Ctx, entry: *const Entry) Error![]const u8 {
     std.debug.assert(entry.secret.len <= 64);
 
@@ -530,7 +554,7 @@ fn units_of(
     const placed = ctx.arena.dupe(sdk.trail.Changed, changed) catch return error.OutOfMemory;
     var next: u32 = 0;
 
-    std.sort.insertion(sdk.trail.Changed, placed, {}, earlier);
+    std.mem.sort(sdk.trail.Changed, placed, {}, earlier);
 
     for (events, 0..) |emitted, position| {
         while (next < placed.len and placed[next].at <= position) : (next += 1) {
@@ -538,8 +562,12 @@ fn units_of(
         }
 
         const prefix = unit_prefix(emitted.name) orelse continue;
-        const key = unit_key(ctx, emitted.subject) orelse continue;
-        const unit = std.fmt.allocPrint(ctx.arena, "{s}:{s}", .{ prefix, key }) catch {
+
+        if (emitted.key.len == 0) {
+            continue;
+        }
+
+        const unit = std.fmt.allocPrint(ctx.arena, "{s}:{s}", .{ prefix, emitted.key }) catch {
             return error.OutOfMemory;
         };
 
@@ -603,26 +631,6 @@ fn keep_unit(ctx: *Ctx, operation: []const u8, unit: changed_units.Unit) void {
     const text = unit.text(ctx.arena) catch return;
 
     open.changed(ctx.trail_start, text);
-}
-
-/// What a typed event's payload names: its first field.
-fn unit_key(ctx: *Ctx, subject: []const u8) ?[]const u8 {
-    std.debug.assert(subject.len <= std.math.maxInt(u32));
-
-    if (subject.len == 0 or subject[0] != '{') {
-        return null;
-    }
-
-    const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, subject, .{}) catch
-        return null;
-
-    if (value != .object or value.object.count() == 0) {
-        return null;
-    }
-
-    const first = value.object.values()[0];
-
-    return if (first == .string and first.string.len > 0) first.string else null;
 }
 
 /// The unit kind an event names, by its namespace; null for one that changes nothing kept.
@@ -712,20 +720,26 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
     try registry.SDK.bootstrap(&system);
 
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
-            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
-            "\"validation\":{\"required\":true}}]}",
+        .definition = .{
+            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
+                "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+                "\"validation\":{\"required\":true}}]}",
+        },
     });
     const created = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "note",
-        .document = "{\"title\":\"One\"}",
+        .document = .{
+            .text = "{\"title\":\"One\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, records.Publish, .{
         .id = created.id,
     });
     _ = try registry.SDK.dispatch(&system, records.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Two\"}",
+        .document = .{
+            .text = "{\"title\":\"Two\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, records.Publish, .{
         .id = created.id,
@@ -753,17 +767,22 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
     _ = try registry.SDK.dispatch(&system, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
     const made = try registry.SDK.dispatch(&system, List, .{
         .operation = "user.create",
     });
-    try std.testing.expect(std.mem.indexOf(u8, made.entries[0].input, "horse") == null);
-    try std.testing.expect(std.mem.indexOf(u8, made.entries[0].input, model.secret.mark) != null);
+    const logged_input = made.entries[0].input.?.text;
+
+    try std.testing.expect(std.mem.indexOf(u8, logged_input, "horse") == null);
+    try std.testing.expect(std.mem.indexOf(u8, logged_input, model.secret.mark) != null);
 
     const broken = registry.SDK.dispatch(&system, records.Create, .{
         .type = "note",
-        .document = "{\"title\":7}",
+        .document = .{
+            .text = "{\"title\":7}",
+        },
     });
     try std.testing.expectError(error.Invalid, broken);
 

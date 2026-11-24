@@ -112,7 +112,7 @@ pub fn line(ctx: *Ctx, plugin: []const u8, text: []const u8) void {
 }
 
 /// A line under the call or run, or the server's output outside one.
-fn add(ctx: *Ctx, plugin: []const u8, level: Level, text: []const u8) void {
+pub fn add(ctx: *Ctx, plugin: []const u8, level: Level, text: []const u8) void {
     std.debug.assert(plugin.len > 0);
     std.debug.assert(text.len > 0);
 

@@ -11,6 +11,7 @@ const Index = @import("../lib/deps.zig").Index;
 const identity = @import("../adapters/rest/identity.zig");
 const registry = @import("registry.zig");
 const apps_watch = @import("apps_watch.zig");
+const apps_interactive = @import("apps_interactive.zig");
 
 /// How the apps are served: their options, and `--static` (with `--full`).
 pub const Mode = struct {
@@ -52,6 +53,7 @@ pub const AppsHost = struct {
     pub fn reload(host: *AppsHost) !void {
         std.debug.assert(host.project.connection.transaction_depth == 0);
 
+        try host.build_interactive();
         try host.check_folder();
         host.close();
         host.project.apps_failed = false;
@@ -60,6 +62,44 @@ pub const AppsHost = struct {
             host.project.apps_failed = true;
             return err;
         };
+    }
+
+    /// The apps' interactive components built where they changed since (a merge or a push
+    /// brings their sources, never what was built from them), as `serve` does when it starts.
+    fn build_interactive(host: *AppsHost) !void {
+        std.debug.assert(host.mode.options.apps_dir.len > 0);
+
+        const db_path = host.project.db_path;
+
+        if (db_path.len == 0) {
+            return;
+        }
+
+        const io = host.project.io;
+        var arena_state = std.heap.ArenaAllocator.init(host.gpa);
+        defer arena_state.deinit();
+
+        const dir = apps_adapter.folder.resolve_dir(io, host.mode.options.apps_dir);
+        const place: apps_interactive.Place = .{
+            .io = io,
+            .arena = arena_state.allocator(),
+        };
+
+        if (!try apps_interactive.build_in(place, db_path, dir)) {
+            host.reason.set("the apps' interactive components did not build", .{});
+            return error.AppsRefused;
+        }
+    }
+
+    /// What the apps' provider slots draw from: the compiled-in plugins' providers and
+    /// components, and the installed ones'.
+    fn slot_sources(
+        host: *const AppsHost,
+        arena: std.mem.Allocator,
+    ) !apps_adapter.provider_slots.Sources {
+        std.debug.assert(host.project.connection.transaction_depth == 0);
+
+        return apps_adapter.provider_slots.sources(arena, host.project.sandboxed_plugins);
     }
 
     /// The folder's apps read and compiled aside, nothing swapped: an edit caught half
@@ -73,13 +113,14 @@ pub const AppsHost = struct {
         var arena_state = std.heap.ArenaAllocator.init(host.gpa);
         defer arena_state.deinit();
 
-        var source = apps_adapter.folder.project_apps(host.gpa, io, dir, &host.reason) catch |err| {
+        const arena = arena_state.allocator();
+        const slots = try host.slot_sources(arena);
+        const apps_folder = apps_adapter.folder;
+        var source = apps_folder.project_apps(host.gpa, io, dir, &host.reason, slots) catch |err| {
             host.stamp = apps_watch.stamp_of(io, dir) orelse 0;
             return err;
         };
         defer source.deinit();
-
-        const arena = arena_state.allocator();
 
         if (try apps_adapter.check_specs(host.gpa, arena, source.specs)) |problem| {
             host.reason.set("{s}", .{problem});
@@ -100,11 +141,16 @@ pub const AppsHost = struct {
         host.dir = options.apps_dir;
         host.stamp = apps_watch.stamp_of(host.project.io, host.dir) orelse 0;
         options.diagnostic = &host.reason;
+
+        var arena_state = std.heap.ArenaAllocator.init(host.gpa);
+        defer arena_state.deinit();
+
         host.source = try apps_adapter.folder.project_apps(
             host.gpa,
             host.project.io,
             options.apps_dir,
             &host.reason,
+            try host.slot_sources(arena_state.allocator()),
         );
 
         const specs = host.source.?.specs;

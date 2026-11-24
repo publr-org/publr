@@ -11,6 +11,7 @@ const server = @import("../server.zig");
 const sdk = @import("../sdk.zig");
 const Project = @import("project.zig").Project;
 const apps_load = @import("apps_load.zig");
+const clock = @import("../operations/clock.zig");
 
 pub const route = "/_publr/cli";
 pub const key_len: u32 = 64;
@@ -294,10 +295,14 @@ pub fn handle(
         envelope.args,
         &out.writer,
         .{
-            .now_ms = sdk.context.wall_clock_ms(project.io),
+            .now_ms = project.now_ms(),
+            .test_clock = project.test_clock(),
             .err = &err.writer,
             .password_env = envelope.password,
             .sandboxed_plugins = project.sandboxed_plugins,
+            .scratch = project.scratch,
+            .call_scratch = project.call_scratch,
+            .plugin_memory = project.plugin_memory,
             .plugin_states = project.plugin_states,
             .files = project.files,
             .apps = project.apps_folder(),
@@ -352,9 +357,15 @@ pub const Commands = struct {
 
         commands.checker = .{
             .init = commands.init,
+            .sandboxed = application.sandboxed(),
         };
 
         std.debug.assert(commands.arena_bytes.len == server.request_arena_bytes);
+
+        // No server: this computer's own run, a test site unless hosted or a copy.
+        const test_clock = !registry.hosted and !@import("project.zig").copy_of_environment();
+        const wall_ms = sdk.context.wall_clock_ms(commands.init.io);
+        const now_ms = if (test_clock) clock.site_ms(&application.connection, wall_ms) else wall_ms;
 
         return cli.CLI(registry.SDK).run(
             &application.connection,
@@ -364,12 +375,17 @@ pub const Commands = struct {
             args,
             out,
             .{
-                .now_ms = sdk.context.wall_clock_ms(commands.init.io),
+                .now_ms = now_ms,
+                .test_clock = test_clock,
                 .password_env = commands.init.environ_map.get("PUBLR_PASSWORD"),
                 .sandboxed_plugins = application.sandboxed(),
+                .scratch = &application.scratch,
+                .call_scratch = &application.call_scratch,
+                .plugin_memory = &application.plugin_memory,
                 .plugin_states = &application.plugin_states,
                 .files = application.files_of(),
                 .apps = commands.checker.folder(),
+                .translations = application.languages.view(),
             },
         );
     }

@@ -28,9 +28,11 @@ pub const System = struct {
         app: []const u8,
     };
     pub const Out = struct {
-        tokens: []const model_app.Token,
+        /// One document: every token, `[{ "name", "value" }]`.
+        tokens: sdk.operation.Json,
         fonts: []const model_app.Font,
-        system: ?design_system.System,
+        /// One document: `design/system.zon` as JSON, or null.
+        system: ?sdk.operation.Json,
         saved: bool,
     };
     pub const example: In = .{
@@ -38,7 +40,9 @@ pub const System = struct {
     };
     // An app that declares no tokens or design system yet: the first a site has.
     pub const example_out: Out = .{
-        .tokens = &.{},
+        .tokens = .{
+            .text = "[]",
+        },
         .fonts = &.{},
         .system = null,
         .saved = false,
@@ -71,34 +75,41 @@ pub const System = struct {
             .path = path,
         }) catch |err| {
             return switch (err) {
-                error.NotFound => .{
-                    .tokens = config.tokens,
-                    .fonts = config.fonts,
-                    .system = null,
-                    .saved = false,
-                },
+                error.NotFound => answered(ctx, config, null, false),
                 else => err,
             };
         };
         const structure = design_system.from_zon(ctx.arena, read.content) catch |err| {
             return switch (err) {
                 error.OutOfMemory => error.OutOfMemory,
-                error.Invalid => .{
-                    .tokens = config.tokens,
-                    .fonts = config.fonts,
-                    .system = null,
-                    .saved = true,
-                },
+                error.Invalid => answered(ctx, config, null, true),
             };
         };
 
         std.debug.assert(std.mem.eql(u8, config.name, in.app));
 
+        return answered(ctx, config, structure, true);
+    }
+
+    /// The tokens and the structure each one document, as many as the app holds.
+    fn answered(
+        ctx: *Ctx,
+        config: anytype,
+        structure: ?design_system.System,
+        saved: bool,
+    ) Error!Out {
+        std.debug.assert(config.name.len > 0);
+
+        const Json = sdk.operation.Json;
+
         return .{
-            .tokens = config.tokens,
+            .tokens = Json.of(ctx.arena, config.tokens) catch return error.OutOfMemory,
             .fonts = config.fonts,
-            .system = structure,
-            .saved = true,
+            .system = if (structure) |given|
+                Json.of(ctx.arena, given) catch return error.OutOfMemory
+            else
+                null,
+            .saved = saved,
         };
     }
 };

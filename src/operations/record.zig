@@ -53,14 +53,14 @@ pub const domain = document_domain.Domain(.{
     .check_create = check_kind,
     .check_def = check_content_type,
     .check_document = check_record_document,
-    .expand_def = with_taxonomies,
-    .prepare_def = without_taxonomies,
+    .expand_def = with_placed,
+    .prepare_def = without_placed,
 });
 
 /// A content type as read: its own fields, then the implicit `terms` field of every
 /// taxonomy it is filed under (`taxonomy/on_type.zig`). An internal taxonomy's never on
 /// the site's side: a page, a preview, an app's call or a visitor.
-fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_types.Row {
+fn with_placed(ctx: *Ctx, row: store.content_types.Row) Error!store.content_types.Row {
     std.debug.assert(row.id.len > 0);
     std.debug.assert(row.def.fields.len <= model.field.fields_max);
 
@@ -87,6 +87,15 @@ fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_
         try fields.append(ctx.arena, implicit);
     }
 
+    // Plugins' groups placed on the type's records, each under its own name.
+    for (try placed_groups.fields_of(ctx, row.def.handle)) |group| {
+        if (fields.items.len == model.field.fields_max or has_field(fields.items, group.name)) {
+            continue;
+        }
+
+        try fields.append(ctx.arena, group);
+    }
+
     var expanded = row;
 
     expanded.def.fields = fields.items;
@@ -95,6 +104,7 @@ fn with_taxonomies(ctx: *Ctx, row: store.content_types.Row) Error!store.content_
 }
 
 const on_type = @import("taxonomy/on_type.zig");
+const placed_groups = @import("custom_fields/on_type.zig");
 
 /// Whether a read is made for the site: a page or a preview, an app's call, or a visitor.
 pub fn site_side(ctx: *const Ctx) bool {
@@ -115,9 +125,10 @@ fn has_field(fields: []const model.field.Def, name: []const u8) bool {
     return false;
 }
 
-/// A content type as given: the implicit fields, if the caller sent them back, are dropped;
-/// they are the taxonomy's, never stored on the type.
-fn without_taxonomies(ctx: *Ctx, def: store.content_types.Def) Error!store.content_types.Def {
+/// A content type as given: the implicit fields and plugins' placed groups, if the caller
+/// sent them back, are dropped; they are the taxonomy's and the plugins', never stored on
+/// the type.
+fn without_placed(ctx: *Ctx, def: store.content_types.Def) Error!store.content_types.Def {
     std.debug.assert(ctx.now_ms >= 0);
 
     if (def.fields.len > model.field.fields_max) {
@@ -125,9 +136,13 @@ fn without_taxonomies(ctx: *Ctx, def: store.content_types.Def) Error!store.conte
     }
 
     var fields: std.ArrayList(model.field.Def) = .empty;
+    const placed = if (def.handle.len > 0) try placed_groups.fields_of(ctx, def.handle) else &.{};
 
     for (def.fields) |candidate| {
-        if (!model.taxonomy.is_implicit(candidate)) {
+        const theirs = model.taxonomy.is_implicit(candidate) or
+            placed_groups.is_placed(placed, candidate);
+
+        if (!theirs) {
             try fields.append(ctx.arena, candidate);
         }
     }
@@ -367,13 +382,15 @@ pub const Create = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         type: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
         app: ?[]const u8 = null,
     };
     pub const Out = crud_module.Created;
     pub const example: In = .{
         .type = "post",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     };
     pub const example_out: Out = .{
         .id = example_id,
@@ -394,7 +411,7 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        const created = try crud.create(ctx, granted, in.type, in.document, null, in.app);
+        const created = try crud.create(ctx, granted, in.type, in.document.text, null, in.app);
 
         try SDK.jobs.follow(ctx, created.id);
 
@@ -423,6 +440,9 @@ pub const Get = struct {
         /// A scheduled version to read the record as (an entry of `scheduled`): what is live
         /// with every version up to it laid over. Signed-in callers only.
         version: i64 = 0,
+        /// The type the record is of: another type's record is not found. A plugin's code
+        /// naming its own type reads it whoever the request is for.
+        type: ?[]const u8 = null,
     };
     pub const Out = crud_module.Got;
     pub const example: In = .{
@@ -431,7 +451,9 @@ pub const Get = struct {
     pub const example_out: Out = .{
         .record = example_record,
         .slot = "live",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The record id",
@@ -440,6 +462,7 @@ pub const Get = struct {
         .dimensions = "Read each field in a combination: `--language pl` (and a flag per " ++
             "other dimension the site has), falling back to the code without its region, " ++
             "then the main value; an empty code asks for the main value",
+        .type = "The type the record must be of; another type's is not found",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -457,29 +480,37 @@ pub const Get = struct {
 
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
+        if (in.type) |handle| {
+            if (!std.mem.eql(u8, got.record.type, handle)) {
+                return error.NotFound;
+            }
+        }
+
         if (try domain.dimensions.wanted_of(ctx, in.dimensions)) |wanted| {
-            try domain.dimensions.resolve_one(ctx, &got.record, &got.document, wanted);
+            try domain.dimensions.resolve_one(ctx, &got.record, &got.document.text, wanted);
         }
 
         // What a site or the API reads shows virtual fields worked out; the editor gets
         // what they keep, to save it back.
         if (in.purpose == .delivery) {
-            var one = [_][]const u8{got.document};
+            var one = [_][]const u8{got.document.text};
 
             try virtual.expand(ctx, &.{got.record}, &one, &.{});
-            got.document = one[0];
+            got.document.text = one[0];
         } else {
-            got.document = try virtual_edit.with_members(ctx, granted, got.record, got.document);
+            const kept = got.document.text;
+
+            got.document.text = try virtual_edit.with_members(ctx, granted, got.record, kept);
 
             got.scheduled = try scheduled_of(ctx, got.record.id);
 
             if (in.version > 0) {
-                got.document = try version_document(ctx, granted, got.record, in.version);
+                got.document.text = try version_document(ctx, granted, got.record, in.version);
                 got.slot = "version";
             }
         }
 
-        got.document = try remote_view.view(ctx, granted, got.record.type, got.document);
+        got.document.text = try remote_view.view(ctx, granted, got.record.type, got.document.text);
 
         return got;
     }
@@ -504,13 +535,18 @@ pub const Save = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         id: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
         expected_version: ?i64 = null,
+        /// The type the record is of: another type's is not found. A plugin's code naming
+        /// its own type writes it whoever the request is for.
+        type: ?[]const u8 = null,
     };
     pub const Out = crud_module.Saved;
     pub const example: In = .{
         .id = example_id,
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     };
     pub const example_out: Out = .{
         .version = 3,
@@ -522,6 +558,7 @@ pub const Save = struct {
         .id = "The record id",
         .document = "The fields to write, as a JSON object; the others keep their values",
         .expected_version = "The `version` you read; refuse if it changed",
+        .type = "The type the record must be of; another type's is not found",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -531,11 +568,20 @@ pub const Save = struct {
             return error.Invalid;
         }
 
+        if (in.type) |handle| {
+            const found = try crud.get(ctx, granted, in.id, .edit, null);
+
+            if (!std.mem.eql(u8, found.record.type, handle)) {
+                return error.NotFound;
+            }
+        }
+
         // A virtual field's list is written into the records it names before the save keeps
         // its order.
-        try virtual_edit.apply(ctx, granted, in.id, in.document);
+        try virtual_edit.apply(ctx, granted, in.id, in.document.text);
 
-        const saved = try crud.save(ctx, granted, in.id, in.document, in.expected_version, null);
+        const text = in.document.text;
+        const saved = try crud.save(ctx, granted, in.id, text, in.expected_version, null);
 
         // A `.due` job follows what the live copy holds now.
         try SDK.jobs.follow(ctx, in.id);
@@ -593,7 +639,7 @@ pub const List = struct {
     pub const Out = struct {
         records: []const Record,
         /// With `documents`: each record's live document, in the records' order.
-        documents: []const []const u8 = &.{},
+        documents: []const sdk.operation.Json = &.{},
         /// With `count`: how many records the conditions keep, every page together.
         total: u32 = 0,
         extended: sdk.Extended = .{},
@@ -654,7 +700,21 @@ pub const List = struct {
 
         std.debug.assert(granted.allows());
 
-        try changes.listed(ctx, .records, in.type, in.types);
+        // Asked by id, the answer is those records and nothing else: a write elsewhere in the
+        // type changes nothing a page built from it, or a value worked out from it, read.
+        if (in.ids.len > 0) {
+            var buffer: [changes.key_len_max]u8 = undefined;
+
+            for (in.ids) |id| {
+                if (id.len == 0) {
+                    continue;
+                }
+
+                ctx.depends_on(changes.record_key(&buffer, id) catch return error.Invalid);
+            }
+        } else {
+            try changes.listed(ctx, .records, in.type, in.types);
+        }
 
         const wanted = try domain.dimensions.wanted_of(ctx, in.dimensions);
         const input: crud_module.ListInput = .{
@@ -721,7 +781,7 @@ pub const List = struct {
 
         return .{
             .records = records_shown,
-            .documents = documents,
+            .documents = try sdk.operation.Json.list(ctx.arena, documents),
             .total = total,
         };
     }
@@ -734,14 +794,17 @@ pub const Referrers = struct {
         \\Every reference and image value is a pointer to another record, and Publr keeps
         \\a reverse index of them. Give a record id (or a media id) and get back who
         \\points at it and through which field. Only records the caller may read are
-        \\listed.
+        \\listed. A page at a time, in the order of the records: `next` continues it; a
+        \\page may hold fewer than 200 when some are left out.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         id: []const u8,
+        after: []const u8 = "",
     };
     pub const Out = struct {
         referrers: []const Referrer,
+        next: []const u8 = "",
     };
     pub const example: In = .{
         .id = example_id,
@@ -756,9 +819,11 @@ pub const Referrers = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The target record or media id",
+        .after = "The page after this one: the `next` the last page answered",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .referrers = "Record id and field path (`related`, `faq.link`) that points at the target",
+        .next = "The next page's `after`; empty after the last",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -768,8 +833,11 @@ pub const Referrers = struct {
             return error.Invalid;
         }
 
+        const page = try crud.referrers(ctx, granted, in.id, in.after);
+
         return .{
-            .referrers = try crud.referrers(ctx, granted, in.id),
+            .referrers = page.referrers,
+            .next = page.next,
         };
     }
 };
@@ -782,12 +850,14 @@ pub const Validate = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         type: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
     };
     pub const Out = crud_module.Report;
     pub const example: In = .{
         .type = "post",
-        .document = "{\"body\":\"no title\",\"extra\":1}",
+        .document = .{
+            .text = "{\"body\":\"no title\",\"extra\":1}",
+        },
     };
     pub const example_out: Out = .{
         .valid = false,
@@ -810,7 +880,7 @@ pub const Validate = struct {
 
         std.debug.assert(granted.allows());
 
-        return crud.validate(ctx, granted, in.type, in.document);
+        return crud.validate(ctx, granted, in.type, in.document.text);
     }
 };
 
@@ -868,7 +938,9 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
         Create,
         .{
             .type = "post",
-            .document = example_document,
+            .document = .{
+                .text = example_document,
+            },
         },
     );
     try std.testing.expectEqualStrings("draft", first.status);
@@ -879,7 +951,9 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
         Create,
         .{
             .type = "post",
-            .document = example_document,
+            .document = .{
+                .text = example_document,
+            },
         },
     );
     try std.testing.expectEqualStrings("hello-world-2", second.slug.?);
@@ -893,7 +967,9 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
 
     const saved = try SDK.dispatch(&editor, Save, .{
         .id = first.id,
-        .document = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+        },
         .expected_version = 1,
     });
     try std.testing.expectEqual(@as(i64, 2), saved.version);
@@ -904,7 +980,9 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
         Save,
         .{
             .id = first.id,
-            .document = example_document,
+            .document = .{
+                .text = example_document,
+            },
             .expected_version = 1,
         },
     );
@@ -914,7 +992,9 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     // field it was about, as every caller is answered.
     _ = try SDK.dispatch(&editor, Save, .{
         .id = first.id,
-        .document = "{\"title\":\"\",\"body\":\"no title\"}",
+        .document = .{
+            .text = "{\"title\":\"\",\"body\":\"no title\"}",
+        },
     });
 
     const incomplete = SDK.dispatch(&editor, Transition, .{
@@ -926,7 +1006,9 @@ test "create, get, save with expected_version, transition, list; slugs are uniqu
     try std.testing.expectEqualStrings("title", editor.problems[0].field);
     _ = try SDK.dispatch(&editor, Save, .{
         .id = first.id,
-        .document = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Hello again\",\"body\":\"x\"}",
+        },
     });
 
     const published = try SDK.dispatch(&editor, Transition, .{
@@ -980,12 +1062,14 @@ test "a unique field refuses a value another record holds; a new record takes de
     var system = harness.ctx(.system);
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition =
-        \\{"handle":"product","name":"Product","public":true,"title_field":"title","fields":[
-        \\{"name":"title","label":"Title","kind":"string","default":"Untitled"},
-        \\{"name":"sku","label":"SKU","kind":"string","validation":{"unique":true}},
-        \\{"name":"stock","label":"Stock","kind":"integer","default":"5"}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"product","name":"Product","public":true,"title_field":"title","fields":[
+            \\{"name":"title","label":"Title","kind":"string","default":"Untitled"},
+            \\{"name":"sku","label":"SKU","kind":"string","validation":{"unique":true}},
+            \\{"name":"stock","label":"Stock","kind":"integer","default":"5"}]}
+            ,
+        },
     });
 
     var editor = harness.ctx(.{
@@ -996,32 +1080,42 @@ test "a unique field refuses a value another record holds; a new record takes de
     });
     const first = try SDK.dispatch(&editor, Create, .{
         .type = "product",
-        .document = "{\"sku\":\"A-1\"}",
+        .document = .{
+            .text = "{\"sku\":\"A-1\"}",
+        },
     });
     const got = try SDK.dispatch(&editor, Get, .{
         .id = first.id,
     });
     try std.testing.expectEqualStrings("Untitled", got.record.title);
-    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"stock\":5") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"stock\":5") != null);
 
     const taken = SDK.dispatch(&editor, Create, .{
         .type = "product",
-        .document = "{\"title\":\"Other\",\"sku\":\"A-1\"}",
+        .document = .{
+            .text = "{\"title\":\"Other\",\"sku\":\"A-1\"}",
+        },
     });
     try std.testing.expectError(error.Conflict, taken);
 
     const second = try SDK.dispatch(&editor, Create, .{
         .type = "product",
-        .document = "{\"title\":\"Other\",\"sku\":\"A-2\"}",
+        .document = .{
+            .text = "{\"title\":\"Other\",\"sku\":\"A-2\"}",
+        },
     });
     const kept = try SDK.dispatch(&editor, Save, .{
         .id = second.id,
-        .document = "{\"title\":\"Other\",\"sku\":\"A-2\"}",
+        .document = .{
+            .text = "{\"title\":\"Other\",\"sku\":\"A-2\"}",
+        },
     });
     try std.testing.expectEqual(@as(i64, 2), kept.version);
     const collides = SDK.dispatch(&editor, Save, .{
         .id = second.id,
-        .document = "{\"title\":\"Other\",\"sku\":\"A-1\"}",
+        .document = .{
+            .text = "{\"title\":\"Other\",\"sku\":\"A-1\"}",
+        },
     });
     try std.testing.expectError(error.Conflict, collides);
 }
@@ -1057,12 +1151,16 @@ test "a grant for the caller's own records pages over those alone" {
 
     const mine = try SDK.dispatch(&ada, Create, .{
         .type = "post",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     });
     // Bob's is the newest: a filter applied after the limit would leave Ada with nothing.
     _ = try SDK.dispatch(&bob, Create, .{
         .type = "post",
-        .document = "{\"title\":\"Bob's\",\"body\":\"b\"}",
+        .document = .{
+            .text = "{\"title\":\"Bob's\",\"body\":\"b\"}",
+        },
     });
 
     const first = try List.run(&ada, .{
@@ -1121,20 +1219,28 @@ test "a slug field that refuses taken slugs: a given one conflicts, a derived on
     };
     const definition = try model.content_type.encode(harness.fixed.allocator(), strict);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = definition,
+        .definition = .{
+            .text = definition,
+        },
     });
 
     const first = try SDK.dispatch(&admin, Create, .{
         .type = "address",
-        .document = "{\"title\":\"Home\",\"slug\":\"home\"}",
+        .document = .{
+            .text = "{\"title\":\"Home\",\"slug\":\"home\"}",
+        },
     });
     const typed = SDK.dispatch(&admin, Create, .{
         .type = "address",
-        .document = "{\"title\":\"Other\",\"slug\":\"home\"}",
+        .document = .{
+            .text = "{\"title\":\"Other\",\"slug\":\"home\"}",
+        },
     });
     const derived = try SDK.dispatch(&admin, Create, .{
         .type = "address",
-        .document = "{\"title\":\"Home\"}",
+        .document = .{
+            .text = "{\"title\":\"Home\"}",
+        },
     });
 
     try std.testing.expectEqualStrings("home", first.slug.?);
@@ -1143,11 +1249,15 @@ test "a slug field that refuses taken slugs: a given one conflicts, a derived on
 
     const kept = try SDK.dispatch(&admin, Create, .{
         .type = "address",
-        .document = "{\"title\":\"Admin\"}",
+        .document = .{
+            .text = "{\"title\":\"Admin\"}",
+        },
     });
     const typed_kept = SDK.dispatch(&admin, Create, .{
         .type = "address",
-        .document = "{\"title\":\"X\",\"slug\":\"admin\"}",
+        .document = .{
+            .text = "{\"title\":\"X\",\"slug\":\"admin\"}",
+        },
     });
 
     try std.testing.expectEqualStrings("admin-2", kept.slug.?);
@@ -1173,7 +1283,9 @@ test "anonymous callers see live records of public types only; private types are
     private.public = false;
     const private_definition = try model.content_type.encode(harness.fixed.allocator(), private);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = private_definition,
+        .definition = .{
+            .text = private_definition,
+        },
     });
 
     const draft = try SDK.dispatch(
@@ -1181,7 +1293,9 @@ test "anonymous callers see live records of public types only; private types are
         Create,
         .{
             .type = "post",
-            .document = example_document,
+            .document = .{
+                .text = example_document,
+            },
         },
     );
     const live = try fixture.published(&admin, "post", "{\"title\":\"Live one\",\"body\":\"y\"}");
@@ -1211,7 +1325,9 @@ test "anonymous callers see live records of public types only; private types are
         error.Denied,
         SDK.dispatch(&anon, Create, .{
             .type = "post",
-            .document = example_document,
+            .document = .{
+                .text = example_document,
+            },
         }),
     );
 
@@ -1219,7 +1335,9 @@ test "anonymous callers see live records of public types only; private types are
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&anon, types.Create, .{
-            .definition = private_definition,
+            .definition = .{
+                .text = private_definition,
+            },
         }),
     );
 
@@ -1232,7 +1350,9 @@ test "anonymous callers see live records of public types only; private types are
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&editor, types.Create, .{
-            .definition = private_definition,
+            .definition = .{
+                .text = private_definition,
+            },
         }),
     );
 
@@ -1273,17 +1393,23 @@ test "list across types: every readable type, the ones named, exclusions, one-ty
     private.public = false;
     const private_definition = try model.content_type.encode(harness.fixed.allocator(), private);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = private_definition,
+        .definition = .{
+            .text = private_definition,
+        },
     });
     _ = try SDK.dispatch(&admin, Create, .{
         .type = "post",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     });
     _ = try fixture.published(&admin, "post", "{\"title\":\"Live one\",\"body\":\"y\"}");
     _ = try fixture.published(&admin, "note", "{\"title\":\"Secret\",\"body\":\"z\"}");
     _ = try SDK.dispatch(&editor, Create, .{
         .type = "note",
-        .document = "{\"title\":\"Mine\",\"body\":\"m\",\"views\":7}",
+        .document = .{
+            .text = "{\"title\":\"Mine\",\"body\":\"m\",\"views\":7}",
+        },
     });
 
     const everything = try SDK.dispatch(&editor, List, .{
@@ -1391,7 +1517,9 @@ test "list by a type's own fields: clauses on fields, an order by one; one type 
     note.handle = "note";
     note.name = "Note";
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = try model.content_type.encode(harness.fixed.allocator(), note),
+        .definition = .{
+            .text = try model.content_type.encode(harness.fixed.allocator(), note),
+        },
     });
     const documents_given = [_][]const u8{
         "{\"title\":\"Alpha\",\"body\":\"<p>a</p>\",\"views\":10}",
@@ -1402,7 +1530,9 @@ test "list by a type's own fields: clauses on fields, an order by one; one type 
     for (documents_given) |given| {
         _ = try SDK.dispatch(&admin, Create, .{
             .type = "post",
-            .document = given,
+            .document = .{
+                .text = given,
+            },
         });
     }
 
@@ -1470,7 +1600,9 @@ test "validate reports problems; filters and search go through the projection" {
         Validate,
         .{
             .type = "post",
-            .document = "{\"body\":1,\"extra\":true}",
+            .document = .{
+                .text = "{\"body\":1,\"extra\":true}",
+            },
         },
     );
     try std.testing.expect(!report.valid);
@@ -1481,7 +1613,9 @@ test "validate reports problems; filters and search go through the projection" {
         Create,
         .{
             .type = "post",
-            .document = "{\"title\":\"Ten\",\"body\":\"about apples\",\"views\":10}",
+            .document = .{
+                .text = "{\"title\":\"Ten\",\"body\":\"about apples\",\"views\":10}",
+            },
         },
     );
     _ = try SDK.dispatch(
@@ -1489,7 +1623,9 @@ test "validate reports problems; filters and search go through the projection" {
         Create,
         .{
             .type = "post",
-            .document = "{\"title\":\"Twenty\",\"body\":\"about pears\",\"views\":20}",
+            .document = .{
+                .text = "{\"title\":\"Twenty\",\"body\":\"about pears\",\"views\":20}",
+            },
         },
     );
 
@@ -1542,19 +1678,25 @@ test "slug comes from the slug field's source; type update re-indexes existing r
         \\ {"name":"age","label":"Age","kind":"integer"}]}
     ;
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = definition,
+        .definition = .{
+            .text = definition,
+        },
     });
 
     const ada_document = "{\"name\":\"Ada L.\",\"age\":36}";
     const ada = try SDK.dispatch(&admin, Create, .{
         .type = "person",
-        .document = ada_document,
+        .document = .{
+            .text = ada_document,
+        },
     });
     try std.testing.expectEqualStrings("ada-l", ada.slug.?);
 
     const explicit = try SDK.dispatch(&admin, Create, .{
         .type = "person",
-        .document = "{\"name\":\"Grace\",\"handle\":\"amazing-grace\",\"age\":45}",
+        .document = .{
+            .text = "{\"name\":\"Grace\",\"handle\":\"amazing-grace\",\"age\":45}",
+        },
     });
     try std.testing.expectEqualStrings("amazing-grace", explicit.slug.?);
 
@@ -1578,7 +1720,9 @@ test "slug comes from the slug field's source; type update re-indexes existing r
         types.Update,
         .{
             .type = "person",
-            .definition = widened,
+            .definition = .{
+                .text = widened,
+            },
         },
     );
     try std.testing.expectEqual(@as(u32, 2), evolved.records_rewritten);
@@ -1603,7 +1747,9 @@ test "slug comes from the slug field's source; type update re-indexes existing r
         types.Update,
         .{
             .type = "person",
-            .definition = narrowed,
+            .definition = .{
+                .text = narrowed,
+            },
         },
     );
     try std.testing.expectError(error.Failed, refused);
@@ -1612,7 +1758,9 @@ test "slug comes from the slug field's source; type update re-indexes existing r
 
     const dropped = try SDK.dispatch(&admin, types.Update, .{
         .type = "person",
-        .definition = narrowed,
+        .definition = .{
+            .text = narrowed,
+        },
         .drop_content = true,
     });
     try std.testing.expectEqual(@as(u32, 2), dropped.values_dropped);
@@ -1624,7 +1772,9 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     ;
     const invalid = SDK.dispatch(&admin, types.Update, .{
         .type = "person",
-        .definition = shape,
+        .definition = .{
+            .text = shape,
+        },
     });
     try std.testing.expectError(error.Invalid, invalid);
 }
@@ -1646,7 +1796,9 @@ test "referrers: reverse index of reference values, filtered by what the caller 
         Create,
         .{
             .type = "post",
-            .document = example_document,
+            .document = .{
+                .text = example_document,
+            },
         },
     );
     const pointing_document = try std.fmt.allocPrint(
@@ -1659,7 +1811,9 @@ test "referrers: reverse index of reference values, filtered by what the caller 
         Create,
         .{
             .type = "post",
-            .document = pointing_document,
+            .document = .{
+                .text = pointing_document,
+            },
         },
     );
 
@@ -1693,11 +1847,15 @@ test "adding a slug field to a type backfills existing records, duplicates get s
         \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
     ;
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = without,
+        .definition = .{
+            .text = without,
+        },
     });
     const abc: Create.In = .{
         .type = "hotel",
-        .document = "{\"name\":\"ABC\"}",
+        .document = .{
+            .text = "{\"name\":\"ABC\"}",
+        },
     };
     const first = try SDK.dispatch(&admin, Create, abc);
     const second = try SDK.dispatch(&admin, Create, abc);
@@ -1710,7 +1868,9 @@ test "adding a slug field to a type backfills existing records, duplicates get s
     ;
     const updated = try SDK.dispatch(&admin, types.Update, .{
         .type = "hotel",
-        .definition = with_slug,
+        .definition = .{
+            .text = with_slug,
+        },
     });
     try std.testing.expectEqual(@as(u32, 2), updated.records_rewritten);
 
@@ -1740,38 +1900,50 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     });
     const term_operations = @import("term.zig");
     const unknown_taxonomy = SDK.dispatch(&admin, types.Create, .{
-        .definition =
-        \\{"handle":"article","name":"Article","fields":[
-        \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
-        \\{"name":"topics","label":"Topics","kind":"terms","many":true,
-        \\"options":{"taxonomy":"topics"}}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"article","name":"Article","fields":[
+            \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
+            \\{"name":"topics","label":"Topics","kind":"terms","many":true,
+            \\"options":{"taxonomy":"topics"}}]}
+            ,
+        },
     });
     try std.testing.expectError(error.Invalid, unknown_taxonomy);
 
     _ = try SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition = taxonomies.example_definition,
+        .definition = .{
+            .text = taxonomies.example_definition,
+        },
     });
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition =
-        \\{"handle":"article","name":"Article","public":true,"fields":[
-        \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
-        \\{"name":"topics","label":"Topics","kind":"terms","many":true,
-        \\"options":{"taxonomy":"topics"}}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"article","name":"Article","public":true,"fields":[
+            \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
+            \\{"name":"topics","label":"Topics","kind":"terms","many":true,
+            \\"options":{"taxonomy":"topics"}}]}
+            ,
+        },
     });
     const tech = try term_operations.published(&admin, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
     });
     const engineering = try term_operations.published(&admin, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Engineering\"}",
+        .document = .{
+            .text = "{\"name\":\"Engineering\"}",
+        },
         .parent = tech.id,
     });
     const art = try term_operations.published(&admin, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Art\"}",
+        .document = .{
+            .text = "{\"name\":\"Art\"}",
+        },
     });
 
     const filed = try std.fmt.allocPrint(
@@ -1804,12 +1976,14 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     const got = try SDK.dispatch(&admin, Get, .{
         .id = record.id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, got.document, engineering.id) != null);
-    try std.testing.expect(std.mem.indexOf(u8, got.document, tech.id) == null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, engineering.id) != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, tech.id) == null);
 
     const missing = SDK.dispatch(&admin, Create, .{
         .type = "article",
-        .document = "{\"title\":\"Lost\",\"topics\":[\"nope\"]}",
+        .document = .{
+            .text = "{\"title\":\"Lost\",\"topics\":[\"nope\"]}",
+        },
     });
     try std.testing.expectError(error.Invalid, missing);
     try std.testing.expectError(
@@ -1821,7 +1995,9 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
 
     const moved = try SDK.dispatch(&admin, term_operations.Save, .{
         .id = engineering.id,
-        .document = "{\"name\":\"Engineering\"}",
+        .document = .{
+            .text = "{\"name\":\"Engineering\"}",
+        },
         .parent = art.id,
     });
     try std.testing.expectEqualStrings(art.id, moved.parent.?);
@@ -1858,16 +2034,21 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     const arena = harness.fixed.allocator();
     const term_operations = @import("term.zig");
     _ = try SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition =
-        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
+            \\ "fields":[{"name":"name","label":"Name","kind":"string",
+            \\ "validation":{"required":true}}]}
+            ,
+        },
     });
     const naming_types = SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition =
-        \\{"handle":"tags","name":"Tags","taxonomies":[{"taxonomy":"topics"}],
-        \\ "fields":[{"name":"name","label":"Name","kind":"string"}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"tags","name":"Tags","taxonomies":[{"taxonomy":"topics"}],
+            \\ "fields":[{"name":"name","label":"Name","kind":"string"}]}
+            ,
+        },
     });
     try std.testing.expectError(error.Invalid, naming_types);
 
@@ -1880,7 +2061,9 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     }};
     const unknown = SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = try model.content_type.encode(arena, filed_def),
+        .definition = .{
+            .text = try model.content_type.encode(arena, filed_def),
+        },
     });
     try std.testing.expectError(error.Invalid, unknown);
 
@@ -1890,7 +2073,9 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     const filed_text = try model.content_type.encode(arena, filed_def);
     _ = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = filed_text,
+        .definition = .{
+            .text = filed_text,
+        },
     });
 
     const post = try SDK.dispatch(&admin, types.Get, .{
@@ -1903,7 +2088,9 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
 
     const tech = try term_operations.published(&admin, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
     });
     const filed = try std.fmt.allocPrint(
         arena,
@@ -1912,18 +2099,22 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     );
     const record = try SDK.dispatch(&admin, Create, .{
         .type = "post",
-        .document = filed,
+        .document = .{
+            .text = filed,
+        },
     });
     const got = try SDK.dispatch(&admin, Get, .{
         .id = record.id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, got.document, tech.id) != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, tech.id) != null);
 
     // The definition sent back whole, implicit field and all, changes nothing.
     const sent_back = try model.content_type.encode(arena, post.definition);
     const kept = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = sent_back,
+        .definition = .{
+            .text = sent_back,
+        },
     });
     try std.testing.expectEqual(@as(u32, 0), kept.values_dropped);
     const stored = try SDK.dispatch(&admin, types.Get, .{
@@ -1934,7 +2125,9 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     // Taken off, the field goes and the record reads without it; ticked again, it is back.
     _ = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = try model.content_type.encode(arena, bare.definition),
+        .definition = .{
+            .text = try model.content_type.encode(arena, bare.definition),
+        },
     });
     const off = try SDK.dispatch(&admin, types.Get, .{
         .type = "post",
@@ -1943,14 +2136,16 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     const after = try SDK.dispatch(&admin, Get, .{
         .id = record.id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, after.document, tech.id) == null);
+    try std.testing.expect(std.mem.indexOf(u8, after.document.text, tech.id) == null);
 
     _ = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = filed_text,
+        .definition = .{
+            .text = filed_text,
+        },
     });
     const back = try SDK.dispatch(&admin, Get, .{
         .id = record.id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, back.document, tech.id) != null);
+    try std.testing.expect(std.mem.indexOf(u8, back.document.text, tech.id) != null);
 }

@@ -17,6 +17,8 @@ export type RevisionsProps = {
   record_title: string;
   record_href: string;
   status: string;
+  /** The status as the person reads it. */
+  status_label: string;
   changed: boolean;
   updated: string;
   updated_by: string;
@@ -30,6 +32,7 @@ export function Revisions({
   record_title,
   record_href,
   status,
+  status_label,
   changed,
   updated,
   updated_by,
@@ -75,9 +78,9 @@ export function Revisions({
           <TableCell>
             <div class="flex flex-wrap items-center gap-3">
               {status === "published" ? (
-                <Status tone="success">{status}</Status>
+                <Status tone="success">{status_label}</Status>
               ) : (
-                <Status tone="neutral">{status}</Status>
+                <Status tone="neutral">{status_label}</Status>
               )}
               {changed && <Status tone="warning">{Publr.t("pending changes aside")}</Status>}
             </div>

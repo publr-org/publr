@@ -14,7 +14,8 @@ not a case: a reader without access is the design working. Administrators only. 
 | `health count` | The cases not kept as they are, plus the translation disagreements not picked yet: what the Settings sidebar shows beside Site Health |
 | `health keep --target <id> [--app <name>]` | Leave a case as it is: the editor's card and the site's restricted payload stay, the case leaves the list until its reason or the number of records pointing changes |
 | `health unlink --target <id> [--app <name>]` | Take the pointer out of every record of the case, live and pending |
-| `health translations` | Where installed translations disagree: per language, each message with every plugin's version (`provider`, `first_party`, `text`), the one `chosen` (empty while the first-party one shows), how many are `open`, and each language's `coverage` per domain |
+| `health translations [--after <next>]` | Where installed translations disagree: per language, each message with every plugin's version (`provider`, `first_party`, `text`), the one `chosen` (empty while the first-party one shows), and how many are `open`; 200 a page, `next` continues it |
+| `health coverage [--after <next>]` | Each language's `coverage` per domain: how many messages it translates, of how many, by which plugins; 200 a page |
 | `health choose_translation --locale <code> --id <message> --provider <plugin> [--context <c>]` | Show that plugin's translation of the message; an empty `--provider` goes back to the first-party one |
 | `health missing_translations --locale <code> --domain <name>` | The messages of a domain (`publr`, or a plugin's name) the language does not translate yet, as a `.pot` |
 

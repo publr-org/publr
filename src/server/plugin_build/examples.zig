@@ -33,9 +33,11 @@ pub fn run(
     std.debug.assert(manifest_json.len > 0);
 
     const arena = init.arena.allocator();
-    const manifest = try std.json.parseFromSliceLeaky(Manifest, arena, manifest_json, .{
+    var manifest = try std.json.parseFromSliceLeaky(Manifest, arena, manifest_json, .{
         .ignore_unknown_fields = true,
     });
+
+    try @import("../../model/sandboxed_plugin.zig").resolve_shapes(arena, &manifest);
     const dir = try std.fmt.allocPrint(arena, "{s}.examples", .{built});
     const db_path = try std.fs.path.joinZ(arena, &.{ dir, "publr.db" });
 

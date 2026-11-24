@@ -31,22 +31,28 @@ pub const Apply = struct {
     pub const description = "Pass values through every modifier of a name";
     pub const details =
         \\`values` is a JSON array; each modifier taking `name` changes them in turn, and the
-        \\array comes back as the last left it. A value a modifier cannot read, or whose
-        \\modifier fails, stays as it was. What `ctx.mod` calls; any plugin may.
+        \\array comes back as the last left it. A value a modifier cannot read as its type
+        \\stays as it was. A modifier that fails (out of its time, its memory or its calls,
+        \\or stopped) refuses the call with `ModifierFailed`: the values never come back
+        \\unchanged without a word. What `ctx.mod` calls; any plugin may.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = mods.Apply.In;
     pub const Out = mods.Apply.Out;
     pub const example: In = .{
         .name = "checkout.methods",
-        .values = "[[{\"name\":\"Courier\"}]]",
+        .values = .{
+            .text = "[[{\"name\":\"Courier\"}]]",
+        },
     };
     pub const example_out: Out = .{
-        .values = "[[{\"name\":\"Courier\"}]]",
+        .values = .{
+            .text = "[[{\"name\":\"Courier\"}]]",
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .name = "The name the values are applied under: dotted parts of a-z, 0-9 and _",
-        .values = "The values, as a JSON array, up to 200",
+        .values = "The values, a JSON array, up to 200",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .values = "The values as the modifiers left them, a JSON array in the same order",
@@ -55,15 +61,40 @@ pub const Apply = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
-        if (!mods.valid(in.name, false) or in.values.len > 1 << 20) {
+        if (!mods.valid(in.name, false)) {
             return error.Invalid;
         }
 
-        const parsed = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, in.values, .{
-            .allocate = .alloc_always,
-        }) catch return error.Invalid;
+        // A plugin's values: held laid out, changed where its caller finds them.
+        if (ctx.applying) |held| {
+            ctx.applying = null;
+            held.* = try registry.SDK.modify_held(ctx, in.name, held.*);
 
-        if (parsed != .array or parsed.array.items.len > mods.items_max) {
+            return .{
+                .values = in.values,
+            };
+        }
+
+        return from_edge(ctx, in);
+    }
+
+    /// The outer edge's values, a JSON array: read once, written once, here.
+    fn from_edge(ctx: *Ctx, in: In) Error!Out {
+        const given = in.values.text;
+
+        std.debug.assert(ctx.applying == null);
+
+        if (given.len > values_bytes_max) {
+            return error.Invalid;
+        }
+
+        const parsed = std.json.parseFromSliceLeaky([]std.json.Value, ctx.arena, given, .{
+            .allocate = .alloc_always,
+        }) catch |err| {
+            return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+        };
+
+        if (parsed.len > mods.items_max) {
             return error.Invalid;
         }
 
@@ -74,18 +105,24 @@ pub const Apply = struct {
         }
 
         var batch: mods.Batch = .{
-            .items = parsed.array.items,
+            .items = parsed,
         };
 
         try registry.SDK.modify(ctx, in.name, &batch);
 
+        const changed = std.json.Stringify.valueAlloc(ctx.arena, batch.items, .{}) catch {
+            return error.OutOfMemory;
+        };
+
         return .{
-            .values = std.json.Stringify.valueAlloc(ctx.arena, batch.items, .{}) catch {
-                return error.OutOfMemory;
+            .values = .{
+                .text = changed,
             },
         };
     }
 };
+
+const values_bytes_max: u32 = 1 << 20;
 
 pub const Changed = struct {
     pub const name = "mod.changed";
@@ -121,6 +158,10 @@ pub const Changed = struct {
         const key = std.fmt.allocPrint(ctx.arena, "mod:{s}", .{in.name}) catch {
             return error.OutOfMemory;
         };
+
+        // What this call read of the site's currencies is read again after the change.
+        ctx.site_currencies = null;
+
         var index: deps.Index = .{
             .db = ctx.db,
             .options = .{
@@ -206,16 +247,22 @@ test "applied under a name with no modifier, values come back as they went; bad 
 
     const kept = try SDK.dispatch(&system, Apply, .{
         .name = "nobody.modifies",
-        .values = "[1,{\"a\":2}]",
+        .values = .{
+            .text = "[1,{\"a\":2}]",
+        },
     });
-    try std.testing.expectEqualStrings("[1,{\"a\":2}]", kept.values);
+    try std.testing.expectEqualStrings("[1,{\"a\":2}]", kept.values.text);
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Apply, .{
         .name = "*.title",
-        .values = "[]",
+        .values = .{
+            .text = "[]",
+        },
     }));
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Apply, .{
         .name = "x.y",
-        .values = "{}",
+        .values = .{
+            .text = "{}",
+        },
     }));
     _ = try SDK.dispatch(&system, List, .{});
 }
@@ -246,9 +293,11 @@ test "a visitor's call applies values too: modifiers only read, with their own g
 
     const kept = try SDK.dispatch(&visitor, Apply, .{
         .name = "checkout.methods",
-        .values = "[[]]",
+        .values = .{
+            .text = "[[]]",
+        },
     });
-    try std.testing.expectEqualStrings("[[]]", kept.values);
+    try std.testing.expectEqualStrings("[[]]", kept.values.text);
     try std.testing.expectError(error.Denied, SDK.dispatch(&visitor, List, .{}));
 }
 
@@ -283,10 +332,12 @@ test "an installed modifier on `greeter.*` changes each value applied as `greete
 
     const changed = try SDK.dispatch(&ctx, Apply, .{
         .name = "greeter.count",
-        .values = "[2,40,\"not a number\"]",
+        .values = .{
+            .text = "[2,40,\"not a number\"]",
+        },
     });
 
-    try std.testing.expectEqualStrings("[3,41,\"not a number\"]", changed.values);
+    try std.testing.expectEqualStrings("[3,41,\"not a number\"]", changed.values.text);
 
     const listed = try SDK.dispatch(&ctx, List, .{});
     var found = false;

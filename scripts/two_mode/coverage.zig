@@ -65,6 +65,14 @@ const exercised = [_]Part{
         .where = "sampler's field group on users",
     },
     .{
+        .name = "request",
+        .where = "sampler's `ref` query parameter, read by its referral",
+    },
+    .{
+        .name = "user_types",
+        .where = "sampler's sample_member, listed by `user_type list`",
+    },
+    .{
         .name = "roles",
         .where = "greeter's grants to editor",
     },
@@ -183,6 +191,10 @@ const exercised = [_]Part{
     .{
         .name = "values",
         .where = "sampler echo --mood angry",
+    },
+    .{
+        .name = "ledger",
+        .where = "sampler's tips, moved by `sampler tip`, read by `ledger accounts`",
     },
     .{
         .name = "internal_records",
@@ -313,6 +325,18 @@ const sandbox_only = [_]Part{
         .where = "the module's own format number",
     },
     .{
+        .name = "input_shape",
+        .where = "where the module keeps an operation's input, in its `shapes`",
+    },
+    .{
+        .name = "output_shape",
+        .where = "where the module keeps an operation's output, in its `shapes`",
+    },
+    .{
+        .name = "shapes",
+        .where = "the module's operation shapes kept once, read back into each operation",
+    },
+    .{
         .name = "depends_on",
         .where = "checked when an installed plugin starts",
     },
@@ -335,6 +359,11 @@ const sandbox_only = [_]Part{
     .{
         .name = "queries",
         .where = "its prepared GROQ texts, parsed when an installed plugin is added or starts",
+    },
+    .{
+        .name = "messages",
+        .where = "the words it marks, counted by a language's coverage; compiled in, the build " ++
+            "embeds them from its sources",
     },
 };
 

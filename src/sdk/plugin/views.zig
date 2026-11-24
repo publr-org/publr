@@ -1,12 +1,15 @@
 //! A plugin's page from its own PTSX view: `publr.views.render(ctx, in.base, Views.SamplerLog,
 //! props)` answers the page's HTML, doctype first, the same either way the plugin runs.
 //! Compiled in, the view and every component it reaches draw in the process. Installed, the
-//! view runs in the plugin and each component of the design system it reaches is drawn by
-//! the host (`publr_render`), so no plugin carries the design system.
+//! view runs in the plugin and describes the page: its own markup and each component of the
+//! design system it reaches, with its props. The host draws them all in one call
+//! (`publr_draw`, `view_wire.zig`), so no plugin carries the design system.
 const std = @import("std");
 const guest = @import("guest.zig");
 const wire = @import("wire.zig");
 const view_wire = @import("view_wire.zig");
+const shape_wire = @import("shape_wire.zig");
+const shape_parts = @import("shape_parts.zig");
 
 const Error = @import("../../sdk.zig").Error;
 
@@ -17,13 +20,11 @@ pub const all = if (guest.mode == .native)
 else
     @import("plugin_views");
 
-extern "env" fn publr_frame(base_ptr: [*]const u8, base_len: u32, result: *wire.Result) u32;
-extern "env" fn publr_render(
-    name_ptr: [*]const u8,
-    name_len: u32,
-    props_ptr: [*]const u8,
-    props_len: u32,
-    result: *wire.Result,
+extern "env" fn publr_frame(
+    base_ptr: [*]const u8,
+    base_len: u32,
+    wanted: *const wire.Result,
+    sizes: *[2]u32,
 ) u32;
 
 /// The page `View` draws with `props`, in the plugin frame under `base`, doctype first. A
@@ -46,44 +47,140 @@ pub fn render(
         return admin.render.document(ctx.arena(), request, View, full) catch error.OutOfMemory;
     }
 
-    var result: wire.Result = .{
-        .ptr = 0,
-        .len = 0,
+    // Who is looking and at what, laid out by the host as this build's own struct.
+    const described = comptime @import("shape_wire.zig").describe(Looked);
+    const wanted: wire.Result = .{
+        .ptr = @intCast(@intFromPtr(described.ptr)),
+        .len = described.len,
     };
-    const status = publr_frame(base.ptr, @intCast(base.len), &result);
+    var sizes: [2]u32 = .{ 0, 0 };
+    const status = publr_frame(base.ptr, @intCast(base.len), &wanted, &sizes);
 
     if (status != wire.ok) {
         return wire.error_of(status);
     }
 
-    const told = guest.take(result);
-    defer std.heap.wasm_allocator.free(told);
-
-    const looking = std.json.parseFromSliceLeaky(Looking, ctx.arena(), told, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch return error.Invalid;
+    const looking = try guest.taken_as(Looked, ctx.arena(), sizes);
+    var sketch: Sketch = .{
+        .memory = ctx.arena(),
+    };
+    const arena = sketch.allocator();
     var out: std.Io.Writer.Allocating = .init(ctx.arena());
+    var full = props_of(View.Props, props, looking, arena);
 
-    // JSX has no doctype; every page starts with one, as compiled in.
-    out.writer.writeAll("<!doctype html>\n") catch return error.OutOfMemory;
-    const full = props_of(View.Props, props, looking, ctx.arena());
+    // The view's own words in the person's language, looked up by the host.
+    if (comptime @hasField(View.Props, "publr_request") and @hasDecl(all, "request_module")) {
+        full.publr_request = try translating(ctx.arena());
+    }
 
-    View.render(&out.writer, ctx.arena(), full) catch |err| {
+    View.render(&out.writer, arena, full) catch |err| {
         return as_error(err);
     };
 
-    return out.written();
+    // One hand-over: the host draws every component and answers the page, doctype first.
+    return sketch.drawn(out.written());
 }
 
 const Looking = @import("../context.zig").View;
+const Laid = @import("../operation/json.zig").Laid;
+
+/// `Looking` as an installed plugin's module is handed it: an editor's value read where it
+/// lies, with what it reads as when it is kept as text holding JSON.
+const Looked = struct {
+    person: Looking.Person = .{},
+    page: Looking.Page = .{},
+    editor: ?Editor = null,
+
+    const Editor = struct {
+        value: Laid = .{},
+        parsed: ?Laid = null,
+        problems: []const []const u8 = &.{},
+        options: Looking.Options = .{},
+    };
+};
+
+/// What a view is told about who is looking, in the form this build holds it.
+const Told = if (guest.mode == .sandboxed) Looked else Looking;
+
+extern "env" fn publr_translate(asked: *const wire.Message, result: *wire.Result) u32;
+
+/// A render's request whose catalogue asks the host: `Publr.t` in an installed plugin's
+/// view reads the person's language as a compiled-in one's does.
+fn translating(arena: std.mem.Allocator) Error!*const anyopaque {
+    const Request = all.request_module.Request;
+    const Translator = all.runtime_module.Translator;
+    const held = arena.create(std.mem.Allocator) catch return error.OutOfMemory;
+    const translator = arena.create(Translator) catch return error.OutOfMemory;
+    const request = arena.create(Request) catch return error.OutOfMemory;
+
+    held.* = arena;
+    translator.* = .{
+        .context = held,
+        .lookup = &looked_up,
+    };
+    request.* = .{
+        .session = .{
+            .name = "",
+            .email = "",
+            .csrf = "",
+            .avatar = "",
+        },
+        .admin = .{
+            .base = "",
+            .path = "",
+            .area = "",
+            .can_structure = false,
+            .can_settings = false,
+            .top_bar = null,
+            .sidebar = null,
+            .framed = true,
+            .grows = true,
+        },
+        .publr_translations = translator,
+    };
+
+    std.debug.assert(request.publr_translations != null);
+
+    return request;
+}
+
+/// One message as the host's catalogue has it in the person's language; null for none.
+fn looked_up(
+    context: *const anyopaque,
+    message_context: []const u8,
+    id: []const u8,
+    plural: []const u8,
+    count: ?f64,
+) ?[]const u8 {
+    const arena: *const std.mem.Allocator = @ptrCast(@alignCast(context));
+    const asked = wire.Message.of(message_context, id, plural, count);
+    var result: wire.Result = .{
+        .ptr = 0,
+        .len = 0,
+    };
+
+    std.debug.assert(id.len > 0);
+
+    if (publr_translate(&asked, &result) != wire.ok) {
+        return null;
+    }
+
+    const told = guest.take(result);
+    defer @import("guest_memory.zig").heap.free(told);
+
+    if (told.len == 0) {
+        return null;
+    }
+
+    return arena.dupe(u8, told) catch null;
+}
 
 /// `props` as the view's `Props`: each prop from `props`, an integer where a number is asked
 /// taken as it is, else its default; `ctx` from `looking`.
 fn props_of(
     comptime Props: type,
     props: anytype,
-    looking: Looking,
+    looking: Told,
     arena: std.mem.Allocator,
 ) Props {
     const Given = @TypeOf(props);
@@ -97,7 +194,7 @@ fn props_of(
         if (comptime std.mem.eql(u8, field_name, "ctx")) {
             @field(full, field_name) = ctx_of(FieldType, looking, arena);
         } else if (@hasField(Given, field_name)) {
-            @field(full, field_name) = number_or(FieldType, @field(props, field_name));
+            @field(full, field_name) = converted(FieldType, @field(props, field_name), arena);
         } else if (comptime field_attrs.defaultValue(FieldType) != null) {
             @field(full, field_name) = comptime field_attrs.defaultValue(FieldType).?;
         } else {
@@ -114,25 +211,88 @@ fn props_of(
     return full;
 }
 
-/// `value` as a prop of type `Prop`: an integer for a number converted.
-fn number_or(comptime Prop: type, value: anytype) Prop {
-    const number = Prop == f64 or Prop == ?f64;
+/// `value` as a prop of type `Prop`, at any depth: an integer where a number is asked as a
+/// number, a struct's fields by name (a field left out takes its default), a list item by
+/// item. Out of memory for a list, the prop's default stands: an empty list.
+fn converted(comptime Prop: type, value: anytype, arena: std.mem.Allocator) Prop {
+    const Value = @TypeOf(value);
 
     comptime std.debug.assert(@typeInfo(Prop) != .void);
 
-    if (comptime number and @typeInfo(@TypeOf(value)) == .int) {
-        return @floatFromInt(value);
+    if (comptime Prop == Value) {
+        return value;
     }
 
-    return value;
+    switch (comptime @typeInfo(Prop)) {
+        .float => if (comptime @typeInfo(Value) == .int or @typeInfo(Value) == .comptime_int) {
+            return @floatFromInt(value);
+        } else {
+            return value;
+        },
+        .optional => |optional| {
+            if (comptime @typeInfo(Value) == .optional) {
+                const present = value orelse return null;
+
+                return converted(optional.child, present, arena);
+            }
+
+            if (comptime Value == @TypeOf(null)) {
+                return null;
+            }
+
+            return converted(optional.child, value, arena);
+        },
+        .pointer => |pointer| {
+            if (comptime pointer.size != .slice or pointer.child == u8 or
+                @typeInfo(Value) != .pointer)
+            {
+                return value;
+            }
+
+            const Item = pointer.child;
+            const items = arena.alloc(Item, value.len) catch return &.{};
+
+            for (value, items) |one, *item| {
+                item.* = converted(Item, one, arena);
+            }
+
+            return items;
+        },
+        .@"struct" => |shape| {
+            if (comptime @typeInfo(Value) != .@"struct") {
+                return value;
+            }
+
+            var out: Prop = undefined;
+
+            inline for (shape.field_names, shape.field_types, shape.field_attrs) |
+                field_name,
+                FieldType,
+                field_attrs,
+            | {
+                if (comptime @hasField(Value, field_name)) {
+                    const given = @field(value, field_name);
+
+                    @field(out, field_name) = converted(FieldType, given, arena);
+                } else if (comptime field_attrs.defaultValue(FieldType)) |default| {
+                    @field(out, field_name) = default;
+                } else {
+                    @compileError("the view's prop has no ." ++ field_name ++ " given");
+                }
+            }
+
+            return out;
+        },
+        else => return value,
+    }
 }
 
 /// The view's `ctx` as it declares it: `person` and `page` filled from `looking`, and in a
 /// field kind's editor `value`, `problems` and `options`; what only the browser has
 /// (`query`, `call`, `navigate`, `change`) is null here.
-fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
+fn ctx_of(comptime Ctx: type, looking: Told, arena: std.mem.Allocator) Ctx {
     var out: Ctx = undefined;
-    const editor = looking.editor orelse Looking.Editor{};
+    const editor = looking.editor orelse Told.Editor{};
 
     inline for (
         comptime std.meta.fieldNames(Ctx),
@@ -143,7 +303,10 @@ fn ctx_of(comptime Ctx: type, looking: Looking, arena: std.mem.Allocator) Ctx {
         } else if (comptime std.mem.eql(u8, field_name, "page")) {
             @field(out, field_name) = part_of(FieldType, looking.page);
         } else if (comptime std.mem.eql(u8, field_name, "value")) {
-            @field(out, field_name) = value_of(FieldType, editor.value, arena);
+            @field(out, field_name) = if (comptime Told == Looked)
+                value_laid(FieldType, editor, arena)
+            else
+                value_of(FieldType, editor.value, arena);
         } else if (comptime std.mem.eql(u8, field_name, "problems")) {
             @field(out, field_name) = editor.problems;
         } else if (comptime std.mem.eql(u8, field_name, "options")) {
@@ -191,6 +354,31 @@ fn value_of(comptime Value: type, value: std.json.Value, arena: std.mem.Allocato
     return parsed catch none;
 }
 
+/// `value_of` in an installed plugin's module: the value read where it lies.
+fn value_laid(comptime Value: type, editor: Looked.Editor, arena: std.mem.Allocator) Value {
+    const optional = @typeInfo(Value) == .optional;
+    const Shape = if (optional) @typeInfo(Value).optional.child else Value;
+    const none: Value = if (optional) null else std.mem.zeroes(Shape);
+    const held = editor.value.read(arena) catch return none;
+
+    comptime std.debug.assert(@typeInfo(Shape) != .void);
+
+    if (held.is_null()) {
+        return none;
+    }
+
+    // A struct kept as text holding JSON: what the text reads as.
+    if (comptime @typeInfo(Shape) == .@"struct") {
+        if (held.kind() == .text) {
+            const parsed = editor.parsed orelse return none;
+
+            return parsed.as(Shape, arena) catch none;
+        }
+    }
+
+    return editor.value.as(Shape, arena) catch none;
+}
+
 fn part_of(comptime Part: type, from: anytype) Part {
     var out: Part = undefined;
 
@@ -203,8 +391,9 @@ fn part_of(comptime Part: type, from: anytype) Part {
     return out;
 }
 
-/// A stand-in's `render`: `name` drawn by the host with `props`, its node props drawn here
-/// first.
+/// A stand-in's `render`: `name` with `props` joins the page's components, to be drawn by
+/// the host with the rest of the page, and a placeholder is written where it goes. Its node
+/// props are written here first, as markup with placeholders of their own.
 pub fn draw(
     writer: *std.Io.Writer,
     arena: std.mem.Allocator,
@@ -213,42 +402,153 @@ pub fn draw(
     props: Props,
 ) !void {
     comptime std.debug.assert(guest.mode == .sandboxed);
-    std.debug.assert(name.len > 0);
+    comptime std.debug.assert(name.len > 0 and name.len <= view_wire.name_len_max);
 
-    const text = try view_wire.encode(arena, Props, props, Nodes{
-        .arena = arena,
-    });
-    var result: wire.Result = .{
-        .ptr = 0,
-        .len = 0,
-    };
-    const status = publr_render(name.ptr, name.len, text.ptr, @intCast(text.len), &result);
+    const sketch = Sketch.of(arena) orelse return error.Invalid;
+    const kept = try sketch.memory.create(Props);
 
-    if (status != wire.ok) {
-        return wire.error_of(status);
+    kept.* = props;
+
+    inline for (comptime std.meta.fieldNames(Props)) |field_name| {
+        if (comptime view_wire.node_of(@FieldType(Props, field_name)) != null) {
+            @field(kept, field_name) = .{
+                .raw = try sketch.written(@field(props, field_name), arena),
+            };
+        }
     }
 
-    const html = guest.take(result);
-    defer std.heap.wasm_allocator.free(html);
+    const described = comptime view_wire.describe(Props);
+    const number = sketch.components.items.len;
 
-    try writer.writeAll(html);
+    if (number >= view_wire.components_max) {
+        return error.Invalid;
+    }
+
+    var table: std.ArrayList(shape_wire.Entry) = .empty;
+
+    if (comptime shape_parts.has_choice(Props)) {
+        try shape_parts.table_of(Props, sketch.memory, kept, &table);
+    }
+
+    try sketch.components.append(sketch.memory, .{
+        .name = @intCast(@intFromPtr(name.ptr)),
+        .name_len = name.len,
+        .described = @intCast(@intFromPtr(described.ptr)),
+        .described_len = described.len,
+        .props = @intCast(@intFromPtr(kept)),
+        .table = @intCast(@intFromPtr(table.items.ptr)),
+        .table_len = @intCast(table.items.len),
+    });
+    try view_wire.write_placeholder(writer, @intCast(number));
 }
 
-/// Draws a node prop where the view runs, for the wire.
-const Nodes = struct {
-    arena: std.mem.Allocator,
+/// A size as an allocator takes it.
+const Bytes = usize;
 
-    pub fn node(nodes: Nodes, given: anytype) view_wire.Error![]const u8 {
-        std.debug.assert(given.raw != null or given.render_fn != null);
+extern "env" fn publr_draw(page: *const view_wire.Page, result: *wire.Result) u32;
 
-        var out: std.Io.Writer.Allocating = .init(nodes.arena);
+/// A page while its view runs: the components it reached so far. The view and everything
+/// it renders get `allocator()`, the plugin's own memory under a name a stand-in knows the
+/// page by.
+const Sketch = struct {
+    memory: std.mem.Allocator,
+    components: std.ArrayList(view_wire.Component) = .empty,
 
-        given.render(&out.writer, nodes.arena, .{}) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => return error.WriteFailed,
+    const forwarding: std.mem.Allocator.VTable = .{
+        .alloc = alloc,
+        .resize = resize,
+        .remap = remap,
+        .free = free,
+    };
+
+    fn allocator(sketch: *Sketch) std.mem.Allocator {
+        return .{
+            .ptr = sketch,
+            .vtable = &forwarding,
         };
+    }
 
-        return out.written();
+    /// The page `arena` belongs to; null for memory no page handed out.
+    fn of(arena: std.mem.Allocator) ?*Sketch {
+        if (arena.vtable != &forwarding) {
+            return null;
+        }
+
+        return @ptrCast(@alignCast(arena.ptr));
+    }
+
+    /// A node prop as markup: null for one left out, empty for one that writes nothing.
+    fn written(sketch: *Sketch, given: anytype, arena: std.mem.Allocator) !?[]const u8 {
+        std.debug.assert(Sketch.of(arena) == sketch);
+
+        const node = if (comptime @typeInfo(@TypeOf(given)) == .optional)
+            given orelse return null
+        else
+            given;
+        var out: std.Io.Writer.Allocating = .init(sketch.memory);
+
+        try node.render(&out.writer, arena, .{});
+
+        return if (out.written().len == 0) "" else out.written();
+    }
+
+    /// The whole page, drawn by the host from `markup` and the components reached.
+    fn drawn(sketch: *const Sketch, markup: []const u8) Error![]const u8 {
+        std.debug.assert(sketch.components.items.len <= view_wire.components_max);
+
+        const page: view_wire.Page = .{
+            .markup = @intCast(@intFromPtr(markup.ptr)),
+            .markup_len = @intCast(markup.len),
+            .components = @intCast(@intFromPtr(sketch.components.items.ptr)),
+            .components_len = @intCast(sketch.components.items.len),
+        };
+        var result: wire.Result = .{
+            .ptr = 0,
+            .len = 0,
+        };
+        const status = publr_draw(&page, &result);
+
+        if (status != wire.ok) {
+            return wire.error_of(status);
+        }
+
+        return guest.take(result);
+    }
+
+    fn alloc(context: *anyopaque, len: Bytes, alignment: std.mem.Alignment, from: Bytes) ?[*]u8 {
+        const sketch: *Sketch = @ptrCast(@alignCast(context));
+
+        return sketch.memory.rawAlloc(len, alignment, from);
+    }
+
+    fn resize(
+        context: *anyopaque,
+        memory: []u8,
+        alignment: std.mem.Alignment,
+        new_len: Bytes,
+        from: Bytes,
+    ) bool {
+        const sketch: *Sketch = @ptrCast(@alignCast(context));
+
+        return sketch.memory.rawResize(memory, alignment, new_len, from);
+    }
+
+    fn remap(
+        context: *anyopaque,
+        memory: []u8,
+        alignment: std.mem.Alignment,
+        new_len: Bytes,
+        from: Bytes,
+    ) ?[*]u8 {
+        const sketch: *Sketch = @ptrCast(@alignCast(context));
+
+        return sketch.memory.rawRemap(memory, alignment, new_len, from);
+    }
+
+    fn free(context: *anyopaque, memory: []u8, alignment: std.mem.Alignment, from: Bytes) void {
+        const sketch: *Sketch = @ptrCast(@alignCast(context));
+
+        sketch.memory.rawFree(memory, alignment, from);
     }
 };
 
@@ -261,6 +561,19 @@ fn as_error(err: anyerror) Error {
         error.NotFound => error.NotFound,
         else => error.Invalid,
     };
+}
+
+test "a page's memory is known by the stand-ins it reaches, and no other memory is" {
+    var sketch: Sketch = .{
+        .memory = std.testing.allocator,
+    };
+    const arena = sketch.allocator();
+    const bytes = try arena.alloc(u8, 8);
+    defer arena.free(bytes);
+
+    try std.testing.expect(Sketch.of(arena) == &sketch);
+    try std.testing.expect(Sketch.of(std.testing.allocator) == null);
+    try std.testing.expectEqual(@as(usize, 0), sketch.components.items.len);
 }
 
 test "a view's props take an integer count as it is, and its ctx is who is looking" {
@@ -297,6 +610,40 @@ test "a view's props take an integer count as it is, and its ctx is who is looki
     try std.testing.expectEqualStrings("Ann", full.ctx.person.name);
     try std.testing.expectEqualStrings("week=2", full.ctx.page.query);
     try std.testing.expect(full.ctx.query == null);
+}
+
+test "a view's props convert integers inside lists of structs by field name" {
+    const Row = struct {
+        name: []const u8,
+        nights: f64,
+        paid: ?f64 = null,
+        note: []const u8 = "",
+    };
+    const Props = struct {
+        rows: []const Row,
+    };
+    const Given = struct {
+        name: []const u8,
+        nights: u32,
+        paid: ?i64,
+    };
+    const given = [_]Given{.{
+        .name = "Berth 4",
+        .nights = 3,
+        .paid = 12000,
+    }};
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const full = props_of(Props, .{
+        .rows = @as([]const Given, &given),
+    }, .{}, arena_state.allocator());
+
+    try std.testing.expectEqual(@as(usize, 1), full.rows.len);
+    try std.testing.expectEqual(@as(f64, 3), full.rows[0].nights);
+    try std.testing.expectEqual(@as(?f64, 12000), full.rows[0].paid);
+    try std.testing.expectEqualStrings("", full.rows[0].note);
 }
 
 test "an editor's ctx carries its value, its problems and the field's options" {

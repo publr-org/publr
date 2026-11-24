@@ -134,6 +134,24 @@ pub fn update(
     return statement.read_int();
 }
 
+/// Replaces the document with its computed fields worked out again: the record's version
+/// and its last change stay, as no caller changed it.
+pub fn refresh(connection: *db.Db, scope: Scope, id: []const u8, document: []const u8) Error!void {
+    assert_scope(scope);
+    std.debug.assert(document.len > 0 and document.len <= model.document_bytes_max);
+
+    var statement = try connection.prepare(
+        "UPDATE internal_records SET document = ?5 " ++
+            "WHERE plugin = ?1 AND app = ?2 AND kind = ?3 AND id = ?4",
+    );
+    defer statement.finalize();
+
+    try bind_scope(&statement, scope);
+    try statement.bind_text(4, id);
+    try statement.bind_text(5, document);
+    try statement.exec();
+}
+
 /// Whether the row was there to delete.
 pub fn delete(connection: *db.Db, scope: Scope, id: []const u8) Error!bool {
     assert_scope(scope);
@@ -161,37 +179,189 @@ pub fn list(
     limit: u32,
     offset: u32,
 ) Error![]Row {
+    return listed(connection, arena, scope, match, .{
+        .limit = limit,
+        .offset = offset,
+    });
+}
+
+/// Which page of a scope's records, and from which end.
+pub const Page = struct {
+    limit: u32,
+    offset: u32 = 0,
+    /// The oldest first: the order they were made in.
+    oldest: bool = false,
+    /// A walk's page: the records after this id in id order (ids are time-ordered), the
+    /// empty id for the first page. Found from the index, so the thousandth page costs
+    /// what the first does; `offset` makes the store pass over every record before it.
+    after: ?[]const u8 = null,
+};
+
+const newest_first = " ORDER BY r.created_at DESC, r.id DESC LIMIT ?6 OFFSET ?7";
+const oldest_first = " ORDER BY r.created_at ASC, r.id ASC LIMIT ?6 OFFSET ?7";
+// A lookup starts from the index of values, so it costs the matches, not the collection.
+const from_matched = "FROM internal_record_values v CROSS JOIN internal_records r " ++
+    "ON r.id = v.record WHERE v.field = ?4 AND v.value = ?5 AND " ++ in_scope;
+const from_every = "FROM internal_records r WHERE " ++ in_scope ++ " AND ?4 IS NULL AND ?5 IS NULL";
+const columns = "SELECT r.id, r.document, r.version, r.created_at, r.updated_at ";
+
+/// `list`, from either end.
+pub fn listed(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    scope: Scope,
+    match: ?Match,
+    page: Page,
+) Error![]Row {
     assert_scope(scope);
-    std.debug.assert(limit > 0 and limit <= list_max);
+    std.debug.assert(page.limit > 0 and page.limit <= list_max);
 
-    var select = try connection.prepare(select_row ++
-        " WHERE " ++ in_scope ++ " AND (?4 IS NULL OR EXISTS (" ++
-        "SELECT 1 FROM internal_record_values v WHERE v.record = r.id " ++
-        "AND v.field = ?4 AND v.value = ?5)) " ++
-        "ORDER BY r.created_at DESC, r.id DESC LIMIT ?6 OFFSET ?7");
-    defer select.finalize();
+    if (page.after) |after| {
+        std.debug.assert(page.offset == 0);
 
-    try bind_scope(&select, scope);
-
-    if (match) |wanted| {
-        try select.bind_text(4, wanted.field);
-        try select.bind_text(5, wanted.value);
-    } else {
-        try select.bind_null(4);
-        try select.bind_null(5);
+        return walked(connection, arena, scope, match, page, after);
     }
 
-    try select.bind_int(6, limit);
-    try select.bind_int(7, offset);
+    var select = if (match == null)
+        try connection.prepare_dynamic(if (page.oldest)
+            columns ++ from_every ++ oldest_first
+        else
+            columns ++ from_every ++ newest_first)
+    else
+        try connection.prepare_dynamic(if (page.oldest)
+            columns ++ from_matched ++ oldest_first
+        else
+            columns ++ from_matched ++ newest_first);
+    defer select.finalize();
+
+    try bind_match(&select, scope, match);
+    try select.bind_int(6, page.limit);
+    try select.bind_int(7, page.offset);
 
     var rows: std.ArrayList(Row) = .empty;
 
     while (try select.step()) {
-        std.debug.assert(rows.items.len < limit);
+        std.debug.assert(rows.items.len < page.limit);
         rows.append(arena, try select.read(Row, arena)) catch return error.OutOfMemory;
     }
 
     return rows.items;
+}
+
+// A walk goes by id, from the index of values for a match and from the scope's index of ids
+// for a whole collection: each page starts where the last one ended.
+const walk_matched = columns ++ from_matched;
+const walk_every = columns ++ from_every;
+const walk_oldest_matched = " AND v.record > ?7 ORDER BY v.record ASC LIMIT ?6";
+const walk_newest_matched = " AND v.record < ?7 ORDER BY v.record DESC LIMIT ?6";
+const walk_oldest_every = " AND r.id > ?7 ORDER BY r.id ASC LIMIT ?6";
+const walk_newest_every = " AND r.id < ?7 ORDER BY r.id DESC LIMIT ?6";
+/// Above every id: where a walk from the newest starts. Ids are ASCII and compared byte by
+/// byte.
+const above_every_id = "\xff";
+/// The longest id a walk continues after: an id chosen by its maker may be longer than Publr's
+/// own.
+pub const id_bytes_max: u32 = 64;
+
+fn walked(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    scope: Scope,
+    match: ?Match,
+    page: Page,
+    after: []const u8,
+) Error![]Row {
+    std.debug.assert(page.offset == 0);
+    std.debug.assert(after.len <= id_bytes_max);
+
+    var select = if (match == null)
+        try connection.prepare_dynamic(if (page.oldest)
+            walk_every ++ walk_oldest_every
+        else
+            walk_every ++ walk_newest_every)
+    else
+        try connection.prepare_dynamic(if (page.oldest)
+            walk_matched ++ walk_oldest_matched
+        else
+            walk_matched ++ walk_newest_matched);
+    defer select.finalize();
+
+    try bind_match(&select, scope, match);
+    try select.bind_int(6, page.limit);
+    try select.bind_text(7, if (after.len == 0 and !page.oldest) above_every_id else after);
+
+    var rows: std.ArrayList(Row) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < page.limit);
+        rows.append(arena, try select.read(Row, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
+/// How many records the scope holds; with `match`, how many whose indexed field holds that
+/// text. Counted from the index: no record is read.
+/// The records' whole numbers at `path` (`$.size.tallies`) added up; a record without one,
+/// or with something else there, adds nothing.
+pub fn sum(connection: *db.Db, scope: Scope, match: ?Match, path: []const u8) Error!i64 {
+    assert_scope(scope);
+    std.debug.assert(std.mem.startsWith(u8, path, "$."));
+
+    const added = "SELECT COALESCE(SUM(CASE WHEN json_type(r.document, ?6) = 'integer' " ++
+        "THEN json_extract(r.document, ?6) ELSE 0 END), 0) ";
+    var select = if (match == null)
+        try connection.prepare(added ++ from_every)
+    else
+        try connection.prepare(added ++ from_matched);
+    defer select.finalize();
+
+    try bind_match(&select, scope, match);
+    try select.bind_text(6, path);
+
+    if (!try select.step()) {
+        return 0;
+    }
+
+    return select.read_int();
+}
+
+pub fn count(connection: *db.Db, scope: Scope, match: ?Match) Error!u64 {
+    assert_scope(scope);
+
+    var select = if (match == null)
+        try connection.prepare("SELECT COUNT(*) " ++ from_every)
+    else
+        try connection.prepare("SELECT COUNT(*) " ++ from_matched);
+    defer select.finalize();
+
+    try bind_match(&select, scope, match);
+
+    if (!try select.step()) {
+        return 0;
+    }
+
+    const counted = select.read_int();
+
+    std.debug.assert(counted >= 0);
+
+    return @intCast(counted);
+}
+
+fn bind_match(statement: *db.Statement, scope: Scope, match: ?Match) Error!void {
+    assert_scope(scope);
+
+    try bind_scope(statement, scope);
+
+    if (match) |wanted| {
+        std.debug.assert(wanted.field.len > 0);
+
+        try statement.bind_text(4, wanted.field);
+        try statement.bind_text(5, wanted.value);
+    } else {
+        try statement.bind_null(4);
+        try statement.bind_null(5);
+    }
 }
 
 fn bind_scope(statement: *db.Statement, scope: Scope) Error!void {
@@ -416,4 +586,128 @@ test "expired records go, in every app, by their creation or last change" {
     try std.testing.expectEqual(0, other_kind);
     try std.testing.expectEqual(2, created);
     try std.testing.expectEqual(0, again);
+}
+
+test "a lookup by an indexed field finds its records from the index, newest first" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    const connection = &fixture.connection;
+    const values = @import("internal_record_values.zig");
+    const scope: Scope = .{
+        .plugin = "orders",
+        .app = "",
+        .kind = "transfer",
+    };
+    var buffer: [4096]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+    const made = [_][]const u8{
+        "b00000000000000000000001",
+        "b00000000000000000000002",
+        "b00000000000000000000003",
+    };
+    const keys = [_][]const u8{ "t1", "t2", "t1" };
+
+    for (made, keys, 0..) |id, key, at| {
+        try insert_as(connection, scope, id, "{}", @intCast(at + 1));
+        try values.replace(connection, id, &.{.{
+            .field = "key",
+            .value = key,
+        }});
+    }
+
+    const found = try list(connection, fixed.allocator(), scope, .{
+        .field = "key",
+        .value = "t1",
+    }, 10, 0);
+
+    try std.testing.expectEqual(@as(usize, 2), found.len);
+    try std.testing.expectEqualStrings(made[2], found[0].id);
+    const every = try list(connection, fixed.allocator(), scope, null, 10, 0);
+
+    try std.testing.expectEqual(@as(usize, 3), every.len);
+
+    var other = scope;
+
+    other.kind = "account";
+    try std.testing.expectEqual(@as(usize, 0), (try list(connection, fixed.allocator(), other, .{
+        .field = "key",
+        .value = "t1",
+    }, 10, 0)).len);
+}
+
+test "a walk goes page after page by id, from either end, with or without a match" {
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    const connection = &fixture.connection;
+    const values = @import("internal_record_values.zig");
+    const scope: Scope = .{
+        .plugin = "orders",
+        .app = "",
+        .kind = "line",
+    };
+    var other = scope;
+    var buffer: [16384]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+    const made = [_][]const u8{
+        "c00000000000000000000001",
+        "c00000000000000000000002",
+        "c00000000000000000000003",
+        "c00000000000000000000004",
+        "c00000000000000000000005",
+    };
+    const orders = [_][]const u8{ "o1", "o2", "o1", "o1", "o1" };
+
+    other.kind = "charge";
+
+    for (made, orders) |id, order| {
+        try insert_as(connection, scope, id, "{}", 1);
+        try values.replace(connection, id, &.{.{
+            .field = "order",
+            .value = order,
+        }});
+    }
+
+    try insert_as(connection, other, "c00000000000000000000009", "{}", 1);
+
+    const match: Match = .{
+        .field = "order",
+        .value = "o1",
+    };
+    const first = try listed(connection, fixed.allocator(), scope, match, .{
+        .limit = 2,
+        .oldest = true,
+        .after = "",
+    });
+    const second = try listed(connection, fixed.allocator(), scope, match, .{
+        .limit = 2,
+        .oldest = true,
+        .after = first[1].id,
+    });
+    const last = try listed(connection, fixed.allocator(), scope, match, .{
+        .limit = 2,
+        .oldest = true,
+        .after = second[1].id,
+    });
+    const newest = try listed(connection, fixed.allocator(), scope, null, .{
+        .limit = 4,
+        .after = "",
+    });
+    const older = try listed(connection, fixed.allocator(), scope, null, .{
+        .limit = 4,
+        .after = newest[3].id,
+    });
+
+    try std.testing.expectEqualStrings(made[0], first[0].id);
+    try std.testing.expectEqualStrings(made[2], first[1].id);
+    try std.testing.expectEqualStrings(made[3], second[0].id);
+    try std.testing.expectEqualStrings(made[4], second[1].id);
+    try std.testing.expectEqual(@as(usize, 0), last.len);
+    try std.testing.expectEqualStrings(made[4], newest[0].id);
+    try std.testing.expectEqualStrings(made[1], newest[3].id);
+    try std.testing.expectEqual(@as(usize, 1), older.len);
+    try std.testing.expectEqualStrings(made[0], older[0].id);
 }

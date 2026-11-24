@@ -178,6 +178,22 @@ redeemed.
 | `password_token_expires_at` | integer, nullable | When that token stops working |
 | `created_at`, `updated_at` | integer | Timestamps |
 
+A database made before `user_types` may carry a `user_type` column here; nothing reads it.
+
+## `user_types`
+
+The types of user a plugin registers (`customer`) that an account holds, one row each, any
+number of them; staff accounts hold them too (an administrator who is also a customer).
+Deleting a user removes their rows.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | text, references `users` | Whose type; cascades on delete |
+| `user_type` | text | The type's name |
+
+Primary key `(user_id, user_type)`. Index `user_types_user_type (user_type, user_id)`: each
+type's list.
+
 ## `user_roles`
 
 The roles an account holds, one row each, at most 16 per account. A name with
@@ -539,7 +555,8 @@ per document.
 | `created_at`, `updated_at` | integer | Timestamps |
 
 Indexes: `internal_records_scope (plugin, app, kind, created_at)`: a collection's records,
-newest first.
+newest first; `internal_records_walk (plugin, app, kind, id)`: a walk over a whole
+collection, each page found from where the last ended.
 
 ## `internal_record_values`
 
@@ -957,7 +974,7 @@ the database under `storage_key`.
 Index `media_created (created_at, record)` serves the newest-first list;
 `media_hash (hash)` finds an upload of the same bytes.
 
-## `deps_edges`, `deps_artifacts`, `deps_pending`, `deps_changes`, `deps_published`, `deps_meta`
+## `deps_edges`, `deps_artifacts`, `deps_pending`, `deps_changes`, `deps_published`, `deps_values`, `deps_value_keys`, `deps_meta`
 
 The dependency index, owned by the `publr_deps` library and created by it in
 the same database (`Server.init` opens it), shared by every app. `deps_edges (artifact,
@@ -968,9 +985,17 @@ of its last bytes, so an unchanged rebuild writes nothing; `deps_pending
 collecting; `deps_changes (revision, key)` the keys each change raised, by revision;
 `deps_published (revision, name)` what each build published, by revision: an artifact
 whose bytes changed or that went away, or an app's name after its files changed, which a
-CDN in front purges (both logs keep their last 10,000 revisions); `deps_meta (name,
+CDN in front purges (both logs keep their last 10,000 revisions); `deps_values (value,
+revision, until_ms, stamp)` each computed field's value of an internal record
+(`computed:<plugin>/<kind>/<id>/<field>`), the revision it was worked out at, when it stops
+holding, and a hash of the code and modifiers that made it, and `deps_value_keys (value,
+key)` what it read: it is fresh while none of those keys changed after that revision
+(`deps_changes_by_key` finds them); `deps_meta (name,
 value)` the batch counter, both logs' revisions and floors, and the time of the last
 change. Keys are `record:<id>`, `type:<handle>`, `records`,
+`internal:<plugin>/<kind>/<id>`, `internal:<plugin>/<kind>` (a list of the whole
+collection), `internal:<plugin>/<kind>/<field>=<value>` (a list by an indexed value, raised
+for the old and new value of each write), `internal:<plugin>/<kind>/*`,
 `template:<app>/<path>` and `asset:<app>`; artifacts are an app and a URL inside it
 (`www:/posts/hello`, `www:/_islands/latest-posts`). See [Apps](../apps.md).
 
@@ -996,6 +1021,11 @@ record: the job's `plugin` and `name`, the `record`, and the field's `moment` th
 the record queues the job again only when the field holds another moment, so each value runs
 once per job; an edit moving it takes back the waiting run of the old one. Gone with the record.
 
+## `job_due_internal`
+
+The same as `job_due` for a `.due` job following a plugin's internal record (`record`
+references `internal_records`), gone with it.
+
 ## `scheduled_changes`
 
 What someone scheduled for a record (`record.transition_at`), any number per record, each its
@@ -1018,6 +1048,32 @@ address it came from (`sender`), whether its signature held (`verified`), the bo
 as they came (empty when refused), and how it ended (`result`: `waiting`, `ran`, `failed`,
 `refused`, `unreadable`), with why (`problem`) and what its queued run logged (`lines`).
 Indexed by plugin, and by plugin, name and delivery id.
+
+## `ledger_accounts`
+
+The double-entry ledger's accounts ([Plugin API](../plugin-api.md#the-ledger)): each counts
+one unit for the plugin that opened it (`owner`), under one of its declared names (`name`),
+for a holder (`holder_kind` `record` or `person`, `holder` its id; both empty for none) or a
+`key`, in a `unit` (an ISO 4217 code, `<plugin>.<unit>`, either maybe `/<record id>`). `kind`
+and `limit_kept` come from the name's declaration. The four totals (`debits_posted`,
+`credits_posted`, `debits_pending`, `credits_pending`) change in place in the write that
+moves them, and only then; `closed` refuses transfers. Never removed. Unique on owner, name,
+holder, key and unit: opening again answers the account. Indexed by holder, and by unit and
+owner.
+
+## `ledger_transfers`
+
+Every transfer, never changed or removed: its `maker` and the maker's own id (`maker_id`,
+unique per maker with `leg`, 1 for a conversion's second leg; empty for a hold's post, void
+or expiry), the plugin it was `made_for` when another's account was handed over, `action`
+(`transfer`, `hold`, `post`, `void`, `expire`, `reverse`, `convert`), the `debit` and
+`credit` accounts, `unit`, `amount` (positive, in the unit's smallest step), `reason`, the
+`hold` a post, void or expiry settles (unique: a hold settles once), what it `reverses`, a
+conversion's other leg (`pair`), `rate` (millionths) and `source`, the first transfer of its
+`chain`, what it is `about` and a finer `detail` (record ids), its `author`, a hold's
+`expires_at`, `happened_at` and `posted_at`, and each account's posted balance after it
+(`debit_after`, `credit_after`), which answers a balance as of a time. Indexed by debit and
+by credit (an account's history), about, detail, reverses, and maker with its id.
 
 ## Coming with later gates
 

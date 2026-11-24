@@ -69,7 +69,8 @@ change that does not compile is refused and the apps loaded before keep serving.
 or new template is served as soon as it loads, never after a rebuild. What still needs compiling comes
 from a build of Publr: `-Dapps=<dir>` compiles that folder's apps in, and an app of the
 same name takes its interactive components and middleware from there; an app the build
-does not have may have neither. With no `apps/` folder, `serve` serves the build's own.
+does not have may have no middleware, and its interactive components are built by `publr apps
+load` and `publr serve` (see Interactive components). With no `apps/` folder, `serve` serves the build's own.
 `-Dapps-max` (32 by default) bounds how many apps a project holds. A template that does not load fails
 `publr build`, naming the app, the template and the construct. `publr serve` keeps the
 admin and the API available even when the apps cannot load or build; their pages then
@@ -576,6 +577,24 @@ then letters, digits or `_`; `dynamic` and `dynamic-if` on one placement is a bu
 and so is `dynamic-if={…}` (braces always mean the build or the server). A conditional
 island is never preloaded.
 
+### Following what it read: `follow`
+
+A dynamic island can follow the records it read and be drawn again when one changes, with
+no reload and no script of the page's own: "Waiting for payment…" turns to "Paid" once the
+payment lands.
+
+```astro
+<PaymentStatus dynamic follow />
+```
+
+The fragment says what it read and as of which change; while it is on screen the page asks
+`<mount>/_live` every few seconds whether any of it changed since (a cheap read of the change
+log, never a record), and when it did, fetches the island again as the visitor, the server
+checking everything as on the first fetch. What it showed stays until the new one arrives.
+A hidden tab does not ask. `follow` without `dynamic` is a build error. What the island read
+includes what the plugin operations it calls read (`Publr.request.call('app.orders.status')`),
+compiled in or installed: an order turning paid redraws it.
+
 A page carries its stylesheet inline, preloads the static islands it will
 place (nested ones included), and links the island loader and, when it will
 hold an interactive component, the app's client stores, each as its own
@@ -598,6 +617,16 @@ same toolchain as the admin: the server renders them with PublrJS wire
 attributes, the client half lands in `<mount>/_app/stores.js`, and a `.publr`
 component wraps the call site (`<Disclosure label={props.label} />`) so the
 app still decides whether it is embedded or an island.
+
+An app compiled into Publr has them lowered to Zig. An app read from the project's folder
+has them built before it loads: `publr apps load` and `publr serve` run the lowering the
+binary carries (its SDK's `pjsx_gen`, its own process: Publr links no compiler) for every
+app whose `interactive/` changed, into the app's `.interactive/`, and the server draws them
+from there, their render as JavaScript in its script engine, the same markup. A change
+the running server sees before `apps load` built it is refused, saying so, and what loaded
+before keeps serving. A plugin's interactive components are placed the same way
+(`plugin:<plugin>/<Name>.ptsx`; see the plugin guide). A call site hands such a component a
+list or an object the page's script made (`addresses={account.addresses}`) as well as text.
 
 ## The toolbar
 

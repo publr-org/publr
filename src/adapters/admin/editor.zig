@@ -176,6 +176,18 @@ pub fn Editor(comptime domain: Domain) type {
             var session = try admin.require(request, response, ctx) orelse return;
             const id = try admin.param(&session, "id", back) orelse return;
             const shape = try load(&session, id) orelse return;
+
+            // A type its plugin draws on a page of its own opens there, not in the form.
+            if (try frame_pages.of_record(&session, shape.def.handle)) |page| {
+                const location = try print(session.arena, "/admin/plugin/{s}/{s}?id={s}", .{
+                    page.plugin,
+                    page.path,
+                    id,
+                });
+
+                return session.response.redirect(.see_other, location);
+            }
+
             const document = parse(session.arena, shape.loaded.?.document) orelse {
                 return admin.fail(&session, error.Invalid, back);
             };
@@ -272,7 +284,9 @@ pub fn Editor(comptime domain: Domain) type {
                     _ = registry.SDK.dispatch(&session.ctx, operations.SaveVersion, .{
                         .id = id,
                         .version = version,
-                        .document = document,
+                        .document = .{
+                            .text = document,
+                        },
                     }) catch |err| return refused(session, shape, form, err, document);
 
                     return saved(session, id);
@@ -281,7 +295,9 @@ pub fn Editor(comptime domain: Domain) type {
 
             var in: operations.Save.In = .{
                 .id = id,
-                .document = document,
+                .document = .{
+                    .text = document,
+                },
                 .expected_version = expected,
             };
 
@@ -729,7 +745,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .loaded = .{
                     .row = row,
                     .slot = full.slot,
-                    .document = full.document,
+                    .document = full.document.text,
                     .scheduled = if (@hasField(@TypeOf(full), "scheduled"))
                         full.scheduled
                     else
@@ -1072,7 +1088,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             if (def.kind == .settings) {
                 return admin.screen(session, .ok, views.SettingsDocument, .{
-                    .title = def.name,
+                    .title = try nouns.label_of(session, def),
                     .description = def.description,
                     .has_fields = def.fields.len > 0,
                     .schema_href = try print(arena, "/admin/structure/settings/{s}", .{def.handle}),
@@ -1090,7 +1106,7 @@ pub fn Editor(comptime domain: Domain) type {
             const parents = try arena.alloc(views.RecordForm.ParentsItem, 1);
 
             parents[0] = .{
-                .label = def.name,
+                .label = try nouns.label_of(session, def),
                 .href = try domain.crumb(arena, def),
             };
 
@@ -1173,6 +1189,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .slug_prefix = try slug_prefix_of(session, def),
                 .slug_prefixes = try slug_prefixes_of(session, def),
                 .live = live,
+                .declared = def.system,
                 .currencies = try currencies_of(session),
                 .record_id = if (shape.loaded) |full| full.row.id else "",
                 .fixed = if (shape.loaded == null) fixed_of(session, def) else "",
@@ -1214,12 +1231,16 @@ pub fn Editor(comptime domain: Domain) type {
             } else {
                 const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
                     .type = handle,
-                    .document = document,
+                    .document = .{
+                        .text = document,
+                    },
                     .id = form.text("id") orelse "",
                 }) catch |err| return admin.fail(session, err, back);
                 const helped = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
                     .type = handle,
-                    .document = document,
+                    .document = .{
+                        .text = document,
+                    },
                 }) catch |err| return admin.fail(session, err, back);
 
                 const version = std.fmt.parseInt(i64, form.text("version") orelse "", 10) catch 0;
@@ -1255,7 +1276,9 @@ pub fn Editor(comptime domain: Domain) type {
                 };
                 const found = registry.SDK.dispatch(&session.ctx, operations.Markers, .{
                     .type = handle,
-                    .document = text,
+                    .document = .{
+                        .text = text,
+                    },
                     .id = id,
                 }) catch return &.{};
                 const items = try session.arena.alloc(
@@ -1299,7 +1322,9 @@ pub fn Editor(comptime domain: Domain) type {
                 };
                 const found = registry.SDK.dispatch(&session.ctx, operations.Helps, .{
                     .type = handle,
-                    .document = text,
+                    .document = .{
+                        .text = text,
+                    },
                 }) catch return &.{};
                 const items = try session.arena.alloc(
                     views.RecordEditor.HelpsItem,
@@ -1483,7 +1508,10 @@ pub fn Editor(comptime domain: Domain) type {
                         suffix,
                     }),
                     .type = row.type,
-                    .type_name = if (def.kind == .settings) def.description else def.name,
+                    .type_name = if (def.kind == .settings)
+                        def.description
+                    else
+                        try nouns.label_of(session, def),
                     .type_href = try type_href_of(session, def, taxonomy),
                     .title = if (def.kind == .settings)
                         def.name
@@ -1578,7 +1606,10 @@ pub fn Editor(comptime domain: Domain) type {
                 .in_drawer = drawer,
                 .action_route = "",
                 .type = def.handle,
-                .type_name = if (def.kind == .settings) def.description else def.name,
+                .type_name = if (def.kind == .settings)
+                    def.description
+                else
+                    try nouns.label_of(session, def),
                 .type_href = try type_href_of(session, def, taxonomy),
                 .title = if (def.kind == .settings) def.name else try session.translated(
                     "New {type}",
@@ -1655,7 +1686,6 @@ pub fn Editor(comptime domain: Domain) type {
             std.debug.assert(field.len > 0);
             std.debug.assert(session.signed_in());
 
-            const frame_pages = @import("frame/pages.zig");
             var items: std.ArrayList(FieldPanel) = .empty;
 
             for (found) |panel| {
@@ -1684,6 +1714,7 @@ pub fn Editor(comptime domain: Domain) type {
                 try items.append(session.arena, .{
                     .label = panel.label,
                     .plugin = panel.plugin,
+                    .from = try frame_panels.from_of(session, panel.plugin),
                     .src = src,
                     .operations = try std.mem.join(session.arena, ",", own),
                 });
@@ -1696,6 +1727,7 @@ pub fn Editor(comptime domain: Domain) type {
 
 const held_in_address_max: u32 = 2048;
 const frame_panels = @import("frame/panels.zig");
+const frame_pages = @import("frame/pages.zig");
 const FieldPanel = @typeInfo(@FieldType(fields.Row, "panels")).pointer.child;
 
 /// A top-level field's value as the form holds it: its text, any other value as JSON;
@@ -3067,7 +3099,7 @@ fn type_names(session: *Session) Error![]const types.Summary {
         .limit = sdk_operation.page_limit_max,
     }) catch return &.{};
 
-    return listed.types;
+    return nouns.summaries(session, types.Summary, listed.types);
 }
 
 /// The content types a record of `def` may link to: what its app reaches, as the app itself

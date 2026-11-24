@@ -145,6 +145,35 @@ fn hook_stage(comptime Plugin: type, comptime Middleware: type) Entry.Stage {
     }
 }
 
+/// A sandboxed build fails on a hook without its words (its `run` function's `///`): it would
+/// be left out and never run, which no one notices. Words the build could not find (a list
+/// it cannot read) fail it the same way, naming the hook.
+pub fn every_hook_has_words(comptime Plugin: type) void {
+    comptime {
+        std.debug.assert(Plugin.manifest.name.len > 0);
+
+        for (plugin_define.get(Plugin, "middleware")) |Middleware| {
+            const takes_ours = context.takes_plugin_ctx(Middleware.run);
+            const words = @hasDecl(Middleware, "reason") and Middleware.reason.len > 0;
+            const target = if (@hasDecl(Middleware, "event"))
+                Middleware.event
+            else if (@hasDecl(Middleware, "operation"))
+                Middleware.operation
+            else if (@hasDecl(Middleware, "pattern"))
+                Middleware.pattern
+            else
+                "";
+
+            if (takes_ours and !words and Middleware.stage != .pre) {
+                @compileError("plugin " ++ Plugin.manifest.name ++ ": its " ++
+                    @tagName(Middleware.stage) ++ " hook on " ++ target ++ " has no words: " ++
+                    "write `///` above its run function, and list it in `.hooks` written out, " ++
+                    "as a constant, or as another file's constant (`place.hooks`)");
+            }
+        }
+    }
+}
+
 /// Why a hook does not run in the sandbox, or null when it does.
 fn hook_left_out(comptime Middleware: type) ?[]const u8 {
     comptime {
@@ -296,6 +325,14 @@ test "entries number operations first, then hooks, and read a hook's shapes from
 /// module's root's `Plugin`; a build without one (Publr itself, its tests) checks nothing.
 pub fn check_call(comptime operation_name: []const u8) void {
     comptime {
+        // Each check compares the name with every entry of a catalog list or one of the
+        // plugin's declared lists once, a comparison at most a key's length of branches.
+        const compared = catalog.never.len + catalog.always.len + catalog.own_records.len +
+            catalog.core.len * catalog.operations_max + permissions_max * 2 +
+            @import("depends_on.zig").depends_on_max * 2;
+
+        @setEvalBranchQuota(1000 + compared * catalog.key_len_max);
+
         const root = @import("root");
 
         if (!@hasDecl(root, "Plugin")) {

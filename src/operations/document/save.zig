@@ -8,6 +8,8 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
+const provider_values = @import("provider_values.zig");
+const visibility = @import("visibility.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -238,6 +240,17 @@ pub fn Of(comptime Domain: type) type {
                 return error.Invalid;
             }
 
+            // A field the caller may not read is not theirs to write either; one they leave
+            // out keeps what it holds.
+            for (def.fields) |field| {
+                const shown_to_some = field.visibility.hidden();
+                const hidden = shown_to_some and !visibility.sees(ctx, field.visibility);
+
+                if (hidden and given.object.get(field.name) != null) {
+                    return error.Denied;
+                }
+            }
+
             var fields = given.object.iterator();
 
             while (fields.next()) |field| {
@@ -270,6 +283,13 @@ pub fn Of(comptime Domain: type) type {
 
             try document.refuse_taken_values(ctx, row.type_id, def, parsed.*, row.id);
             try document.refuse_unpublished_targets(ctx, def, parsed.*);
+
+            if (model.field.contains_kind(def.fields, "provider")) {
+                const before = try document.document_of(ctx, row.id, values.live, def);
+
+                try provider_values.refuse_unknown(ctx, def, parsed.*, before);
+            }
+
             try Domain.config.check_document(ctx, def, parsed.*);
 
             return slug;
@@ -286,7 +306,9 @@ fn published_post(ctx: *Ctx, document_text: []const u8) Error![]const u8 {
 
     const created = try SDK.dispatch(ctx, records.Create, .{
         .type = "post",
-        .document = document_text,
+        .document = .{
+            .text = document_text,
+        },
     });
 
     _ = try SDK.dispatch(ctx, records.Publish, .{
@@ -307,11 +329,15 @@ test "a save writes only the fields it is given" {
 
     const created = try SDK.dispatch(&system, records.Create, .{
         .type = "post",
-        .document = "{\"title\":\"One\",\"body\":\"first\",\"views\":5}",
+        .document = .{
+            .text = "{\"title\":\"One\",\"body\":\"first\",\"views\":5}",
+        },
     });
     _ = try SDK.dispatch(&system, records.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Two\"}",
+        .document = .{
+            .text = "{\"title\":\"Two\"}",
+        },
     });
 
     const got = try SDK.dispatch(&system, records.Get, .{
@@ -319,12 +345,14 @@ test "a save writes only the fields it is given" {
         .purpose = .edit,
     });
     try std.testing.expectEqualStrings("Two", got.record.title);
-    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"first\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"views\":5") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"first\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"views\":5") != null);
 
     const not_an_object = SDK.dispatch(&system, records.Save, .{
         .id = created.id,
-        .document = "[]",
+        .document = .{
+            .text = "[]",
+        },
     });
     try std.testing.expectError(error.Invalid, not_an_object);
 }
@@ -342,13 +370,17 @@ test "an edit taken back leaves the record unchanged" {
 
     const edited = try SDK.dispatch(&system, records.Save, .{
         .id = id,
-        .document = "{\"title\":\"Test111\"}",
+        .document = .{
+            .text = "{\"title\":\"Test111\"}",
+        },
     });
     try std.testing.expect(edited.changed);
 
     const back = try SDK.dispatch(&system, records.Save, .{
         .id = id,
-        .document = "{\"title\":\"Test\"}",
+        .document = .{
+            .text = "{\"title\":\"Test\"}",
+        },
     });
     try std.testing.expect(!back.changed);
 
@@ -361,7 +393,9 @@ test "an edit taken back leaves the record unchanged" {
 
     const again = try SDK.dispatch(&system, records.Save, .{
         .id = id,
-        .document = "{\"title\":\"Test\"}",
+        .document = .{
+            .text = "{\"title\":\"Test\"}",
+        },
     });
     try std.testing.expect(!again.changed);
 }

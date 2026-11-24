@@ -42,7 +42,9 @@ fn chosen(session: *Session) admin.Error!Language {
     };
     const languages = session.project.languages orelse return .{};
 
-    languages.apply(shown.chosen_translations) catch |err| {
+    const picked = if (shown.chosen_translations) |translations| translations.text else "";
+
+    languages.apply(picked) catch |err| {
         std.log.err("languages: the chosen translations: {t}", .{err});
     };
 
@@ -67,16 +69,34 @@ pub fn in(session: *Session, locale: []const u8) admin.Error!Language {
     return .{
         .locale = locale,
         .translator = translator,
-        // By what the script holds: a pack updated in place is fetched again.
-        .messages = try std.fmt.allocPrint(session.arena, "{s}{s}{s}.js?v={s}-{x}", .{
+        .messages = try address_of(
+            session.arena,
             session.project.admin_path(),
-            prefix,
             locale,
-            @import("../../publr.zig").version,
-            std.hash.Wyhash.hash(0, language.script),
-        }),
+            language.script,
+        ),
         .script = language.script,
     };
+}
+
+/// Where the browser fetches `locale`'s catalogue, under the admin at `admin_path`: by what
+/// the script holds, so a pack updated in place is fetched again.
+pub fn address_of(
+    arena: std.mem.Allocator,
+    admin_path: []const u8,
+    locale: []const u8,
+    script: []const u8,
+) admin.Error![]const u8 {
+    std.debug.assert(locale.len > 0);
+    std.debug.assert(script.len > 0);
+
+    return std.fmt.allocPrint(arena, "{s}{s}{s}.js?v={s}-{x}", .{
+        admin_path,
+        prefix,
+        locale,
+        @import("../../publr.zig").version,
+        std.hash.Wyhash.hash(0, script),
+    }) catch error.OutOfMemory;
 }
 
 /// The session's language on the page's request: `<html lang>`, the renders' catalogue, the

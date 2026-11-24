@@ -5,11 +5,9 @@
 //! `compatible_with` is never held back by it.
 
 const std = @import("std");
-const plugin_define = @import("../../sdk/plugin/define.zig");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
-const state = @import("state.zig");
 const depends_on = @import("../../sdk/plugin/depends_on.zig");
 
 const Ctx = sdk.Ctx;
@@ -86,12 +84,16 @@ pub fn refuse_missing_parents(ctx: *Ctx, names: []const []const u8) Error!void {
 
     var asked: std.ArrayList(Asked) = .empty;
 
+    const installed_needs = try store.sandboxed_plugins.needs(ctx.db, ctx.arena);
+
     for (names) |name| {
-        const decoded = try state.load(ctx, name);
+        const row = for (installed_needs) |one| {
+            if (std.mem.eql(u8, one.name, name)) break one;
+        } else return error.NotFound;
 
         asked.append(ctx.arena, .{
             .name = name,
-            .depends_on = decoded.manifest.depends_on,
+            .depends_on = try depends_of(ctx, row),
         }) catch return error.OutOfMemory;
     }
 
@@ -229,12 +231,10 @@ fn installed_of(ctx: *Ctx) Error![]const Running {
 
     var installed: std.ArrayList(Running) = .empty;
 
-    for (try store.sandboxed_plugins.list(ctx.db, ctx.arena)) |row| {
-        const manifest = try state.parse_manifest(ctx.arena, row.manifest);
-
+    for (try store.sandboxed_plugins.needs(ctx.db, ctx.arena)) |row| {
         installed.append(ctx.arena, .{
-            .name = manifest.name,
-            .depends_on = manifest.depends_on,
+            .name = row.name,
+            .depends_on = try depends_of(ctx, row),
             .built_in = false,
         }) catch return error.OutOfMemory;
     }
@@ -303,21 +303,20 @@ fn running_of(ctx: *Ctx) Error![]const Running {
 
     var running: std.ArrayList(Running) = .empty;
 
-    inline for (registry.native_plugins.all) |Plugin| {
+    // From what the build worked out once per plugin, never from its declarations here.
+    for (registry.native_plugins.merged_plugin_grants) |grants| {
         running.append(ctx.arena, .{
-            .name = Plugin.manifest.name,
-            .depends_on = comptime plugin_define.get(Plugin, "depends_on"),
+            .name = grants.name,
+            .depends_on = grants.access.depends_on,
             .built_in = true,
         }) catch return error.OutOfMemory;
     }
 
-    for (try store.sandboxed_plugins.list(ctx.db, ctx.arena)) |row| {
+    for (try store.sandboxed_plugins.needs(ctx.db, ctx.arena)) |row| {
         if (row.enabled) {
-            const manifest = try state.parse_manifest(ctx.arena, row.manifest);
-
             running.append(ctx.arena, .{
-                .name = manifest.name,
-                .depends_on = manifest.depends_on,
+                .name = row.name,
+                .depends_on = try depends_of(ctx, row),
                 .built_in = false,
             }) catch return error.OutOfMemory;
         }
@@ -448,4 +447,13 @@ test "parents: a missing chain is started first, an absent one is named" {
     }};
     const absent = (try parents_missing(arena, &running, &installed, &orphan)).?;
     try std.testing.expect(std.mem.indexOf(u8, absent, "not installed") != null);
+}
+
+/// What an installed plugin names in `depends_on`, read from its row.
+fn depends_of(ctx: *Ctx, row: store.sandboxed_plugins.Needs) Error![]const []const u8 {
+    std.debug.assert(row.name.len > 0);
+    std.debug.assert(row.depends_on.len > 0);
+
+    return std.json.parseFromSliceLeaky([]const []const u8, ctx.arena, row.depends_on, .{}) catch
+        error.Invalid;
 }

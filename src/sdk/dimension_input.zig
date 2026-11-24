@@ -12,6 +12,9 @@ pub const Dimensions = struct {
     /// Each dimension asked for and its code; an empty code asks for its main value.
     pairs: []const Pair = &.{},
 
+    /// Handed over as its pairs, each code keyed by its dimension.
+    pub const publr_form = .keyed;
+
     /// From `{"language":"pl","variation":"b"}`.
     pub fn jsonParse(
         allocator: std.mem.Allocator,

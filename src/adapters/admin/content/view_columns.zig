@@ -183,7 +183,9 @@ fn values_of(
     var reading = session.*;
     const answered = registry.SDK.dispatch(&reading.ctx, query.Query, .{
         .query = projection.written(),
-        .params = params,
+        .params = .{
+            .text = params,
+        },
         .perspective = .all,
     }) catch |err| {
         std.log.warn("list columns: {t}", .{err});

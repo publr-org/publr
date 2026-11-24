@@ -49,7 +49,7 @@ pub fn Helps(comptime Domain: type) type {
         pub const open = true;
         pub const In = struct {
             type: []const u8,
-            document: []const u8,
+            document: sdk.operation.Json,
         };
         pub const Out = struct {
             helps: []const Help,
@@ -57,7 +57,9 @@ pub fn Helps(comptime Domain: type) type {
         pub const example_signed_in = true;
         pub const example: In = .{
             .type = "post",
-            .document = "{\"title\":\"Hello\"}",
+            .document = .{
+                .text = "{\"title\":\"Hello\"}",
+            },
         };
         pub const example_out: Out = .{
             .helps = &.{},
@@ -78,7 +80,8 @@ pub fn Helps(comptime Domain: type) type {
             }
 
             const row = try Domain.definition.find(ctx, in.type) orelse return error.NotFound;
-            const record = @import("../../lib/json.zig").parse(Value, ctx.arena, in.document, .{
+            const text = in.document.text;
+            const record = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
 

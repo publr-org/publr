@@ -20,7 +20,10 @@ pub const sandboxed_plugins_max: u32 = 500;
 /// The largest module a plugin ships.
 pub const bytes_max: u32 = 16 << 20;
 /// Bumped when the manifest's shape changes; a host refuses a format it does not know.
-pub const format: u32 = 1;
+/// Format 2 names each operation shape once (`shapes`); a host reads 1 still.
+pub const format: u32 = 2;
+/// The oldest format a host still reads.
+pub const format_oldest: u32 = 1;
 
 pub const Kind = enum { read, write };
 
@@ -39,6 +42,8 @@ pub const Ask = struct {
     taxonomies: []const []const u8 = &.{},
     /// `http.fetch`'s: where it may send.
     domains: []const []const u8 = &.{},
+    /// `ledger.read`'s: whose accounts it reads.
+    plugins: []const []const u8 = &.{},
     drafts: bool = false,
     private: bool = false,
     internal: bool = false,
@@ -54,6 +59,7 @@ pub const Ask = struct {
             .records = ask.records,
             .taxonomies = ask.taxonomies,
             .domains = ask.domains,
+            .plugins = ask.plugins,
             .drafts = ask.drafts,
             .private = ask.private,
             .internal = ask.internal,
@@ -73,6 +79,8 @@ pub const Limits = struct {
     memory_mib: ?u32 = null,
     calls: ?u32 = null,
     output_kib: ?u32 = null,
+    /// The largest file it makes (`ctx.make_file`), in MiB.
+    file_mib: ?u32 = null,
     reason: []const u8 = "",
 };
 
@@ -83,6 +91,11 @@ pub const Manifest = struct {
     summary: []const u8,
     namespaces: []const Namespace = &.{},
     operations: []const Operation = &.{},
+    /// What it reads of visitors' requests (`.request`).
+    request: RequestReads = .{},
+    /// The shapes its operations take and answer, each once: many share one (an order's
+    /// answer). An operation names its own by index (`input_shape`, `output_shape`).
+    shapes: []const []const contract.Node = &.{},
     hooks: []const Hook = &.{},
     /// Its queued jobs; each one's entry follows the hooks', in this order.
     jobs: []const Job = &.{},
@@ -107,9 +120,13 @@ pub const Manifest = struct {
     register_taxonomies: []const @import("taxonomy.zig").Registration = &.{},
     custom_fields: []const content_type.Def = &.{},
     roles: []const role.Declared = &.{},
+    /// The types of user it registers (`.user_types`).
+    user_types: []const @import("user_type.zig").Declared = &.{},
     /// The statuses it adds to other plugins' flows (`.register_statuses`), each a request.
     statuses: []const flow.Added = &.{},
     internal_records: []const internal_record.Collection = &.{},
+    /// Its ledger (`.ledger`): account names, reasons and units; null without one.
+    ledger: ?@import("ledger.zig").Declaration = null,
     /// What it uses of other plugins (`.remotes`): operations, records and events.
     remotes: []const RemoteUse = &.{},
     /// The events it declares (`.events`), by full name, with their payloads' shapes.
@@ -133,6 +150,9 @@ pub const Manifest = struct {
     left_out: []const []const u8 = &.{},
     /// What the plugin checks warned of (`file:line: why`): shown on its page, never a stop.
     warnings: []const []const u8 = &.{},
+    /// Every message it marks for translators, `[context, id]`: what a language's coverage
+    /// of its words counts.
+    messages: []const [2][]const u8 = &.{},
     /// The GROQ texts it prepares, parsed when it is installed.
     queries: []const Query = &.{},
     /// The dimensions it declares (`.dimensions`): a field holds a value per combination.
@@ -174,6 +194,10 @@ pub const Operation = struct {
     /// The shapes it takes and answers: its published contract.
     input: []const contract.Node = &.{},
     output: []const contract.Node = &.{},
+    /// Where the manifest keeps `input` and `output` once, in its `shapes`: read back into
+    /// them by `resolve_shapes`.
+    input_shape: ?u32 = null,
+    output_shape: ?u32 = null,
     /// Input fields never written to the logs.
     secret: []const []const u8 = &.{},
     /// What its `.validate` checks, in its words; empty for none.
@@ -183,6 +207,11 @@ pub const Operation = struct {
     /// What every caller is told when it is on its way out: since when, and what to call
     /// instead. Empty for an operation that is not.
     deprecated: []const u8 = "",
+
+    /// Written without its defaults.
+    pub fn jsonStringify(operation: Operation, writer: anytype) @TypeOf(writer.*).Error!void {
+        return @import("compact_json.zig").write(operation, writer);
+    }
 };
 
 /// Another plugin's operation, record or event as this plugin uses it.
@@ -285,6 +314,11 @@ pub const Field = struct {
     default: []const u8 = "",
 
     pub const Shape = enum { string, integer, number, boolean, strings, json };
+
+    /// Written without its defaults.
+    pub fn jsonStringify(field: Field, writer: anytype) @TypeOf(writer.*).Error!void {
+        return @import("compact_json.zig").write(field, writer);
+    }
 };
 
 /// A column a declared form's list leaves empty in the row an `only_one` column picks (the
@@ -321,6 +355,8 @@ pub const Page = struct {
     /// A tab's primary action in its tabbed page's header: its label and admin address.
     action_label: []const u8 = "",
     action_href: []const u8 = "",
+    /// The type of the plugin's own whose records it draws in place of the admin's form.
+    record: []const u8 = "",
     /// Also in the top bar, for whoever may see the page.
     top_bar: ?TopBar = null,
 };
@@ -356,6 +392,8 @@ pub const FieldKind = struct {
     texts: bool,
     /// Whether it has an `.editor` view, drawn in its frame on the edit form.
     edits: bool = false,
+    /// Only the plugin's code puts it on a type: the type builder never offers it.
+    code_only: bool = false,
 };
 
 const kinds = @import("kinds.zig");
@@ -477,6 +515,12 @@ pub const Signature = union(enum) {
     token: struct {
         header: []const u8,
     },
+    /// Signed in a way only the plugin reads (a digest of fields in the body, the gateway
+    /// asked back): core takes the delivery as it comes, and the run confirms it with
+    /// `secret.digest` (any of the plugin's secrets) or the gateway's own answer before
+    /// anything acts. Never dropped
+    /// as a repeat: a forged copy must not stand in for the real one.
+    verify: struct {},
 };
 
 pub const Encoding = enum { hex, base64 };
@@ -490,6 +534,27 @@ pub const DeliveryId = union(enum) {
     field: []const u8,
 };
 
+/// What a plugin reads of the requests visitors make (`.request`): query parameters and
+/// cookies by name, recorded by core per visitor as they land (`request.read`); and the
+/// path prefixes it answers with a redirect (`request.redirect`).
+pub const RequestReads = struct {
+    /// Query parameters kept for each visitor who brings one (`ref`, `utm_source`).
+    query: []const []const u8 = &.{},
+    /// Cookies read with a call the visitor makes (`consent`).
+    cookies: []const []const u8 = &.{},
+    redirects: []const Redirect = &.{},
+
+    pub const names_max: u32 = 16;
+    pub const redirects_max: u32 = 8;
+};
+
+/// A path prefix a plugin answers (`/ref/`): its operation (`follow`) is told the rest of the
+/// path (`ada`) and answers where to send the visitor.
+pub const Redirect = struct {
+    prefix: []const u8,
+    operation: []const u8,
+};
+
 /// A record's datetime field a job follows: it runs once per value, `offset_ms` from it.
 pub const Due = struct {
     /// The record's type, by its full name.
@@ -497,6 +562,12 @@ pub const Due = struct {
     field: []const u8,
     /// Negative for `.before`.
     offset_ms: i64,
+    /// The record is a plugin's internal record (`subscriptions.subscription`): its moment
+    /// is read from its document.
+    internal: bool = false,
+    /// It comes back every year (a birthday, a card's expiry): the run follows its next
+    /// return, and once run, the one after.
+    yearly: bool = false,
 };
 
 /// A hook a plugin asks for; its entry is the number of operations plus its position here.
@@ -506,6 +577,10 @@ pub const Hook = struct {
     /// the name a modifier takes (`variant.title`, `*.title`).
     target: []const u8,
     reason: []const u8,
+    /// The record kind (an internal collection of the plugin's own) or content type the
+    /// hook is about, when it is about one: core runs it only on a write of that, and
+    /// never starts the plugin for another's. Empty for a hook on every call of `target`.
+    about: []const u8 = "",
 
     pub const Stage = enum { before, after, event, modify };
 };
@@ -516,6 +591,7 @@ pub const limits_default: Effective = .{
     .memory_mib = 16,
     .calls = 1000,
     .output_kib = 1024,
+    .file_mib = 4,
 };
 
 pub const Effective = struct {
@@ -523,6 +599,7 @@ pub const Effective = struct {
     memory_mib: u32,
     calls: u32,
     output_kib: u32,
+    file_mib: u32,
 };
 
 pub const limit_keys = [_][]const u8{
@@ -530,6 +607,7 @@ pub const limit_keys = [_][]const u8{
     "limit.memory_mib",
     "limit.calls",
     "limit.output_kib",
+    "limit.file_mib",
 };
 
 /// One thing an administrator sees on the install page and grants or revokes on the
@@ -575,6 +653,11 @@ pub fn requests(
     }
 
     for (manifest.hooks) |hook| {
+        // A hook on its own operation or event needs nobody's leave.
+        if (own_target(manifest.name, hook.target)) {
+            continue;
+        }
+
         const key = try hook_key(arena, hook);
 
         try list.append(arena, .{
@@ -610,15 +693,22 @@ pub fn requests(
 }
 
 fn append_limits(list: *std.ArrayList(Request), arena: std.mem.Allocator, limits: Limits) !void {
-    std.debug.assert(limit_keys.len == 4);
+    std.debug.assert(limit_keys.len == 5);
     std.debug.assert(limits.reason.len <= reason_len_max);
 
-    const asked = [_]?u32{ limits.cpu_ms, limits.memory_mib, limits.calls, limits.output_kib };
+    const asked = [_]?u32{
+        limits.cpu_ms,
+        limits.memory_mib,
+        limits.calls,
+        limits.output_kib,
+        limits.file_mib,
+    };
     const sentences = [_][]const u8{
         "Run up to {d} ms of CPU in one call",
         "Use up to {d} MiB of memory",
         "Make up to {d} calls in one call",
         "Answer with up to {d} KiB",
+        "Make files of up to {d} MiB",
     };
 
     inline for (asked, limit_keys, sentences) |value_or_null, key, sentence| {
@@ -661,6 +751,15 @@ fn hook_sentence(arena: std.mem.Allocator, hook: Hook) error{OutOfMemory}![]cons
 }
 
 /// `after:record.save`: the key a hook is granted and revoked by.
+/// Whether a hook's target (`orders.receive`) is the plugin's own operation or event.
+pub fn own_target(plugin: []const u8, target: []const u8) bool {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(target.len > 0);
+
+    return target.len > plugin.len + 1 and std.mem.startsWith(u8, target, plugin) and
+        target[plugin.len] == '.';
+}
+
 pub fn hook_key(arena: std.mem.Allocator, hook: Hook) error{OutOfMemory}![]const u8 {
     std.debug.assert(hook.target.len > 0);
     std.debug.assert(hook.reason.len > 0);
@@ -952,6 +1051,10 @@ pub fn effective_limits(limits: Limits, granted: []const []const u8) Effective {
         if (permission.contains(granted, "limit.output_kib")) effective.output_kib = value;
     }
 
+    if (limits.file_mib) |value| {
+        if (permission.contains(granted, "limit.file_mib")) effective.file_mib = value;
+    }
+
     return effective;
 }
 
@@ -1149,4 +1252,165 @@ test "an update's new domains join a saved list; removed stay out, dropped leave
 
     try std.testing.expectEqual(@as(usize, 1), added.len);
     try std.testing.expectEqualStrings("new.example.com", added[0]);
+}
+
+/// Whether a host reads the manifest's format.
+pub fn format_known(manifest: *const Manifest) bool {
+    std.debug.assert(format_oldest <= format);
+    std.debug.assert(format_oldest > 0);
+
+    return manifest.format >= format_oldest and manifest.format <= format;
+}
+
+/// Each operation's shapes kept in `shapes` once, the operations naming theirs by index:
+/// what a plugin's build writes, so a manifest holds an answer many operations share once.
+pub fn share_shapes(arena: std.mem.Allocator, manifest: *Manifest) error{OutOfMemory}!void {
+    std.debug.assert(manifest.shapes.len == 0);
+    std.debug.assert(manifest.operations.len <= 1 << 16);
+
+    var shapes: std.ArrayList([]const contract.Node) = .empty;
+    const operations = try arena.dupe(Operation, manifest.operations);
+
+    for (operations) |*operation| {
+        if (operation.input.len > 0) {
+            operation.input_shape = try shape_index(arena, &shapes, operation.input);
+            operation.input = &.{};
+        }
+
+        if (operation.output.len > 0) {
+            operation.output_shape = try shape_index(arena, &shapes, operation.output);
+            operation.output = &.{};
+        }
+    }
+
+    manifest.operations = operations;
+    manifest.shapes = shapes.items;
+}
+
+fn shape_index(
+    arena: std.mem.Allocator,
+    shapes: *std.ArrayList([]const contract.Node),
+    nodes: []const contract.Node,
+) error{OutOfMemory}!u32 {
+    std.debug.assert(nodes.len > 0);
+    std.debug.assert(shapes.items.len <= 1 << 16);
+
+    for (shapes.items, 0..) |kept, index| {
+        if (contract.same_shape(kept, nodes)) {
+            return @intCast(index);
+        }
+    }
+
+    try shapes.append(arena, nodes);
+
+    return @intCast(shapes.items.len - 1);
+}
+
+/// The shapes a manifest names once put back on the operations naming them; refused when
+/// an index names none.
+pub fn resolve_shapes(arena: std.mem.Allocator, manifest: *Manifest) error{
+    OutOfMemory,
+    Invalid,
+}!void {
+    std.debug.assert(manifest.operations.len <= 1 << 16);
+    std.debug.assert(manifest.shapes.len <= 1 << 16);
+
+    if (manifest.shapes.len == 0) {
+        return;
+    }
+
+    const operations = try arena.dupe(Operation, manifest.operations);
+
+    for (operations) |*operation| {
+        if (operation.input_shape) |index| {
+            if (index >= manifest.shapes.len) {
+                return error.Invalid;
+            }
+
+            operation.input = manifest.shapes[index];
+            operation.input_shape = null;
+        }
+
+        if (operation.output_shape) |index| {
+            if (index >= manifest.shapes.len) {
+                return error.Invalid;
+            }
+
+            operation.output = manifest.shapes[index];
+            operation.output_shape = null;
+        }
+    }
+
+    manifest.operations = operations;
+    manifest.shapes = &.{};
+}
+
+test "an answer many operations share is kept once, and read back on each" {
+    const order = [_]contract.Node{
+        .{
+            .parent = -1,
+            .kind = .object,
+        },
+        .{
+            .parent = 0,
+            .name = "total",
+            .kind = .integer,
+        },
+    };
+    const id = [_]contract.Node{.{
+        .parent = -1,
+        .kind = .string,
+    }};
+    const operations = [_]Operation{
+        .{
+            .name = "shop.place",
+            .kind = .write,
+            .description = "Place",
+            .input = &id,
+            .output = &order,
+        },
+        .{
+            .name = "shop.get",
+            .kind = .read,
+            .description = "Get",
+            .input = &id,
+            .output = &order,
+        },
+    };
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var manifest: Manifest = .{
+        .name = "shop",
+        .version = "0.1.0",
+        .summary = "A shop",
+        .operations = &operations,
+    };
+
+    try share_shapes(arena, &manifest);
+    try std.testing.expectEqual(@as(usize, 2), manifest.shapes.len);
+    try std.testing.expectEqual(@as(usize, 0), manifest.operations[1].output.len);
+
+    const text = try std.json.Stringify.valueAlloc(arena, manifest, .{
+        .emit_null_optional_fields = false,
+    });
+    var read = try std.json.parseFromSliceLeaky(Manifest, arena, text, .{
+        .ignore_unknown_fields = true,
+    });
+
+    try resolve_shapes(arena, &read);
+    try std.testing.expectEqualStrings("total", read.operations[1].output[1].name);
+    try std.testing.expectEqual(@as(usize, 1), read.operations[0].input.len);
+
+    var broken = read;
+    const wrong = [_]Operation{.{
+        .name = "shop.get",
+        .kind = .read,
+        .description = "Get",
+        .output_shape = 9,
+    }};
+
+    broken.operations = &wrong;
+    broken.shapes = &.{&id};
+    try std.testing.expectError(error.Invalid, resolve_shapes(arena, &broken));
 }

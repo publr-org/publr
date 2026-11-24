@@ -33,9 +33,13 @@ pub const SaveSystem = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         app: []const u8,
-        tokens: []const model_app.Token = &.{},
+        /// One document: the app's tokens, `[{ "name", "value" }]`, as many as it holds.
+        tokens: sdk.operation.Json = .{
+            .text = "[]",
+        },
         fonts: []const model_app.Font = &.{},
-        system: ?design_system.System = null,
+        /// One document: `design/system.zon` as JSON.
+        system: ?sdk.operation.Json = null,
     };
     pub const Out = struct {
         path: []const u8,
@@ -45,10 +49,9 @@ pub const SaveSystem = struct {
     };
     pub const example: In = .{
         .app = "www",
-        .tokens = &.{.{
-            .name = "color-brand",
-            .value = "#2f5d54",
-        }},
+        .tokens = .{
+            .text = "[{\"name\":\"color-brand\",\"value\":\"#2f5d54\"}]",
+        },
         .fonts = &.{.{
             .family = "Inter",
             .url = "https://fonts.googleapis.com/css2?family=Inter",
@@ -75,13 +78,19 @@ pub const SaveSystem = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        try check(in);
+        const arena = ctx.arena;
+        const tokens = in.tokens.as([]const model_app.Token, arena) catch return error.Invalid;
+        const structure: ?design_system.System = if (in.system) |given|
+            given.as(design_system.System, arena) catch return error.Invalid
+        else
+            null;
+
+        try check(in.app, tokens, in.fonts, structure);
 
         const found = try find_zon(ctx, in.app);
-        const arena = ctx.arena;
         const with_tokens = zon_fields.replace(arena, found.content, "tokens", try tokens_zon(
             arena,
-            in.tokens,
+            tokens,
         )) catch return error.Invalid;
         const content = zon_fields.replace(arena, with_tokens, "fonts", try fonts_zon(
             arena,
@@ -99,15 +108,15 @@ pub const SaveSystem = struct {
 
         var written: []const u8 = "";
 
-        if (in.system) |structure| {
-            written = try write_structure(ctx, found.path, structure);
+        if (structure) |given| {
+            written = try write_structure(ctx, found.path, given);
         }
 
         std.debug.assert(content.len > 0);
 
         return .{
             .path = found.path,
-            .tokens = @intCast(in.tokens.len),
+            .tokens = @intCast(tokens.len),
             .fonts = @intCast(in.fonts.len),
             .system = written,
         };
@@ -122,32 +131,51 @@ pub const SaveSystem = struct {
     }
 };
 
-fn check(in: SaveSystem.In) Error!void {
+fn check(
+    app: []const u8,
+    tokens: []const model_app.Token,
+    fonts: []const model_app.Font,
+    system: ?design_system.System,
+) Error!void {
     std.debug.assert(model_app.tokens_max > 0);
 
-    const too_many = in.tokens.len > model_app.tokens_max or in.fonts.len > model_app.fonts_max;
+    const too_many = tokens.len > model_app.tokens_max or fonts.len > model_app.fonts_max;
 
-    if (!model_app.valid_name(in.app) or too_many) {
+    if (!model_app.valid_name(app) or too_many) {
         return error.Invalid;
     }
 
-    for (in.tokens) |token| {
+    for (tokens) |token| {
         if (!design.valid_token_name(token.name) or !design.valid_token_value(token.value)) {
             return error.Invalid;
         }
     }
 
-    for (in.fonts) |font| {
+    for (fonts) |font| {
         if (!valid_font(font)) {
             return error.Invalid;
         }
     }
 
-    if (in.system) |structure| {
+    if (system) |structure| {
         if (!design_system.valid(structure)) {
             return error.Invalid;
         }
     }
+}
+
+/// What the tests hand `check`, by name.
+const Given = struct {
+    app: []const u8,
+    tokens: []const model_app.Token = &.{},
+    fonts: []const model_app.Font = &.{},
+    system: ?design_system.System = null,
+};
+
+fn check_given(given: Given) Error!void {
+    std.debug.assert(given.app.len > 0);
+
+    return check(given.app, given.tokens, given.fonts, given.system);
 }
 
 /// A stylesheet font, or a hosted one: a family whose faces are all files this site or
@@ -354,14 +382,14 @@ test "the zon written for tokens and fonts reads back as an app.zon" {
         "fonts",
         try fonts_zon(arena, &.{}),
     ))).fonts.len);
-    try std.testing.expectError(error.Invalid, check(.{
+    try std.testing.expectError(error.Invalid, check_given(.{
         .app = "www",
         .fonts = &.{.{
             .family = "Inter",
             .url = "http://f.test/inter.css",
         }},
     }));
-    try std.testing.expectError(error.Invalid, check(.{
+    try std.testing.expectError(error.Invalid, check_given(.{
         .app = "www",
         .tokens = &.{.{
             .name = "color",
@@ -396,11 +424,11 @@ test "a hosted family's faces are written inline and checked" {
     try std.testing.expectEqual(@as(usize, 2), config.fonts[0].faces.len);
     try std.testing.expectEqual(@as(u32, 900), config.fonts[0].faces[1].weight_max);
     try std.testing.expect(config.fonts[0].faces[1].italic);
-    try check(.{
+    try check_given(.{
         .app = "www",
         .fonts = &fonts,
     });
-    try std.testing.expectError(error.Invalid, check(.{
+    try std.testing.expectError(error.Invalid, check_given(.{
         .app = "www",
         .fonts = &.{.{
             .family = "Inferi",
@@ -409,7 +437,7 @@ test "a hosted family's faces are written inline and checked" {
             }},
         }},
     }));
-    try std.testing.expectError(error.Invalid, check(.{
+    try std.testing.expectError(error.Invalid, check_given(.{
         .app = "www",
         .system = .{
             .roles = &.{.{

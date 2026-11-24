@@ -294,6 +294,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .kept = try kept_of(&session, pieces.items),
         .trashed = try trashed_of(&session, pieces.items),
         .log_href = try std.fmt.allocPrint(arena, "{s}/log", .{base}),
+        .ledger_href = try @import("ledger.zig").tab_href(&session, detail.name),
         .webhooks_href = if (webhooks_tab.has_webhooks(&session, detail.name))
             try std.fmt.allocPrint(arena, "{s}/webhooks", .{base})
         else
@@ -305,6 +306,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             arena,
             detail.warnings[0..@min(detail.warnings.len, 64)],
         ),
+        .answers = try @import("plugin_answers.zig").of(&session, detail.name),
     }, .{});
 }
 
@@ -932,4 +934,8 @@ fn redirect_to(session: *Session, name: []const u8) Error!void {
     const location = try std.fmt.allocPrint(session.arena, "{s}/{s}", .{ back, name });
 
     try session.response.redirect(.see_other, location);
+}
+
+test {
+    _ = @import("plugin_answers.zig");
 }

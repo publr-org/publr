@@ -81,6 +81,40 @@ $ publr --as-admin project move_app --from www --to site
 { "moved": 6 }
 ```
 
+## `clock` and `set_clock`
+
+A test site's clock, to try time-driven work end to end: "it is now 11 January", and a
+payment request is overdue, a monthly job runs, a `.due` job's moment passes. Only on a test
+site: one on this computer, not hosted, not a copy (`PUBLR_COPY`), served over plain http
+while `serve` runs (the same switch that makes `serve` development). Everywhere else the
+clock is the wall clock and `set_clock` is refused (`NotATestSite`). Administrators only.
+
+`set_clock` takes one of: `--at_ms` (the site's time from now on, ms since 1970),
+`--ahead_ms` (moved on by that many ms), `--reset true` (back to the wall clock). From then
+on the site's time runs as the wall clock does. A plugin's `ctx.now()` (built-in and
+installed), the moments of queued work and the queue worker read it, so whatever falls due
+by then runs within a second or two. Sign-ins and sessions keep the wall clock. `clock`
+says the site's time, whether it was moved and whether it may be.
+
+```
+$ publr --as-admin project set_clock --at_ms 1799668800000
+{ "now_ms": 1799668800000 }
+$ publr --as-admin project clock
+{ "now_ms": 1799668801250, "moved": true, "test_site": true }
+$ publr --as-admin project set_clock --reset true
+```
+
+## `random`
+
+`--bytes` (1 to 64, 16 when left out) random bytes from the operating system's
+cryptographic source, as lowercase hex: what a plugin's `ctx.random(&buffer)` reads, built
+in and installed alike. Anyone; every plugin may call it without asking. Changes nothing.
+
+```
+$ publr project random --bytes 4
+{ "hex": "9f04c2e1" }
+```
+
 ## `put`
 
 Anything the project stores put exactly as another copy of the project keeps it, with its
@@ -108,6 +142,6 @@ unit with its outcome: `added`, `replaced`, `removed` or `unchanged`, and a cont
 type's or taxonomy's `handle`. Files (plugins' modules, apps, `publr.zon`) are not put.
 
 ```
-$ publr --as-admin project put --units '[{"kind":"role","id":"reviewer","rows":"{}"}]'
+$ publr --as-admin project put --units '[{"kind":"role","id":"reviewer","rows":{}}]'
 { "put": [{ "kind": "role", "id": "reviewer", "outcome": "removed", "handle": "" }] }
 ```

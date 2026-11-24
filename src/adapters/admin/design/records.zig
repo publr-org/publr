@@ -142,7 +142,7 @@ fn each(
         });
 
         for (listed.records, listed.documents) |record, text| {
-            const parsed = json.parse(Document, arena, text, .{
+            const parsed = json.parse(Document, arena, text.text, .{
                 .ignore_unknown_fields = true,
                 .allocate = .alloc_always,
             });
@@ -179,7 +179,9 @@ pub fn save(session: *Session, handle: []const u8, app_name: []const u8, documen
     if (existing.len > 0) {
         const saved = try registry.SDK.dispatch(&session.ctx, record_operations.Save, .{
             .id = existing[0].id,
-            .document = text,
+            .document = .{
+                .text = text,
+            },
             .expected_version = existing[0].version,
         });
 
@@ -194,7 +196,9 @@ pub fn save(session: *Session, handle: []const u8, app_name: []const u8, documen
 
     const created = try registry.SDK.dispatch(&session.ctx, record_operations.Create, .{
         .type = handle,
-        .document = text,
+        .document = .{
+            .text = text,
+        },
         .app = app_name,
     });
 

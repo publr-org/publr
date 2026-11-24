@@ -254,18 +254,31 @@ pub const Follow = struct {
     now_ms: i64,
     /// The record's language in the write that moved the field (`Queued.language`).
     language: []const u8 = "",
+    /// The record is a plugin's internal record: kept in `job_due_internal`.
+    internal: bool = false,
 };
 
 /// A record's field moved (or was set first): its job queued for the new moment, at once when
 /// that is past, the waiting one for the old moment taken back. A moment the job already
 /// had queued (or ran for) queues nothing again: each value runs once per job.
+const same_due = "plugin = ?1 AND name = ?2 AND record = ?3";
+const keep_due = "(plugin, name, record, moment) VALUES (?1, ?2, ?3, ?4) " ++
+    "ON CONFLICT (plugin, name, record) DO UPDATE SET moment = excluded.moment";
+const select_due = "SELECT moment FROM job_due WHERE " ++ same_due;
+const select_internal_due = "SELECT moment FROM job_due_internal WHERE " ++ same_due;
+const drop_due = "DELETE FROM job_due WHERE " ++ same_due;
+const drop_internal_due = "DELETE FROM job_due_internal WHERE " ++ same_due;
+const keep_record_due = "INSERT INTO job_due " ++ keep_due;
+const keep_internal_due = "INSERT INTO job_due_internal " ++ keep_due;
+
 pub fn follow(connection: *db.Db, arena: std.mem.Allocator, due: Follow) Error!void {
     std.debug.assert(due.plugin.len > 0 and due.name.len > 0);
     std.debug.assert(due.record.len > 0);
 
-    var select = try connection.prepare(
-        "SELECT moment FROM job_due WHERE plugin = ?1 AND name = ?2 AND record = ?3",
-    );
+    var select = if (due.internal)
+        try connection.prepare(select_internal_due)
+    else
+        try connection.prepare(select_due);
     defer select.finalize();
 
     try select.bind_text(1, due.plugin);
@@ -295,9 +308,10 @@ pub fn follow(connection: *db.Db, arena: std.mem.Allocator, due: Follow) Error!v
     try forget.exec();
 
     const moment = due.moment orelse {
-        var drop = try connection.prepare(
-            "DELETE FROM job_due WHERE plugin = ?1 AND name = ?2 AND record = ?3",
-        );
+        var drop = if (due.internal)
+            try connection.prepare(drop_internal_due)
+        else
+            try connection.prepare(drop_due);
         defer drop.finalize();
 
         try drop.bind_text(1, due.plugin);
@@ -308,10 +322,10 @@ pub fn follow(connection: *db.Db, arena: std.mem.Allocator, due: Follow) Error!v
         return;
     };
 
-    var keep = try connection.prepare(
-        "INSERT INTO job_due (plugin, name, record, moment) VALUES (?1, ?2, ?3, ?4) " ++
-            "ON CONFLICT (plugin, name, record) DO UPDATE SET moment = excluded.moment",
-    );
+    var keep = if (due.internal)
+        try connection.prepare(keep_internal_due)
+    else
+        try connection.prepare(keep_record_due);
     defer keep.finalize();
 
     try keep.bind_text(1, due.plugin);
@@ -366,6 +380,43 @@ pub fn moment_of(
     return row.value;
 }
 
+/// `moment_of` for a plugin's internal record (`type_name` its `<plugin>.<kind>`), the
+/// field read from its document; null when the record is not of that collection.
+pub fn internal_moment_of(
+    connection: *db.Db,
+    record: []const u8,
+    type_name: []const u8,
+    field: []const u8,
+) db.Error!??i64 {
+    std.debug.assert(record.len > 0);
+    std.debug.assert(type_name.len > 0 and field.len > 0);
+
+    const dot = std.mem.indexOfScalar(u8, type_name, '.') orelse return null;
+    var select = try connection.prepare(
+        "SELECT json_extract(document, '$.' || ?4) AS value FROM internal_records " ++
+            "WHERE id = ?1 AND plugin = ?2 AND kind = ?3",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, record);
+    try select.bind_text(2, type_name[0..dot]);
+    try select.bind_text(3, type_name[dot + 1 ..]);
+    try select.bind_text(4, field);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    const Row = struct {
+        value: ?i64,
+    };
+    var no_memory: [0]u8 = .{};
+    var fixed = std.heap.FixedBufferAllocator.init(&no_memory);
+    const row = try select.read(Row, fixed.allocator());
+
+    return row.value;
+}
+
 /// A job as the operator sees it, in the column order of `list`.
 pub const Listed = struct {
     id: i64,
@@ -390,6 +441,46 @@ pub fn list(connection: *db.Db, arena: std.mem.Allocator, max: u32) Error![]cons
     defer select.finalize();
 
     try select.bind_int(1, max);
+
+    var rows: std.ArrayList(Listed) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < max);
+        try rows.append(arena, try select.read(Listed, arena));
+    }
+
+    return rows.items;
+}
+
+/// Where a page of the queue starts: past this job, in the order `list` reads them.
+pub const Position = struct {
+    failed: bool,
+    due_at: i64,
+    id: i64,
+};
+
+/// The jobs after `after` (from the first when null), in `list`'s order, at most `max`.
+pub fn list_after(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    after: ?Position,
+    max: u32,
+) Error![]const Listed {
+    std.debug.assert(max > 0 and max <= 1000);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    const from = after orelse return list(connection, arena, max);
+    var select = try connection.prepare(
+        "SELECT id, plugin, name, input, due_at, attempts, state, problem FROM job_queue " ++
+            "WHERE (state = 'failed', due_at, id) > (?2, ?3, ?4) " ++
+            "ORDER BY state = 'failed', due_at, id LIMIT ?1",
+    );
+    defer select.finalize();
+
+    try select.bind_int(1, max);
+    try select.bind_int(2, @intFromBool(from.failed));
+    try select.bind_int(3, from.due_at);
+    try select.bind_int(4, from.id);
 
     var rows: std.ArrayList(Listed) = .empty;
 

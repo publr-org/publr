@@ -167,7 +167,9 @@ fn move_up(ctx: *Ctx, folder: []const u8, parent: []const u8) Error!u32 {
         for (children) |child| {
             _ = try registry.SDK.dispatch(ctx, term.Save, .{
                 .id = child,
-                .document = "{}",
+                .document = .{
+                    .text = "{}",
+                },
                 .parent = parent,
             });
         }

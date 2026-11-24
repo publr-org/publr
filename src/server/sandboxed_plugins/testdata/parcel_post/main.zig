@@ -3,7 +3,8 @@
 //! A provider of another plugin's contract: it needs `parcels` and provides its
 //! `parcels.carrier`, built against parcels' published interface (`@import("parcels")`)
 //! without its code. It answers `quote` only, so parcels 0.2.0, which requires `label`,
-//! stops its update.
+//! stops its update. Its `track` asks the carrier's page, a request out: parcels calls it
+//! from queued work.
 const std = @import("std");
 const publr = @import("publr");
 const parcels = @import("parcels");
@@ -46,14 +47,83 @@ fn quote(ctx: *publr.Ctx, in: QuoteIn) publr.Error!QuoteOut {
     };
 }
 
+pub const FactsIn = struct {};
+
+pub const FactsOut = struct {
+    /// What the carrier carries
+    carries: []const u8,
+};
+
+/// Says what Parcel Post carries: asked once, when it is installed.
+///
+/// Example:
+///   in: {}
+///   out: { "carries": "parcels up to 30 kg" }
+pub const Facts = publr.operation.define(FactsIn, FactsOut, .{
+    .name = "facts",
+    .kind = .read,
+    .run = facts,
+});
+
+fn facts(ctx: *publr.Ctx, in: FactsIn) publr.Error!FactsOut {
+    _ = in;
+    std.debug.assert(ctx.now().ms >= 0);
+
+    return .{
+        .carries = "parcels up to 30 kg",
+    };
+}
+
+pub const TrackIn = struct {
+    /// The carrier's parcel number: here, the address of its tracking page
+    number: []const u8,
+};
+
+pub const TrackOut = struct {
+    /// Where the parcel is now
+    at: []const u8,
+};
+
+/// Asks the carrier where a parcel is: a request out, so only from queued work.
+///
+/// Example:
+///   in: { "number": "https://localhost/track" }
+///   out: { "at": "answered 200" }
+pub const Track = publr.operation.define(TrackIn, TrackOut, .{
+    .name = "track",
+    .kind = .read,
+    .run = track,
+});
+
+fn track(ctx: *publr.Ctx, in: TrackIn) publr.Error!TrackOut {
+    std.debug.assert(in.number.len > 0);
+
+    const answer = try ctx.call(publr.operations.http.Fetch, .{
+        .url = in.number,
+    });
+    const at = std.fmt.allocPrint(ctx.arena(), "answered {d}", .{answer.status}) catch
+        return error.OutOfMemory;
+
+    return .{
+        .at = at,
+    };
+}
+
 pub const plugin = publr.plugin.define(manifest, .{
     .depends_on = .{"parcels"},
-    .operations = &.{Quote},
+    .operations = &.{ Quote, Facts, Track },
+    .permissions = &.{.{
+        .key = "http.fetch",
+        .domains = &.{"localhost"},
+        .reason = "Asks the carrier where a parcel is",
+    }},
     .register_providers = .{.{
         .contract = parcels.contracts.carrier,
         .name = "parcel_post",
         .operations = .{
+            .facts = Facts,
             .quote = Quote,
+            .track = Track,
         },
     }},
 });

@@ -163,7 +163,7 @@ fn proxied(
 /// Every address `host` resolves to, checked (in production, none the server's own either);
 /// answers the one to connect to: the first IPv4 one, else the first IPv6 one, so the
 /// connection goes where the check looked.
-fn resolved(
+pub fn resolved(
     io: std.Io,
     rule: outside.Rule,
     host: HostName,

@@ -26,9 +26,9 @@ pub const namespace: sdk.operation.Namespace = .{
     \\`contributor`, each plugin's), made the first time it declares them; the site
     \\changes them, makes its own and removes them. A plugin's update adds only the
     \\grants new in it, so what the site changed stays. `admin` grants everything and
-    \\never changes. An account holds one or more roles and may call what any of them
-    \\grants. Only an account that may call one of the admin's operations (anything
-    \\outside `app.*`) gets into the admin. Administrators only.
+    \\never changes. An account holds the roles it is given, none unless asked, and may
+    \\call what any of them grants. Only an account that may call one of the admin's
+    \\operations (anything outside `app.*`) gets into the admin. Administrators only.
     ,
 };
 
@@ -111,9 +111,12 @@ pub const Create = struct {
     pub const details =
         \\Administrators only. `copy` starts it with another role's grants, `grants` adds to
         \\them. Fails as invalid for a bad name, label or grant, when the name is taken, or
-        \\when the project holds 64 roles already; as not found when `copy` names no role.
+        \\when the project holds 64 roles already; as not found when `copy` names no role;
+        \\as `GivenByType` when a type of user gives the name and the grants reach past
+        \\what visitors call.
     ;
     pub const kind: sdk.operation.Kind = .write;
+    pub const failures = [_]sdk.operation.Failure{rows.given_by_type};
     pub const In = struct {
         name: []const u8,
         label: []const u8,
@@ -172,6 +175,7 @@ pub const Create = struct {
         };
 
         try rows.check(row, grants);
+        try rows.refuse_staff_given(ctx, row, grants);
         try store.roles.insert(ctx.db, row, ctx.now_ms);
         try store.role_grants.set(ctx.db, in.name, grants);
         ctx.emit(Created, .{
@@ -189,11 +193,13 @@ pub const Update = struct {
     pub const description = "Change a role's label, description and grants";
     pub const details =
         \\Administrators only. `grants` is the whole list, in place of the one it had. Fails
-        \\as not found for a name no role has, as `Locked` for `admin`, and as invalid for a
-        \\bad label, description or grant.
+        \\as not found for a name no role has, as `Locked` for `admin`, as invalid for a
+        \\bad label, description or grant, and as `GivenByType` when a type of user gives
+        \\the role and the grants reach past what visitors call: staff and visitors are two
+        \\ladders.
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const failures = [_]sdk.operation.Failure{rows.locked};
+    pub const failures = [_]sdk.operation.Failure{ rows.locked, rows.given_by_type };
     pub const In = struct {
         name: []const u8,
         label: []const u8,
@@ -238,6 +244,7 @@ pub const Update = struct {
         };
 
         try rows.check(row, in.grants);
+        try rows.refuse_staff_given(ctx, row, in.grants);
         try store.roles.update(ctx.db, row, ctx.now_ms);
         try store.role_grants.set(ctx.db, found.name, in.grants);
         ctx.emit(Updated, .{
@@ -259,7 +266,7 @@ pub const Reset = struct {
         \\`Locked` for `admin`, and as invalid for a role no code declares (the site's own).
     ;
     pub const kind: sdk.operation.Kind = .write;
-    pub const failures = [_]sdk.operation.Failure{rows.locked};
+    pub const failures = [_]sdk.operation.Failure{ rows.locked, rows.given_by_type };
     pub const In = Get.In;
     pub const Out = Get.Out;
     pub const example: In = Get.example;
@@ -277,6 +284,8 @@ pub const Reset = struct {
         if (found.owner.len == 0 or declared.len > role.grants_max) {
             return error.Invalid;
         }
+
+        try rows.refuse_staff_given(ctx, found, declared);
 
         try store.role_grants.set(ctx.db, found.name, declared);
         ctx.emit(Updated, .{
@@ -354,6 +363,7 @@ pub const operations = [_]type{ List, Get, Create, Update, Reset, Remove };
 
 test {
     _ = @import("role/tests.zig");
+    _ = @import("role/stale.zig");
 }
 
 /// What a role's events carry.
@@ -376,4 +386,16 @@ pub const Updated = event_define(.{
 pub const Removed = event_define(.{
     .name = "role.removed",
     .payload = Changed,
+});
+
+/// A grant left a role a type of user gives: the plugin's update took the operation from
+/// visitors, and a type's people never reach what staff call.
+pub const GrantDropped = event_define(.{
+    .name = "role.grant_dropped",
+    .payload = struct {
+        /// The role's name
+        role: []const u8,
+        /// The grant that went: the operation's name
+        grant: []const u8,
+    },
 });

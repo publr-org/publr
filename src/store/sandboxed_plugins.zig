@@ -50,6 +50,50 @@ pub fn get(connection: *db.Db, arena: std.mem.Allocator, name: []const u8) Error
     return try select.read(Row, arena);
 }
 
+/// An installed plugin's manifest alone, read without the rest of its row.
+pub fn manifest_of(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    name: []const u8,
+) Error!?[]const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(name.len <= sandboxed_plugin.name_len_max);
+
+    var select = try connection.prepare("SELECT manifest FROM sandboxed_plugins WHERE name = ?1");
+    defer select.finalize();
+
+    try select.bind_text(1, name);
+
+    if (!try select.step()) {
+        return null;
+    }
+
+    const row = try select.read(struct {
+        manifest: []const u8,
+    }, arena);
+
+    return row.manifest;
+}
+
+/// How long an installed plugin's manifest is, in bytes; 0 when there is no such plugin.
+pub fn manifest_bytes(connection: *db.Db, name: []const u8) Error!u32 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(name.len <= sandboxed_plugin.name_len_max);
+
+    var select = try connection.prepare(
+        "SELECT length(manifest) FROM sandboxed_plugins WHERE name = ?1",
+    );
+    defer select.finalize();
+
+    try select.bind_text(1, name);
+
+    if (!try select.step()) {
+        return 0;
+    }
+
+    return @intCast(select.read_int());
+}
+
 /// Every installed plugin, by name.
 pub fn list(connection: *db.Db, arena: std.mem.Allocator) Error![]Row {
     std.debug.assert(list_max > 0);
@@ -65,6 +109,36 @@ pub fn list(connection: *db.Db, arena: std.mem.Allocator) Error![]Row {
     while (try select.step()) {
         std.debug.assert(rows.items.len < list_max);
         rows.append(arena, try select.read(Row, arena)) catch return error.OutOfMemory;
+    }
+
+    return rows.items;
+}
+
+/// An installed plugin as what it needs sees it: its name, whether it runs, and its
+/// `depends_on` as JSON, read without its whole manifest.
+pub const Needs = struct {
+    name: []const u8,
+    enabled: bool,
+    depends_on: []const u8,
+};
+
+/// Every installed plugin's needs, by name.
+pub fn needs(connection: *db.Db, arena: std.mem.Allocator) Error![]Needs {
+    std.debug.assert(list_max > 0);
+    std.debug.assert(connection.transaction_depth <= 8);
+
+    var select = try connection.prepare("SELECT name, enabled, " ++
+        "COALESCE(json_extract(manifest, '$.depends_on'), '[]') FROM sandboxed_plugins " ++
+        "ORDER BY name LIMIT ?1");
+    defer select.finalize();
+
+    try select.bind_int(1, list_max);
+
+    var rows: std.ArrayList(Needs) = .empty;
+
+    while (try select.step()) {
+        std.debug.assert(rows.items.len < list_max);
+        rows.append(arena, try select.read(Needs, arena)) catch return error.OutOfMemory;
     }
 
     return rows.items;

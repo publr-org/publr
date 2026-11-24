@@ -79,7 +79,9 @@ test "an installed modifier: its reads come for the batch, text back, no writes 
     const fields = try std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, note, .{});
     const stored = try registry.SDK.dispatch(&ctx, @import("../../operations/record.zig").Create, .{
         .type = "greeter.salutation",
-        .document = note,
+        .document = .{
+            .text = note,
+        },
     });
     const blank = try std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, empty, .{});
     var items = [_]std.json.Value{

@@ -12,6 +12,8 @@ const preview_token = @import("../../model/preview_token.zig");
 const http = @import("../../lib/http.zig");
 const Project = @import("../../server/project.zig").Project;
 const registry = @import("../../server/registry.zig");
+const identity_store = @import("../../store/identities.zig");
+const provider_operations = @import("../../operations/identity/providers.zig");
 
 const Error = http.Error;
 const Caller = sdk.Caller;
@@ -62,6 +64,9 @@ pub const Identity = struct {
     /// The signed-in user's name and email, for the admin's chrome; empty when anonymous.
     display_name: []const u8 = "",
     email: []const u8 = "",
+    /// The types of user the signed-in account holds (`customer`); none for staff alone and
+    /// anonymous.
+    user_types: []const []const u8 = &.{},
 
     pub fn csrf_token(
         identity: *const Identity,
@@ -88,7 +93,9 @@ pub fn identify(
 ) Identity {
     std.debug.assert(project.connection.transaction_depth == 0);
 
-    const identity = identify_on_site(request, arena, project);
+    const on_site = identify_on_site(request, arena, project);
+    const providers = registry.sign_in_providers;
+    const identity = vouched_by_proxy(providers, request, arena, project, on_site);
 
     if (identity.caller != .user or !project.split() or project.on_admin_host(request)) {
         return identity;
@@ -99,6 +106,69 @@ pub fn identify(
     std.debug.assert(door.caller == .user);
 
     return if (registry.SDK.reaches_admin(&door)) .{} else identity;
+}
+
+/// While a sign-in provider read from the request is available (an identity-aware proxy in
+/// front of the admin), a session counts only when the proxy's header names a person linked
+/// to the session's account, on every request: someone the proxy no longer lets through,
+/// or someone else at the same browser, is nobody. Device tokens are Publr's own and pass.
+pub fn vouched_by_proxy(
+    providers: []const sdk.provider.SignInProvider,
+    request: *const http.Request,
+    arena: std.mem.Allocator,
+    project: *const Project,
+    identity: Identity,
+) Identity {
+    std.debug.assert(project.connection.transaction_depth == 0);
+
+    const session = identity.session orelse return identity;
+
+    std.debug.assert(session.user_id.len > 0);
+
+    const provider = proxy_for(providers, request, arena, project) orelse return identity;
+    const reading = provider.from_request.?;
+    var system = context(project, arena, .system);
+    const value = request.header(reading.header) orelse return .{};
+    const read = reading.read(&system, value) catch return .{};
+    const claims = read orelse return .{};
+
+    if (claims.subject.len == 0 or claims.subject.len > identity_store.id_len_max) {
+        return .{};
+    }
+
+    const connection = project.connection;
+    const linked = identity_store.find(connection, arena, provider.name, claims.subject) catch {
+        return .{};
+    };
+    const row = linked orelse return .{};
+    const same_person = std.mem.eql(u8, claims.provider, provider.name) and
+        std.mem.eql(u8, row.user_id, session.user_id);
+
+    return if (same_person) identity else .{};
+}
+
+/// The provider read from the request that answers for this request: declared, available,
+/// and the request on the admin's host (or anywhere, on a site without one). There it is
+/// the one way in: password sign-in is refused.
+pub fn proxy_for(
+    providers: []const sdk.provider.SignInProvider,
+    request: *const http.Request,
+    arena: std.mem.Allocator,
+    project: *const Project,
+) ?*const sdk.provider.SignInProvider {
+    std.debug.assert(providers.len <= sdk.provider.providers_max);
+    std.debug.assert(project.connection.transaction_depth == 0);
+
+    if (project.split() and !project.on_admin_host(request)) {
+        return null;
+    }
+
+    const provider = sdk.provider.from_request_of(providers) orelse return null;
+    var system = context(project, arena, .system);
+    // Unreadable settings: as if it were there, so a password is never the way round it.
+    const offered = provider_operations.available(&system, provider) catch true;
+
+    return if (offered) provider else null;
 }
 
 /// Who the site's own pages see (an app's pages, islands and `_actions`, the toolbar): the
@@ -137,6 +207,7 @@ pub fn identify_on_site(
         .token = token,
         .display_name = credentials.user.display_name,
         .email = credentials.user.email,
+        .user_types = credentials.user.user_types,
     };
 }
 
@@ -472,6 +543,43 @@ pub fn clear_session_cookie(
     try response.add_header("Set-Cookie", hint);
 }
 
+/// Set when someone signs out behind an identity-aware proxy. While it is there the admin
+/// says they are signed out instead of signing them straight back in through the proxy, which
+/// still says who they are. Host-only, until the browser closes; signing in through the
+/// proxy clears it.
+pub const signed_out_cookie_name = "publr_signed_out";
+
+/// The `Set-Cookie` value that sets (`on`) or clears the signed-out mark.
+pub fn signed_out_cookie(
+    request: *const http.Request,
+    arena: std.mem.Allocator,
+    on: bool,
+) Error![]const u8 {
+    std.debug.assert(request.path().len > 0);
+    std.debug.assert(signed_out_cookie_name.len > 0);
+
+    const set = "{s}=1; Path=/; HttpOnly; SameSite=Lax{s}";
+    const clear = "{s}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{s}";
+    const suffix = secure_suffix(request);
+    const value = if (on)
+        std.fmt.allocPrint(arena, set, .{ signed_out_cookie_name, suffix })
+    else
+        std.fmt.allocPrint(arena, clear, .{ signed_out_cookie_name, suffix });
+
+    return value catch error.OutOfMemory;
+}
+
+/// This browser signed out behind the proxy and has not signed in again since.
+pub fn signed_out_here(request: *const http.Request) bool {
+    std.debug.assert(request.path().len > 0);
+    std.debug.assert(signed_out_cookie_name.len > 0);
+
+    const cookies = request.header("cookie") orelse return false;
+    const value = cookie_value(cookies, signed_out_cookie_name) orelse return false;
+
+    return std.mem.eql(u8, value, "1");
+}
+
 /// `; Domain=` and the project's domain when an app answers on a subdomain: one sign-in
 /// then holds on every app of the project. Nothing otherwise (`Project.cookie_domain`).
 pub fn domain_label(project: *const Project) []const u8 {
@@ -509,12 +617,14 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
         project.auth,
         caller,
         .{
-            .now_ms = sdk.context.wall_clock_ms(project.io),
+            .now_ms = project.now_ms(),
         },
     );
 
     ctx.sandboxed_plugins = project.sandboxed_plugins;
     ctx.scratch_set_aside = project.scratch;
+    ctx.calls_set_aside = project.call_scratch;
+    ctx.plugins_set_aside = project.plugin_memory;
     ctx.definitions = project.definitions;
     ctx.plugin_states = project.plugin_states;
     ctx.files = project.files;
@@ -525,6 +635,8 @@ pub fn context(project: *const Project, arena: std.mem.Allocator, caller: Caller
     ctx.updater = project.updater;
     ctx.limits = project.limits;
     ctx.outside = project.outside;
+    ctx.on_copy = project.on_copy;
+    ctx.test_clock = project.test_clock();
 
     return ctx;
 }

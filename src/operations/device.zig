@@ -385,7 +385,9 @@ test "a device never destroys, a drafts device never publishes, a revoked one st
     const lifecycle = @import("record/lifecycle.zig");
     const created = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "post",
-        .document = record_operations.example_document,
+        .document = .{
+            .text = record_operations.example_document,
+        },
     });
     const token = try approved(&harness, "production", "production");
     var device = try device_ctx(&harness, token);
@@ -398,7 +400,9 @@ test "a device never destroys, a drafts device never publishes, a revoked one st
 
     _ = try registry.SDK.dispatch(&device, record_operations.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Draft edit\"}",
+        .document = .{
+            .text = "{\"title\":\"Draft edit\"}",
+        },
         .expected_version = null,
     });
     try std.testing.expectError(error.Failed, registry.SDK.dispatch(&device, lifecycle.Publish, .{

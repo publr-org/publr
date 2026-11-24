@@ -41,7 +41,7 @@ pub const per_user_max = views.per_user_max;
 pub const Saved = struct {
     id: []const u8,
     name: []const u8,
-    query: []const u8,
+    query: sdk.operation.Json,
     created_at: i64,
     updated_at: i64,
     /// Made by an administrator for everyone.
@@ -55,7 +55,9 @@ const example_query = "{\"clauses\":[" ++
 const example_saved: Saved = .{
     .id = example_id,
     .name = "My drafts",
-    .query = example_query,
+    .query = .{
+        .text = example_query,
+    },
     .created_at = 1789650000000,
     .updated_at = 1789653600000,
 };
@@ -158,13 +160,15 @@ pub const Create = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         name: []const u8,
-        query: []const u8 = "{}",
+        query: sdk.operation.Json = .object,
         for_everyone: bool = false,
     };
     pub const Out = Saved;
     pub const example: In = .{
         .name = "My drafts",
-        .query = example_query,
+        .query = .{
+            .text = example_query,
+        },
     };
     pub const example_out: Out = example_saved;
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -182,7 +186,7 @@ pub const Create = struct {
 
         const owner = ctx.caller.user_id() orelse return error.Denied;
         const clean_name = try check_name(in.name);
-        const query = try check_query(ctx, in.query);
+        const query = try check_query(ctx, in.query.text);
 
         if (in.for_everyone) {
             return create_shared(ctx, owner, clean_name, query);
@@ -211,7 +215,7 @@ pub const Update = struct {
     pub const In = struct {
         id: []const u8,
         name: ?[]const u8 = null,
-        query: ?[]const u8 = null,
+        query: ?sdk.operation.Json = null,
     };
     pub const Out = Saved;
     pub const example: In = .{
@@ -237,13 +241,13 @@ pub const Update = struct {
         switch (found) {
             .own => |row| {
                 const clean_name = if (in.name) |text| try check_name(text) else row.name;
-                const query = if (in.query) |text| try check_query(ctx, text) else row.query;
+                const query = if (in.query) |text| try check_query(ctx, text.text) else row.query;
 
                 try views.update(ctx.db, row.id, clean_name, query, ctx.now_ms);
             },
             .shared => |row| {
                 const clean_name = if (in.name) |text| try check_name(text) else row.name;
-                const query = if (in.query) |text| try check_query(ctx, text) else row.query;
+                const query = if (in.query) |text| try check_query(ctx, text.text) else row.query;
 
                 try shared_views.update(ctx.db, row.id, clean_name, query, ctx.now_ms);
             },
@@ -433,7 +437,9 @@ fn shared_of(row: shared_views.View) Saved {
     return .{
         .id = row.id,
         .name = row.name,
-        .query = row.query,
+        .query = .{
+            .text = row.query,
+        },
         .created_at = row.created_at,
         .updated_at = row.updated_at,
         .shared = true,
@@ -447,7 +453,9 @@ fn saved_of(row: views.View) Saved {
     return .{
         .id = row.id,
         .name = row.name,
-        .query = row.query,
+        .query = .{
+            .text = row.query,
+        },
         .created_at = row.created_at,
         .updated_at = row.updated_at,
     };
@@ -473,10 +481,12 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
     const bob_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "bob@example.com",
         .display_name = "Bob",
+        .roles = &.{"editor"},
     });
     var ada = harness.ctx(.{
         .user = .{
@@ -496,19 +506,25 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         "{\"key\":\"status\",\"operator\":\"is\",\"value\":\"draft\"}]}";
     const created = try SDK.dispatch(&ada, Create, .{
         .name = "  Drafts ",
-        .query = drafts_query,
+        .query = .{
+            .text = drafts_query,
+        },
     });
     try std.testing.expectEqualStrings("Drafts", created.name);
-    try std.testing.expect(std.mem.indexOf(u8, created.query, "\"value\":\"draft\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, created.query.text, "\"value\":\"draft\"") != null);
     _ = try SDK.dispatch(&ada, Create, .{
         .name = "All",
-        .query = "{}",
+        .query = .{
+            .text = "{}",
+        },
     });
     const mine_query = "{\"clauses\":[" ++
         "{\"key\":\"created\",\"operator\":\"by\",\"value\":\"me\"}]}";
     _ = try SDK.dispatch(&bob, Create, .{
         .name = "Bob's",
-        .query = mine_query,
+        .query = .{
+            .text = mine_query,
+        },
     });
 
     const mine = try SDK.dispatch(&ada, List, .{});
@@ -534,13 +550,15 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         .name = "My drafts",
     });
     try std.testing.expectEqualStrings("My drafts", renamed.name);
-    try std.testing.expectEqualStrings(created.query, renamed.query);
+    try std.testing.expectEqualStrings(created.query.text, renamed.query.text);
     const refiltered = try SDK.dispatch(&ada, Update, .{
         .id = created.id,
-        .query = "{\"order\":\"title\"}",
+        .query = .{
+            .text = "{\"order\":\"title\"}",
+        },
     });
     try std.testing.expectEqualStrings("My drafts", refiltered.name);
-    try std.testing.expect(std.mem.indexOf(u8, refiltered.query, "\"title\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, refiltered.query.text, "\"title\"") != null);
     try std.testing.expectError(
         error.NotFound,
         SDK.dispatch(&bob, Update, .{
@@ -552,7 +570,9 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         error.Invalid,
         SDK.dispatch(&ada, Update, .{
             .id = created.id,
-            .query = "{\"order\":\"no pe\"}",
+            .query = .{
+                .text = "{\"order\":\"no pe\"}",
+            },
         }),
     );
     try std.testing.expectError(error.Invalid, SDK.dispatch(&ada, Create, .{
@@ -562,7 +582,9 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         error.Invalid,
         SDK.dispatch(&ada, Create, .{
             .name = "Bad",
-            .query = "not json",
+            .query = .{
+                .text = "not json",
+            },
         }),
     );
     const unknown = "{\"clauses\":[{\"key\":\"nope\",\"operator\":\"is\"}]}";
@@ -570,7 +592,9 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         error.Invalid,
         SDK.dispatch(&ada, Create, .{
             .name = "Bad",
-            .query = unknown,
+            .query = .{
+                .text = unknown,
+            },
         }),
     );
     const wrong_operator = "{\"clauses\":[{\"key\":\"status\",\"operator\":\"within\"}]}";
@@ -578,7 +602,9 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
         error.Invalid,
         SDK.dispatch(&ada, Create, .{
             .name = "Bad",
-            .query = wrong_operator,
+            .query = .{
+                .text = wrong_operator,
+            },
         }),
     );
 
@@ -595,7 +621,9 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
 
     const everyone_in: Create.In = .{
         .name = "Unpaid",
-        .query = "{\"order\":\"-total\"}",
+        .query = .{
+            .text = "{\"order\":\"-total\"}",
+        },
         .for_everyone = true,
     };
     try std.testing.expectError(error.Denied, SDK.dispatch(&ada, Create, everyone_in));
@@ -603,6 +631,7 @@ test "views are private: create, list, get, update, delete, all owner-bound" {
     const admin_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "root@example.com",
         .display_name = "Root",
+        .roles = &.{"editor"},
     });
     var root = harness.ctx(.{
         .user = .{

@@ -27,6 +27,8 @@ export type PluginWebhooksProps = {
   log_href: string;
   /** This page. */
   webhooks_href: string;
+  /** Its Ledger tab; empty when it keeps no ledger. */
+  ledger_href?: string;
   /** Each webhook and the address to paste into the sender's settings. */
   webhooks: Array<{ name: string; url: string }>;
   /** What was sent, newest first. */
@@ -56,7 +58,7 @@ export type PluginWebhooksProps = {
 
 /** A plugin's webhooks: the addresses other servers send to, and what they sent, each
  * delivery with its signature, result and log, and Run again. */
-export function PluginWebhooks({ name, summary, overview_href, plugins_href, log_href, webhooks_href, webhooks, deliveries, notice, problem }: PluginWebhooksProps) {
+export function PluginWebhooks({ name, summary, overview_href, plugins_href, log_href, webhooks_href, ledger_href = "", webhooks, deliveries, notice, problem }: PluginWebhooksProps) {
   return (
     <IndexPage
       title={name}
@@ -69,6 +71,7 @@ export function PluginWebhooks({ name, summary, overview_href, plugins_href, log
           <TabNavLink href={webhooks_href} active>
             {Publr.t("Webhooks")}
           </TabNavLink>
+          {ledger_href !== "" && <TabNavLink href={ledger_href}>{Publr.t("Ledger")}</TabNavLink>}
         </TabNav>
       }
       notice={

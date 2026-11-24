@@ -176,7 +176,7 @@ fn matches_etag(header: ?[]const u8, etag: []const u8) bool {
 }
 
 /// The file as uploaded, when it fits one response.
-fn original(
+pub fn original(
     response: *http.Response,
     ctx: *http.Context,
     files: files_module.Files,

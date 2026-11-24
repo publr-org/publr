@@ -1,5 +1,6 @@
 //! How much of each domain's messages each language covers: the core's (`publr`) and each
-//! compiled-in plugin's, as the build embedded them, against the language's catalogue.
+//! compiled-in plugin's, as the build embedded them, and each installed plugin's, as its
+//! manifest lists them, against the language's catalogue.
 const std = @import("std");
 const model = @import("../../model.zig");
 const OwnedTranslation = @import("../../sdk/plugin.zig").OwnedTranslation;
@@ -11,13 +12,20 @@ const Message = @import("../../sdk/context.zig").MessageId;
 /// Every message the admin and the compiled-in plugins mark, `domain\tcontext\tid` a line.
 const messages_lines = @import("i18n_messages").lines;
 
+/// An installed plugin's marked messages, `[context, id]` each.
+pub const Marked = struct {
+    plugin: []const u8,
+    messages: []const [2][]const u8,
+};
+
 const Domain = struct {
     name: []const u8,
     messages: std.ArrayList(Message) = .empty,
 };
 
-/// The embedded messages by domain, in the order the build listed them.
-fn domains_of(arena: std.mem.Allocator) ![]Domain {
+/// The embedded messages by domain, in the order the build listed them, then each installed
+/// plugin's not compiled in.
+fn domains_of(arena: std.mem.Allocator, marked: []const Marked) ![]Domain {
     std.debug.assert(messages_lines.len <= 64 << 20);
 
     var domains: std.ArrayList(Domain) = .empty;
@@ -41,7 +49,38 @@ fn domains_of(arena: std.mem.Allocator) ![]Domain {
         });
     }
 
+    const embedded = domains.items.len;
+
+    for (marked) |one| {
+        if (one.plugin.len == 0 or listed(domains.items[0..embedded], one.plugin)) {
+            continue;
+        }
+
+        const domain = try domain_in(arena, &domains, one.plugin);
+
+        for (one.messages) |message| {
+            if (message[1].len > 0) {
+                try domain.messages.append(arena, .{
+                    .context = message[0],
+                    .id = message[1],
+                });
+            }
+        }
+    }
+
     return domains.items;
+}
+
+fn listed(domains: []const Domain, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    for (domains) |domain| {
+        if (std.mem.eql(u8, domain.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn domain_in(arena: std.mem.Allocator, domains: *std.ArrayList(Domain), name: []const u8) !*Domain {
@@ -92,10 +131,12 @@ pub fn of(
     arena: std.mem.Allocator,
     list: []const Language,
     translations: []const OwnedTranslation,
+    marked: []const Marked,
 ) ![]const Coverage {
     std.debug.assert(list.len <= languages.languages_max);
+    std.debug.assert(marked.len <= 1024);
 
-    const domains = try domains_of(arena);
+    const domains = try domains_of(arena, marked);
     var out: std.ArrayList(Coverage) = .empty;
 
     for (list) |language| {

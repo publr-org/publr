@@ -64,28 +64,43 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
                 std.debug.assert(text.len > 0);
 
                 const arena = ctx.arena();
-                // `.{}` is an empty tuple, which JSON writes as `[]`: no parameters are `{}`.
-                const bound = if (comptime std.meta.fieldNames(@TypeOf(params)).len == 0)
-                    "{}"
+                // `.{}` is an empty tuple, which is written as a list: no parameters are `{}`.
+                const bound: sdk.operation.Json = if (comptime std.meta.fieldNames(
+                    @TypeOf(params),
+                ).len == 0)
+                    .object
                 else
-                    std.json.Stringify.valueAlloc(arena, params, .{}) catch {
-                        return error.OutOfMemory;
-                    };
+                    sdk.operation.Json.of(arena, params) catch return error.OutOfMemory;
 
                 if (comptime guest.mode == .native) {
                     ctx.inner.prepared = parsed();
                 }
 
-                const answer = try ctx.call(record.Query, .{
+                const asked: record.Query.In = .{
                     .query = text,
                     .params = bound,
                     .trashed = options.trashed,
-                });
+                };
 
-                return std.json.parseFromSliceLeaky(Result, arena, answer.result.text, .{
-                    .ignore_unknown_fields = true,
-                    .allocate = .alloc_always,
-                }) catch error.Invalid;
+                // An installed plugin gets the answer laid out as its `Result`: no text read
+                // there. A modifier's reads are noted and answered together, as JSON.
+                if (comptime guest.mode == .sandboxed) laid: {
+                    const Got = struct {
+                        result: Result,
+                    };
+
+                    if (ctx.reads != null) {
+                        break :laid;
+                    }
+
+                    const Query = record.Query;
+
+                    return (try ctx.read_shaped(Query.In, Got, Query.name, &asked)).result;
+                }
+
+                const answer = try ctx.call(record.Query, asked);
+
+                return answer.result.as(Result, arena) catch error.Invalid;
             }
         };
     }

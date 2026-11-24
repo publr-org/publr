@@ -64,6 +64,14 @@ pub fn add(
         });
     }
 
+    // The fixture app's components rendered as JavaScript, held to their Zig render.
+    fixture.addAnonymousImport("interactive_parity", .{
+        .root_source_file = @import("gen.zig").script_render(
+            builder,
+            fixture_apps_dir ++ "/www/interactive",
+        ),
+    });
+
     const test_step = builder.step("test", "Run all tests");
     const test_exe_step = builder.step("test-exe", "Build the test binary for a debugger");
     const plugins_step = builder.step("test-native-plugins", "Run the native plugins' tests");

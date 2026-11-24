@@ -32,6 +32,30 @@ pub fn under_base(
 
     defer if (definitions) |cache| cache.end();
 
+    // And the installed plugins it reaches are each started once for it, and gone with it.
+    const plugins = Project.of(ctx).sandboxed_plugins;
+
+    if (plugins) |installed| {
+        var label_buffer: [96]u8 = undefined;
+
+        // Named before anything runs: the request's counters carry its path, not the name
+        // of the first operation it calls.
+        installed.request_begin();
+        installed.counted(.{
+            .label = std.fmt.bufPrint(&label_buffer, "{s}_{s}", .{
+                @tagName(request.inner.method),
+                request.inner.path[0..@min(request.inner.path.len, 80)],
+            }) catch "",
+        });
+    }
+
+    defer if (plugins) |installed| {
+        installed.counted(.{
+            .arena_bytes = http.arena_used(ctx.arena) orelse 0,
+        });
+        installed.request_end();
+    };
+
     try next.run(request, response, ctx);
 
     const project = Project.of(ctx);

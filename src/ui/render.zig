@@ -184,6 +184,13 @@ pub const layouts = [_][]const u8{
     "PanelPage",
 };
 
+/// A page's root as an error names it: `<Name>`, or markup.
+fn root_named(comptime root_component: []const u8) []const u8 {
+    comptime std.debug.assert(root_component.len < 64);
+
+    return if (root_component.len == 0) "markup" else "<" ++ root_component ++ ">";
+}
+
 fn is_layout(comptime name: []const u8) bool {
     comptime {
         std.debug.assert(layouts.len == 10);
@@ -238,9 +245,9 @@ pub fn document(
         if (!is_layout(View.root_component)) {
             @compileError("a page is drawn by one of the layouts (IndexPage, FormPage, " ++
                 "HubPage, CardPage, ListDetailPage, FramePage, BareFramePage, WorkspacePage, " ++
-                "AroundPage, PanelPage); " ++
-                "this one's root is \"" ++
-                View.root_component ++ "\"");
+                "AroundPage, PanelPage), the page's root: one layout around everything it " ++
+                "shows, its state and handlers on the page itself; this one's root is " ++
+                root_named(View.root_component));
         }
     }
 

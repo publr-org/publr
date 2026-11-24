@@ -16,7 +16,9 @@ pub fn post_type(ctx: *Ctx) Error!void {
     const definition = try model.content_type.encode(ctx.arena, model.content_type.test_post);
 
     _ = try registry.SDK.dispatch(ctx, types.Create, .{
-        .definition = definition,
+        .definition = .{
+            .text = definition,
+        },
     });
 }
 
@@ -27,7 +29,9 @@ pub fn published(ctx: *Ctx, handle: []const u8, document: []const u8) Error!reco
 
     var created = try registry.SDK.dispatch(ctx, records.Create, .{
         .type = handle,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
     const moved = try registry.SDK.dispatch(ctx, records.Publish, .{
         .id = created.id,

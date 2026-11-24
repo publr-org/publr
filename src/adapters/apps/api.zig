@@ -18,6 +18,7 @@ const sandboxed_cli = @import("../cli/sandboxed_plugins.zig");
 const context = @import("context.zig");
 const visitor = @import("visitor.zig");
 const framed = @import("framed.zig");
+const languages = @import("languages.zig");
 const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
 
@@ -111,6 +112,12 @@ pub fn call(
     else
         visitor.of_header(request);
 
+    // Words for the visitor are in the language of the page they are on.
+    if (same) {
+        sdk_ctx.cookies = request.header("cookie") orelse "";
+        try speak_page_language(project, request, ctx.arena, target, &sdk_ctx);
+    }
+
     if (!same and as_form) {
         return rest_auth.refuse(
             response,
@@ -132,6 +139,45 @@ pub fn call(
     }
 
     return form_call(&sdk_ctx, found, request, response, target);
+}
+
+/// The language of the site's page that sent the call (its `Referer`, under `/pl`): what a
+/// plugin's `ctx.t` speaks to the visitor, whatever the admin speaks. A call from no page
+/// (the command line, a test, a referer left out) speaks the site's default language.
+fn speak_page_language(
+    project: *const Project,
+    request: *Request,
+    arena: std.mem.Allocator,
+    target: Target,
+    sdk_ctx: *sdk.Ctx,
+) !void {
+    std.debug.assert(target.path.len > 0);
+    std.debug.assert(sdk_ctx.now_ms >= 0);
+
+    const located = try languages.locate(project, arena, .{
+        .app = target.app,
+        .path = page_path(request.header("referer") orelse ""),
+    });
+
+    if (located.place.locale.len > 0) {
+        sdk_ctx.language.locale = located.place.locale;
+        sdk_ctx.address_code = located.place.code;
+    }
+}
+
+/// The path of the page a `Referer` names; `/`, the site's first page, when it names none.
+fn page_path(referer: []const u8) []const u8 {
+    std.debug.assert(referer.len < 1 << 16);
+
+    const scheme_end = std.mem.indexOf(u8, referer, "://") orelse return "/";
+    const after_host = referer[scheme_end + 3 ..];
+    const slash = std.mem.indexOfScalar(u8, after_host, '/') orelse return "/";
+    const whole = after_host[slash..];
+    const end = std.mem.indexOfAny(u8, whole, "?#") orelse whole.len;
+
+    std.debug.assert(end > 0);
+
+    return whole[0..end];
 }
 
 fn not_found(response: *Response) anyerror!void {
@@ -158,6 +204,9 @@ fn action_of(project: *const Project, rest: []const u8) ?Action {
     const own = operation_named(rest) orelse return null;
 
     std.debug.assert(own.len < rest.len);
+
+    // Unrolled once over every operation: the budget grows with the list.
+    @setEvalBranchQuota(1000 + registry.SDK.operations.len * 8);
 
     inline for (registry.SDK.operations) |Operation| {
         const defined = comptime @hasDecl(Operation, "untrusted_callers");
@@ -297,6 +346,9 @@ fn input_of(sdk_ctx: *sdk.Ctx, name: []const u8, form: *const Form) !?[]const u8
     }
 
     var problem: cli.Problem = .{};
+
+    // Unrolled once over every operation: the budget grows with the list.
+    @setEvalBranchQuota(1000 + registry.SDK.operations.len * 8);
 
     inline for (registry.SDK.operations) |Operation| {
         if (comptime @hasDecl(Operation, "untrusted_callers")) {

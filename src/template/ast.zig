@@ -338,6 +338,8 @@ pub const Node = union(enum) {
         /// `dynamic-if="<name>"`: fetched only when the browser's condition of that name
         /// holds (`Publr.islands.condition`); empty for an island fetched on every view.
         condition: []const u8 = "",
+        /// `follow`: drawn again in the browser when a record it read changes.
+        follow: bool = false,
         /// The fallback markup inside the placeholder (empty with `prerender`).
         fallback: []const Node,
     };

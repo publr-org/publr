@@ -35,6 +35,15 @@ pub fn sign_in(request: *Request, response: *Response, ctx: *Context) Error!void
         return;
     }
 
+    // Behind an identity-aware proxy the proxy is the one way in: no password opens a session.
+    const providers = registry.sign_in_providers;
+
+    if (identity_module.proxy_for(providers, request, ctx.arena, project) != null) {
+        return response.json(.forbidden, .{
+            .@"error" = "sign_in_through_proxy",
+        });
+    }
+
     const in = parse_body(sign_in_operations.SignIn.In, ctx.arena, request.body) orelse {
         return response.json(.bad_request, .{
             .@"error" = "invalid_body",
@@ -196,7 +205,7 @@ pub fn whoami(request: *Request, response: *Response, ctx: *Context) Error!void 
     });
 }
 
-fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In {
+pub fn parse_body(comptime In: type, arena: std.mem.Allocator, body: []const u8) ?In {
     std.debug.assert(@typeInfo(In) == .@"struct");
     std.debug.assert(body_bytes_max > 0);
 
@@ -537,6 +546,7 @@ test "auth over http: login sets the cookie, session reports the user, csrf guar
     const invited = try registry.SDK.dispatch(&system, user_operations.Create, .{
         .email = "new@example.com",
         .display_name = "New",
+        .roles = &.{"editor"},
         .password_link = true,
     });
     const token = invited.link.?.path[user_operations.invitation_path.len + 7 ..];

@@ -150,7 +150,7 @@ pub const Create = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         taxonomy: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
         parent: ?[]const u8 = null,
     };
     pub const Out = struct {
@@ -162,7 +162,9 @@ pub const Create = struct {
     };
     pub const example: In = .{
         .taxonomy = "topics",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     };
     pub const example_out: Out = .{
         .id = example_id,
@@ -184,7 +186,7 @@ pub const Create = struct {
             return error.Invalid;
         }
 
-        const created = try crud.create(ctx, granted, in.taxonomy, in.document, null, null);
+        const created = try crud.create(ctx, granted, in.taxonomy, in.document.text, null, null);
 
         if (in.parent) |parent| {
             try place(ctx, created.id, if (parent.len == 0) null else parent);
@@ -203,7 +205,7 @@ pub const Create = struct {
 /// A new term made live by publishing it: the media library's folders and tags.
 pub fn published(ctx: *Ctx, in: Create.In) Error!Create.Out {
     std.debug.assert(in.taxonomy.len > 0);
-    std.debug.assert(in.document.len > 0);
+    std.debug.assert(in.document.text.len > 0);
 
     var created = try registry.SDK.dispatch(ctx, Create, in);
     const moved = try registry.SDK.dispatch(ctx, Publish, .{
@@ -283,7 +285,7 @@ pub const Get = struct {
         term: Term,
         parent: ?[]const u8,
         slot: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
     };
     pub const example: In = .{
         .id = example_id,
@@ -292,7 +294,9 @@ pub const Get = struct {
         .term = example_term,
         .parent = example_parent_id,
         .slot = "live",
-        .document = example_document,
+        .document = .{
+            .text = example_document,
+        },
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .id = "The term id",
@@ -317,7 +321,7 @@ pub const Get = struct {
         var got = try crud.get(ctx, granted, in.id, in.purpose, in.slot);
 
         if (try domain.dimensions.wanted_of(ctx, in.dimensions)) |wanted| {
-            try domain.dimensions.resolve_one(ctx, &got.record, &got.document, wanted);
+            try domain.dimensions.resolve_one(ctx, &got.record, &got.document.text, wanted);
         }
 
         const parent = try terms.parent_of(ctx.db, ctx.arena, got.record.id);
@@ -346,7 +350,7 @@ pub const Save = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         id: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
         expected_version: ?i64 = null,
         parent: ?[]const u8 = null,
     };
@@ -360,7 +364,9 @@ pub const Save = struct {
     };
     pub const example: In = .{
         .id = example_id,
-        .document = example_edit,
+        .document = .{
+            .text = example_edit,
+        },
     };
     pub const example_out: Out = .{
         .version = 3,
@@ -384,7 +390,7 @@ pub const Save = struct {
         }
 
         const expected = in.expected_version;
-        const saved = try crud.save(ctx, granted, in.id, in.document, expected, null);
+        const saved = try crud.save(ctx, granted, in.id, in.document.text, expected, null);
 
         if (in.parent) |parent| {
             try place(ctx, in.id, if (parent.len == 0) null else parent);
@@ -619,12 +625,14 @@ pub const Validate = struct {
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         taxonomy: []const u8,
-        document: []const u8,
+        document: sdk.operation.Json,
     };
     pub const Out = crud_module.Report;
     pub const example: In = .{
         .taxonomy = "topics",
-        .document = "{\"slug\":\"no name\"}",
+        .document = .{
+            .text = "{\"slug\":\"no name\"}",
+        },
     };
     pub const example_out: Out = .{
         .valid = false,
@@ -647,7 +655,7 @@ pub const Validate = struct {
 
         std.debug.assert(granted.allows());
 
-        return crud.validate(ctx, granted, in.taxonomy, in.document);
+        return crud.validate(ctx, granted, in.taxonomy, in.document.text);
     }
 };
 
@@ -667,7 +675,9 @@ pub fn seed_topics(harness: *sdk.testing.Harness) !void {
 
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, taxonomy_operations.Create, .{
-        .definition = taxonomy_operations.example_definition,
+        .definition = .{
+            .text = taxonomy_operations.example_definition,
+        },
     });
 }
 
@@ -685,18 +695,24 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
     });
     const tech = try published(&editor, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
     });
     try std.testing.expectEqualStrings("technology", tech.slug.?);
     const engineering = try SDK.dispatch(&editor, Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Engineering\"}",
+        .document = .{
+            .text = "{\"name\":\"Engineering\"}",
+        },
         .parent = tech.id,
     });
     try std.testing.expectEqualStrings(tech.id, engineering.parent.?);
     const art = try SDK.dispatch(&editor, Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Art\"}",
+        .document = .{
+            .text = "{\"name\":\"Art\"}",
+        },
     });
 
     const tree = try SDK.dispatch(&editor, Tree, .{
@@ -716,32 +732,42 @@ test "terms: create with a parent, tree order, save moves, get shows the parent"
 
     const moved = try SDK.dispatch(&editor, Save, .{
         .id = tech.id,
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
         .parent = art.id,
     });
     try std.testing.expectEqualStrings(art.id, moved.parent.?);
     const rooted = try SDK.dispatch(&editor, Save, .{
         .id = tech.id,
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
         .parent = "",
     });
     try std.testing.expect(rooted.parent == null);
 
     const cycle = SDK.dispatch(&editor, Save, .{
         .id = tech.id,
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
         .parent = engineering.id,
     });
     try std.testing.expectError(error.Invalid, cycle);
     const self = SDK.dispatch(&editor, Save, .{
         .id = tech.id,
-        .document = "{\"name\":\"Technology\"}",
+        .document = .{
+            .text = "{\"name\":\"Technology\"}",
+        },
         .parent = tech.id,
     });
     try std.testing.expectError(error.Invalid, self);
     const stranger = SDK.dispatch(&editor, Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Lost\"}",
+        .document = .{
+            .text = "{\"name\":\"Lost\"}",
+        },
         .parent = "nope",
     });
     try std.testing.expectError(error.Invalid, stranger);
@@ -780,18 +806,25 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
         },
     });
     _ = try SDK.dispatch(&admin, taxonomy_operations.Create, .{
-        .definition =
-        \\{"handle":"tags","name":"Tags","title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"tags","name":"Tags","title_field":"name",
+            \\ "fields":[{"name":"name","label":"Name","kind":"string",
+            \\ "validation":{"required":true}}]}
+            ,
+        },
     });
     const one = try SDK.dispatch(&admin, Create, .{
         .taxonomy = "tags",
-        .document = "{\"name\":\"A\"}",
+        .document = .{
+            .text = "{\"name\":\"A\"}",
+        },
     });
     const flat = SDK.dispatch(&admin, Create, .{
         .taxonomy = "tags",
-        .document = "{\"name\":\"B\"}",
+        .document = .{
+            .text = "{\"name\":\"B\"}",
+        },
         .parent = one.id,
     });
     try std.testing.expectError(error.Invalid, flat);
@@ -804,7 +837,9 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
         const text = try std.fmt.allocPrint(arena, "{{\"name\":\"L{d}\"}}", .{depth});
         const created = try SDK.dispatch(&admin, Create, .{
             .taxonomy = "topics",
-            .document = text,
+            .document = .{
+                .text = text,
+            },
             .parent = parent,
         });
         parent = created.id;
@@ -812,7 +847,9 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
 
     const too_deep = SDK.dispatch(&admin, Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Deep\"}",
+        .document = .{
+            .text = "{\"name\":\"Deep\"}",
+        },
         .parent = parent,
     });
     try std.testing.expectError(error.Invalid, too_deep);
@@ -825,11 +862,14 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
 
     const flatten = SDK.dispatch(&admin, taxonomy_operations.Update, .{
         .taxonomy = "topics",
-        .definition =
-        \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
-        \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
-        \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
-        ,
+        .definition = .{
+            .text =
+            \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
+            \\ "fields":[{"name":"name","label":"Name","kind":"string",
+            \\ "validation":{"required":true}},
+            \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
+            ,
+        },
     });
     try std.testing.expectError(error.Conflict, flatten);
 }

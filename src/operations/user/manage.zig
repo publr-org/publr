@@ -1,5 +1,6 @@
 //! Changing and removing accounts; the rules that keep one admin around.
 const std = @import("std");
+const visitors = @import("visitors.zig");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const trash = @import("../trash.zig");
@@ -26,7 +27,7 @@ pub const Update = struct {
         user: []const u8,
         display_name: []const u8,
         roles: []const []const u8,
-        document: ?[]const u8 = null,
+        document: ?sdk.operation.Json = null,
     };
     pub const Out = struct {
         user_id: []const u8,
@@ -57,6 +58,12 @@ pub const Update = struct {
         std.debug.assert(ctx.caller != .anonymous);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
+
+        try visitors.refuse_other_account(ctx, found.user);
+
+        try visitors.refuse_roles_not_its_own(ctx, in.roles);
+        try user_operations.staff.refuse_from_plugin(ctx, found.user.roles, in.roles);
+
         const display_name = store.users.validate_display_name(in.display_name) catch {
             return error.Invalid;
         };
@@ -88,7 +95,7 @@ pub const Update = struct {
         if (in.document) |text| {
             const defs = try user_operations.fields.definition(ctx, found.user.id, in.roles);
 
-            try user_operations.fields.write(ctx, found.user.id, defs, text);
+            try user_operations.fields.write(ctx, found.user.id, defs, text.text);
         }
 
         return .{
@@ -135,6 +142,8 @@ pub const Delete = struct {
         std.debug.assert(ctx.caller != .anonymous);
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
+
+        try visitors.refuse_other_account(ctx, found.user);
 
         if (is_self(ctx, found.user.id)) {
             return error.Invalid;

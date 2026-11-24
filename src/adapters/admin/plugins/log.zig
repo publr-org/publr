@@ -58,6 +58,7 @@ pub fn show(
             try std.fmt.allocPrint(session.arena, "{s}/webhooks", .{own})
         else
             "",
+        .ledger_href = try @import("../ledger.zig").tab_href(&session, name),
         .lines = lines,
         .older_href = try activity_page.older(session.arena, log_href, oldest),
     }, .{});

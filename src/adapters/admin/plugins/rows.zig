@@ -15,7 +15,7 @@ pub const Mode = enum { read_only, switches, review };
 pub const Secret = plugin_operations.Detail.Secret;
 
 /// Requests as rows of a page's `Row` type, low tier first; `secrets` (what the plugin
-/// declares) under its `http.fetch` row.
+/// declares) under the first row whose key sends them (`http.fetch`, `mail.send`).
 pub fn requests(
     comptime Row: type,
     session: *const Session,
@@ -29,14 +29,21 @@ pub fn requests(
     const arena = session.arena;
 
     var rows: std.ArrayList(Row) = .empty;
+    var secrets_shown = false;
 
     for ([_]@TypeOf(list[0].tier){ .low, .medium, .high }) |tier| {
         for (list) |request| {
             if (request.tier == tier) {
                 var row = try row_of(Row, session, request, mode);
 
-                if (std.mem.eql(u8, request.key, "http.fetch")) {
+                const sends = if (permission.find(request.key)) |entry|
+                    entry.sends_secrets
+                else
+                    false;
+
+                if (sends and !secrets_shown) {
                     row.secrets = try secret_rows(Row, session, secrets);
+                    secrets_shown = true;
                 }
 
                 try rows.append(arena, row);

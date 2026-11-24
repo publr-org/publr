@@ -37,6 +37,8 @@ pub const Has = struct {
     media: bool = false,
     /// The taxonomy whose terms the field assigns.
     taxonomy: bool = false,
+    /// How many decimal places the number keeps.
+    places: bool = false,
 };
 
 /// The kind's own rule over one value that already has the right storage shape.
@@ -74,6 +76,9 @@ pub const Kind = struct {
     editor: ?Editor = null,
     /// The kinds whose values this kind takes when a field changes kind.
     convert_from: []const []const u8 = &.{},
+    /// Only a plugin's code puts a field of the kind on a type: the type builder never
+    /// offers it.
+    code_only: bool = false,
 };
 
 pub const core = [_]Kind{
@@ -207,8 +212,25 @@ pub const core = [_]Kind{
         .has = .{
             .range = true,
             .choices = true,
+            .places = true,
         },
         .default_allowed = true,
+        .convert_from = &.{ "string", "integer" },
+    },
+    .{
+        .id = "decimal",
+        .label = "Decimal",
+        .description = "An exact number with set decimal places: 1.25 kg",
+        .icon = "chart",
+        // Kept as written: an exact value, never a binary fraction.
+        .storage = .text,
+        .control = .number,
+        .has = .{
+            .places = true,
+        },
+        .unique_allowed = true,
+        .default_allowed = true,
+        .check = &checks.decimal,
         .convert_from = &.{ "string", "integer" },
     },
     .{
@@ -293,6 +315,26 @@ pub const core = [_]Kind{
         .control = .input,
     },
     .{
+        .id = "ledger_account",
+        .label = "Ledger account",
+        .description = "One of the ledger's accounts",
+        .icon = "link",
+        .storage = .text,
+        .control = .input,
+        .unique_allowed = true,
+        .code_only = true,
+    },
+    .{
+        .id = "ledger_transfer",
+        .label = "Ledger transfer",
+        .description = "One of the ledger's transfers",
+        .icon = "link",
+        .storage = .text,
+        .control = .input,
+        .unique_allowed = true,
+        .code_only = true,
+    },
+    .{
         .id = "embed",
         .label = "Embed",
         .description = "The URL of externally hosted content",
@@ -341,6 +383,17 @@ pub const core = [_]Kind{
         .storage = .int,
         .many_allowed = false,
         .check = &@import("kinds/extra.zig").money,
+    },
+    .{
+        .id = "provider",
+        .label = "Provider",
+        .description = "One provider of a contract: a payment or a delivery method",
+        .icon = "package",
+        .storage = .text,
+        .control = .input,
+        .many_allowed = false,
+        .check = &@import("kinds/extra.zig").provider,
+        .code_only = true,
     },
     .{
         .id = "link",
@@ -521,7 +574,7 @@ fn validate(comptime kinds: []const Kind) void {
 pub const Core = Registry(&core);
 
 test "core registry: every kind found, storage columns, conversions" {
-    try std.testing.expectEqual(@as(usize, 28), Core.all.len);
+    try std.testing.expectEqual(@as(usize, 32), Core.all.len);
     try std.testing.expect(Core.find_kind("terms").?.has.taxonomy);
     try std.testing.expectEqual(Storage.long, Core.find_kind("richtext").?.storage);
     try std.testing.expectEqual(Storage.bool, Core.find_kind("boolean").?.storage);

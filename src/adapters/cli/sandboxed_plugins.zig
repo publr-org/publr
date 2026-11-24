@@ -83,9 +83,7 @@ fn value_of(arena: std.mem.Allocator, field: Field, text: []const u8) !std.json.
     std.debug.assert(text.len <= cli.value_len_max);
 
     if (field.values.len > 0 and std.mem.startsWith(u8, field.label, "list of ")) {
-        var parts = std.mem.splitScalar(u8, text, ',');
-
-        while (parts.next()) |part| {
+        for (try strings_of(arena, text)) |part| {
             try one_of(field.values, part);
         }
     } else if (field.values.len > 0 and !(is_null(field, text))) {
@@ -111,9 +109,8 @@ fn value_of(arena: std.mem.Allocator, field: Field, text: []const u8) !std.json.
         },
         .strings => strings: {
             var list: std.json.Array = .init(arena);
-            var parts = std.mem.splitScalar(u8, text, ',');
 
-            while (parts.next()) |part| {
+            for (try strings_of(arena, text)) |part| {
                 try list.append(.{
                     .string = part,
                 });
@@ -125,6 +122,29 @@ fn value_of(arena: std.mem.Allocator, field: Field, text: []const u8) !std.json.
         },
         .json => try std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{}),
     };
+}
+
+/// A list of text as given: a JSON array (`["a","b"]`), else comma-separated (`a,b`), as a
+/// compiled-in operation reads it.
+fn strings_of(arena: std.mem.Allocator, text: []const u8) ![]const []const u8 {
+    std.debug.assert(text.len <= cli.value_len_max);
+
+    const trimmed = std.mem.trim(u8, text, " ");
+
+    if (std.mem.startsWith(u8, trimmed, "[")) {
+        return std.json.parseFromSliceLeaky([]const []const u8, arena, trimmed, .{});
+    }
+
+    var list: std.ArrayList([]const u8) = .empty;
+    var parts = std.mem.splitScalar(u8, text, ',');
+
+    while (parts.next()) |part| {
+        try list.append(arena, part);
+    }
+
+    std.debug.assert(list.items.len > 0);
+
+    return list.items;
 }
 
 /// An optional field given `null`, as a compiled-in operation reads it.
@@ -173,6 +193,54 @@ pub fn print_json(arena: std.mem.Allocator, text: []const u8, out: *std.Io.Write
 
     std.json.Stringify.value(value, options, out) catch return error.WriteFailed;
     out.writeByte('\n') catch return error.WriteFailed;
+}
+
+/// The `next` an answer names, when it answers a page at a time and there is a page after;
+/// null otherwise.
+pub fn next_of(arena: std.mem.Allocator, output: []const u8) ?[]const u8 {
+    std.debug.assert(output.len > 0);
+
+    const value = std.json.parseFromSliceLeaky(std.json.Value, arena, output, .{}) catch {
+        return null;
+    };
+
+    if (value != .object) {
+        return null;
+    }
+
+    const next = value.object.get("next") orelse return null;
+
+    return if (next == .string and next.string.len > 0) next.string else null;
+}
+
+/// The input as JSON with `after` set to `after`: the same call for the next page. Null
+/// when the caller named a page itself, or the input is no object.
+pub fn input_after(
+    arena: std.mem.Allocator,
+    input: []const u8,
+    after: []const u8,
+) Error!?[]const u8 {
+    std.debug.assert(after.len > 0);
+
+    var value = std.json.parseFromSliceLeaky(std.json.Value, arena, input, .{}) catch {
+        return null;
+    };
+
+    if (value != .object) {
+        return null;
+    }
+
+    if (value.object.get("after")) |given| {
+        if (given != .string or given.string.len > 0) {
+            return null;
+        }
+    }
+
+    value.object.put(arena, "after", .{
+        .string = after,
+    }) catch return error.OutOfMemory;
+
+    return std.json.Stringify.valueAlloc(arena, value, .{}) catch error.OutOfMemory;
 }
 
 pub fn print_help(found: sdk.sandboxed_plugins.Operation, out: *std.Io.Writer) Error!void {
@@ -273,6 +341,11 @@ test "flags become JSON by the field shapes; unknown and missing flags are named
     const expected = "{\"note\":\"hi\",\"times\":3,\"tags\":[\"a\",\"b\"]}";
 
     try std.testing.expectEqualStrings(expected, text);
+
+    // A list of text given as a JSON array arrives as the same list.
+    const as_json = [_][]const u8{ "--note", "hi", "--times", "3", "--tags", "[\"a\",\"b\"]" };
+
+    try std.testing.expectEqualStrings(expected, try parse(arena, found, &as_json, &problem));
     try std.testing.expectError(error.Invalid, parse(arena, found, &.{}, &problem));
     try std.testing.expectEqualStrings("missing required --note (text)", problem.text());
     const unknown = parse(arena, found, &.{ "--nope", "x" }, &problem);

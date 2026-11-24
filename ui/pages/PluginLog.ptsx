@@ -27,6 +27,8 @@ export type PluginLogProps = {
   log_href: string;
   /** Its Webhooks tab; empty when it declares none. */
   webhooks_href?: string;
+  /** Its Ledger tab; empty when it keeps no ledger. */
+  ledger_href?: string;
   /** The lines, newest first. */
   lines: Array<{
     /** The day, `YYYY-MM-DD`, UTC. */
@@ -44,7 +46,7 @@ export type PluginLogProps = {
 };
 
 /** What one plugin logged with `ctx.log`, newest first, read only: its Log tab. */
-export function PluginLog({ name, summary, overview_href, plugins_href, log_href, webhooks_href = "", lines, older_href }: PluginLogProps) {
+export function PluginLog({ name, summary, overview_href, plugins_href, log_href, webhooks_href = "", ledger_href = "", lines, older_href }: PluginLogProps) {
   return (
     <IndexPage
       title={name}
@@ -57,6 +59,7 @@ export function PluginLog({ name, summary, overview_href, plugins_href, log_href
             {Publr.t("Log")}
           </TabNavLink>
           {webhooks_href !== "" && <TabNavLink href={webhooks_href}>{Publr.t("Webhooks")}</TabNavLink>}
+          {ledger_href !== "" && <TabNavLink href={ledger_href}>{Publr.t("Ledger")}</TabNavLink>}
         </TabNav>
       }
       empty={

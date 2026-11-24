@@ -5,6 +5,7 @@
 const std = @import("std");
 const plugin_define = @import("define.zig");
 const secrets = @import("../../model/secrets.zig");
+const permission = @import("../../model/permission.zig");
 
 pub const Declared = secrets.Declared;
 
@@ -81,7 +82,7 @@ fn declared_one(
 }
 
 /// Fails the build when the plugin's code writes a `{secret:NAME}` it did not declare, or
-/// declares secrets without asking for `http.fetch`, the only way one is sent.
+/// declares secrets without asking for a key that sends them (`http.fetch`, `mail.send`).
 pub fn check(comptime Plugin: type) void {
     comptime {
         const plugin = Plugin.manifest.name;
@@ -101,14 +102,14 @@ pub fn check(comptime Plugin: type) void {
             }
         }
 
-        if (declared.len > 0 and !asks_fetch(Plugin)) {
-            @compileError("plugin " ++ plugin ++ ": secrets are sent by `http.fetch`; ask " ++
-                "for it in `.permissions`");
+        if (declared.len > 0 and !asks_sending(Plugin)) {
+            @compileError("plugin " ++ plugin ++ ": secrets are sent by `http.fetch` or " ++
+                "`mail.send`; ask for one in `.permissions`");
         }
     }
 }
 
-fn asks_fetch(comptime Plugin: type) bool {
+fn asks_sending(comptime Plugin: type) bool {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
@@ -117,7 +118,9 @@ fn asks_fetch(comptime Plugin: type) bool {
         }
 
         for (plugin_define.get(Plugin, "permissions")) |ask| {
-            if (std.mem.eql(u8, ask.key, "http.fetch")) {
+            const entry = permission.find(ask.key) orelse continue;
+
+            if (entry.sends_secrets) {
                 return true;
             }
         }

@@ -22,6 +22,9 @@ pub fn native_of(builder: *std.Build, plugins_dir: []const u8) Native {
     const root = std.fs.path.dirname(plugins_dir) orelse ".";
     const path = builder.pathJoin(&.{ root, "publr.zon" });
     const io = builder.graph.io;
+
+    // Read while configuring: a changed list (a preset's) configures the build again.
+    repository.read_under(builder, path, .file);
     const limit: std.Io.Limit = .limited(1 << 16);
     const handle = repository.dir(builder);
     const text = handle.readFileAllocOptions(io, path, builder.allocator, limit, .of(u8), 0) catch {
@@ -200,6 +203,8 @@ fn append_components(
 
         var entries = handle.iterate();
 
+        repository.read_under(builder, folder, .folder);
+
         while (entries.next(io) catch @panic("components: reading the folder failed")) |entry| {
             if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".publr")) {
                 continue;
@@ -207,6 +212,8 @@ fn append_components(
 
             const text = handle.readFileAlloc(io, entry.name, arena, .limited(1 << 20)) catch
                 @panic("components: reading a component failed");
+
+            repository.read_under(builder, builder.pathJoin(&.{ folder, entry.name }), .file);
             const component = entry.name[0 .. entry.name.len - ".publr".len];
             const line = builder.fmt("    .{{ .plugin = \"{s}\", .name = \"{s}\", " ++
                 ".text = \"{f}\" }},\n", .{ name, component, std.zig.fmtString(text) });
@@ -431,6 +438,9 @@ pub fn discover(
 
     var iterator = root.iterate();
     var count: u32 = 0;
+
+    // A plugin's folder added or removed configures the build again.
+    repository.read_under(builder, dir, .folder);
 
     while (iterator.next(io) catch null) |entry| {
         // A link counts: a native plugins folder may gather plugins kept elsewhere. The main.zig

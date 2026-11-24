@@ -1,15 +1,54 @@
+import { Publr } from "publr-jsx";
+import { call, query } from "publr/operations";
 import { IndexPage } from "@publr/admin/IndexPage.ptsx";
-import { __Name__List } from "./__Name__List.ptsx";
+import { IndexSection } from "@publr/admin/IndexSection.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { FieldRow } from "@publr/ui/FieldRow.ptsx";
+import { Input } from "@publr/ui/Input.ptsx";
+import { ItemList } from "@publr/ui/ItemList.ptsx";
+
+type Item = { id: string; title: string; type_label: string; status: string; tone: string; href: string };
 
 export type __Name__PageProps = {
-  items: Array<{ id: string; title: string; type_label: string; status: string; tone: string; href: string }>;
+  /** The entries as the list draws them, from the page's server render. */
+  items: Item[];
 };
 
-/** __Title__'s page in the admin: its entries, and a way to add one. */
+const shown = (entries: Array<{ id: string; title: string }>): Item[] =>
+  entries.map((entry) => ({ id: entry.id, title: entry.title, type_label: Publr.t("Entry"), status: "", tone: "", href: "" }));
+
+/** __Title__'s page in the admin: a way to add an entry, then the entries, each removable;
+ * read again after every add or remove. */
 export function __Name__Page({ items }: __Name__PageProps) {
+  const state = Publr.reactive({ items: items, title: "" });
+  const listed = query("__name__.list", undefined, { seeded: true });
+  const addEntry = call("__name__.add");
+  const removeEntry = call("__name__.remove");
+  Publr.effect(() => {
+    const read = listed.value;
+    if (read) state.items = shown(read.entries);
+  });
+  const typed = (event: Event) => {
+    state.title = (event.target as HTMLInputElement).value;
+  };
+  const add = () => {
+    if (state.title.trim() === "") return;
+    addEntry({ title: state.title });
+    state.title = "";
+  };
+  const remove = (event: Event) => removeEntry({ id: (event.currentTarget as HTMLButtonElement).value });
+
   return (
-    <IndexPage title="__Title__" description="Entries people add and remove.">
-      <__Name__List items={items} />
+    <IndexPage title={Publr.t("__Title__")} description={Publr.t("Entries people add and remove.")}>
+      <IndexSection title={Publr.t("New entry")} padded>
+        <FieldRow label={Publr.t("Title")} htmlFor="__name__-title" required>
+          <Input id="__name__-title" name="title" value={state.title} onInput={typed} />
+        </FieldRow>
+        <Button onClick={add}>{Publr.t("Add entry")}</Button>
+      </IndexSection>
+      <IndexSection title={Publr.t("Entries")} empty={state.items.length === 0 ? Publr.t("No entries yet.") : undefined} padded>
+        <ItemList items={state.items} onRemove={remove} />
+      </IndexSection>
     </IndexPage>
   );
 }

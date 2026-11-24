@@ -203,7 +203,7 @@ const term_fields = [_]model.field.Def{
 };
 
 /// An operation's input with the definition under the domain's key, the rest from
-/// `extra` or the field's default.
+/// `extra` or the field's default; a value field takes its JSON text from `extra`.
 pub fn keyed(comptime In: type, comptime key: []const u8, value: []const u8, extra: anytype) In {
     comptime std.debug.assert(@hasField(In, key));
     std.debug.assert(value.len > 0);
@@ -217,6 +217,10 @@ pub fn keyed(comptime In: type, comptime key: []const u8, value: []const u8, ext
     ) |info_name, InfoType, info_attrs| {
         if (comptime std.mem.eql(u8, info_name, key)) {
             @field(in, info_name) = value;
+        } else if (comptime InfoType == sdk_operation.Json) {
+            @field(in, info_name) = .{
+                .text = @field(extra, info_name),
+            };
         } else if (comptime @hasField(@TypeOf(extra), info_name)) {
             @field(in, info_name) = @field(extra, info_name);
         } else if (comptime info_attrs.defaultValue(InfoType)) |fallback| {
@@ -520,7 +524,9 @@ pub fn Pages(comptime domain: Domain) type {
                 return error.OutOfMemory;
             };
             const created = registry.SDK.dispatch(&session.ctx, operations.Create, .{
-                .definition = definition,
+                .definition = .{
+                    .text = definition,
+                },
             }) catch |err| {
                 return render_form(session, def, null, try problems_of(session, err, definition));
             };
@@ -723,7 +729,9 @@ pub fn Pages(comptime domain: Domain) type {
             }
 
             const checked = registry.SDK.dispatch(&session.ctx, operations.Validate, .{
-                .definition = definition,
+                .definition = .{
+                    .text = definition,
+                },
             }) catch return error.OutOfMemory;
 
             return checked.problems;
@@ -1001,13 +1009,13 @@ test "handles are made from names; an input is keyed under the domain's name" {
 
     const In = struct {
         taxonomy: []const u8,
-        definition: []const u8,
+        definition: sdk_operation.Json,
         drop_content: bool = false,
     };
     const in = keyed(In, "taxonomy", "topics", .{
         .definition = "{}",
     });
     try std.testing.expectEqualStrings("topics", in.taxonomy);
-    try std.testing.expectEqualStrings("{}", in.definition);
+    try std.testing.expectEqualStrings("{}", in.definition.text);
     try std.testing.expect(!in.drop_content);
 }

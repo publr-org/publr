@@ -36,20 +36,26 @@ test "site changes: live writes and moves raise, pending edits and drafts do not
     try SDK.bootstrap(&system);
 
     _ = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = note_definition,
+        .definition = .{
+            .text = note_definition,
+        },
     });
 
     const start = (try raised(&system, 0)).revision;
     const draft = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Draft\"}",
+        .document = .{
+            .text = "{\"title\":\"Draft\"}",
+        },
     });
 
     try std.testing.expectEqual(start, (try raised(&system, start)).revision);
 
     const live = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Live\"}",
+        .document = .{
+            .text = "{\"title\":\"Live\"}",
+        },
     });
     _ = try SDK.dispatch(&system, record.Publish, .{
         .id = live.id,
@@ -63,7 +69,9 @@ test "site changes: live writes and moves raise, pending edits and drafts do not
     // An edit parked on the live record changes nothing visitors see.
     _ = try SDK.dispatch(&system, record.Save, .{
         .id = live.id,
-        .document = "{\"title\":\"Live, edited\"}",
+        .document = .{
+            .text = "{\"title\":\"Live, edited\"}",
+        },
     });
     try std.testing.expectEqual(created.revision, (try raised(&system, start)).revision);
 
@@ -124,12 +132,16 @@ test "site changes: a page's reads name the record, the type and every record" {
     try SDK.bootstrap(&system);
 
     _ = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = note_definition,
+        .definition = .{
+            .text = note_definition,
+        },
     });
 
     const made = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Read\"}",
+        .document = .{
+            .text = "{\"title\":\"Read\"}",
+        },
     });
     var named: sdk.testing.reads.Named = .{};
     var drawing = system;
@@ -161,7 +173,9 @@ test "site changes: live terms raise, pending edits do not; a page's term reads 
     var system = harness.ctx(.system);
     const made = try SDK.dispatch(&system, term.Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Draft\"}",
+        .document = .{
+            .text = "{\"name\":\"Draft\"}",
+        },
     });
     const start = (try raised(&system, 0)).revision;
 
@@ -179,7 +193,9 @@ test "site changes: live terms raise, pending edits do not; a page's term reads 
     // An edit parked on the live term changes nothing visitors see; applying it does.
     _ = try SDK.dispatch(&system, term.Save, .{
         .id = made.id,
-        .document = "{\"name\":\"Live, edited\"}",
+        .document = .{
+            .text = "{\"name\":\"Live, edited\"}",
+        },
     });
     try std.testing.expectEqual(live.revision, (try raised(&system, start)).revision);
 

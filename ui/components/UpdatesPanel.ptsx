@@ -108,17 +108,8 @@ const current = (): Found => ({
   previous: state.previous === "" ? null : state.previous,
 });
 
-const call = async (operation: string, method: string, body?: unknown) => {
-  const response = await fetch(Publr.url(`/api/update.${operation}`), {
-    method,
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const answer = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
-  return answer;
-};
+const call = (operation: string, _method: string, body?: unknown): Promise<any> =>
+  Publr.send(`update.${operation}`, body ?? {}, { csrf: state.csrf });
 
 /** While an update runs, its step is asked for again; a restart drops the server for a
  * moment, which only means asking again. */

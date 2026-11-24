@@ -145,6 +145,10 @@ pub fn add_module(
     const publr_text = builder.dependency("publr_text", .{
         .target = target,
     });
+    const publr_api = builder.dependency("publr_api", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const publr_jit = builder.dependency("publr_jit", .{
         .target = target,
         .optimize = optimize,
@@ -188,6 +192,10 @@ pub fn add_module(
                 .module = publr_text.module("publr_text"),
             },
             .{
+                .name = "publr_api",
+                .module = publr_api.module("publr_api"),
+            },
+            .{
                 .name = "publr_jit",
                 .module = publr_jit.module("publr_jit"),
             },
@@ -220,6 +228,13 @@ pub fn add_module(
 
     @import("i18n.zig").add(builder, module, from.plugins_dir, plugin_names);
     const generated = gen.add(builder, target, optimize, plugin_ui);
+    @import("native_interactive.zig").add(
+        builder,
+        module,
+        from.plugins_dir,
+        from.native,
+        generated.tool,
+    );
 
     module.addImport("views", generated.views);
     module.addImport("runtime", generated.runtime);

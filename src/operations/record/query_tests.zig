@@ -136,7 +136,9 @@ const Library = struct {
             const definition = try model.content_type.encode(system.arena, def);
 
             _ = try SDK.dispatch(&system, types.Create, .{
-                .definition = definition,
+                .definition = .{
+                    .text = definition,
+                },
             });
         }
 
@@ -190,7 +192,9 @@ fn create(
 
     const made = try SDK.dispatch(ctx, record.Create, .{
         .type = type_handle,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     if (!std.mem.eql(u8, status, "draft")) {
@@ -265,11 +269,15 @@ test "query: a prepared query runs as kept, its brackets bound to each call's pa
 
     const first = try SDK.dispatch(&visitor, Query, .{
         .query = text,
-        .params = "{\"from\":0,\"to\":1}",
+        .params = .{
+            .text = "{\"from\":0,\"to\":1}",
+        },
     });
     const second = try SDK.dispatch(&visitor, Query, .{
         .query = text,
-        .params = "{\"from\":1,\"to\":3}",
+        .params = .{
+            .text = "{\"from\":1,\"to\":3}",
+        },
     });
 
     try std.testing.expectEqualStrings("[{\"title\":\"Second\"}]", first.result.text);
@@ -286,7 +294,9 @@ test "query: a prepared query runs as kept, its brackets bound to each call's pa
 
     const counted = try SDK.dispatch(&visitor, Query, .{
         .query = text,
-        .params = "{\"from\":0,\"to\":1}",
+        .params = .{
+            .text = "{\"from\":0,\"to\":1}",
+        },
     });
 
     try std.testing.expectEqualStrings("3", counted.result.text);
@@ -397,7 +407,9 @@ test "virtual: an author's books are the books pointing at it, in the order kept
 
     _ = try SDK.dispatch(&admin, record.Save, .{
         .id = library.ada,
-        .document = order,
+        .document = .{
+            .text = order,
+        },
     });
     // Ada is published: the new order is a pending change until it is published too.
     _ = try SDK.dispatch(&admin, record.Publish, .{
@@ -432,7 +444,9 @@ test "virtual: saving the list repoints the records it adds and leaves out" {
 
     _ = try SDK.dispatch(&admin, record.Save, .{
         .id = library.ada,
-        .document = list,
+        .document = .{
+            .text = list,
+        },
     });
 
     const got = try SDK.dispatch(&admin, record.Get, .{
@@ -444,7 +458,7 @@ test "virtual: saving the list repoints the records it adds and leaves out" {
         first.result.text,
     });
 
-    try std.testing.expect(contains(got.document, expected));
+    try std.testing.expect(contains(got.document.text, expected));
 
     // A live book's reference changes live: Second has left Ada for site visitors too.
     const live = try ask(&admin, "*[_type == \"book\" && title == \"Second\"][0].author");
@@ -473,7 +487,9 @@ test "virtual: leaving out a record that needs its parent deletes it, restorable
 
     _ = try SDK.dispatch(&admin, record.Save, .{
         .id = book_id,
-        .document = kept,
+        .document = .{
+            .text = kept,
+        },
     });
 
     const gone = try SDK.dispatch(&admin, record.Get, .{
@@ -482,14 +498,14 @@ test "virtual: leaving out a record that needs its parent deletes it, restorable
     });
 
     try std.testing.expectEqualStrings("trashed", gone.record.status);
-    try std.testing.expect(contains(gone.document, book_id));
+    try std.testing.expect(contains(gone.document.text, book_id));
 
     const got = try SDK.dispatch(&admin, record.Get, .{
         .id = book_id,
         .purpose = .edit,
     });
 
-    try std.testing.expect(!contains(got.document, two));
+    try std.testing.expect(!contains(got.document.text, two));
 }
 
 test "query: a reference into a Private type stands in place, saying its type and why" {

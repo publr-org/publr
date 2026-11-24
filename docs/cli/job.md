@@ -10,5 +10,5 @@ with `job answer`. Back to the [CLI reference](../cli.md).
 
 | Command | What |
 |---|---|
-| `job list` | The jobs waiting to run, soonest first, then the ones that failed for good |
+| `job list [--after <next>]` | The jobs waiting to run, soonest first, then the ones that failed for good, a page of 200 at a time: `next` continues it |
 | `job answer --id <id>` | What queued work someone waits on answered: `waiting` until it lands, then `done` with its answer, or `failed` with why. Only whoever asked reads it; kept a day |

@@ -369,17 +369,17 @@ pub fn describe(comptime about: Description) fn (*PluginCtx, Nothing) operation.
 /// The JSON `complete` takes and answers.
 pub const Completion = struct {
     pub const In = struct {
-        request: []const u8,
+        request: operation.Json,
 
         pub const field_docs = .{
-            .request = "The request, as JSON",
+            .request = "The request",
         };
     };
     pub const Out = struct {
-        response: []const u8,
+        response: operation.Json,
 
         pub const field_docs = .{
-            .response = "The model's response, as JSON",
+            .response = "The model's response",
         };
     };
 };
@@ -392,16 +392,23 @@ pub fn complete(
 ) fn (*PluginCtx, Completion.In) operation.Error!Completion.Out {
     return struct {
         fn run(ctx: *PluginCtx, in: Completion.In) operation.Error!Completion.Out {
-            std.debug.assert(in.request.len > 0);
             std.debug.assert(ctx.now().ms >= 0);
 
             const arena = ctx.arena();
-            const request = request_of(arena, in.request) catch return error.Invalid;
+            const request = in.request.as(Request, arena) catch return error.Invalid;
+
+            if (request.messages.len == 0 or request.output_tokens_max == 0) {
+                return error.Invalid;
+            }
+
             const response = try answer(ctx, request);
-            const text = response_json(arena, response) catch return error.OutOfMemory;
+
+            std.debug.assert(response.parts.len > 0 or response.stop != .tool_calls);
 
             return .{
-                .response = text,
+                .response = operation.Json.document(arena, response) catch {
+                    return error.OutOfMemory;
+                },
             };
         }
     }.run;

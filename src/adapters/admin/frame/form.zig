@@ -26,10 +26,11 @@ pub fn show(session: *Session, page: pages.Page) Error!void {
     const fields = try fields_of(session, page, PageField) orelse return;
     const options: admin.chrome.Options = .{
         .settings_path = session.request.path(),
+        .section_page = session.request.path(),
     };
 
     try admin.screen(session, .ok, admin.views.PluginFormPage, .{
-        .title = page.label,
+        .title = try session.declared(page.label),
         .operation = page.save,
         .fields = fields,
         .preview = page.preview,
@@ -57,10 +58,11 @@ fn show_tab(
         .parent = header.title,
         .description = header.description,
         .tabs = header.tabs,
-        .action_label = page.action_label,
+        .action_label = try session.declared(page.action_label),
         .action_href = page.action_href,
     }, .{
         .settings_path = header.address,
+        .section_page = header.address,
     });
 }
 
@@ -87,10 +89,81 @@ pub fn fields_of(session: *Session, page: pages.Page, comptime Item: type) Error
         };
     }
 
-    return try items_of(Item, session.arena, described, values, suggested, .{
+    const items = try items_of(Item, session.arena, described, values, suggested, .{
         .only_one = page.only_one,
         .blank_in_one = blanks,
     });
+
+    try spoken(Item, session, items);
+
+    return items;
+}
+
+/// The form's words in the person's language: each field's label and help, and its
+/// choices', from the plugin's catalogue as its own pages read them.
+fn spoken(comptime Item: type, session: *const Session, items: []Item) Error!void {
+    std.debug.assert(items.len <= 256);
+    std.debug.assert(session.signed_in());
+
+    for (items) |*item| {
+        item.label = try session.declared(item.label);
+        item.help = try session.declared(item.help);
+
+        if (comptime @hasField(Item, "choices")) {
+            const choices = try session.arena.dupe(Each(Item, "choices"), item.choices);
+
+            for (choices) |*choice| {
+                choice.label = try session.declared(choice.label);
+            }
+
+            item.choices = choices;
+        }
+
+        if (comptime @hasField(Item, "columns")) {
+            item.columns = try spoken_columns(Item, session, item.columns);
+            item.rows = try spoken_rows(Item, session, item.rows);
+        }
+    }
+}
+
+/// A list's column headings in the person's language.
+fn spoken_columns(
+    comptime Item: type,
+    session: *const Session,
+    columns: @FieldType(Item, "columns"),
+) Error!@FieldType(Item, "columns") {
+    std.debug.assert(columns.len <= 256);
+
+    const out = try session.arena.dupe(Each(Item, "columns"), columns);
+
+    for (out) |*column| {
+        column.label = try session.declared(column.label);
+    }
+
+    return out;
+}
+
+/// Each row's cells, labelled as their columns are.
+fn spoken_rows(
+    comptime Item: type,
+    session: *const Session,
+    rows: @FieldType(Item, "rows"),
+) Error!@FieldType(Item, "rows") {
+    std.debug.assert(rows.len <= 1 << 16);
+
+    const out = try session.arena.dupe(Each(Item, "rows"), rows);
+
+    for (out) |*row| {
+        const cells = try session.arena.dupe(Each(Each(Item, "rows"), "cells"), row.cells);
+
+        for (cells) |*cell| {
+            cell.label = try session.declared(cell.label);
+        }
+
+        row.cells = cells;
+    }
+
+    return out;
 }
 
 /// What the read `operation` answers, parsed; null once a failure is shown.
@@ -175,7 +248,7 @@ fn items_of(
     values: std.json.Value,
     suggested: std.json.Value,
     drawn: Drawn,
-) Error![]const Item {
+) Error![]Item {
     std.debug.assert(described.fields.len <= 256);
 
     var items: std.ArrayList(Item) = .empty;

@@ -8,6 +8,8 @@ const kind_registry = @import("../model/kinds.zig");
 const filter_registry = @import("../model/filter.zig");
 const role_registry = @import("../model/role.zig");
 const heartbeat = @import("../operations/heartbeat.zig");
+const money_operations = @import("../operations/money.zig");
+const ledger_operations = @import("../operations/ledger.zig");
 const project = @import("../operations/project.zig");
 const custom_fields = @import("../operations/custom_fields.zig");
 const user = @import("../operations/user.zig");
@@ -21,6 +23,8 @@ const identity = @import("../operations/identity.zig");
 const status = @import("../operations/status.zig");
 const flow_operations = @import("../operations/flow.zig");
 const job = @import("../operations/job.zig");
+const clock = @import("../operations/clock.zig");
+const random_operations = @import("../operations/random.zig");
 const webhook = @import("../operations/webhook.zig");
 const role = @import("../operations/role.zig");
 const content_type = @import("../operations/content_type.zig");
@@ -43,21 +47,23 @@ const errors = @import("../operations/errors.zig");
 const ai = @import("../operations/ai.zig");
 const secret = @import("../operations/secret.zig");
 const http_operations = @import("../operations/http.zig");
+const mail_operations = @import("../operations/mail.zig");
 const update = @import("../operations/update.zig");
 const design_operations = @import("../operations/design.zig");
 const health = @import("../operations/health.zig");
 const operation_operations = @import("../operations/operation.zig");
+const event_operations = @import("../operations/event.zig");
 const mod_operations = @import("../operations/mod.zig");
 const provider_operations = @import("../operations/provider.zig");
+const user_type_operations = @import("../operations/user_type.zig");
+const link_operations = @import("../operations/link.zig");
+const messaging_operations = @import("../operations/messaging.zig");
+const request_operations = @import("../operations/request.zig");
 const messaging = @import("../sdk/messaging.zig");
 
-/// A compiled-in plugin's `components/<name>.publr`, which an app imports as
-/// `plugin:<plugin>/<name>`.
-pub const PluginComponent = struct {
-    plugin: []const u8,
-    name: []const u8,
-    text: []const u8,
-};
+/// A plugin's `components/<name>.publr`, which an app imports as `plugin:<plugin>/<name>`:
+/// compiled in, or carried by an installed plugin's module.
+pub const PluginComponent = sdk.sandboxed_plugins.Component;
 
 /// Every compiled-in plugin's components; none in a build listing none.
 pub const plugin_components: []const PluginComponent = listed: {
@@ -82,6 +88,26 @@ pub const plugin_components: []const PluginComponent = listed: {
     break :listed &done;
 };
 
+/// Every compiled-in plugin's interactive components, built as an installed plugin's are.
+pub const plugin_interactive: []const sdk.sandboxed_plugins.Interactive = listed: {
+    const listed = @import("native_interactive");
+    var out: [listed.all.len]sdk.sandboxed_plugins.Interactive = undefined;
+
+    for (listed.all, &out) |carried, *slot| {
+        slot.* = .{
+            .plugin = carried.plugin,
+            .components = carried.components,
+            .render = carried.render,
+            .browser = carried.browser,
+            .classes = carried.classes,
+        };
+    }
+
+    const done = out;
+
+    break :listed &done;
+};
+
 /// The compiled-in plugins, each bound to its doc comments.
 pub const bound_plugins = bound: {
     const listed = @import("native_plugins");
@@ -96,6 +122,31 @@ pub const bound_plugins = bound: {
 
 pub const native_plugins = contract.Merged(bound_plugins);
 
+/// What each compiled-in plugin reads of visitors' requests (`.request`), when it says.
+pub const request_reads: []const RequestDeclaration = reads: {
+    var list: []const RequestDeclaration = &.{};
+
+    for (bound_plugins) |Plugin| {
+        const reads = @import("../sdk/plugin/manifest.zig").request_of(Plugin);
+
+        if (reads.query.len + reads.cookies.len + reads.redirects.len > 0) {
+            list = list ++ &[_]RequestDeclaration{.{
+                .plugin = Plugin.manifest.name,
+                .reads = reads,
+            }};
+        }
+    }
+
+    const done = list;
+
+    break :reads done;
+};
+
+pub const RequestDeclaration = struct {
+    plugin: []const u8,
+    reads: @import("../model/sandboxed_plugin.zig").RequestReads,
+};
+
 /// The compiled-in plugins' remotes another compiled-in plugin switches off, and why: off
 /// from the start, their hooks left out of the build.
 pub const remotes_off = native_plugins.merged_remotes_off;
@@ -103,17 +154,23 @@ pub const remotes_off = native_plugins.merged_remotes_off;
 const core_operations = heartbeat.operations ++ project.operations ++ custom_fields.operations ++
     user.operations ++
     sign_in.operations ++ sign_on.operations ++ device.operations ++ identity.operations ++
-    status.operations ++ flow_operations.operations ++ job.operations ++ webhook.operations ++
+    status.operations ++ flow_operations.operations ++ job.operations ++ clock.operations ++
+    random_operations.operations ++
+    webhook.operations ++
     role.operations ++
     content_type.operations ++
     record.operations ++ taxonomy.operations ++ term.operations ++ media.operations ++
     snapshot.operations ++
     view.operations ++ rail.operations ++ plugin_operations.operations ++ internal.operations ++
     activity.operations ++ errors.operations ++ apps.operations ++ ai.operations ++
-    secret.operations ++ http_operations.operations ++ update.operations ++
+    secret.operations ++ http_operations.operations ++ mail_operations.operations ++
+    update.operations ++
     removal.operations ++ trash.operations ++ design_operations.operations ++
-    health.operations ++ operation_operations.operations ++ mod_operations.operations ++
-    provider_operations.operations;
+    health.operations ++ operation_operations.operations ++ event_operations.operations ++
+    mod_operations.operations ++
+    provider_operations.operations ++ money_operations.operations ++ ledger_operations.operations ++
+    user_type_operations.operations ++ link_operations.operations ++
+    messaging_operations.operations ++ request_operations.operations;
 const core_namespaces = [_]sdk.operation.Namespace{
     heartbeat.namespace,
     project.namespace,
@@ -127,6 +184,7 @@ const core_namespaces = [_]sdk.operation.Namespace{
     job.namespace,
     webhook.namespace,
     operation_operations.namespace,
+    event_operations.namespace,
     mod_operations.namespace,
     role.namespace,
     content_type.namespace,
@@ -145,12 +203,19 @@ const core_namespaces = [_]sdk.operation.Namespace{
     ai.namespace,
     secret.namespace,
     http_operations.namespace,
+    mail_operations.namespace,
     update.namespace,
     removal.namespace,
     trash.namespace,
     design_operations.namespace,
     health.namespace,
     provider_operations.namespace,
+    money_operations.namespace,
+    ledger_operations.namespace,
+    user_type_operations.namespace,
+    link_operations.namespace,
+    messaging_operations.namespace,
+    request_operations.namespace,
 };
 
 /// The names no plugin may take: every core namespace, `app` (what an app's users call is
@@ -208,6 +273,80 @@ pub fn internal_collection(
     }
 
     return null;
+}
+
+const model_ledger = @import("../model/ledger.zig");
+
+/// A plugin's ledger, as it declares it (`publr.ledger.define`).
+pub const OwnedLedger = struct {
+    owner: []const u8,
+    declaration: model_ledger.Declaration,
+};
+
+/// Every compiled-in plugin's ledger.
+pub const native_ledgers: []const OwnedLedger = ledgers: {
+    const ledger_define = @import("../sdk/plugin/ledger_define.zig");
+    var list: []const OwnedLedger = &.{};
+
+    for (bound_plugins) |Plugin| {
+        if (ledger_define.declared_of(Plugin)) |declaration| {
+            list = list ++ &[_]OwnedLedger{.{
+                .owner = Plugin.manifest.name,
+                .declaration = declaration,
+            }};
+        }
+    }
+
+    const done = list;
+
+    break :ledgers done;
+};
+
+/// Plugin `plugin`'s ledger, compiled in or installed; null when it declares none.
+pub fn ledger_of(ctx: *const sdk.Ctx, plugin: []const u8) ?model_ledger.Declaration {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    for (native_ledgers) |owned| {
+        if (std.mem.eql(u8, owned.owner, plugin)) {
+            return owned.declaration;
+        }
+    }
+
+    const sandboxed = ctx.sandboxed_plugins orelse return null;
+
+    for (sandboxed.manifests()) |manifest| {
+        if (std.mem.eql(u8, manifest.name, plugin)) {
+            return manifest.ledger;
+        }
+    }
+
+    return null;
+}
+
+/// Every plugin's ledger, compiled in and installed.
+pub fn ledgers(
+    ctx: *const sdk.Ctx,
+    arena: std.mem.Allocator,
+) error{OutOfMemory}![]const OwnedLedger {
+    var all: std.ArrayList(OwnedLedger) = .empty;
+
+    try all.appendSlice(arena, native_ledgers);
+
+    const sandboxed = ctx.sandboxed_plugins orelse return all.items;
+
+    for (sandboxed.manifests()) |manifest| {
+        if (manifest.ledger) |declaration| {
+            try all.append(arena, .{
+                .owner = manifest.name,
+                .declaration = declaration,
+            });
+        }
+    }
+
+    std.debug.assert(all.items.len >= native_ledgers.len);
+
+    return all.items;
 }
 
 /// Every internal record collection, compiled in and installed, with the plugin keeping it.
@@ -532,6 +671,8 @@ pub const webhook_owners = native_plugins.merged_webhook_owners;
 pub const sign_in_providers = native_plugins.merged_sign_in_providers;
 /// The providers the native plugins register into contracts.
 pub const providers = native_plugins.merged_providers;
+/// The types of user the native plugins register.
+pub const user_types = native_plugins.merged_user_types;
 /// Each compiled-in plugin's published interface: its contracts and dimensions, as data.
 pub const published_interfaces: []const @import("../sdk/published.zig").Interface = each: {
     const published = @import("../sdk/published.zig");
@@ -575,6 +716,7 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     try queries_read(ctx);
     try plugin_types.apply_all(ctx);
     try apply_declared_roles(ctx);
+    _ = try @import("../operations/role/stale.zig").drop_compiled(ctx);
 
     inline for (native_plugins.all) |Plugin| {
         if (comptime plugin_define.has(Plugin, "bootstrap")) {
@@ -588,13 +730,10 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
 fn queries_read(ctx: *sdk.Ctx) sdk.Error!void {
     @import("std").debug.assert(ctx.caller == .system);
 
-    inline for (native_plugins.all) |Plugin| {
-        const queries = comptime if (@hasDecl(Plugin, "docs"))
-            @import("../sdk/plugin/prepared_queries.zig").of(Plugin.docs)
-        else
-            &.{};
+    for (plugin_queries) |prepared| {
+        const queries = prepared.queries;
 
-        plugin_lifecycle.queries_read(ctx, Plugin.manifest.name, queries) catch |err| {
+        plugin_lifecycle.queries_read(ctx, prepared.plugin, queries) catch |err| {
             if (ctx.failure) |failure| {
                 std.log.err("{s}", .{failure.message});
             }
@@ -611,9 +750,59 @@ pub fn apply_declared_roles(ctx: *sdk.Ctx) sdk.Error!void {
 
     try sdk.stored_roles.apply(ctx, role_registry.owner_core, &role_registry.core);
 
-    inline for (native_plugins.all) |Plugin| {
-        const declared = comptime @import("../sdk/plugin.zig").roles_of(Plugin);
-
-        try sdk.stored_roles.declare(ctx, Plugin.manifest.name, declared);
+    for (plugin_roles) |declared| {
+        try sdk.stored_roles.declare(ctx, declared.plugin, declared.roles);
     }
 }
+
+const PreparedQuery = @import("../sdk/plugin/prepared_queries.zig").Query;
+
+const PluginQueries = struct {
+    plugin: []const u8,
+    queries: []const PreparedQuery,
+};
+
+/// Each compiled-in plugin's prepared GROQ texts, read from its docs once.
+const plugin_queries: []const PluginQueries = each: {
+    @setEvalBranchQuota((bound_plugins.len + 1) * 4096);
+
+    var out: [bound_plugins.len]PluginQueries = undefined;
+
+    for (bound_plugins, &out) |Plugin, *slot| {
+        slot.* = .{
+            .plugin = Plugin.manifest.name,
+            .queries = if (@hasDecl(Plugin, "docs"))
+                @import("../sdk/plugin/prepared_queries.zig").of(Plugin.docs)
+            else
+                &.{},
+        };
+    }
+
+    const done = out;
+
+    break :each &done;
+};
+
+const PluginRoles = struct {
+    plugin: []const u8,
+    roles: []const role_registry.Declared,
+};
+
+/// Each compiled-in plugin's roles, worked out once, never in a call's evaluation: its
+/// budget follows from the plugins and the roles each may declare.
+const plugin_roles: []const PluginRoles = each: {
+    @setEvalBranchQuota((bound_plugins.len + 1) * (role_registry.roles_max + 1) * 64);
+
+    var out: [bound_plugins.len]PluginRoles = undefined;
+
+    for (bound_plugins, &out) |Plugin, *slot| {
+        slot.* = .{
+            .plugin = Plugin.manifest.name,
+            .roles = @import("../sdk/plugin.zig").roles_of(Plugin),
+        };
+    }
+
+    const done = out;
+
+    break :each &done;
+};

@@ -20,35 +20,47 @@ const Native = @import("native.zig");
 const Notes = @import("records/notes.zig");
 const Logs = @import("records/logs.zig");
 const Tallies = @import("records/tallies.zig");
+const Baskets = @import("records/baskets.zig");
 const Reviews = @import("records/reviews.zig");
 const Visits = @import("records/visits.zig");
 const Profile = @import("records/profile.zig");
 const Noted = @import("events/noted.zig");
 const Place = @import("kinds/place.zig");
+const Weight = @import("kinds/weight.zig");
+const Parcel = @import("records/parcel.zig");
 const Shelves = @import("taxonomies/shelves.zig");
 const Flags = @import("taxonomies/flags.zig");
 
 const Hello = @import("operations/hello.zig");
 const Hi = @import("operations/hi.zig");
 const Echo = @import("operations/echo.zig");
+const Tally = @import("operations/tally.zig");
+const Hoard = @import("operations/hoard.zig");
+const Leaves = @import("operations/leaves.zig");
+const Basket = @import("operations/basket.zig");
 const Encode = @import("operations/encode.zig");
 const Note = @import("operations/note.zig");
 const ReadLogs = @import("operations/logs.zig");
 const Page = @import("operations/page.zig");
 const Count = @import("operations/count.zig");
+const Tip = @import("operations/tip.zig");
+const Books = @import("ledger.zig");
 const NotePanel = @import("operations/note_panel.zig");
 const NoteStrength = @import("operations/note_strength.zig");
 const Wave = @import("operations/wave.zig");
 const Submit = @import("operations/submit.zig");
 const Later = @import("operations/later.zig");
 const Measure = @import("operations/measure.zig");
+const Stretch = @import("operations/stretch.zig");
 const Reference = @import("operations/reference.zig");
 const Motto = @import("operations/motto.zig");
+const Referral = @import("operations/referral.zig");
 const Settings = @import("operations/settings.zig");
 const HasMotto = @import("rules/has_motto.zig");
 const NoteCount = @import("hooks/note_count.zig");
 const Characters = @import("hooks/characters.zig");
 const Letters = @import("hooks/letters.zig");
+const BasketBonus = @import("hooks/basket_bonus.zig");
 
 const WriteNote = @import("jobs/write_note.zig");
 const Tick = @import("jobs/tick.zig");
@@ -64,6 +76,7 @@ const LogNote = @import("hooks/log_note.zig");
 const NoteTitle = @import("hooks/note_title.zig");
 const NoteHelp = @import("hooks/note_help.zig");
 const Double = @import("hooks/double.zig");
+const RaiseAll = @import("hooks/raise_all.zig");
 
 const manifest: publr.Manifest = .{
     .name = "sampler",
@@ -131,11 +144,22 @@ const Secrets = struct {
     SAMPLER_KEY: publr.Secret,
 };
 
-const permissions = .{.{
-    .key = "http.fetch",
-    .domains = &.{"sampler.example"},
-    .reason = "Holds a key for the sampler service",
-}};
+const permissions = .{
+    .{
+        .key = "http.fetch",
+        .domains = &.{"sampler.example"},
+        .reason = "Holds a key for the sampler service",
+    },
+    .{
+        .key = "request.read",
+        .reason = "Knows which referral brought a visitor",
+    },
+};
+
+/// The query parameter core keeps for each visitor who brings one.
+const request = .{
+    .query = .{"ref"},
+};
 
 /// A status sampler adds to greeter's salutations: the same flow either way it runs.
 const added_statuses = .{.{
@@ -158,8 +182,22 @@ const added_statuses = .{.{
     },
 }};
 
+/// A type of user, signing in to the `www` app until an administrator chooses.
+const user_types = [_]publr.plugin.UserType{.{
+    .name = "sample_member",
+    .label = "Sample member",
+    .apps = &.{"www"},
+}};
+
 /// Its types, one whose field is of the sampler's own kind.
-const records = [_]type{ Notes.record, Logs.record, Tallies.record, Reviews.record, Visits.record };
+const records = [_]type{
+    Notes.record,
+    Logs.record,
+    Tallies.record,
+    Reviews.record,
+    Visits.record,
+    Baskets.record,
+};
 const jobs = [_]type{ WriteNote.job, Tick.job, Remind.job };
 const taxonomies = [_]type{ Shelves.taxonomy, Flags.taxonomy };
 
@@ -178,16 +216,23 @@ const operations = [_]type{
     ReadLogs.operation,
     Page.operation,
     Count.operation,
+    Tip.operation,
     NotePanel.operation,
     NoteStrength.operation,
     Wave.operation,
     Submit.operation,
     Later.operation,
     Measure.operation,
+    Stretch.operation,
     Reference.operation,
     Hi.operation,
     Motto.operation,
     Editions.operation,
+    Referral.operation,
+    Tally.operation,
+    Hoard.operation,
+    Leaves.operation,
+    Basket.operation,
 };
 /// Compiled in, Settings › Sampler drawn by its read.
 const native_operations = operations ++ [_]type{Settings.operation};
@@ -200,7 +245,12 @@ const hooks = .{
     publr.modify("sampler.sample_note.note.help", NoteHelp.run),
     publr.modify("sampler.*", Double.run),
     publr.after(publr.operations.user.List, NoteCount.run),
-    publr.after(publr.operations.record.List, Characters.run),
+    publr.hook.about(
+        "greeter.salutation",
+        publr.after(publr.operations.record.List, Characters.run),
+    ),
+    publr.modify_all("sampler.batch.sizes", RaiseAll.run),
+    publr.modify("sampler.basket.size", BasketBonus.run),
     publr.after(publr.operations.media.List, Letters.run),
 };
 
@@ -240,6 +290,10 @@ const field_groups = .{
         .fields = Profile.Fields,
         .location = Profile.location,
     },
+    .{
+        .fields = Parcel.Fields,
+        .location = Parcel.location,
+    },
 };
 
 const icons = .{
@@ -255,9 +309,10 @@ const icons = .{
 pub const plugin = if (publr.plugin.guest.mode == .native)
     publr.plugin.define(manifest, .{
         .records = &records,
+        .ledger = Books.Ledger,
         .taxonomies = &taxonomies,
         .register_taxonomies = shelved,
-        .field_kinds = &.{Place.kind},
+        .field_kinds = &.{ Place.kind, Weight.kind },
         .register_location_rules = .{HasMotto.location_rule},
         .register_columns = columns,
         .jobs = &jobs,
@@ -269,20 +324,23 @@ pub const plugin = if (publr.plugin.guest.mode == .native)
         .events = &.{Noted.event},
         .secrets = Secrets,
         .permissions = permissions,
+        .request = request,
         .register_statuses = added_statuses,
         .menu = &.{notes_menu},
         .icons = icons,
         .pages = native_pages,
         .panels = panels,
         .row_actions = row_actions,
+        .user_types = &user_types,
         .extend = Native.extend,
     })
 else
     publr.plugin.define(manifest, .{
         .records = &records,
+        .ledger = Books.Ledger,
         .taxonomies = &taxonomies,
         .register_taxonomies = shelved,
-        .field_kinds = &.{Place.kind},
+        .field_kinds = &.{ Place.kind, Weight.kind },
         .register_location_rules = .{HasMotto.location_rule},
         .jobs = &jobs,
         .webhooks = &webhooks,
@@ -294,10 +352,12 @@ else
         .events = &.{Noted.event},
         .secrets = Secrets,
         .permissions = permissions,
+        .request = request,
         .register_statuses = added_statuses,
         .menu = &.{notes_menu},
         .icons = icons,
         .pages = pages,
         .panels = panels,
         .row_actions = row_actions,
+        .user_types = &user_types,
     });

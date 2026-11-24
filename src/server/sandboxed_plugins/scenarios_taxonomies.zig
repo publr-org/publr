@@ -111,7 +111,9 @@ test "an installed plugin's taxonomies go on its type and, by pattern, on greete
 
     _ = try registry.SDK.dispatch(&reading, content_types.Update, .{
         .type = "greeter.salutation",
-        .definition = try model.content_type.encode(arena, off),
+        .definition = .{
+            .text = try model.content_type.encode(arena, off),
+        },
     });
     const taken_off = try type_of(&scenario, "greeter.salutation");
 
@@ -120,7 +122,9 @@ test "an installed plugin's taxonomies go on its type and, by pattern, on greete
     off.taxonomies = &.{};
     _ = try registry.SDK.dispatch(&reading, content_types.Update, .{
         .type = "greeter.salutation",
-        .definition = try model.content_type.encode(arena, off),
+        .definition = .{
+            .text = try model.content_type.encode(arena, off),
+        },
     });
     const put_back = try type_of(&scenario, "greeter.salutation");
 
@@ -161,12 +165,14 @@ test "a plugin taxonomy's terms come back under its name, and GROQ filters on th
     const term = @import("../../operations/term.zig");
     const top = try term.published(&writing, .{
         .taxonomy = "sampler.shelf",
-        .document = "{\"name\":\"Top shelf\"}",
+        .document = .{
+            .text = "{\"name\":\"Top shelf\"}",
+        },
     });
     const note = try std.fmt.allocPrint(
         arena,
         "{{\"type\":\"sampler.sample_note\",\"document\":" ++
-            "\"{{\\\"note\\\":\\\"Filed\\\",\\\"sampler_shelf\\\":[\\\"{s}\\\"]}}\"}}",
+            "{{\"note\":\"Filed\",\"sampler_shelf\":[\"{s}\"]}}}}",
         .{top.id},
     );
     const created = try scenario.call(admin, "record.create", note);
@@ -176,7 +182,7 @@ test "a plugin taxonomy's terms come back under its name, and GROQ filters on th
     const query = try std.fmt.allocPrint(
         arena,
         "{{\"query\":\"*[_type == \\\"sampler.sample_note\\\" && $shelf in sampler_shelf]" ++
-            "{{note}}\",\"params\":\"{{\\\"shelf\\\":\\\"{s}\\\"}}\"}}",
+            "{{note}}\",\"params\":{{\"shelf\":\"{s}\"}}}}",
         .{top.id},
     );
     const found = try scenario.call(admin, "record.query", query);

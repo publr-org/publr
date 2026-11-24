@@ -42,6 +42,7 @@ pub const Detail = views.Detail;
 pub const contracts = @import("plugin/contracts.zig");
 pub const Interfaces = @import("plugin/published.zig").Interfaces;
 pub const Added = lifecycle.Added;
+pub const Labels = @import("plugin/labels.zig").Labels;
 
 const detail_of = views.detail_of;
 
@@ -309,16 +310,63 @@ pub const Enable = struct {
         }
 
         const shown = ctx.arena.alloc(Detail, in.names.len) catch return error.OutOfMemory;
+        const order = try started_order(ctx, in.names);
+        var there: std.ArrayList(contracts.Provider) = .empty;
 
-        for (in.names, shown) |plugin_name, *detail| {
-            const enabled = try lifecycle.enable(ctx, plugin_name, in.grants);
+        there.appendSlice(ctx.arena, try contracts.providers(ctx, .{})) catch {
+            return error.OutOfMemory;
+        };
 
-            detail.* = try detail_of(ctx, enabled);
+        // Several plugins: each worked on in memory of its own, given back once it is
+        // enabled; only what it answers and what it provides stay, so enabling many takes
+        // the largest. One is worked on in the request's arena.
+        const kept = ctx.arena;
+        const several = order.len > 1;
+        var working: std.heap.FixedBufferAllocator = .init(if (several)
+            try kept.alloc(u8, try enable_bytes_of(ctx, order))
+        else
+            &.{});
+
+        _ = try ctx.scratch();
+        defer ctx.arena = kept;
+
+        for (order, shown) |plugin_name, *detail| {
+            working.reset();
+            ctx.arena = if (several) working.allocator() else kept;
+
+            const enabled = try lifecycle.enable_among(ctx, plugin_name, in.grants, there.items);
+            const enabled_detail = try views.detail_among(ctx, enabled, there.items);
+
+            try contracts.append(kept, ctx.arena, &there, &enabled.manifest);
+            detail.* = try model.deep_copy.copy(Detail, kept, enabled_detail);
         }
 
         return .{
             .plugins = shown,
         };
+    }
+
+    /// What one plugin's enabling takes beside its manifest: its types made, its page's
+    /// detail.
+    pub const enable_bytes: u32 = 1 << 19;
+    /// How many times its manifest's length reading it takes: the text, and what it parses
+    /// into.
+    pub const manifest_factor: u32 = state.manifest_factor;
+
+    /// The most the largest of `order` takes to enable, from its manifest's length.
+    fn enable_bytes_of(ctx: *Ctx, order: []const []const u8) Error!u32 {
+        std.debug.assert(order.len > 1);
+        std.debug.assert(manifest_factor > 1);
+
+        var largest: u32 = 0;
+
+        for (order) |plugin_name| {
+            const bytes = try store.sandboxed_plugins.manifest_bytes(ctx.db, plugin_name);
+
+            largest = @max(largest, bytes);
+        }
+
+        return enable_bytes + largest * manifest_factor;
     }
 };
 
@@ -423,6 +471,38 @@ pub const Disable = struct {
 };
 
 /// Refuses a list of plugins naming none, or more than are started or stopped together.
+/// `names` in the order they start: each after the plugins among them it depends on.
+fn started_order(ctx: *Ctx, names: []const []const u8) Error![]const []const u8 {
+    std.debug.assert(names.len <= dependents.together_max);
+
+    const enable_order = @import("plugin/enable_order.zig");
+    const named = ctx.arena.alloc(enable_order.Named, names.len) catch return error.OutOfMemory;
+
+    const installed = try store.sandboxed_plugins.needs(ctx.db, ctx.arena);
+
+    for (names, named) |plugin_name, *one| {
+        const row = for (installed) |each| {
+            if (std.mem.eql(u8, each.name, plugin_name)) break each;
+        } else return error.NotFound;
+
+        one.* = .{
+            .name = plugin_name,
+            .depends_on = std.json.parseFromSliceLeaky(
+                []const []const u8,
+                ctx.arena,
+                row.depends_on,
+                .{},
+            ) catch return error.Invalid,
+        };
+    }
+
+    return enable_order.ordered(ctx.arena, named) catch error.OutOfMemory;
+}
+
+test {
+    _ = @import("plugin/enable_order.zig");
+}
+
 fn refuse_names(ctx: *Ctx, names: []const []const u8) error{Invalid}!void {
     if (names.len >= 1 and names.len <= dependents.together_max) {
         return;
@@ -653,9 +733,9 @@ pub const Remove = struct {
 };
 
 pub const operations = [_]type{
-    List,         Get,          Upload,     Add,  Enable,   Disable, Update, Rollback,
-    CancelUpdate, GrantRequest, Revoke,     Deny, SetGrant, Remove,  Data,   EraseData,
-    LeftBehind,   RestoreData,  Interfaces,
+    List,         Get,          Upload,     Add,    Enable,   Disable, Update, Rollback,
+    CancelUpdate, GrantRequest, Revoke,     Deny,   SetGrant, Remove,  Data,   EraseData,
+    LeftBehind,   RestoreData,  Interfaces, Labels,
 } ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
     @import("plugin/log.zig").operations;
 

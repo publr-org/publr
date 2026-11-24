@@ -9,8 +9,28 @@ pub const Level = enum { info, warn, err };
 pub const message_len_max: u32 = operation.failure_message_len_max;
 
 /// A moment, as a `datetime` field holds it: milliseconds since 1970, UTC.
+const calendar = @import("../../model/calendar.zig");
+
+/// A day on the calendar: `time.local_date(zone)`, `date.add_months(1)`,
+/// `check_in.days_until(check_out)`.
+pub const Date = calendar.Date;
+
+/// The site's time zone, as `ctx.time_zone()` answers it: its name (`Europe/Warsaw`) and its
+/// rule, summer time included.
+pub const TimeZone = struct {
+    name: []const u8 = "UTC",
+    /// The POSIX rule (`CET-1CEST,M3.5.0,M10.5.0/3`).
+    rule: []const u8 = "UTC0",
+};
+
 pub const Time = struct {
     ms: i64,
+
+    /// Written as its milliseconds, in JSON and in an operation's shape.
+    pub const json_scalar: @import("../../model/contract.zig").Kind = .integer;
+    pub const json_label = "milliseconds since 1970";
+    /// Handed over as its milliseconds.
+    pub const publr_form = .inner;
 
     pub fn before(time: Time, other: Time) bool {
         std.debug.assert(time.ms >= 0);
@@ -35,6 +55,61 @@ pub const Time = struct {
         return .{
             .ms = time.ms + days * std.time.ms_per_day,
         };
+    }
+
+    /// The date it falls on, on the zone's clock (`ctx.time_zone()`).
+    pub fn local_date(time: Time, zone: TimeZone) Date {
+        std.debug.assert(time.ms >= 0);
+        std.debug.assert(zone.rule.len > 0);
+
+        return calendar.local_date(zone.rule, time.ms);
+    }
+
+    /// The moment its day starts on the zone's clock.
+    pub fn start_of_day(time: Time, zone: TimeZone) Time {
+        std.debug.assert(time.ms >= 0);
+        std.debug.assert(zone.rule.len > 0);
+
+        return .{
+            .ms = calendar.start_of(zone.rule, time.local_date(zone)),
+        };
+    }
+
+    /// The moment its day ends on the zone's clock: the next day's start, not in it.
+    pub fn end_of_day(time: Time, zone: TimeZone) Time {
+        std.debug.assert(time.ms >= 0);
+        std.debug.assert(zone.rule.len > 0);
+
+        return .{
+            .ms = calendar.start_of(zone.rule, time.local_date(zone).add_days(1)),
+        };
+    }
+
+    /// `months` later on the zone's clock: the same time of day, the same day of the month
+    /// or the month's last (31 January and a month is the end of February). Never 30 days.
+    pub fn add_months(time: Time, zone: TimeZone, months: i64) Time {
+        std.debug.assert(time.ms >= 0);
+        std.debug.assert(zone.rule.len > 0);
+
+        return .{
+            .ms = calendar.add_months(zone.rule, time.ms, months),
+        };
+    }
+
+    pub fn add_years(time: Time, zone: TimeZone, years: i64) Time {
+        std.debug.assert(time.ms >= 0);
+        std.debug.assert(years > -(1 << 16) and years < (1 << 16));
+
+        return time.add_months(zone, years * 12);
+    }
+
+    /// Whole days from its date to `other`'s on the zone's clock: nights between a check-in
+    /// and a check-out.
+    pub fn days_until(time: Time, zone: TimeZone, other: Time) i64 {
+        std.debug.assert(time.ms >= 0);
+        std.debug.assert(other.ms >= 0);
+
+        return time.local_date(zone).days_until(other.local_date(zone));
     }
 
     pub fn jsonStringify(time: Time, writer: anytype) !void {

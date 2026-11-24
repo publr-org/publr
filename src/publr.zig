@@ -32,6 +32,9 @@ pub const operation = struct {
 pub const record = struct {
     pub const define = @import("sdk/plugin/record_define.zig").define;
     pub const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
+    /// A collection's reads by its stored name, for code that names it rather than its handle:
+    /// `publr.record.Store(Line, "line", true).find(ctx, "order", id, 200, 0)`.
+    pub const Store = @import("sdk/plugin/record_define.zig").Store;
     /// One transition of a record's flow: `[_]publr.record.Transition(Status){ ... }`.
     pub const Transition = @import("sdk/plugin/record_flow.zig").Transition;
     /// Every status but the transition's target and the trash: `.from = publr.record.any`.
@@ -59,6 +62,9 @@ pub const dimension = struct {
 /// `publr.hook.request(run)` in `.hooks`: a page request before it is drawn.
 pub const hook = struct {
     pub const request = @import("sdk/plugin/hook_define.zig").request;
+    /// `publr.hook.about("shop.product", publr.after(publr.operations.record.List, run))`:
+    /// the hook hears only calls that name that content type.
+    pub const about = @import("sdk/plugin/hook_define.zig").about;
 };
 pub const PageRequest = @import("sdk/page_request.zig").PageRequest;
 pub const Answered = @import("sdk/page_request.zig").Answered;
@@ -90,9 +96,15 @@ pub const t = @import("sdk/plugin/menu_define.zig").t;
 /// Changes the value applied under a name, wherever its owner applies it (`ctx.mod`):
 /// `publr.modify("variant.title", title)`, `*` for one part (`*.title`).
 pub const modify = @import("sdk/plugin/hook_define.zig").modify;
+/// A batch modifier: `publr.modify_all("orders.charge", price_all)`, `fn (ctx: *publr.Ctx,
+/// charges: []Charge) publr.Error!void`, called once with every value applied.
+pub const modify_all = @import("sdk/plugin/hook_define.zig").modify_all;
 /// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
 /// (`.record`), and the `.title` to change.
 pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+/// A computed field as its modifiers take it: `publr.modify("<record>.<field>", run)` with
+/// `fn (ctx: *publr.Ctx, value: *publr.Computed(Doc, Field)) publr.Error!void`.
+pub const Computed = @import("sdk/plugin/record_computed.zig").Computed;
 /// What a `<type>.<field>.help` modifier takes: the help under one field of a record in the
 /// editor, asked again as its values change; change `help`.
 pub const FieldHelp = @import("sdk/plugin/modify_define.zig").FieldHelp;
@@ -108,7 +120,7 @@ pub const FieldMarkers = struct {
     /// Each value it must hold before its record goes live: `language` at `pl`.
     required: []const @import("model/dimension.zig").Pair = &.{},
     /// The whole record as the editor holds it, every value beside its field.
-    record: @import("std").json.Value = .null,
+    record: sdk.operation.Json = .object,
     markers: []const Marker = &.{},
 };
 /// A marker beside a field's label: `PL`, `Variant B`. Markers of one `dimension` are drawn
@@ -186,6 +198,13 @@ pub const QueueCtx = @import("sdk/plugin/queue.zig").Queue(Ctx);
 pub const ExchangeCtx = @import("sdk/provider.zig").ExchangeCtx;
 /// A moment, as a `datetime` field holds it.
 pub const Time = @import("sdk/plugin/words.zig").Time;
+/// A day on the calendar (`time.local_date(zone)`).
+pub const Date = @import("sdk/plugin/words.zig").Date;
+/// The site's time zone, as `ctx.time_zone()` answers it.
+pub const TimeZone = @import("sdk/plugin/words.zig").TimeZone;
+/// An exact number with `places` decimal places, as a `decimal` field holds it:
+/// `publr.Decimal(3)` keeps `1.25` kg as 1250 units, never a binary fraction.
+pub const Decimal = @import("sdk/plugin/decimal.zig").Decimal;
 /// An operation on its way out: `.deprecated = .{ .since = "0.4.0", .instead = "x.y" }`.
 pub const Deprecated = @import("sdk/operation.zig").Deprecated;
 /// What `.validate` fills: `problems.add(.page, "Must start with /")`.
@@ -219,6 +238,84 @@ pub const published = @import("sdk/published.zig");
 /// The enabled providers of a contract, in the administrator's order:
 /// `publr.providers(ctx, Contract, .{ .can = &.{.refund} })`.
 pub const providers = @import("sdk/contract.zig").providers;
+/// A record's field naming one provider of a contract: `method: publr.ProviderRef(Method)`.
+/// `ref.provider(ctx)` is the provider while it is registered and on.
+pub const ProviderRef = @import("sdk/provider_ref.zig").ProviderRef;
+/// JSON as Publr's wire reads and writes it: `publr.json.parse(Line, ctx.arena(), text)` and
+/// `publr.json.stringify(ctx.arena(), value)`, as `std.json` does, at a cost close to the bytes.
+pub const json = @import("sdk/plugin/json_api.zig");
+/// Money: whole minor units by currency, as a `money` field holds it and as operations pass
+/// it: `try publr.Money.of(ctx.arena(), "PLN", 12300)`, `price.get("PLN")`. A plain list of
+/// amounts, handed over as it lies; JSON, where Publr keeps or sends it, is `{ "PLN": 12300 }`.
+pub const Money = @import("sdk/money.zig").Money;
+/// A value whose shape comes with the data, read where it lies: `value.get("title")`,
+/// `value.at(0)`, `value.text()`; written with `publr.value.Builder`, or from a struct with
+/// `publr.sdk.operation.Json.of(arena, value)`.
+pub const Value = @import("sdk/free_value.zig").Value;
+/// A plugin's own collections, made with `init(ctx)` and growing in the memory they were made
+/// in whatever is open when they grow: `publr.List(T)`, `publr.IdMap(V)` (keyed by text that
+/// is mostly ids, hashed in 64-bit steps) and `publr.IdList(V)` (one that keeps its keys in
+/// the order they were put).
+pub const List = @import("sdk/plugin/collections.zig").List;
+pub const IdMap = @import("sdk/plugin/collections.zig").IdMap;
+pub const IdList = @import("sdk/plugin/collections.zig").IdList;
+pub const id_map = @import("sdk/plugin/id_map.zig");
+/// Publr's REST API as its clients read it, for code calling another Publr:
+/// `publr.api_client.path(arena, "device.redeem")`,
+/// `publr.api_client.result(Out, arena, body)`, `publr.api_client.refusal(arena, body)`. One
+/// shape, kept in `lib/api`.
+pub const api_client = @import("publr_api");
+/// Every page of an operation that answers a page at a time (`after` in, `next` out), one
+/// held at a time: `var roles = publr.pages(ctx, Operation, .{});`, `while (try roles.next())`.
+pub const pages = @import("sdk/plugin/pages.zig").pages;
+pub const Pages = @import("sdk/plugin/pages.zig").Pages;
+pub const value = struct {
+    pub const Builder = @import("sdk/free_builder.zig").Builder;
+    pub const of = @import("sdk/free_typed.zig").of;
+    pub const as = @import("sdk/free_typed.zig").as;
+};
+/// A field naming a person's account, kept as its id (a `user` field): `owner: publr.Account`.
+/// `ctx.caller().account()` is the signed-in person's.
+pub const Account = @import("sdk/account_ref.zig").Account;
+/// The double-entry ledger: `pub const Ledger = publr.ledger.define(struct { ... }, .{
+/// .reasons = Reason })`, listed in `define` as `.ledger`, used as `Ledger.transfer(ctx, ...)`;
+/// reads as `publr.ledger.balance(ctx, account)` and the rest.
+pub const ledger = struct {
+    const ledger_define = @import("sdk/plugin/ledger_define.zig");
+
+    pub const define = ledger_define.define;
+    pub const Kind = ledger_define.Kind;
+    pub const Asset = ledger_define.Asset;
+    pub const Liability = ledger_define.Liability;
+    pub const Equity = ledger_define.Equity;
+    pub const Income = ledger_define.Income;
+    pub const Expense = ledger_define.Expense;
+    pub const Unit = ledger_define.Unit;
+    pub const UnitName = ledger_define.UnitName;
+    pub const unit = ledger_define.unit;
+    pub const unit_of = ledger_define.unit_of;
+    pub const Account = ledger_define.Account;
+    pub const TransferRef = ledger_define.TransferRef;
+    pub const Holder = ledger_define.Holder;
+    pub const Done = ledger_define.Done;
+    pub const Pair = ledger_define.Pair;
+    pub const balance = ledger_define.balance;
+    pub const balance_at = ledger_define.balance_at;
+    pub const history = ledger_define.history;
+    pub const find = ledger_define.find;
+    pub const page = ledger_define.page;
+    pub const Page = ledger_define.Page;
+    pub const totals = ledger_define.totals;
+    pub const get = ledger_define.get;
+    pub const accounts = ledger_define.accounts;
+    pub const account = ledger_define.account_of;
+    pub const AccountView = operations.ledger.Account.Out;
+    pub const Transfer = operations.ledger.Shown;
+    pub const Line = operations.ledger.Line;
+    pub const Sum = operations.ledger.Sum;
+    /// A hold voided by its expiry: `publr.on(publr.ledger.Expired, run)`.
+    pub const Expired = operations.ledger.Expired;
+};
 /// Messages Publr hands to providers: `ctx.emit(publr.messaging.Email, .{ .to, .subject,
 /// .text })`, and the `messaging` contract providers register into.
 pub const messaging = @import("sdk/messaging.zig");
@@ -241,7 +338,9 @@ pub const operations = struct {
     pub const device = @import("operations/device.zig");
     pub const apps = @import("operations/apps.zig");
     pub const heartbeat = @import("operations/heartbeat.zig");
+    pub const money = @import("operations/money.zig");
     pub const project = @import("operations/project.zig");
+    pub const clock = @import("operations/clock.zig");
     pub const custom_fields = @import("operations/custom_fields.zig");
     pub const user = @import("operations/user.zig");
     pub const sign_in = @import("operations/sign_in.zig");
@@ -263,9 +362,14 @@ pub const operations = struct {
     pub const ai = @import("operations/ai.zig");
     pub const secret = @import("operations/secret.zig");
     pub const http = @import("operations/http.zig");
+    pub const mail = @import("operations/mail.zig");
     pub const internal = @import("operations/internal.zig");
+    pub const request = @import("operations/request.zig");
+    pub const link = @import("operations/link.zig");
+    pub const messaging = @import("operations/messaging.zig");
     pub const plugin = @import("operations/plugin.zig");
     pub const dimensions = @import("operations/dimensions.zig");
+    pub const ledger = @import("operations/ledger.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

@@ -247,7 +247,8 @@ answer; a failure emits nothing. A plugin declares an event of its own with a ty
 (`publr.event.define`) and emits it with `ctx.emit(Event, payload)`; the payload travels as
 JSON. Events are queued in the write's transaction, so a rolled-back write drops them, and
 `on` hooks hear them once it commits. Core's typed events are `role.created|updated|removed`
-(`.role`), `auth.user_created` (`.user`), `internal.created|saved|deleted` (`.record`) and
+(`.role`), `role.grant_dropped` (`.role`, `.grant`), `auth.user_created` (`.user`),
+`internal.created|saved|deleted` (`.record`) and
 the sign-in ones (`publr.auth.SignedIn`, `SignedUp`, `SignedOut`), all declared in one shape
 (`publr.event.define(.{ .name, .payload })`). What is not a successful call is kept outside
 the write that raised it, so a refusal's rollback does not drop it, and heard by `on` hooks

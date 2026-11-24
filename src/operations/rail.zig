@@ -359,10 +359,12 @@ test "everyone's pins come first; a person hides one for themselves; administrat
     const root_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "root@example.com",
         .display_name = "Root",
+        .roles = &.{"editor"},
     });
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
     var root = harness.ctx(.{
         .user = .{

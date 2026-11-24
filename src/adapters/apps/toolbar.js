@@ -266,6 +266,11 @@ const start = async () => {
     return;
   }
 
+  // An app's visitor: signed in to the app, with no way to the admin, so no bar.
+  if (!answer.admin) {
+    return;
+  }
+
   const { createStore, hydrate } = await import('./publr.js');
   const host = document.createElement('publr-toolbar');
   const shadow = host.attachShadow({ mode: 'open' });

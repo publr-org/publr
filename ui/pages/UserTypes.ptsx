@@ -1,0 +1,105 @@
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { IndexSection } from "../components/IndexSection.ptsx";
+import { Publr } from "publr-jsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type UserTypesProps = {
+  types: Array<{
+    /** The type's name: `customer`. */
+    name: string;
+    label: string;
+    /** The plugin that registers it. */
+    plugin: string;
+    /** Where its form posts. */
+    action: string;
+    /** The staff role it names, so it gives nothing; empty when its roles are visitors'. */
+    refused_role: string;
+    /** Every app of the site, switched on where the type's people may sign in. */
+    apps: Array<{
+      name: string;
+      label: string;
+      on: boolean;
+    }>;
+  }>;
+  /** What the last post did; empty for nothing. */
+  notice: string;
+};
+
+/** Each type of user a plugin registers, and the apps its people may sign in to. */
+export function UserTypes({ types, notice }: UserTypesProps) {
+  return (
+    <IndexPage
+      title={Publr.t("User types")}
+      description={Publr.t("People with an account on the site who are not staff, such as customers. Each type signs in only to the apps switched on here.")}
+      empty={
+        types.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("No user types")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("A plugin such as customers adds one.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+      notice={notice !== "" && <Callout title={notice} />}
+    >
+      {types.map((type) => (
+        <IndexSection
+          title={type.label}
+          description={Publr.t("from {plugin}", { plugin: type.plugin })}
+          empty={type.apps.length === 0 ? Publr.t("This site has no apps.") : ""}
+        >
+          {type.refused_role !== "" && (
+            <Callout tone="warning" title={Publr.t("Gives nothing: {role} reaches what staff call", { role: type.refused_role })}>
+              <Text as="span" variant="body-sm">
+                {Publr.t("A type gives visitor roles only. Take the staff grants back from the role under Roles, and its people sign up and are given the type again.")}
+              </Text>
+            </Callout>
+          )}
+          {type.apps.length > 0 && (
+            <form method="post" action={type.action} data-user-type={type.name}>
+              <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{Publr.t("Signs in")}</TableHead>
+                    <TableHead>{Publr.t("App")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {type.apps.map((app) => (
+                    <TableRow>
+                      <TableCell>
+                        <Switch name="app" value={app.name} checked={app.on} />
+                      </TableCell>
+                      <TableCell>
+                        <Text as="span" variant="body-sm">
+                          {app.label}
+                        </Text>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div class="flex justify-end px-5 py-4">
+                <Button hierarchy="secondary" size="md" type="submit">
+                  {Publr.t("Save")}
+                </Button>
+              </div>
+            </form>
+          )}
+        </IndexSection>
+      ))}
+    </IndexPage>
+  );
+}

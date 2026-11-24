@@ -52,6 +52,9 @@ pub fn Shape(comptime Node: type) type {
             /// The sheet alone, without the rail and the sidebar: the AI workspace's preview
             /// asks for it with `?framed=1`.
             framed: bool = false,
+            /// In a plugin's frame: the page is as tall as what it shows, scrolled by the
+            /// admin around the frame, which grows to it; never a scroll of its own.
+            grows: bool = false,
             /// A paste with nothing focused asks the agent: a provider is connected and the
             /// person may ask, on a page that is not in a frame.
             can_ask: bool = false,

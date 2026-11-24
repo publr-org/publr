@@ -1,0 +1,31 @@
+import { FramePage } from "../layouts/FramePage.ptsx";
+
+export type PluginRecordPageProps = {
+  title: string;
+  /** The type's list, to go back to. */
+  parents: Array<{ label: string; href: string }>;
+  src: string;
+  plugin: string;
+  page: string;
+  csrf: string;
+  operations: string[];
+  /** The panels plugins add to the type, each in its own plugin frame. */
+  panels: Array<{ label: string; plugin: string; from: string; src: string; operations: string }>;
+};
+
+/** A record its plugin draws on a page of its own, in place of the admin's form, with the
+ * panels other plugins add to the type beside it. */
+export function PluginRecordPage({ title, parents, src, plugin, page, csrf, operations, panels }: PluginRecordPageProps) {
+  return (
+    <FramePage
+      title={title}
+      parents={parents}
+      src={src}
+      plugin={plugin}
+      page={page}
+      csrf={csrf}
+      operations={operations}
+      panels={panels}
+    />
+  );
+}

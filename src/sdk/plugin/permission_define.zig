@@ -66,6 +66,10 @@ fn asks_for(comptime plugin: []const u8, comptime request: anytype) Ask {
             ask.domains = request.domains;
         }
 
+        if (@hasField(Request, "plugins")) {
+            ask.plugins = request.plugins;
+        }
+
         for (entry.flags) |flag| {
             if (@hasField(Request, @tagName(flag))) {
                 @field(ask, @tagName(flag)) = @field(request, @tagName(flag));

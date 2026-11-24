@@ -76,10 +76,12 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     const custom = publr.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
         .group = "user",
-        .definition = try publr.model.content_type.encode(
-            ctx.arena,
-            custom.Destination.user.definition(),
-        ),
+        .definition = .{
+            .text = try publr.model.content_type.encode(
+                ctx.arena,
+                custom.Destination.user.definition(),
+            ),
+        },
     });
 }
 
@@ -162,7 +164,9 @@ fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
     });
     _ = try SDK.dispatch(ctx, records.Create, .{
         .type = "shelf.item",
-        .document = "{\"title\":\"Mug\"}",
+        .document = .{
+            .text = "{\"title\":\"Mug\"}",
+        },
     });
     _ = try SDK.dispatch(ctx, plugin_operations.Remove, .{
         .name = "shelf",
@@ -208,10 +212,14 @@ fn fill_taxonomies(ctx: *Ctx) Error!void {
     std.debug.assert(terms.example_parent_id.len == store.terms.id_len);
 
     _ = try SDK.dispatch(ctx, taxonomies.Create, .{
-        .definition = taxonomies.example_definition,
+        .definition = .{
+            .text = taxonomies.example_definition,
+        },
     });
     _ = try SDK.dispatch(ctx, taxonomies.Create, .{
-        .definition = tags_definition,
+        .definition = .{
+            .text = tags_definition,
+        },
     });
 
     try term_with_id(ctx, terms.example_parent_id, "Technology", null);
@@ -262,8 +270,10 @@ fn fill_media(ctx: *Ctx) Error!void {
 
     const created = try SDK.dispatch(ctx, records.Create, .{
         .type = "media",
-        .document = "{\"title\":\"Harbour at dawn\",\"alt\":\"Fishing boats\"," ++
-            "\"credit\":\"Ada\",\"focal_y\":40}",
+        .document = .{
+            .text = "{\"title\":\"Harbour at dawn\",\"alt\":\"Fishing boats\"," ++
+                "\"credit\":\"Ada\",\"focal_y\":40}",
+        },
     });
 
     _ = try SDK.dispatch(ctx, records.Publish, .{
@@ -286,7 +296,9 @@ fn fill_media(ctx: *Ctx) Error!void {
 
     const folder = try terms.published(ctx, .{
         .taxonomy = "media_folders",
-        .document = "{\"name\":\"Photos\"}",
+        .document = .{
+            .text = "{\"name\":\"Photos\"}",
+        },
     });
 
     try store.terms.rename(ctx.db, folder.id, media.serve.example_folder_id);
@@ -515,10 +527,14 @@ fn fill_types(ctx: *Ctx) Error!void {
     std.debug.assert(content_types.example_definition.len > 0);
 
     _ = try SDK.dispatch(ctx, content_types.Create, .{
-        .definition = content_types.example_definition,
+        .definition = .{
+            .text = content_types.example_definition,
+        },
     });
     _ = try SDK.dispatch(ctx, content_types.Create, .{
-        .definition = page_definition,
+        .definition = .{
+            .text = page_definition,
+        },
     });
 
     // The page's own status and transition the `flow` examples remove.
@@ -546,7 +562,9 @@ fn fill_records(ctx: *Ctx) Error!void {
     });
     _ = try SDK.dispatch(ctx, records.Save, .{
         .id = records.example_id,
-        .document = second_document,
+        .document = .{
+            .text = second_document,
+        },
     });
     _ = try SDK.dispatch(ctx, records.Publish, .{
         .id = records.example_id,
@@ -558,7 +576,9 @@ fn fill_records(ctx: *Ctx) Error!void {
     });
     _ = try SDK.dispatch(ctx, records.Save, .{
         .id = records.example_changed_id,
-        .document = edited_document,
+        .document = .{
+            .text = edited_document,
+        },
     });
 
     try record_with_id(ctx, records.example_draft_id);
@@ -611,7 +631,9 @@ fn record_with_id(ctx: *Ctx, id: []const u8) Error!void {
 
     const created = try SDK.dispatch(ctx, records.Create, .{
         .type = "post",
-        .document = records.example_document,
+        .document = .{
+            .text = records.example_document,
+        },
     });
 
     try store.records.rename(ctx.db, created.id, id);

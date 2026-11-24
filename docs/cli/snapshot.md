@@ -16,6 +16,6 @@ a normal `record save` of its document. Signed-in callers only. Back to the [CLI
 
 ```
 $ publr --as ada@example.com snapshot list --id a1b2… --kind revision
-{ "snapshots": [ { "seq": 1, "kind": "revision", "at": 1789650000000, "by": "3f9c…", "document": "{…}" } ] }
+{ "snapshots": [ { "seq": 1, "kind": "revision", "at": 1789650000000, "by": "3f9c…" } ] }
 $ publr --as ada@example.com snapshot restore --id a1b2… --seq 1
 ```

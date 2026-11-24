@@ -329,7 +329,8 @@ the same calls read the catalogue the page loads (`/admin/messages/<locale>.js`,
 version). A message is a literal string, one sentence, its variable parts named
 placeholders; counts go through the plural form, whatever English needs.
 
-`zig run scripts/i18n.zig -- ui src/adapters ...` writes the template (`.pot`) of every
+`zig run --dep i18n_marks -Mroot=scripts/i18n.zig -Mi18n_marks=src/model/i18n/marks.zig --
+ui src/adapters ...` writes the template (`.pot`) of every
 marked message, with where it is written, for any PO editor. A plugin brings translations
 with `pub const translations = [_]publr.plugin.Translation{ .{ .locale = "pl", .label =
 "Polski", .domain = "publr", .po = @embedFile("i18n/publr/pl.po") } }`. `domain` says whose
@@ -347,7 +348,10 @@ that message from the next page on, and clearing it goes back to the first-party
 tab also shows how much of each domain's messages each language covers, which plugins
 translate them, and "Missing (.pot)": a template of the untranslated ones, ready for a PO
 editor and a plugin of translations. The build embeds every message the core and the
-compiled-in plugins mark (`scripts/i18n.zig --lines`), so the count needs no source.
+compiled-in plugins mark (`scripts/i18n.zig --lines`), and an installed plugin's module lists
+its own (its manifest's `messages`, read from its files when it is built), so the count needs
+no source. A plugin marks its words with `ctx.t`, `ctx.tn`, `publr.t` and `Publr.t`; a label
+kept as written (another plugin's, or one it stored) is shown with `ctx.translate(label)`.
 
 ## Settings and custom fields
 

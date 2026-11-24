@@ -13,7 +13,14 @@ pub const baseline = "0.7.5";
 ///
 /// written over five lines. Released ones never change and are never removed.
 /// `zig build migration-draft` starts the next one.
-pub const core = [_]migration.Migration{};
+pub const core = [_]migration.Migration{
+    .of(
+        "publr",
+        migration.unreleased,
+        @import("migrations/unreleased.zig"),
+        @embedFile("migrations/unreleased.zig"),
+    ),
+};
 
 /// What a database recorded, less core's rows named for a release before the baseline: the
 /// releases before it recorded those, `schema.sql` holds what they made, and they stay in

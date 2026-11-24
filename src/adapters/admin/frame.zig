@@ -5,6 +5,7 @@ const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const pages = @import("frame/pages.zig");
 const panels = @import("frame/panels.zig");
+const sections = @import("sections.zig");
 const records = @import("../../operations/record.zig");
 const document = @import("frame/document.zig");
 const model_app = @import("../../model/app.zig");
@@ -103,11 +104,18 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             .operations = operations,
         }, .{
             .settings_path = request.path(),
+            .section_page = request.path(),
         });
+    }
+
+    if (page.record.len > 0) {
+        return record_page(&session, page, title, src, operations);
     }
 
     const all_pages = try pages.all(&session);
     const parent = pages.parent_of(all_pages, page) orelse {
+        const home = try home_of(&session, page.plugin, request.path());
+
         return admin.screen(&session, .ok, admin.views.PluginPage, .{
             .title = title,
             .src = src,
@@ -117,6 +125,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             .operations = operations,
         }, .{
             .settings_path = request.path(),
+            .section_page = home,
         });
     };
     // A tab: its tabbed page's header and tab bar over the frame, its entry lit in the menu.
@@ -136,10 +145,172 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .action_href = page.action_href,
     }, .{
         .settings_path = header.address,
+        .section_page = header.address,
     });
 }
 
 const Tab = admin.views.PluginTabPage.TabsItem;
+
+/// Where a plugin's page sits in the admin: its own address when a section holds it, else
+/// the plugin's page a section holds (an order and Create order under Shop, Orders lit),
+/// else its own address, under Settings.
+fn home_of(session: *const Session, plugin: []const u8, path: []const u8) Error![]const u8 {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(path.len > 0);
+
+    const all_sections = try sections.all(session);
+
+    if (sections.holding_page(all_sections, path) != null) {
+        return path;
+    }
+
+    for (try pages.all(session)) |one| {
+        if (!std.mem.eql(u8, one.plugin, plugin)) {
+            continue;
+        }
+
+        const href = try one.href(session.arena);
+
+        if (sections.holding_page(all_sections, href) != null) {
+            return href;
+        }
+    }
+
+    return path;
+}
+
+/// A page drawing a record in place of the form: the frame, and beside it the panels
+/// plugins add to the record's type, each told the record (`?id=`), as beside a form.
+fn record_page(
+    session: *Session,
+    page: pages.Page,
+    title: []const u8,
+    src: []const u8,
+    operations: []const []const u8,
+) Error!void {
+    std.debug.assert(page.record.len > 0);
+    std.debug.assert(src.len > 0);
+
+    const id = std.Uri.percentDecodeInPlace(
+        try session.arena.dupe(u8, query_param(session.request.query(), "id")),
+    );
+    var shown: std.ArrayList(Item) = .empty;
+
+    if (id.len > 0) {
+        const held = try held_fields(session, id);
+
+        for (try panels.for_type(session, page.record)) |panel| {
+            // A field's help belongs under the form's field; there is no form here.
+            if (panel.field.len > 0 or !panels.shows(panel, held)) {
+                continue;
+            }
+
+            const own = try pages.operations_of(session, panel.plugin);
+
+            try shown.append(session.arena, .{
+                .label = panel.label,
+                .plugin = panel.plugin,
+                .from = try panels.from_of(session, panel.plugin),
+                .src = try std.fmt.allocPrint(
+                    session.arena,
+                    prefix ++ "/{s}/panels/{s}/frame?record={s}",
+                    .{ panel.plugin, panel.operation, id },
+                ),
+                .operations = try std.mem.join(session.arena, ",", own),
+            });
+        }
+    }
+
+    const list = try std.fmt.allocPrint(session.arena, "/admin/content?type={s}", .{page.record});
+    const parents = try session.arena.dupe(Parent, &.{.{
+        .label = try type_label(session, page.record),
+        .href = list,
+    }});
+    const types = try session.arena.dupe([]const u8, &.{page.record});
+
+    try admin.screen(session, .ok, admin.views.PluginRecordPage, .{
+        .title = try record_title(session, id, title),
+        .parents = parents,
+        .src = src,
+        .plugin = page.plugin,
+        .page = page.path,
+        .csrf = session.csrf_token(),
+        .operations = operations,
+        .panels = shown.items,
+    }, .{
+        // Under the type's own section and entry, where its list is; else where the
+        // plugin's own page is (Orders, for an order).
+        .content = .{
+            .filters = .{
+                .types = types,
+            },
+        },
+        .section_page = try home_of(session, page.plugin, session.request.path()),
+    });
+}
+
+const Item = admin.views.PluginRecordPage.PanelsItem;
+const Parent = admin.views.PluginRecordPage.ParentsItem;
+
+/// The value of `name` in a query string, still encoded; empty when it is not there.
+fn query_param(query: []const u8, name: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+
+    var pairs = std.mem.splitScalar(u8, query, '&');
+
+    while (pairs.next()) |pair| {
+        const equals = std.mem.indexOfScalar(u8, pair, '=') orelse continue;
+
+        if (std.mem.eql(u8, pair[0..equals], name)) {
+            return pair[equals + 1 ..];
+        }
+    }
+
+    return "";
+}
+
+/// The record's title, as its list shows it; `fallback` when there is none to read.
+fn record_title(session: *Session, id: []const u8, fallback: []const u8) Error![]const u8 {
+    std.debug.assert(fallback.len > 0);
+
+    if (id.len == 0) {
+        return fallback;
+    }
+
+    const got = registry.SDK.dispatch(&session.ctx, records.Get, .{
+        .id = id,
+        .purpose = .edit,
+    }) catch return fallback;
+
+    return if (got.record.title.len > 0) got.record.title else fallback;
+}
+
+/// The record's fields as the viewer reads them, for the panels of the providers it chose;
+/// null when it is not there.
+fn held_fields(session: *Session, id: []const u8) Error!?std.json.Value {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(session.signed_in());
+
+    const got = registry.SDK.dispatch(&session.ctx, records.Get, .{
+        .id = id,
+        .purpose = .edit,
+    }) catch return null;
+
+    return std.json.parseFromSliceLeaky(std.json.Value, session.arena, got.document.text, .{}) catch
+        null;
+}
+
+/// The type's name as its list shows it; its handle when it is not there.
+fn type_label(session: *Session, handle: []const u8) Error![]const u8 {
+    std.debug.assert(handle.len > 0);
+
+    const definitions = @import("../../operations/content_type.zig");
+    const def = registry.SDK.dispatch(&session.ctx, definitions.Get, .{
+        .type = handle,
+    }) catch return handle;
+
+    return @import("nouns.zig").label_of(session, def.definition);
+}
 
 /// The frame's document. The plugin's read takes the address's query string; a failure is
 /// told inside the frame, which keeps the admin around it.

@@ -101,7 +101,7 @@ fn read_controls(form: *const Form, kind: Kind, field: *FieldDef) void {
 
         set.number.unit = form.text("unit") orelse "";
         set.number.unit_after = !std.mem.eql(u8, form.text("unit_after") orelse "1", "0");
-        set.number.decimals = if (kind.storage == .real)
+        set.number.decimals = if (kind.has.places)
             options.count_of(form, "decimals")
         else
             null;

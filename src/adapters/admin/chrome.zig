@@ -26,6 +26,10 @@ pub const Options = struct {
     /// The address whose Settings entry is lit, for a page that belongs under another's
     /// entry: merging a branch is part of Environments.
     settings_path: ?[]const u8 = null,
+    /// A plugin's page: the address of the menu entry it is, or of the tabbed page it is a
+    /// tab of. A section listing that entry draws the page in its own sidebar, the entry lit:
+    /// Shop › Settings stays in the Shop.
+    section_page: ?[]const u8 = null,
 };
 
 /// `section`: a plugin's part of the admin, its own types in its own sidebar.
@@ -119,6 +123,17 @@ pub fn in_plugin_frame(ctx: anytype, base: []const u8) admin.Error!*const Reques
         request.admin.locale = if (language.locale.len > 0) language.locale else "en";
         request.publr_translations = language.translator;
         request.publr_catalogue = language.catalogue;
+
+        // The frame's script speaks it too: `Publr.t` in the browser reads this catalogue.
+        if (language.locale.len > 0 and language.catalogue.len > 0) {
+            request.admin.messages = try @import("language.zig").address_of(
+                arena,
+                base,
+                language.locale,
+                language.catalogue,
+            );
+        }
+
         request.session.name = person.name;
         request.session.email = person.email;
 
@@ -130,6 +145,7 @@ pub fn in_plugin_frame(ctx: anytype, base: []const u8) admin.Error!*const Reques
     request.admin.base = base;
     request.admin.area = "settings";
     request.admin.framed = true;
+    request.admin.grows = true;
 
     std.debug.assert(request.session.csrf.len == 0);
 
@@ -157,7 +173,9 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
     }
 
     const all_sections = try sections.all(session);
-    const in = sections.current(all_sections, options.content);
+    const section_page = options.section_page orelse "";
+    const in = sections.current(all_sections, options.content) orelse
+        sections.holding_page(all_sections, section_page);
     var pinning = session.*;
     const rail = try @import("destinations.zig").rail_of(&pinning, path, all_sections, in);
     const area: Area = if (in != null) .section else area_of(path);
@@ -179,7 +197,7 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
             .rail = rail.node,
             .pinned_lit = rail.lit,
             .sidebar = if (in) |section|
-                try sections.sidebar_of(session, section, options.content)
+                try sections.sidebar_of(session, section, options.content, section_page)
             else
                 try sidebar_of(session, area, path, options),
             .sidebar_heading = if (in) |section|

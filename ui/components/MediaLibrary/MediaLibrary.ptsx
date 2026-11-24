@@ -566,7 +566,7 @@ export const folder_made = (event: Event) => {
   if (name === "") return;
   return done(() => made_live({
     taxonomy: "media_folders",
-    document: JSON.stringify({ name }),
+    document: { name },
     ...(parent !== "" ? { parent } : {}),
   }), Publr.t("Folder {name} made", { name }));
 };
@@ -578,7 +578,7 @@ export const folder_renamed = (event: Event) => {
   const id = form.dataset.folder ?? "";
   if (name === "") return;
   return done(async () => {
-    const saved = (await write("term.save", { id, document: JSON.stringify({ name }) })) as { outcome: string };
+    const saved = (await write("term.save", { id, document: { name } })) as { outcome: string };
     if (saved.outcome === "changes_saved") await write("term.publish", { id });
   }, Publr.t("Renamed"));
 };
@@ -639,7 +639,7 @@ export const tag_made = (event: Event) => {
   if (name === "") return;
   return done(() => made_live({
     taxonomy: "media_tags",
-    document: JSON.stringify({ name }),
+    document: { name },
   }), Publr.t("Tag {name} made", { name }));
 };
 

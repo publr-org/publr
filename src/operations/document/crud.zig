@@ -1,11 +1,13 @@
 //! Create, get, save, list, referrers and validate: the bodies both domains share.
 
 const std = @import("std");
+const visibility = @import("visibility.zig");
 const field_conditions = @import("field_conditions.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
+const provider_values = @import("provider_values.zig");
 const access_module = @import("access.zig");
 const document_module = @import("document.zig");
 const statuses = @import("../status.zig");
@@ -28,7 +30,7 @@ pub const Created = struct {
 pub const Got = struct {
     record: Record,
     slot: []const u8,
-    document: []const u8,
+    document: sdk.operation.Json,
     /// What is scheduled for it (`record.transition_at`), soonest first; read for the editor.
     scheduled: []const Scheduled = &.{},
 };
@@ -55,6 +57,11 @@ pub const Saved = @import("save.zig").Saved;
 pub const Referrer = struct {
     record_id: []const u8,
     field: []const u8,
+};
+/// A page of the records pointing at one, and the next page's `after`.
+pub const ReferrersPage = struct {
+    referrers: []const Referrer,
+    next: []const u8,
 };
 pub const Report = struct {
     valid: bool,
@@ -148,6 +155,7 @@ pub fn Of(comptime Domain: type) type {
 
             try document.refuse_taken_values(ctx, row.id, row.def, parsed, null);
             try document.refuse_unpublished_targets(ctx, row.def, parsed);
+            try provider_values.refuse_unknown(ctx, row.def, parsed, null);
             try Domain.config.check_document(ctx, row.def, parsed);
 
             const id = try documents.insert(ctx.db, ctx.io, ctx.arena, .{
@@ -222,7 +230,14 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(slot.len > 0);
             const parsed = try document.document_of(ctx, record.id, slot, type_row.def);
-            const text = try std.json.Stringify.valueAlloc(ctx.arena, parsed, .{});
+            var readable = parsed;
+
+            if (visibility.any_hidden(type_row.def.fields)) {
+                readable = try copied(ctx, parsed);
+                visibility.strip(ctx, type_row.def.fields, &readable);
+            }
+
+            const text = try std.json.Stringify.valueAlloc(ctx.arena, readable, .{});
             var shown = record;
 
             if (!std.mem.eql(u8, slot, values.live)) {
@@ -233,7 +248,22 @@ pub fn Of(comptime Domain: type) type {
             return .{
                 .record = shown,
                 .slot = slot,
-                .document = text,
+                .document = .{
+                    .text = text,
+                },
+            };
+        }
+
+        /// A top-level copy of `parsed`, so leaving fields out of it keeps the original.
+        fn copied(ctx: *Ctx, parsed: std.json.Value) Error!std.json.Value {
+            std.debug.assert(ctx.now_ms >= 0);
+
+            if (parsed != .object) {
+                return parsed;
+            }
+
+            return .{
+                .object = parsed.object.clone(ctx.arena) catch return error.OutOfMemory,
             };
         }
 
@@ -666,6 +696,10 @@ pub fn Of(comptime Domain: type) type {
                 return null;
             };
 
+            if (in.filter_field) |named| {
+                try field_conditions.readable(ctx, def, named);
+            }
+
             if (in.filter_values.len > 0) {
                 const field = in.filter_field orelse return error.Invalid;
 
@@ -704,15 +738,38 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
-        pub fn referrers(ctx: *Ctx, granted: *const Grant, id: []const u8) Error![]const Referrer {
+        /// A page of the records pointing at `id` that the caller may read, after the pair
+        /// `after` names (`<record>/<field>`, empty for the first), and the next page's
+        /// `after`. A page may hold fewer than it read: those the caller may not read are
+        /// left out.
+        pub fn referrers(
+            ctx: *Ctx,
+            granted: *const Grant,
+            id: []const u8,
+            after: []const u8,
+        ) Error!ReferrersPage {
             std.debug.assert(granted.allows());
             std.debug.assert(model.document.rows_max > 0);
 
-            if (id.len == 0 or id.len > 128) {
+            if (id.len == 0 or id.len > 128 or after.len > 512) {
                 return error.Invalid;
             }
 
-            const found = try values.referrers(ctx.db, ctx.arena, id, .live);
+            const slash = std.mem.indexOfScalar(u8, after, '/');
+
+            if (after.len > 0 and slash == null) {
+                return error.Invalid;
+            }
+
+            const from: store.document_values.Referrer = if (slash) |at| .{
+                .record_id = after[0..at],
+                .field = after[at + 1 ..],
+            } else .{
+                .record_id = "",
+                .field = "",
+            };
+            const limit = sdk.operation.page_limit_max;
+            const found = try values.referrers_page(ctx.db, ctx.arena, id, from, limit);
             var visible: std.ArrayList(Referrer) = .empty;
 
             for (found) |item| {
@@ -728,7 +785,16 @@ pub fn Of(comptime Domain: type) type {
 
             std.debug.assert(visible.items.len <= found.len);
 
-            return visible.items;
+            const last = if (found.len == limit) found[found.len - 1] else null;
+
+            return .{
+                .referrers = visible.items,
+                .next = if (last) |pair|
+                    std.fmt.allocPrint(ctx.arena, "{s}/{s}", .{ pair.record_id, pair.field }) catch
+                        return error.OutOfMemory
+                else
+                    "",
+            };
         }
 
         pub fn validate(

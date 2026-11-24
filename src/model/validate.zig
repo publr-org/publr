@@ -107,6 +107,23 @@ pub fn validate_document(
     }
 }
 
+/// Only the fields listed, each as the document holds it; other keys are none of theirs:
+/// what an internal record's rules check.
+pub fn validate_fields(
+    known: []const Kind,
+    defs: []const Def,
+    object: std.json.ObjectMap,
+    now_ms: i64,
+    problems: *Problems,
+) void {
+    std.debug.assert(defs.len <= field.fields_max);
+    std.debug.assert(problems.len <= field.problems_max);
+
+    for (defs) |def| {
+        validate_field(known, def, object.get(def.name), def.name, now_ms, problems);
+    }
+}
+
 /// Each value a field holds in a combination (`name@language=pl`) is checked as the field's
 /// own would be, except that none is required: a combination left out reads its fallback.
 fn validate_combinations(

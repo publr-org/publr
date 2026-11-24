@@ -31,7 +31,7 @@ const Shape = struct {
     name: []const u8 = "",
     email: []const u8 = "",
     /// The roles the account holds, by name.
-    roles: []const []const u8 = &.{model.role.editor},
+    roles: []const []const u8 = &.{},
     invited: bool = false,
     link: []const u8 = "",
     problem: []const u8 = "",
@@ -299,7 +299,9 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
         .user = id,
         .display_name = shape.name,
         .roles = shape.roles,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     }) catch |err| {
         const said = try reason(session, err, .update);
 
@@ -378,7 +380,7 @@ fn load(session: *Session, id: []const u8) Error!?Shape {
         .roles = user.roles,
         .invited = !user.active,
         .defs = got.fields,
-        .document = parse(session.arena, got.document),
+        .document = parse(session.arena, got.document.text),
     };
 }
 
@@ -419,7 +421,9 @@ fn problems_of(session: *Session, id: []const u8, document: []const u8) Error![]
 
     const checked = registry.SDK.dispatch(&session.ctx, user_operations.Validate, .{
         .user = id,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     }) catch return &.{};
     const problems = try session.arena.alloc(Problem, checked.problems.len);
 
@@ -763,4 +767,8 @@ test "users under settings: invite by link, rename, reissue, delete; the rail si
     try std.testing.expectEqualStrings(back, deleted.header("Location").?);
     const gone = try flow.call("GET", back, "");
     try std.testing.expect(std.mem.indexOf(u8, gone.body, "writer@example.com") == null);
+}
+
+test {
+    _ = @import("users_guard.zig");
 }

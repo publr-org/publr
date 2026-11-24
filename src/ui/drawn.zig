@@ -1,12 +1,12 @@
 //! What the host draws for an installed plugin's view: one design-system component, or one
-//! of the admin's layouts and components, by name, its props off the wire. The view runs in
-//! the plugin; each component it reaches is drawn here, natively, with the frame's request,
-//! so the plugin carries none of them and its page reads like a compiled-in one.
+//! of the admin's layouts and components, by name, its props read where the plugin left
+//! them. The view runs in the plugin and describes its page; each component it reached is
+//! drawn here, natively, with the frame's request, so the plugin carries none of them and
+//! its page reads like a compiled-in one (`drawn_placed.zig` puts the page together).
 const std = @import("std");
 const runtime = @import("runtime");
 const views = @import("views");
 const render = @import("render.zig");
-const view_wire = @import("../sdk/plugin/view_wire.zig");
 
 const admin_expressions = @embedFile("admin_expressions");
 
@@ -60,20 +60,20 @@ pub fn callable(name: []const u8) bool {
     return false;
 }
 
-/// `name` drawn with the props the wire carries; `NotFound` for a name the plugin may not
-/// draw, `Invalid` for props that are not its.
+/// `name` drawn with the props `source` reads (`source.read(Props)`, each prop by its name);
+/// `NotFound` for a name the plugin may not draw, `Invalid` for props that are not its.
 pub fn draw(
     drawing: *Drawing,
     arena: std.mem.Allocator,
     name: []const u8,
-    props: []const u8,
+    source: anytype,
 ) Error![]const u8 {
     std.debug.assert(name.len > 0);
     std.debug.assert(drawing.request.publr_expressions != null);
 
     inline for (views.callable.names) |listed| {
         if (std.mem.eql(u8, listed, name)) {
-            return draw_one(@field(views, listed), drawing, arena, props);
+            return draw_one(@field(views, listed), drawing, arena, source);
         }
     }
 
@@ -84,11 +84,11 @@ fn draw_one(
     comptime View: type,
     drawing: *Drawing,
     arena: std.mem.Allocator,
-    text: []const u8,
+    source: anytype,
 ) Error![]const u8 {
-    std.debug.assert(text.len > 0);
+    std.debug.assert(drawing.request.admin.framed);
 
-    var props = view_wire.decode(arena, View.Props, text) catch |err| switch (err) {
+    var props = source.read(View.Props) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.Invalid,
     };
@@ -102,7 +102,18 @@ fn draw_one(
     return out.written();
 }
 
-test "a component drawn off the wire is the same markup as drawn in the process" {
+/// Props a test hands over as they are.
+fn TestSource(comptime Given: type) type {
+    return struct {
+        props: Given,
+
+        fn read(source: @This(), comptime Props: type) Error!Props {
+            return if (Props == Given) source.props else error.Invalid;
+        }
+    };
+}
+
+test "a component drawn for a plugin is the same markup as drawn in the process" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -115,8 +126,13 @@ test "a component drawn off the wire is the same markup as drawn in the process"
     const drawing = try Drawing.start(arena, &frame);
     defer drawing.deinit();
 
-    const wired = try draw(drawing, arena, "Status", "{\"tone\":\"success\"," ++
-        "\"children\":\"Noted\"}");
+    const given: TestSource(views.Status.Props) = .{
+        .props = .{
+            .tone = .success,
+            .children = runtime.raw("Noted"),
+        },
+    };
+    const handed = try draw(drawing, arena, "Status", given);
     var out: std.Io.Writer.Allocating = .init(arena);
 
     try views.Status.render(&out.writer, arena, .{
@@ -124,10 +140,10 @@ test "a component drawn off the wire is the same markup as drawn in the process"
         .children = runtime.raw("Noted"),
         .publr_request = &drawing.request,
     });
-    try std.testing.expectEqualStrings(out.written(), wired);
-    try std.testing.expect(std.mem.indexOf(u8, wired, "Noted") != null);
+    try std.testing.expectEqualStrings(out.written(), handed);
+    try std.testing.expect(std.mem.indexOf(u8, handed, "Noted") != null);
     try std.testing.expect(callable("IndexPage"));
     try std.testing.expect(!callable("Content"));
-    try std.testing.expectError(error.NotFound, draw(drawing, arena, "Content", "{}"));
-    try std.testing.expectError(error.Invalid, draw(drawing, arena, "Status", "[]"));
+    try std.testing.expectError(error.NotFound, draw(drawing, arena, "Content", given));
+    try std.testing.expectError(error.Invalid, draw(drawing, arena, "IndexPage", given));
 }

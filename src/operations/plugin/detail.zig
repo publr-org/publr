@@ -232,6 +232,18 @@ fn shown_requests(arena: std.mem.Allocator, decoded: state.Decoded) Error![]cons
 pub fn detail_of(ctx: *Ctx, decoded: state.Decoded) Error!Detail {
     std.debug.assert(decoded.row.name.len > 0);
 
+    return detail_among(ctx, decoded, try contracts.providers(ctx, .{}));
+}
+
+/// `detail_of` against what is there, read once by a caller showing several plugins.
+pub fn detail_among(
+    ctx: *Ctx,
+    decoded: state.Decoded,
+    there: []const contracts.Provider,
+) Error!Detail {
+    std.debug.assert(decoded.row.name.len > 0);
+    std.debug.assert(there.len <= 1 << 16);
+
     const manifest = &decoded.manifest;
     const names = try ctx.arena.alloc([]const u8, manifest.operations.len);
 
@@ -239,7 +251,7 @@ pub fn detail_of(ctx: *Ctx, decoded: state.Decoded) Error!Detail {
         name.* = operation.name;
     }
 
-    const remotes = try contracts.standing(ctx, manifest);
+    const remotes = try contracts.standing_among(ctx, manifest, there);
 
     return .{
         .name = manifest.name,
@@ -270,13 +282,39 @@ fn warnings_of(
     std.debug.assert(manifest.warnings.len <= 1 << 16);
 
     const waiting = try @import("../taxonomy/on_type.zig").missing_types(ctx, manifest.name);
+    const staff = try staff_types(ctx, manifest);
 
-    if (waiting.len == 0) {
+    if (waiting.len == 0 and staff.len == 0) {
         return manifest.warnings;
     }
 
-    return std.mem.concat(ctx.arena, []const u8, &.{ manifest.warnings, waiting }) catch
+    return std.mem.concat(ctx.arena, []const u8, &.{ manifest.warnings, waiting, staff }) catch
         error.OutOfMemory;
+}
+
+/// Each type it registers that names a role staff now, which so gives nothing.
+fn staff_types(
+    ctx: *Ctx,
+    manifest: *const model.sandboxed_plugin.Manifest,
+) Error![]const []const u8 {
+    std.debug.assert(manifest.name.len > 0);
+    std.debug.assert(manifest.user_types.len <= model.user_type.types_max);
+
+    var said: std.ArrayList([]const u8) = .empty;
+
+    for (manifest.user_types) |declared| {
+        const user_types = @import("../../sdk/user_types.zig");
+        const given = try user_types.staff_role_given(ctx, declared) orelse continue;
+        const text = std.fmt.allocPrint(ctx.arena, "Its type {s} gives nothing: the role {s} " ++
+            "reaches what staff call, and a type gives visitor roles only", .{
+            declared.label,
+            given,
+        }) catch return error.OutOfMemory;
+
+        said.append(ctx.arena, text) catch return error.OutOfMemory;
+    }
+
+    return said.items;
 }
 
 /// The secrets `manifest` declares, each with whether it is set and who else uses it.

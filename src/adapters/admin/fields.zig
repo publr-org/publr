@@ -4,6 +4,7 @@
 //! Reading the form back is `fields/decode.zig`; adding, removing and moving values
 //! without saving is `fields/reshape.zig`.
 const std = @import("std");
+const visibility = @import("../../operations/document/visibility.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
@@ -95,6 +96,9 @@ pub const Context = struct {
     statuses: []const model.status.Status = &model.status.core_statuses,
     /// The record is live: a slug locked on publish is shown, not edited.
     live: bool = false,
+    /// The type is a plugin's or the core's: its fields' labels and help are declared words,
+    /// shown in the person's language. A type people made keeps its words as typed.
+    declared: bool = false,
     /// The site's currencies, the default first: one input each on a money field.
     currencies: []const model.money.Entry = &.{},
     /// The record edited, empty for a new one: what its virtual fields list for.
@@ -206,6 +210,12 @@ pub fn rows_of(context: Context, fields: []const Def, document: ?Value) Error![]
             continue;
         }
 
+        // A field the person may not read is not on their form: special-category data is
+        // shown only on its declaring plugin's own pages, never to administrators.
+        if (def.visibility.hidden() and !visibility.sees(&context.session.ctx, def.visibility)) {
+            continue;
+        }
+
         const row = try row_of(context, def, current);
 
         // A repeater counts its items' cells as it draws them (`entries_of`).
@@ -269,6 +279,13 @@ fn asked_open(open: []const []const u8, name: []const u8) bool {
     return false;
 }
 
+/// A field's label or help as the form shows it: a declared type's in the person's language.
+fn worded(context: Context, text: []const u8) Error![]const u8 {
+    std.debug.assert(text.len <= 1 << 16);
+
+    return if (context.declared) context.session.declared(text) else text;
+}
+
 fn row_shell(context: Context, def: Def) Error!Row {
     std.debug.assert(def.name.len > 0);
     const kind = kind_of(context, def);
@@ -276,9 +293,9 @@ fn row_shell(context: Context, def: Def) Error!Row {
         .name = def.name,
         .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
         .value_kind = def.kind,
-        .label = def.label,
+        .label = try worded(context, def.label),
         .required = def.validation.required,
-        .help = def.help,
+        .help = try worded(context, def.help),
         .panels = &.{},
         .hint = try @import("fields/hint.zig").line(context.session, context.arena, def),
         .collapsed = def.options.container.collapsed,
@@ -625,7 +642,7 @@ fn money_single_of(context: Context, def: Def, current: ?Value) Error![]const vi
     const instances = try money_instances(context, def, current);
 
     std.debug.assert(instances.len == 1);
-    @constCast(instances)[0].label = def.label;
+    @constCast(instances)[0].label = try worded(context, def.label);
     @constCast(instances)[0].required = def.validation.required;
 
     return convert_all(views.ItemsItem, views.OptionsItem, "options", context.arena, instances);
@@ -921,9 +938,9 @@ fn nested_of(
     if (nested or def.many or kind_of(context, def).control == .json) {
         return .{
             .name = name,
-            .label = def.label,
+            .label = try worded(context, def.label),
             .required = def.validation.required,
-            .help = def.help,
+            .help = try worded(context, def.help),
             .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
             .value_kind = def.kind,
             .control = "json",
@@ -983,9 +1000,9 @@ fn instance_of(
         .name = name,
         .conditions = try std.json.Stringify.valueAlloc(context.arena, def.conditions, .{}),
         .value_kind = def.kind,
-        .label = def.label,
+        .label = try worded(context, def.label),
         .required = def.validation.required,
-        .help = def.help,
+        .help = try worded(context, def.help),
         .placeholder = if (def.options.placeholder.len > 0)
             def.options.placeholder
         else
@@ -999,11 +1016,11 @@ fn instance_of(
     }
 
     if (kind.editor != null) {
-        if (try editor_src(context.arena, kind.id, def, current)) |src| {
+        if (try editor_src(context.arena, kind, def, current)) |src| {
             instance.control = "editor";
             instance.src = src;
             instance.value = if (current != null and current.? != .null)
-                try json_text(context.arena, current.?)
+                try edited_text(context.arena, kind, current.?)
             else
                 "";
 
@@ -1055,7 +1072,10 @@ fn instance_of(
         .json => {
             instance.control = "json";
             instance.rows = json_rows;
-            instance.value = if (current) |value| try json_text(context.arena, value) else "";
+            instance.value = if (current) |value|
+                try edited_text(context.arena, kind, value)
+            else
+                "";
         },
     }
 
@@ -1069,13 +1089,14 @@ const editor_value_max: u32 = 4 << 10;
 /// `/admin/plugin/places/kinds/location/frame?value=…`; null for a value too long to tell.
 fn editor_src(
     arena: std.mem.Allocator,
-    id: []const u8,
+    kind: Kind,
     def: Def,
     current: ?Value,
 ) Error!?[]const u8 {
+    const id = kind.id;
     const dot = std.mem.indexOfScalar(u8, id, '.') orelse return null;
     const held = current != null and current.? != .null;
-    const value = if (held) try json_text(arena, current.?) else "";
+    const value = if (held) try edited_text(arena, kind, current.?) else "";
 
     std.debug.assert(dot > 0);
 
@@ -1475,6 +1496,61 @@ fn fill_user(context: Context, instance: *Instance) Error!void {
     instance.options = options[0 .. context.users.len + (if (found) @as(u32, 1) else 2)];
 }
 
+/// A provider field: the contract's providers by label, and the one held kept even when it
+/// was removed since, marked so.
+fn fill_provider(context: Context, instance: *Instance, contract_name: []const u8) Error!void {
+    std.debug.assert(instance.name.len > 0);
+    std.debug.assert(contract_name.len > 0);
+
+    var reading = context.session.ctx;
+    const contract = @import("../../sdk/contract.zig");
+    const listed = contract.listed(&reading, contract_name) catch |err| listed: {
+        if (err == error.OutOfMemory) {
+            return error.OutOfMemory;
+        }
+
+        std.log.warn("providers of {s} unavailable: {t}", .{ contract_name, err });
+
+        break :listed &.{};
+    };
+    var options: std.ArrayList(Option) = .empty;
+    var found = instance.value.len == 0;
+
+    try options.append(context.arena, .{
+        .value = "",
+        .label = try context.session.translated("Select a provider", .{}),
+        .selected = instance.value.len == 0,
+    });
+
+    for (listed) |one| {
+        const held = std.mem.eql(u8, one.provider.name, instance.value);
+        const label = one.provider.label;
+
+        found = found or held;
+        try options.append(context.arena, .{
+            .value = one.provider.name,
+            .label = if (label.len > 0) try context.session.declared(label) else one.provider.name,
+            .selected = held,
+        });
+    }
+
+    if (!found) {
+        try options.append(context.arena, .{
+            .value = instance.value,
+            .label = try context.session.translated("{name} (removed)", .{
+                .values = &.{.{
+                    .name = "name",
+                    .value = instance.value,
+                }},
+            }),
+            .selected = true,
+        });
+    }
+
+    instance.control = "select";
+    instance.options = options.items;
+}
+
 /// A plain input, unless the kind is a slug (the address in front of it) or a reference
 /// (a card of the record it points at; a slot to pick one while it points nowhere).
 fn fill_input(
@@ -1501,6 +1577,11 @@ fn fill_input(
 
     if (std.mem.eql(u8, def.kind, "user")) {
         try fill_user(context, instance);
+        return;
+    }
+
+    if (std.mem.eql(u8, def.kind, "provider")) {
+        try fill_provider(context, instance, def.options.provider.contract);
         return;
     }
 
@@ -1534,7 +1615,7 @@ fn fill_input(
     instance.control = "card";
     instance.card_type = if (found) |seen| seen.type_name else "";
     instance.card_title = if (found) |seen| title_of(seen.record) else instance.value;
-    instance.card_status = if (status) |known| known.label else "";
+    instance.card_status = if (status) |known| try context.session.declared(known.label) else "";
     instance.card_tone = if (status) |known| tone_of(known.color) else "neutral";
     instance.card_href = if (linked)
         try print(context.arena, "/admin/content/{s}", .{instance.value})
@@ -1794,6 +1875,21 @@ fn copied(comptime Target: type, arena: std.mem.Allocator, source: anytype) Erro
     }
 
     return out;
+}
+
+/// The value as its editor holds it: a kind keeping JSON text (a plugin kind of a struct)
+/// holds that text, any other kind the value as JSON.
+fn edited_text(arena: std.mem.Allocator, kind: Kind, value: Value) Error![]const u8 {
+    std.debug.assert(value != .null);
+    std.debug.assert(kind.id.len > 0);
+
+    const texted = kind.storage == .text or kind.storage == .long;
+
+    if (texted and value == .string) {
+        return value.string;
+    }
+
+    return json_text(arena, value);
 }
 
 fn json_text(arena: std.mem.Allocator, value: Value) Error![]const u8 {

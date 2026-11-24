@@ -192,6 +192,7 @@ fn sign_in(harness: *Harness) ![]const u8 {
     _ = try registry.SDK.dispatch(&system, testing_users.Create, .{
         .email = "ed@x.test",
         .display_name = "Ed",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
 

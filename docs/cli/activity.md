@@ -19,7 +19,7 @@ entry has the error's name, its message, and the inner operation it came from.
 $ publr --as-admin plugin disable --names cart,inventory
 $ publr --as-admin activity list --operation plugin.disable --limit 1
 { "entries": [ { "id": 41, "operation": "plugin.disable",
-  "input": "{\"names\":[\"cart\",\"inventory\"]}",
+  "input": { "names": [ "cart", "inventory" ] },
   "units": [ "plugin:cart", "plugin:inventory" ], "calls": [], … } ] }
 $ publr --as-admin plugin enable --names cart,inventory
 ```

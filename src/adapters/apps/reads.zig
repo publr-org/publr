@@ -64,7 +64,7 @@ pub fn find_records(
     const entries = try ctx.arena.alloc(Entry, listed.records.len);
 
     for (listed.records, listed.documents, entries) |row, text, *out| {
-        out.* = try ctx.adopt(row, text);
+        out.* = try ctx.adopt(row, text.text);
     }
 
     return entries;
@@ -84,7 +84,9 @@ pub fn run_query(ctx: *const Context, groq: []const u8, params: []const u8) ![]c
     var sdk_ctx = ctx.sdk_context();
     const answered = registry.SDK.dispatch(&sdk_ctx, record_operations.Query, .{
         .query = groq,
-        .params = params,
+        .params = .{
+            .text = params,
+        },
     }) catch |err| {
         const message = if (sdk_ctx.failure) |failure| failure.message else @errorName(err);
 
@@ -148,6 +150,12 @@ pub fn call_with(ctx: *const Context, operation: []const u8, input: []const u8) 
     sdk_ctx.app_reach = ctx.app.spec.name;
     sdk_ctx.visitor = ctx.visitor_id;
 
+    // What the operation reads is what the render read: a followed island is drawn again
+    // when it changes.
+    if (ctx.deps) |deps| {
+        sdk_ctx.reads = deps.reads();
+    }
+
     const given = if (input.len > 0) input else "{}";
     const output = registry.SDK.call_json(&sdk_ctx, name, given) catch {
         return blank;
@@ -188,6 +196,9 @@ fn resolved(_: *const Context, operation: []const u8) []const u8 {
 fn callable(ctx: *const Context, operation: []const u8) !bool {
     std.debug.assert(operation.len > 0);
     std.debug.assert(ctx.app.spec.name.len > 0);
+
+    // Unrolled once over every operation: the budget grows with the list.
+    @setEvalBranchQuota(1000 + registry.SDK.operations.len * 8);
 
     inline for (registry.SDK.operations) |Operation| {
         if (std.mem.eql(u8, Operation.name, operation)) {

@@ -28,7 +28,9 @@ pub fn create(request: *Request, response: *Response, ctx: *Context) Error!void 
     const query = try query_json(session, post.form.get("filters") orelse "");
     const created = registry.SDK.dispatch(&session.ctx, saved_views.Create, .{
         .name = name,
-        .query = query,
+        .query = .{
+            .text = query,
+        },
         .for_everyone = for_everyone(&post.form),
     }) catch |err| return admin.fail(session, err, back);
 
@@ -47,7 +49,9 @@ pub fn save(request: *Request, response: *Response, ctx: *Context) Error!void {
 
     _ = registry.SDK.dispatch(&session.ctx, saved_views.Update, .{
         .id = id,
-        .query = query,
+        .query = .{
+            .text = query,
+        },
     }) catch |err| return admin.fail(session, err, back);
 
     try session.response.redirect(.see_other, try view_href(session, id));
@@ -99,7 +103,9 @@ pub fn save_default(request: *Request, response: *Response, ctx: *Context) Error
 
     _ = registry.SDK.dispatch(&session.ctx, view_default.SaveDefault, .{
         .type = handle,
-        .query = query,
+        .query = .{
+            .text = query,
+        },
         .for_everyone = for_everyone(&post.form),
     }) catch |err| return admin.fail(session, err, back);
 

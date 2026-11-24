@@ -29,6 +29,11 @@
       if (window.publr.refused) window.publr.refused(Array.isArray(answer.problems) ? answer.problems : []);
       return;
     }
+    // What a read of the page read changed elsewhere: the page reads again.
+    if (answer.kind === "changed") {
+      if (window.publr.changed) window.publr.changed();
+      return;
+    }
     // A field's help: the field's value as the form now holds it.
     if (answer.kind === "value") {
       if (window.publr.told) window.publr.told(answer.value ?? null);
@@ -37,8 +42,15 @@
     const caller = pending.get(answer.id);
     if (!caller) return;
     pending.delete(answer.id);
-    if (answer.ok) caller.resolve(answer.value);
-    else caller.reject(new Error(answer.error));
+    if (answer.ok) {
+      caller.resolve(answer.value);
+      return;
+    }
+    // A refusal keeps its code and what was wrong with each field, for the form to show.
+    const refused = new Error(answer.error);
+    refused.code = String(answer.code || "");
+    refused.problems = Array.isArray(answer.problems) ? answer.problems : [];
+    caller.reject(refused);
   });
   hello();
   window.publr = {

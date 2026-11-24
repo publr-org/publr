@@ -96,7 +96,7 @@ pub const Language = struct {
         /// someone who has not.
         answered: bool = true,
         /// Site Health's choices between translations that disagree, as stored.
-        chosen_translations: []const u8 = "",
+        chosen_translations: ?sdk.operation.Json = null,
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -114,7 +114,7 @@ pub const Language = struct {
         .site = "The site's default for everyone who chose none",
         .shown = "The language the admin speaks to you",
         .choices = "Each language the admin speaks: `locale` and its own name",
-        .chosen_translations = "The translations picked where several disagree, as JSON",
+        .chosen_translations = "The translations picked where several disagree; null for none",
         .answered = "Whether you ever chose; until then the site's default, else English",
     };
 
@@ -129,6 +129,7 @@ pub const Language = struct {
         };
         const chosen = try stored(ctx, key, all);
         const answered = try store.settings.get(ctx.db, ctx.arena, key) != null;
+        const picked = try store.settings.get(ctx.db, ctx.arena, choices_key) orelse "";
 
         return .{
             .answered = answered,
@@ -136,7 +137,9 @@ pub const Language = struct {
             .site = site,
             .shown = if (chosen.len > 0) chosen else if (site.len > 0) site else "en",
             .choices = all,
-            .chosen_translations = try store.settings.get(ctx.db, ctx.arena, choices_key) orelse "",
+            .chosen_translations = if (picked.len > 0) .{
+                .text = picked,
+            } else null,
         };
     }
 };

@@ -1,0 +1,36 @@
+import { Publr } from "publr-jsx";
+
+export type SamplerTallyProps = {
+  /// What the tally starts from.
+  start?: number;
+};
+
+// A tally kept in the browser, placed by the sampler's panel and by a site's page alike: rows
+// from a list it starts with, each counted up by a button handing its row to the action.
+export function SamplerTally({ start = 0 }: SamplerTallyProps) {
+  const labels: Record<string, string> = { low: "Low", high: "High" };
+  const state = Publr.reactive({
+    rows: [
+      { name: "low", count: start },
+      { name: "high", count: start },
+    ],
+  });
+
+  const add = (index: number) => {
+    state.rows = state.rows.map((row, at) => (at === index ? { name: row.name, count: row.count + 1 } : row));
+  };
+
+  return (
+    <ul data-sampler-tally class="grid gap-2">
+      {state.rows.map((row, index) => (
+        <li data-tally-row class="flex items-center gap-2">
+          <span>{labels[row.name] ?? row.name}</span>
+          <output>{row.count}</output>
+          <button type="button" onClick={() => add(index)} class="rounded border px-2">
+            {Publr.t("Count")}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}

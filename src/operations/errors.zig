@@ -30,7 +30,8 @@ pub const Item = struct {
     actor: []const u8,
     app: []const u8,
     operation: []const u8,
-    input: []const u8,
+    /// The call's input, its secrets masked; null when it had none.
+    input: ?sdk.operation.Json,
     calls: []const []const u8,
     @"error": []const u8,
     message: []const u8,
@@ -68,7 +69,9 @@ pub const List = struct {
             .actor = "u_admin",
             .app = "",
             .operation = "plugin.disable",
-            .input = "{\"names\":[\"inventory\"]}",
+            .input = .{
+                .text = "{\"names\":[\"inventory\"]}",
+            },
             .calls = &.{},
             .@"error" = "Failed",
             .message = "cart depends on inventory. To disable them together: " ++
@@ -117,7 +120,7 @@ pub const List = struct {
                 .actor = row.actor,
                 .app = row.app,
                 .operation = row.operation,
-                .input = row.input,
+                .input = try activity.input_of(ctx, row.input),
                 .calls = try activity.names_of(ctx, row.calls),
                 .@"error" = row.@"error",
                 .message = row.message,

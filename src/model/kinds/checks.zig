@@ -4,6 +4,7 @@ const std = @import("std");
 const time = @import("../../lib/time.zig");
 const field = @import("../field.zig");
 const options = @import("../field/options.zig");
+const decimals = @import("../decimal.zig");
 
 const Def = field.Def;
 const Problems = field.Problems;
@@ -38,7 +39,8 @@ pub fn email(def: Def, value: Value, path: []const u8, problems: *Problems) void
     std.debug.assert(def.name.len > 0);
     std.debug.assert(path.len > 0);
 
-    if (value != .string) {
+    // Empty is no email given: whether one must be is the field's `required`.
+    if (value != .string or value.string.len == 0) {
         return;
     }
 
@@ -133,6 +135,25 @@ pub fn datetime(def: Def, value: Value, path: []const u8, problems: *Problems) v
     if (value == .integer and (value.integer < 0 or value.integer >= time.ms_max)) {
         problems.add(path, "datetime is milliseconds since 1970");
     }
+}
+
+/// A decimal is text (`1.25`), never a binary fraction, with at most its field's places.
+pub fn decimal(def: Def, value: Value, path: []const u8, problems: *Problems) void {
+    std.debug.assert(def.name.len > 0);
+    std.debug.assert(path.len > 0);
+
+    if (value != .string) {
+        return;
+    }
+
+    const declared = def.options.number.decimals orelse decimals.places_max;
+    const places = @min(declared, decimals.places_max);
+
+    _ = decimals.units_of(value.string, @intCast(places)) catch |err| switch (err) {
+        error.NotDecimal => problems.add(path, "a decimal number written as text: 1.25"),
+        error.TooManyPlaces => problems.add(path, "more decimal places than the field keeps"),
+        error.TooLarge => problems.add(path, "too large a number"),
+    };
 }
 
 pub fn valid_slug(text: []const u8) bool {

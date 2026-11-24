@@ -144,7 +144,7 @@ fn repoint(
         return error.Invalid;
     }
 
-    const fields = std.json.parseFromSliceLeaky(Value, arena, got.document, .{}) catch {
+    const fields = std.json.parseFromSliceLeaky(Value, arena, got.document.text, .{}) catch {
         return error.Invalid;
     };
     const held: Value = if (fields == .object) fields.object.get(def.options.via) orelse
@@ -162,7 +162,9 @@ fn repoint(
 
     const saved = try registry.SDK.dispatch(ctx, records.Save, .{
         .id = child,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     // A live child joins or leaves at once, not as a pending change waiting for its own
@@ -291,7 +293,7 @@ fn points_here(
         return false;
     }
 
-    const fields = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document, .{}) catch {
+    const fields = std.json.parseFromSliceLeaky(Value, ctx.arena, got.document.text, .{}) catch {
         return false;
     };
 

@@ -15,12 +15,20 @@ pub fn add_check(
 ) *std.Build.Step {
     std.debug.assert(builder.root.sub_path.len == 0);
 
+    // The answers of `/api/<operation>`, read as every client of the API reads them.
+    const api = builder.dependency("publr_api", .{
+        .target = builder.graph.host,
+    });
     const smoke = builder.addExecutable(.{
         .name = "smoke",
         .root_module = builder.createModule(.{
             .root_source_file = builder.path("scripts/smoke.zig"),
             .target = builder.graph.host,
             .optimize = .debug,
+            .imports = &.{.{
+                .name = "publr_api",
+                .module = api.module("publr_api"),
+            }},
         }),
     });
 

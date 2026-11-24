@@ -5,8 +5,9 @@ import { PluginPanel } from "../PluginPanel.ptsx";
 
 export type RecordPanelsProps = {
   csrf: string;
-  /** The panels plugins add to this record's form, each in the plugin frame. */
-  panels: Array<{ label: string; plugin: string; src: string; operations: string }>;
+  /** The panels plugins add to this record's form, each in the plugin frame; `from` is
+   * its plugin as people read it. */
+  panels: Array<{ label: string; plugin: string; from: string; src: string; operations: string }>;
 };
 
 /** The boxes plugins add to a record's form: each titled, named after its plugin, and
@@ -16,7 +17,7 @@ export function RecordPanels({ csrf, panels }: RecordPanelsProps) {
     <>
       {panels.map((panel) => (
         <EditorAsideSection title={panel.label}>
-          <Text as="span" variant="body-xs" tone="muted">{Publr.t("From {name}", { name: panel.plugin })}</Text>
+          <Text as="span" variant="body-xs" tone="muted">{Publr.t("From {name}", { name: panel.from })}</Text>
           <PluginPanel src={panel.src} title={panel.label} plugin={panel.plugin} csrf={csrf} operations={panel.operations} />
         </EditorAsideSection>
       ))}

@@ -5,6 +5,7 @@ import { UninstallPlugin } from "../components/UninstallPlugin.ptsx";
 import { IndexSection } from "../components/IndexSection.ptsx";
 import { PluginRequests } from "../components/PluginRequests.ptsx";
 import { PluginData } from "../components/PluginData.ptsx";
+import { PluginAnswers } from "../components/PluginAnswers.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Callout } from "@publr/ui/Callout.ptsx";
 import { Status } from "@publr/ui/Status.ptsx";
@@ -63,6 +64,8 @@ export type PluginProps = {
   log_href: string;
   /** Its Webhooks tab; empty when it declares none. */
   webhooks_href?: string;
+  /** Its Ledger tab; empty when it keeps no ledger. */
+  ledger_href?: string;
   /** The labels of the secrets it declares that have no value yet, joined; empty for none. */
   missing: string;
   /** Why it can't be enabled: each plugin it needs that does not fit, in plain words. */
@@ -71,6 +74,13 @@ export type PluginProps = {
   off: Array<{ code: string; text: string }>;
   /** What the plugin checks warned of, each where it is and why: never a stop. */
   warnings: Array<{ code: string; text: string }>;
+  /** What each of its providers answered at install (`.at_install`), read only. */
+  answers: Array<{
+    contract: string;
+    provider: string;
+    version: string;
+    lines: Array<{ name: string; value: string }>;
+  }>;
 };
 
 /** One plugin: whether it runs, its versions (an update waiting, the previous one to roll
@@ -100,10 +110,12 @@ export function Plugin({
   trashed,
   log_href,
   webhooks_href = "",
+  ledger_href = "",
   missing,
   blocked,
   off,
   warnings,
+  answers,
 }: PluginProps) {
   return (
     <IndexPage
@@ -165,6 +177,7 @@ export function Plugin({
           </TabNavLink>
           <TabNavLink href={log_href}>{Publr.t("Log")}</TabNavLink>
           {webhooks_href !== "" && <TabNavLink href={webhooks_href}>{Publr.t("Webhooks")}</TabNavLink>}
+          {ledger_href !== "" && <TabNavLink href={ledger_href}>{Publr.t("Ledger")}</TabNavLink>}
         </TabNav>
       }
       notice={
@@ -228,6 +241,7 @@ export function Plugin({
           )}
         </IndexSection>
       </form>
+      <PluginAnswers answers={answers} />
       <PluginData restore_action={restore_action} pieces={pieces} />
     </IndexPage>
   );

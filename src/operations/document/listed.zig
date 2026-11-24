@@ -106,12 +106,14 @@ pub fn Of(comptime Domain: type) type {
                 }
 
                 const rows = grouped.get(record.id) orelse &.{};
-                const parsed = try model.document.assemble(
+                var parsed = try model.document.assemble(
                     registry.kinds(ctx),
                     ctx.arena,
                     cached_def.fields,
                     rows,
                 );
+
+                @import("visibility.zig").strip(ctx, cached_def.fields, &parsed);
 
                 text.* = std.json.Stringify.valueAlloc(ctx.arena, parsed, .{}) catch {
                     return error.OutOfMemory;
@@ -166,28 +168,38 @@ test "listed documents: read with their page, the same as one read each, in list
     try registry.SDK.bootstrap(&system);
 
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
-            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
-            "\"validation\":{\"required\":true}}," ++
-            "{\"name\":\"tags\",\"label\":\"Tags\",\"kind\":\"string\",\"many\":true}]}",
+        .definition = .{
+            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
+                "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+                "\"validation\":{\"required\":true}}," ++
+                "{\"name\":\"tags\",\"label\":\"Tags\",\"kind\":\"string\",\"many\":true}]}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = "{\"handle\":\"memo\",\"name\":\"Memo\",\"fields\":[" ++
-            "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
-            "\"validation\":{\"required\":true}}]}",
+        .definition = .{
+            .text = "{\"handle\":\"memo\",\"name\":\"Memo\",\"fields\":[" ++
+                "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
+                "\"validation\":{\"required\":true}}]}",
+        },
     });
 
     const first = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "note",
-        .document = "{\"title\":\"First\",\"tags\":[\"a\",\"b\"]}",
+        .document = .{
+            .text = "{\"title\":\"First\",\"tags\":[\"a\",\"b\"]}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "memo",
-        .document = "{\"title\":\"Second\"}",
+        .document = .{
+            .text = "{\"title\":\"Second\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "note",
-        .document = "{\"title\":\"Empty\"}",
+        .document = .{
+            .text = "{\"title\":\"Empty\"}",
+        },
     });
 
     const listed = try registry.SDK.dispatch(&system, records.List, .{
@@ -204,7 +216,7 @@ test "listed documents: read with their page, the same as one read each, in list
             .id = record.id,
         });
 
-        try std.testing.expectEqualStrings(one.document, text);
+        try std.testing.expectEqualStrings(one.document.text, text.text);
     }
 
     const plain = try registry.SDK.dispatch(&system, records.List, .{

@@ -257,7 +257,9 @@ pub fn test_job(ctx: *Ctx, in: Testing) Error!void {
         .output_tokens_max = 16,
     }) catch return error.OutOfMemory;
     const input = std.json.Stringify.valueAlloc(ctx.arena, sdk_ai.Completion.In{
-        .request = request,
+        .request = .{
+            .text = request,
+        },
     }, .{}) catch return error.OutOfMemory;
     const provider = try providers.registered(ctx, in.provider) orelse {
         return jobs.answer(ctx, in.asked, Tested{
@@ -300,7 +302,7 @@ fn reply_of(ctx: *Ctx, output: []const u8) Error![]const u8 {
     const out = std.json.parseFromSliceLeaky(sdk_ai.Completion.Out, ctx.arena, output, .{
         .ignore_unknown_fields = true,
     }) catch return error.Invalid;
-    const response = lib_ai.response_of(ctx.arena, out.response) catch return error.Invalid;
+    const response = lib_ai.response_of(ctx.arena, out.response.text) catch return error.Invalid;
 
     for (response.parts) |part| {
         if (part.kind == .text) {

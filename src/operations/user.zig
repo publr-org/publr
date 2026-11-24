@@ -18,10 +18,11 @@ pub const namespace: sdk.operation.Namespace = .{
     .details =
     \\Everything about who may use Publr. The first admin comes from `publr project init`;
     \\after that, create accounts with `user create` (with a password, a generated
-    \\one, or a set-password link). An account holds one or more roles, and may call
-    \\what any of them grants. Core has `admin` (everything) and `editor` (content,
-    \\not users, structure or settings); plugins add their own, such as the visitors
-    \\of an app, whose grants reach only that app's operations (`app.<feature>.*`).
+    \\one, or a set-password link). An account holds the roles it is given, none unless
+    \\asked, and may call what any of them grants. Core has `admin` (everything) and
+    \\`editor` (content, not users, structure or settings); plugins add their own, such as
+    \\the visitors of an app, whose grants reach only that app's operations
+    \\(`app.<feature>.*`).
     \\
     \\`sign_in`, `sign_out` and `set_password` are open to anyone; the rest
     \\needs an admin (`--as <admin>` or `--as-admin`). Over HTTP the same operations
@@ -47,6 +48,8 @@ pub const Summary = struct {
     roles: []const []const u8,
     created_at: i64,
     active: bool,
+    /// The types of user plugins register (`customer`) the account holds; none for staff alone.
+    user_types: []const []const u8 = &.{},
 };
 
 pub const Link = struct {
@@ -72,15 +75,25 @@ pub const Create = struct {
         \\
         \\`--roles` names the roles the account holds, one or more (`admin,editor`);
         \\`publr role list` lists the ones this project has. Fails as invalid for a role
-        \\no compiled-in code declares.
+        \\no compiled-in code declares. No role is ever given unasked: without `--roles`
+        \\the account holds none and can do nothing until an administrator gives it one,
+        \\or, with `--user_type`, it holds exactly the roles the type declares.
+        \\
+        \\`--user_type` makes it an account of a type a plugin registers (`customer`,
+        \\see `user_type list`). An account holding types and no role but theirs signs in
+        \\only to the apps its types open and is listed with its types, never under
+        \\Settings › Users; one holding another role (an administrator who is also a
+        \\customer) is staff as well. The admin is reached by roles alone.
+        \\`user add_type` gives an account more types.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         email: []const u8,
         display_name: []const u8,
-        roles: []const []const u8 = &.{role.editor},
+        roles: ?[]const []const u8 = null,
         password: ?[]const u8 = null,
         password_link: bool = false,
+        user_type: []const u8 = "",
     };
     pub const Out = struct {
         user_id: []const u8,
@@ -91,6 +104,7 @@ pub const Create = struct {
     pub const example: In = .{
         .email = "writer@example.com",
         .display_name = "Writer",
+        .roles = &.{"editor"},
         .password_link = true,
     };
     pub const example_out: Out = .{
@@ -106,9 +120,11 @@ pub const Create = struct {
         .email = "Sign-in email; must be unique, stored lowercased and trimmed",
         .display_name = "Name shown in the admin",
         .roles = "The roles the account holds, comma-separated: `admin`, `editor` or one a " ++
-            "plugin declares",
+            "plugin declares; none when omitted, or only the type's roles with user_type",
         .password = "8 to 256 characters; generated when omitted; not allowed with password_link",
         .password_link = "Create the account inactive and return a set-password link instead",
+        .user_type = "A type of user a plugin registers (`customer`) the account holds; " ++
+            "none when empty",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .user_id = "The new account's id",
@@ -125,8 +141,18 @@ pub const Create = struct {
             return error.Invalid;
         }
 
+        try check_user_type(ctx, in.user_type);
+        try visitors.refuse_other_type(ctx, in.user_type);
+
+        const roles = try roles_of_new(ctx, in.roles, in.user_type);
+
+        try staff.refuse_from_plugin(ctx, &.{}, roles);
+
         if (in.password_link) {
-            const created = try create_pending_user(ctx, in.email, in.display_name, in.roles);
+            const created = try create_pending_user(ctx, in.email, in.display_name, roles);
+
+            try give_type(ctx, created, in.user_type);
+
             const link = try issue_link(ctx, created);
 
             ctx.emit(UserCreated, .{
@@ -135,25 +161,85 @@ pub const Create = struct {
 
             return .{
                 .user_id = created,
-                .roles = in.roles,
+                .roles = roles,
                 .password = null,
                 .link = link,
             };
         }
 
-        const created = try create_user(ctx, in.email, in.display_name, in.password, in.roles);
+        const created = try create_user(ctx, in.email, in.display_name, in.password, roles);
+
+        try give_type(ctx, created.user_id, in.user_type);
         ctx.emit(UserCreated, .{
             .user = created.user_id,
         });
 
         return .{
             .user_id = created.user_id,
-            .roles = in.roles,
+            .roles = roles,
             .password = created.password,
             .link = null,
         };
     }
 };
+
+/// The roles a new account holds: the ones named, and with a type its roles joining them.
+/// Nothing is given unasked: no roles named and no type is an account holding none. A type
+/// giving a staff role gives nothing: a type of user is never a way into the admin.
+fn roles_of_new(
+    ctx: *Ctx,
+    named: ?[]const []const u8,
+    user_type: []const u8,
+) Error![]const []const u8 {
+    std.debug.assert(user_type.len <= 1 << 16);
+    std.debug.assert(ctx.now_ms >= 0);
+
+    if (user_type.len == 0) {
+        return named orelse &.{};
+    }
+
+    const user_types = @import("../sdk/user_types.zig");
+    const declared = try user_types.find(ctx, user_type) orelse return error.Invalid;
+
+    if (try user_types.staff_role_given(ctx, declared) != null) {
+        return error.Denied;
+    }
+
+    var roles: std.ArrayList([]const u8) = .empty;
+
+    try roles.appendSlice(ctx.arena, named orelse &.{});
+
+    for (declared.roles) |given| {
+        if (!visitors.held(roles.items, given)) {
+            try roles.append(ctx.arena, given);
+        }
+    }
+
+    return roles.items;
+}
+
+/// A type given is one a plugin registers now.
+fn check_user_type(ctx: *Ctx, user_type: []const u8) Error!void {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(user_type.len <= 1 << 16);
+
+    if (user_type.len == 0) {
+        return;
+    }
+
+    if (try @import("../sdk/user_types.zig").find(ctx, user_type) == null) {
+        return error.Invalid;
+    }
+}
+
+fn give_type(ctx: *Ctx, user_id: []const u8, user_type: []const u8) Error!void {
+    std.debug.assert(user_id.len > 0);
+    std.debug.assert(user_type.len <= 64);
+
+    if (user_type.len > 0) {
+        _ = try store.user_types.add(ctx.db, user_id, user_type);
+    }
+}
 
 pub const PasswordLink = struct {
     pub const name = "user.password_link";
@@ -195,6 +281,9 @@ pub const PasswordLink = struct {
         std.debug.assert(ctx.caller != .anonymous);
 
         const credentials = try find_user(ctx, in.user) orelse return error.NotFound;
+
+        try visitors.refuse_other_account(ctx, credentials.user);
+
         const link = try issue_link(ctx, credentials.user.id);
 
         return .{
@@ -311,7 +400,10 @@ pub const Options = struct {
     pub fn run(ctx: *Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
 
-        const window = try window_of(in.query, in.limit, in.offset);
+        var window = try window_of(in.query, in.limit, in.offset);
+
+        window.type_roles = try @import("../sdk/user_types.zig").roles_given_json(ctx);
+
         const rows = try store.users.page(ctx.db, ctx.arena, window);
         const users = try ctx.arena.alloc(Option, rows.len);
 
@@ -324,7 +416,7 @@ pub const Options = struct {
 
         return .{
             .users = users,
-            .total = try store.users.count_matching(ctx.db, window.query),
+            .total = try store.users.count_matching(ctx.db, window),
         };
     }
 };
@@ -357,6 +449,7 @@ pub const List = struct {
         limit: u32 = 50,
         offset: u32 = 0,
         sort: []const u8 = "",
+        user_type: []const u8 = "",
     };
     pub const Out = struct {
         users: []const Summary,
@@ -382,6 +475,8 @@ pub const List = struct {
         .offset = "How many to pass over first: the next page's start",
         .sort = "A field stored on the accounts (`loyalty.points`), `-loyalty.points` " ++
             "descending; oldest first when empty",
+        .user_type = "Accounts holding this type of user (`customer`); staff when empty: " ++
+            "accounts holding no type, or a role no type gives",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -421,7 +516,15 @@ pub const List = struct {
             return error.Invalid;
         }
 
+        if (in.user_type.len > model.user_type.name_len_max) {
+            return error.Invalid;
+        }
+
+        try visitors.refuse_unread_type(ctx, in.user_type);
+
         window.sort = in.sort;
+        window.user_type = in.user_type;
+        window.type_roles = try @import("../sdk/user_types.zig").roles_given_json(ctx);
 
         const rows = try store.users.page(ctx.db, ctx.arena, window);
         const users = try ctx.arena.alloc(Summary, rows.len);
@@ -432,7 +535,7 @@ pub const List = struct {
 
         return .{
             .users = users,
-            .total = try store.users.count_matching(ctx.db, window.query),
+            .total = try store.users.count_matching(ctx.db, window),
             .extended = try stored_columns(ctx, users),
         };
     }
@@ -539,7 +642,7 @@ pub fn seed_admin(ctx: *Ctx) Error!void {
     _ = try insert_user(ctx, "admin@example.com", "Admin", password_hash, &.{role.admin});
 }
 
-fn create_pending_user(
+pub fn create_pending_user(
     ctx: *Ctx,
     raw_email: []const u8,
     raw_display_name: []const u8,
@@ -556,7 +659,7 @@ pub fn valid_roles(ctx: *const Ctx, roles: []const []const u8) Error!bool {
     std.debug.assert(role.user_roles_max > 0);
     std.debug.assert(ctx.now_ms >= 0);
 
-    if (roles.len == 0 or roles.len > role.user_roles_max) {
+    if (roles.len > role.user_roles_max) {
         return false;
     }
 
@@ -638,6 +741,12 @@ fn generate_password(ctx: *Ctx) Error![]const u8 {
 }
 
 fn issue_link(ctx: *Ctx, user_id: []const u8) Error!Link {
+    return issue_link_at(ctx, user_id, invitation_path);
+}
+
+/// A one-hour set-password link to `page` (the admin's welcome, or a page of the app an
+/// account of a user type signs in to); the account's earlier link stops working.
+pub fn issue_link_at(ctx: *Ctx, user_id: []const u8, page: []const u8) Error!Link {
     std.debug.assert(user_id.len > 0);
     std.debug.assert(password_link_lifetime_ms > 0);
 
@@ -651,7 +760,7 @@ fn issue_link(ctx: *Ctx, user_id: []const u8) Error!Link {
     try store.users.set_password_token(ctx.db, user_id, token_hash, expires_at);
 
     const path = try std.fmt.allocPrint(ctx.arena, "{s}?token={s}", .{
-        invitation_path,
+        page,
         token,
     });
 
@@ -705,7 +814,12 @@ pub const Get = fields.Get;
 pub const Validate = fields.Validate;
 
 pub const language = @import("user/language.zig");
+pub const visitors = @import("user/visitors.zig");
 pub const columns = @import("user/columns.zig");
+pub const types = @import("user/types.zig");
+pub const staff = @import("user/staff.zig");
+pub const AddType = types.AddType;
+pub const RemoveType = types.RemoveType;
 
 pub const operations = [_]type{
     Create,
@@ -721,7 +835,7 @@ pub const operations = [_]type{
     language.SetLanguage,
     columns.Columns,
     columns.SetColumns,
-};
+} ++ visitors.operations ++ types.operations;
 
 pub fn summary_of(user: store.users.User) Summary {
     std.debug.assert(user.id.len > 0);
@@ -734,6 +848,7 @@ pub fn summary_of(user: store.users.User) Summary {
         .roles = user.roles,
         .created_at = user.created_at,
         .active = user.active,
+        .user_types = user.user_types,
     };
 }
 

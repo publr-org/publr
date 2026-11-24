@@ -16,12 +16,13 @@ Returns a session token like `user sign_in`, and `created` when the account is n
 ## `configure`
 
 Administrators only. `--open_sign_up <role>` lets an identity nobody holds create an
-account with that role, from a verified email; any declared role but `admin`. Empty closes
+account with that role, from a verified email: a visitor's role, never one that reaches
+the admin (refused as denied). Empty closes
 sign-up again, the default: only accounts that exist sign in through a provider.
 
 ```
-$ publr --as ada@example.com identity configure --open_sign_up editor
-{ "open_sign_up": "editor" }
+$ publr --as ada@example.com identity configure --open_sign_up customer
+{ "open_sign_up": "customer" }
 ```
 
 ## `status`

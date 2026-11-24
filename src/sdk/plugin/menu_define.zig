@@ -102,13 +102,13 @@ fn check_icon(comptime Plugin: type, comptime what: []const u8, comptime name: [
     }
 }
 
-/// The text a menu item shows, marked for translation where it is written.
+/// Words marked for translation where they are written: a menu item's text, a label another
+/// plugin shows (`ctx.translate`). The text itself, at build or at run time.
 pub fn t(comptime text: []const u8) []const u8 {
-    comptime {
-        std.debug.assert(text.len > 0);
+    comptime std.debug.assert(text.len > 0);
+    comptime std.debug.assert(std.unicode.utf8ValidateSlice(text));
 
-        return text;
-    }
+    return text;
 }
 
 /// The plugin's menu items as the admin reads them, checked against its own records and pages.

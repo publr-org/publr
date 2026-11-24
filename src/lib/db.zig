@@ -2,6 +2,7 @@
 //! the schema, and the fixture every store test starts from.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const sqlite = @import("publr_sqlite");
 const deps = @import("deps.zig");
 
@@ -18,6 +19,8 @@ pub const Blob = sqlite.Blob;
 pub const Any = sqlite.Any;
 pub const Error = sqlite.Error;
 pub const heap_bytes_min = sqlite.heap_bytes_min;
+/// The most SQLite held at once since the last reset, in bytes.
+pub const memory_peak = sqlite.memory_peak;
 
 /// How long a statement waits for another process (the CLI next to a running server)
 /// to release the write lock before the caller hears `error.Busy`.
@@ -35,7 +38,14 @@ pub fn open(runtime: *Runtime, path: [*:0]const u8) Error!Db {
     try connection.exec("PRAGMA journal_mode = WAL");
     try connection.exec("PRAGMA synchronous = NORMAL");
     try connection.exec("PRAGMA foreign_keys = ON");
-    try connection.exec("PRAGMA temp_store = MEMORY");
+    // What a savepoint keeps of the pages it changed goes to a file: in memory it would grow
+    // with the write (a big order placed in one transaction) until the fixed heap ran out.
+    // The browser build has no temporary files; its writes stay small.
+    if (builtin.os.tag == .wasi or builtin.os.tag == .freestanding) {
+        try connection.exec("PRAGMA temp_store = MEMORY");
+    } else {
+        try connection.exec("PRAGMA temp_store = FILE");
+    }
 
     return connection;
 }

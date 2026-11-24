@@ -315,6 +315,10 @@ fn type_label_depth(comptime Type: type, comptime depth: u32) []const u8 {
             "list of " ++ type_label_depth(pointer.child, depth + 1),
         .@"struct" => |info| if (Type == @import("dimension_input.zig").Dimensions)
             "a code per dimension"
+        else if (@hasDecl(Type, "json_label"))
+            Type.json_label
+        else if (@import("../model/contract.zig").is_json_map(Type))
+            "an object by key (money as `{ \"PLN\": 12300 }`)"
         else if (@hasDecl(Type, "handle"))
             "id of " ++ Type.handle
         else if (@hasDecl(Type, "reference"))

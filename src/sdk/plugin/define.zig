@@ -121,7 +121,8 @@ const options_known = [_][]const u8{
     "register_location_rules", "register_providers",
     "register_columns",        "dimensions",
     "taxonomies",              "register_taxonomies",
-    "contracts",
+    "contracts",               "user_types",
+    "request",                 "ledger",
 };
 
 /// What only a built-in plugin takes outside `.extend`, until each finds its place.
@@ -475,9 +476,11 @@ fn declared_hooks(comptime Plugin: type) []const type {
 
         if (@hasField(Options, "records")) {
             const record_validate = @import("record_validate.zig");
+            const record_computed = @import("record_computed.zig");
 
             for (Plugin.options.records) |Record| {
                 list = list ++ record_validate.hooks_of(Record);
+                list = list ++ record_computed.hooks_of(Record, Plugin.manifest.name);
             }
         }
 

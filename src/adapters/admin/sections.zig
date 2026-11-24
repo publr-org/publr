@@ -104,6 +104,7 @@ pub fn all(session: *const Session) Error![]const Section {
     const listed = registry.SDK.dispatch(&reading.ctx, types.List, .{
         .limit = @import("../../sdk/operation.zig").page_limit_max,
     }) catch return error.OutOfMemory;
+    const named = try @import("nouns.zig").summaries(session, types.Summary, listed.types);
     var shown: std.ArrayList(Section) = .empty;
 
     for (entries, 0..) |entry, position| {
@@ -113,13 +114,13 @@ pub fn all(session: *const Session) Error![]const Section {
             continue;
         }
 
-        const within = try entries_under(session, entries, index, listed.types);
+        const within = try entries_under(session, entries, index, named);
 
         if (within.len > 0) {
             try shown.append(session.arena, .{
                 .plugin = plugin_of(entry.name),
                 .name = entry.name,
-                .label = entry.label,
+                .label = try session.declared(entry.label),
                 .icon = entry.icon,
                 .types = within,
             });
@@ -166,8 +167,9 @@ fn entries_under(
 
             if (heading and mine == own) {
                 const from = plugin_of(entry.name);
+                const label = try session.declared(entry.label);
 
-                try append_group(session, &within, placed, index, entry.label, from);
+                try append_group(session, &within, placed, index, label, from);
             }
         }
     }
@@ -314,7 +316,7 @@ fn page_of(session: *const Session, entry: MenuEntry) Error!Type {
     return .{
         .handle = "",
         .icon = entry.icon,
-        .label = entry.label,
+        .label = try session.declared(entry.label),
         .href = try std.fmt.allocPrint(session.arena, "/admin/plugin/{s}/{s}", .{
             plugin_of(entry.name),
             entry.page,
@@ -423,6 +425,25 @@ pub fn current(sections: []const Section, content: nav.Current) ?Section {
     return null;
 }
 
+/// The section whose sidebar lists the page at `page` (`/admin/plugin/<plugin>/<path>`).
+pub fn holding_page(sections: []const Section, page: []const u8) ?Section {
+    std.debug.assert(sections.len <= sections_max);
+
+    if (page.len == 0) {
+        return null;
+    }
+
+    for (sections) |section| {
+        for (section.types) |one| {
+            if (one.handle.len == 0 and std.mem.eql(u8, one.href, page)) {
+                return section;
+            }
+        }
+    }
+
+    return null;
+}
+
 /// Whether a type belongs to a section, so the Content sidebar leaves it out.
 pub fn holds(sections: []const Section, handle: []const u8) bool {
     std.debug.assert(sections.len <= sections_max);
@@ -442,6 +463,7 @@ pub fn sidebar_of(
     session: *const Session,
     section: Section,
     content: nav.Current,
+    page: []const u8,
 ) Error!admin.render.Node {
     std.debug.assert(session.signed_in());
     std.debug.assert(section.types.len > 0);
@@ -460,7 +482,10 @@ pub fn sidebar_of(
             .href = one.href,
             .icon = picked.icon,
             .custom_icon = picked.custom_icon,
-            .active = one.handle.len > 0 and std.mem.eql(u8, one.handle, lit),
+            .active = if (one.handle.len > 0)
+                std.mem.eql(u8, one.handle, lit)
+            else
+                page.len > 0 and std.mem.eql(u8, one.href, page),
             .plugin = "",
             .page = "",
             .pinned = false,

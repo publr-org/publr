@@ -11,15 +11,12 @@ type Landed = {
 export const landed = async (id: string): Promise<Landed> => {
   for (;;) {
     try {
-      const response = await fetch(Publr.url(`/api/job/answer?id=${encodeURIComponent(id)}`), {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      const found = await response.json().catch(() => ({}));
-      if (!response.ok) return { state: "failed", problem: found.message ?? found.error ?? `${response.status}` };
+      const found = (await Publr.send("job.answer", { id })) as Landed;
       if (found.state !== "waiting") return found;
-    } catch {
-      // The server is restarting: asked again in a moment.
+    } catch (error) {
+      // Refused: the work failed. Anything else is the server restarting: asked again.
+      const refused = error as { code?: string; message?: string };
+      if (typeof refused.code === "string") return { state: "failed", problem: refused.message ?? refused.code };
     }
     await new Promise((done) => window.setTimeout(done, 1000));
   }

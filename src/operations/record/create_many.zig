@@ -13,24 +13,24 @@ const Problem = sdk.operation.Problem;
 
 /// The most documents one call takes: a batch a request's memory holds with room to spare;
 /// `publr seed` sends a file in batches of this size.
-pub const documents_max: u32 = 250;
+pub const documents_max: u32 = 200;
 const documents_bytes_max: u32 = 2 << 20;
 
 pub const CreateMany = struct {
     pub const name = "record.create_many";
-    pub const description = "Create many records of a type at once, from a JSON array of documents";
+    pub const description = "Create many records of a type at once, from a list of documents";
     pub const details =
         \\Each document is made as `record create` makes it, its checks, hooks and events
-        \\included, all in one write: up to 250 a call (`publr seed` sends a file of any size
-        \\in calls of 250). The batch is all or nothing: one document refused refuses them all,
+        \\included, all in one write: up to 200 a call (`publr seed` sends a file of any size
+        \\in calls of 200). The batch is all or nothing: one document refused refuses them all,
         \\its problems named `documents.<index>.<field>`. With `publish`, each is published
         \\as `record transition --transition publish` would, once all are made.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         type: []const u8,
-        /// A JSON array of documents, as `record create` takes one.
-        documents: []const u8,
+        /// The documents, each as `record create` takes one.
+        documents: []const sdk.operation.Json,
         publish: bool = false,
     };
     pub const Out = struct {
@@ -39,7 +39,14 @@ pub const CreateMany = struct {
     };
     pub const example: In = .{
         .type = "post",
-        .documents = "[{\"title\":\"First\",\"body\":\"One\"},{\"title\":\"Second\"}]",
+        .documents = &.{
+            .{
+                .text = "{\"title\":\"First\",\"body\":\"One\"}",
+            },
+            .{
+                .text = "{\"title\":\"Second\"}",
+            },
+        },
     };
     pub const example_out: Out = .{
         .created = 2,
@@ -47,7 +54,7 @@ pub const CreateMany = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .type = "The content type, by handle or id",
-        .documents = "The documents as a JSON array of objects, at most 250",
+        .documents = "The documents, each an object as `record create` takes one, at most 200",
         .publish = "Publish each one once all are made",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
@@ -59,11 +66,14 @@ pub const CreateMany = struct {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.type.len == 0 or in.type.len > 64 << 10 or in.documents.len > documents_bytes_max) {
+        if (in.type.len == 0 or in.type.len > 64 << 10) {
             return error.Invalid;
         }
 
-        const documents = try documents_of(ctx, in.documents);
+        const documents = in.documents;
+
+        try check(ctx, documents);
+
         const ids = ctx.arena.alloc([]const u8, documents.len) catch return error.OutOfMemory;
         const kept = ctx.arena;
         const scratch = try ctx.scratch();
@@ -113,49 +123,42 @@ pub const CreateMany = struct {
         };
     }
 
-    /// Each document of the array as its own JSON text, as `record create` takes it.
-    fn documents_of(ctx: *Ctx, text: []const u8) Error![]const []const u8 {
+    /// Refuses an empty batch, one over the limits, or an item that is no object.
+    fn check(ctx: *Ctx, documents: []const sdk.operation.Json) Error!void {
         std.debug.assert(documents_max > 0);
 
-        const parsed = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, text, .{}) catch {
+        if (documents.len == 0) {
             return ctx.refuse(&.{.{
                 .field = "documents",
-                .message = "Not a JSON array of objects",
-            }});
-        };
-
-        if (parsed != .array or parsed.array.items.len == 0) {
-            return ctx.refuse(&.{.{
-                .field = "documents",
-                .message = "A JSON array with at least one object",
+                .message = "At least one document",
             }});
         }
 
-        if (parsed.array.items.len > documents_max) {
+        if (documents.len > documents_max) {
             return ctx.refuse(&.{.{
                 .field = "documents",
-                .message = "At most 250 documents a call; `publr seed` sends more in batches",
+                .message = "At most 200 documents a call; `publr seed` sends more in batches",
             }});
         }
 
-        const documents = ctx.arena.alloc([]const u8, parsed.array.items.len) catch {
-            return error.OutOfMemory;
-        };
+        var bytes: u64 = 0;
 
-        for (parsed.array.items, documents) |item, *document| {
-            if (item != .object) {
+        for (documents) |document| {
+            bytes += document.text.len;
+
+            if (document.text.len == 0 or document.text[0] != '{') {
                 return ctx.refuse(&.{.{
                     .field = "documents",
                     .message = "Every item must be a JSON object",
                 }});
             }
-
-            document.* = std.json.Stringify.valueAlloc(ctx.arena, item, .{}) catch {
-                return error.OutOfMemory;
-            };
         }
 
-        return documents;
+        if (bytes > documents_bytes_max) {
+            return error.Invalid;
+        }
+
+        std.debug.assert(documents.len <= documents_max);
     }
 
     /// One document's refusal as the batch's: its problems, or its failure, named by index.
@@ -219,7 +222,14 @@ test "create_many: a batch made at once, published on asking, refused whole" {
     });
     const made = try SDK.dispatch(&editor, CreateMany, .{
         .type = "post",
-        .documents = "[{\"title\":\"One\",\"body\":\"x\"},{\"title\":\"Two\",\"body\":\"y\"}]",
+        .documents = &.{
+            .{
+                .text = "{\"title\":\"One\",\"body\":\"x\"}",
+            },
+            .{
+                .text = "{\"title\":\"Two\",\"body\":\"y\"}",
+            },
+        },
         .publish = true,
     });
 
@@ -227,7 +237,14 @@ test "create_many: a batch made at once, published on asking, refused whole" {
 
     const refused_whole = SDK.dispatch(&editor, CreateMany, .{
         .type = "post",
-        .documents = "[{\"title\":\"Three\",\"body\":\"z\"},{\"title\":5}]",
+        .documents = &.{
+            .{
+                .text = "{\"title\":\"Three\",\"body\":\"z\"}",
+            },
+            .{
+                .text = "{\"title\":5}",
+            },
+        },
     });
 
     try std.testing.expectError(error.Invalid, refused_whole);
@@ -243,6 +260,6 @@ test "create_many: a batch made at once, published on asking, refused whole" {
     try std.testing.expectEqual(@as(u32, 2), listed.total);
     try std.testing.expectError(error.Invalid, SDK.dispatch(&editor, CreateMany, .{
         .type = "post",
-        .documents = "{}",
+        .documents = &.{},
     }));
 }

@@ -1,7 +1,9 @@
 //! A record's own `validate`, run on every write of its type whoever writes: two hooks of the
 //! plugin's own, after the create and the save of its kind of record, read the record as
 //! written and refuse with its problems, so the write rolls back. Hooks reach installed
-//! plugins too.
+//! plugins too. Each names the kind it is about (`about`), so core starts the plugin only
+//! for a write of that kind, and a write of many (`create_many`, `save_many`) enters it once
+//! for all of them.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const record_operations = @import("../../operations/record.zig");
@@ -35,6 +37,8 @@ fn Checks(comptime Definition: type) type {
             pub const stage: sdk.hooks.Stage = .after;
             pub const operation = Operations.Create.name;
             pub const reason = reason_words;
+            /// Core runs it only on a write of this kind of record.
+            pub const about = name;
 
             pub fn run(
                 ctx: *PluginCtx,
@@ -55,6 +59,7 @@ fn Checks(comptime Definition: type) type {
             pub const stage: sdk.hooks.Stage = .after;
             pub const operation = Operations.Save.name;
             pub const reason = reason_words;
+            pub const about = name;
 
             pub fn run(
                 ctx: *PluginCtx,

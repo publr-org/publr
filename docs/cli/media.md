@@ -27,6 +27,9 @@ tags. Signed-in callers only, except `media file` and `media view`. Back to the 
 | `media folder_delete --folder <id>` | Remove a folder; its folders and files move up a level (admins: it purges the term) |
 | `media import_many --urls <a>,<b>,… [--folder <id or name>]` | Several files from the web in one call, up to 20, as `media import` takes one; each that cannot be added is listed in `failed` with why, the rest are added. `--folder` takes a folder's id or its name (made when there is none of that name; also for `media import`) |
 | `media read --key <key> [--width <n>] [--height <n>] [--fit crop\|cover] [--format webp\|jpeg\|png] [--quality <1-100>]` | A file's bytes, base64, as uploaded or resized as `/media/<key>` resizes: of any media type, private ones included, for whoever may read the type. Up to 8 MiB; read a larger image smaller. How the agent looks at chat pictures |
+| `media write_part --part <name> [--offset <n>] --data <base64>` | Plugins only (`ctx.make_file`): a piece of a file the plugin is making, up to 256 KiB, at `offset` (0 starts afresh); the part is the plugin's own, up to its file limit |
+| `media make --part <name> --filename <name> --type <handle>` | Plugins only: the part kept as a published file of one of the plugin's own media types, checked as an upload is |
+| `media made --id <id>` | Plugins only: where one of the plugin's own files is kept, what a signed link answering `{ "file": id }` serves |
 | `media file --key <key>` | What serving a file needs; a private file is not found for anyone not signed in |
 | `media view --id <id>` | What a page needs to show the file a media field holds: its address (`/media/<key>`), alt text, title and size; anyone for a public file, a private one is not found for anyone not signed in. Templates read it as `Publr.build.media(id)` and `mediaUrl(id, { w, h, fit })` |
 

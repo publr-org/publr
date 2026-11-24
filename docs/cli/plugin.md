@@ -17,6 +17,7 @@ to enable it, or to update it.
 | Command | What |
 |---|---|
 | `plugin list [--limit <n>] [--offset <n>]` | The plugins, built-in then installed by name (`mode` native or sandboxed), 50 a page (`--limit` up to 200): version, enabled or not, what waits for approval, an update waiting; `total` counts them all |
+| `plugin labels --names <a,b>` | Each plugin as people read it, in the caller's language: the words its summary opens with (`Bank transfer: …` is "Bank transfer"), else its name. Plugins may call it without asking (an order's timeline names the plugin that did something) |
 | `plugin get --name <n>` | A built-in plugin too (`mode` native: every request granted, nothing to update). Every request with its tier, its state, the types it names and each flag it asked for as set now; the versions; why it can't be enabled (`blocked`) and which remotes are off (`off`), in words; an update's `stops` and `switches_off` |
 | `plugin add --file <path>` | Add a module from this machine (`--as-admin` only); a new plugin, or the next version of one |
 | `plugin upload --file <name> --data <base64> [--offset <n>] [--last false]` | Add a module sent a piece at a time: what the admin's Upload plugin button sends |

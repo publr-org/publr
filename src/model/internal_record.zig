@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const plugin_contracts = @import("plugin_contracts.zig");
+const field_model = @import("field.zig");
 
 pub const kind_len_max: u32 = 64;
 pub const field_len_max: u32 = 64;
@@ -38,7 +39,18 @@ pub const Collection = struct {
     /// Each top-level field with its kind, from the record's Zig type: what another plugin's
     /// `publr.remote.record` on it is checked against.
     fields: []const plugin_contracts.ProvidedField = &.{},
+    /// The top-level fields with rules, checked on every write as content's are: bounds and
+    /// shapes (`.validation`), `.unique` among the collection's records (an idempotency key:
+    /// a transfer's id), a provider field naming a provider of its contract.
+    rules: []const field_model.Def = &.{},
+    /// The top-level fields the plugin works out (`.virtual = .{ .computed = fn }`): stored
+    /// with the record, worked out again when anything they read has changed. Never
+    /// indexed: an index would answer by a value not yet worked out again.
+    computed: []const []const u8 = &.{},
 };
+
+/// The most computed fields one collection has.
+pub const computed_max: u32 = 8;
 
 /// Why a plugin's collections cannot be declared, or null.
 pub fn problem(collections: []const Collection) ?[]const u8 {
@@ -60,6 +72,14 @@ pub fn problem(collections: []const Collection) ?[]const u8 {
         }
 
         if (indexed_problem(collection.indexed)) |message| {
+            return message;
+        }
+
+        if (rules_problem(collection)) |message| {
+            return message;
+        }
+
+        if (computed_problem(collection)) |message| {
             return message;
         }
     }
@@ -87,6 +107,97 @@ fn indexed_problem(indexed: []const []const u8) ?[]const u8 {
     }
 
     return null;
+}
+
+/// A unique field is found by its value: indexed, one text or whole number.
+fn rules_problem(collection: Collection) ?[]const u8 {
+    std.debug.assert(collection.kind.len > 0);
+
+    if (collection.rules.len > field_model.fields_max) {
+        return "a collection has at most as many fields with rules as a type";
+    }
+
+    for (collection.rules) |rule| {
+        // Found by it, a record would tell its value to whoever may not read it.
+        if (rule.visibility.hidden() and indexes(collection, rule.name)) {
+            return "a field only some may read is never indexed";
+        }
+
+        if (!rule.validation.unique) {
+            continue;
+        }
+
+        if (!indexes(collection, rule.name)) {
+            return "a unique field of an internal record is indexed";
+        }
+
+        // A reference is kept as its record's id: one text like any other.
+        const kinds = [_][]const u8{
+            "string",
+            "email",
+            "url",
+            "integer",
+            "decimal",
+            "reference",
+            "user",
+            "ledger_account",
+            "ledger_transfer",
+        };
+        const one_value = for (kinds) |kind| {
+            if (std.mem.eql(u8, rule.kind, kind)) {
+                break true;
+            }
+        } else false;
+
+        if (rule.many or !one_value) {
+            return "only a single text, whole number or reference field of an internal record " ++
+                "is unique";
+        }
+    }
+
+    return null;
+}
+
+/// A computed field is named once, is one of the record's fields, and is never indexed.
+fn computed_problem(collection: Collection) ?[]const u8 {
+    std.debug.assert(collection.kind.len > 0);
+    std.debug.assert(computed_max > 0);
+
+    if (collection.computed.len > computed_max) {
+        return "a collection has at most 8 computed fields";
+    }
+
+    for (collection.computed, 0..) |field, index| {
+        if (!valid_name(field, field_len_max)) {
+            return "a computed field is [a-z][a-z0-9_]*, up to 64 characters";
+        }
+
+        for (collection.computed[0..index]) |earlier| {
+            if (std.mem.eql(u8, earlier, field)) {
+                return "a collection names a computed field twice";
+            }
+        }
+
+        if (indexes(collection, field)) {
+            return "a computed field is never indexed: it would be found by a value not " ++
+                "yet worked out again";
+        }
+    }
+
+    return null;
+}
+
+pub fn computes(collection: Collection, field: []const u8) bool {
+    std.debug.assert(collection.kind.len > 0);
+    std.debug.assert(field.len > 0);
+
+    for (collection.computed) |computed| {
+        if (std.mem.eql(u8, computed, field)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 pub fn find(collections: []const Collection, kind: []const u8) ?Collection {

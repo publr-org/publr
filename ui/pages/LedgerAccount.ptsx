@@ -1,0 +1,214 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Drawer } from "@publr/ui/Drawer.ptsx";
+import { DrawerClose } from "@publr/ui/DrawerClose.ptsx";
+import { DrawerContent } from "@publr/ui/DrawerContent.ptsx";
+import { DrawerHeader } from "@publr/ui/DrawerHeader.ptsx";
+import { DrawerTitle } from "@publr/ui/DrawerTitle.ptsx";
+import { DrawerTrigger } from "@publr/ui/DrawerTrigger.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { StatCell } from "@publr/ui/StatCell.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type LedgerAccountProps = {
+  /** The account's name in words. */
+  title: string;
+  /** The plugin that keeps it. */
+  plugin: string;
+  /** The plugin's Ledger tab. */
+  ledger_href: string;
+  plugins_href: string;
+  /** asset, liability, equity, income or expense. */
+  kind: string;
+  /** none, never_below_zero or never_above_zero. */
+  limit: string;
+  holder: string;
+  holder_href: string;
+  key: string;
+  unit: string;
+  closed: boolean;
+  posted: string;
+  pending: string;
+  available: string;
+  debits_posted: string;
+  credits_posted: string;
+  debits_pending: string;
+  credits_pending: string;
+  /** Its transfers, newest first. */
+  lines: Array<{
+    /** `YYYY-MM-DD`, UTC. */
+    date: string;
+    /** `HH:MM`, UTC. */
+    time: string;
+    reason: string;
+    /** The other account, in words, and the plugin keeping it. */
+    other: string;
+    other_plugin: string;
+    other_href: string;
+    /** On this account's side, signed: `+12.00 zł`, `−3.00 zł`. */
+    amount: string;
+    grows: boolean;
+    balance_after: string;
+    /** posted, pending, voided or expired. */
+    status: string;
+    /** What it is about, in words, and its page; empty when about nothing. */
+    about: string;
+    about_href: string;
+    /** Everything the transfer holds, for its drawer. */
+    details: Array<{ label: string; value: string; href: string }>;
+  }>;
+  /** The page of older transfers; empty at the oldest. */
+  older_href: string;
+};
+
+const kind_label = (kind: string) =>
+  kind === "asset" ? Publr.t("Asset") : kind === "liability" ? Publr.t("Liability") : kind === "equity" ? Publr.t("Equity") : kind === "income" ? Publr.t("Income") : Publr.t("Expense");
+
+const limit_label = (limit: string) =>
+  limit === "never_below_zero" ? Publr.t("Never below zero") : limit === "never_above_zero" ? Publr.t("Never above zero") : Publr.t("No limit");
+
+/** One ledger account, read only: what it is, its four totals and its history, newest first;
+ * each transfer opens a drawer with everything it holds. */
+export function LedgerAccount({ title, plugin, ledger_href, plugins_href, kind, limit, holder, holder_href, key, unit, closed, posted, pending, available, debits_posted, credits_posted, debits_pending, credits_pending, lines, older_href }: LedgerAccountProps) {
+  return (
+    <IndexPage
+      title={title}
+      parents={[
+        { label: Publr.t("Plugins"), href: plugins_href },
+        { label: plugin, href: ledger_href },
+      ]}
+      meta={
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {closed && <Status tone="neutral">{Publr.t("Closed")}</Status>}
+          <Text as="span" variant="body-sm">{kind_label(kind)}</Text>
+          <Text as="span" variant="body-sm" tone="muted">{limit_label(limit)}</Text>
+          <Text as="span" variant="body-sm" tone="muted">{unit}</Text>
+          {holder !== "" && (holder_href !== "" ? <Link href={holder_href}>{holder}</Link> : <Text as="span" variant="body-sm">{holder}</Text>)}
+          {key !== "" && <Text as="span" variant="body-sm" tone="muted">{key}</Text>}
+        </div>
+      }
+      notice={
+        <div class="flex flex-col rounded-md border border-border">
+          <div class="grid grid-cols-3">
+            <StatCell label={Publr.t("Balance")} value={posted} />
+            <StatCell label={Publr.t("On hold")} value={pending} ruled />
+            <StatCell label={Publr.t("Available")} value={available} ruled />
+          </div>
+          <div class="grid grid-cols-2 border-t border-border">
+            <StatCell label={Publr.t("Debits posted")} value={debits_posted} note={Publr.t("Credits posted: {amount}", { amount: credits_posted })} />
+            <StatCell label={Publr.t("Debits pending")} value={debits_pending} note={Publr.t("Credits pending: {amount}", { amount: credits_pending })} ruled />
+          </div>
+        </div>
+      }
+      empty={
+        lines.length === 0 && (
+          <Empty>
+            <EmptyTitle>{Publr.t("No transfers yet")}</EmptyTitle>
+            <EmptyDescription>{Publr.t("Every transfer on this account shows here, newest first.")}</EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        older_href !== "" && (
+          <Button href={older_href} hierarchy="secondary" size="sm">
+            {Publr.t("Older")}
+          </Button>
+        )
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{Publr.t("When")}</TableHead>
+            <TableHead>{Publr.t("Reason")}</TableHead>
+            <TableHead>{Publr.t("Other account")}</TableHead>
+            <TableHead align="right">{Publr.t("Amount")}</TableHead>
+            <TableHead align="right">{Publr.t("Balance after")}</TableHead>
+            <TableHead>{Publr.t("Status")}</TableHead>
+            <TableHead>{Publr.t("About")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lines.map((line) => (
+            <TableRow>
+              <TableCell classes="whitespace-nowrap">
+                <Drawer>
+                  <DrawerTrigger asChild>
+                    <Button type="button" hierarchy="link" size="sm">
+                      {line.date} {line.time}
+                    </Button>
+                  </DrawerTrigger>
+                  <DrawerContent label={Publr.t("Transfer")}>
+                    <DrawerHeader>
+                      <DrawerTitle>{line.reason}</DrawerTitle>
+                    </DrawerHeader>
+                    <dl class="flex flex-col gap-3 p-5">
+                      {line.details.map((detail) => (
+                        <div class="flex flex-col gap-0.5">
+                          <dt>
+                            <Text as="span" variant="label-xs-strong" tone="muted">{detail.label}</Text>
+                          </dt>
+                          <dd>
+                            {detail.href !== "" ? (
+                              <Link href={detail.href}>{detail.value}</Link>
+                            ) : (
+                              <Text as="span" variant="body-sm" classes="break-all">{detail.value}</Text>
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <div class="flex justify-end px-5 pb-5">
+                      <DrawerClose asChild>
+                        <Button type="button" hierarchy="secondary">{Publr.t("Close")}</Button>
+                      </DrawerClose>
+                    </div>
+                  </DrawerContent>
+                </Drawer>
+              </TableCell>
+              <TableCell>
+                <Text as="span" variant="body-sm">{line.reason}</Text>
+              </TableCell>
+              <TableCell>
+                <div class="flex flex-col">
+                  {line.other_href !== "" ? <Link href={line.other_href}>{line.other}</Link> : <Text as="span" variant="body-sm">{line.other}</Text>}
+                  <Text as="span" variant="body-xs" tone="muted">{line.other_plugin}</Text>
+                </div>
+              </TableCell>
+              <TableCell align="right" classes="whitespace-nowrap">
+                <Text as="span" variant="body-sm" tone={line.grows ? "success" : "default"}>{line.amount}</Text>
+              </TableCell>
+              <TableCell align="right" classes="whitespace-nowrap">
+                <Text as="span" variant="body-sm" tone="muted">{line.balance_after}</Text>
+              </TableCell>
+              <TableCell>
+                {line.status === "posted" && <Status tone="success">{Publr.t("Posted")}</Status>}
+                {line.status === "pending" && <Status tone="warning">{Publr.t("Pending")}</Status>}
+                {line.status === "voided" && <Status tone="neutral">{Publr.t("Voided")}</Status>}
+                {line.status === "expired" && <Status tone="neutral">{Publr.t("Expired")}</Status>}
+              </TableCell>
+              <TableCell>
+                {line.about_href !== "" ? (
+                  <Link href={line.about_href}>{line.about}</Link>
+                ) : (
+                  <Text as="span" variant="body-sm" tone="muted">{line.about}</Text>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </IndexPage>
+  );
+}

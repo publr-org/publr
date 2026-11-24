@@ -4,6 +4,7 @@
 //! doc comments: the struct's `///` is the type's name and description, each field's its
 //! label and help.
 const queue = @import("queue.zig");
+const guest = @import("guest.zig");
 const std = @import("std");
 const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
@@ -15,6 +16,7 @@ const words = @import("words.zig");
 const conditions = @import("../../model/conditions.zig");
 const record_menu = @import("record_menu.zig");
 const remote_fields = @import("remote_fields.zig");
+const rows_module = @import("rows.zig");
 
 pub const Scope = enum { project, app };
 
@@ -26,17 +28,19 @@ pub const Scope = enum { project, app };
 pub const AnyRef = struct {
     id: []const u8,
     type: []const u8 = "",
-    /// The record's fields as JSON, when the caller may read it.
-    value: ?std.json.Value = null,
+    /// The record's fields, when the caller may read it: `ref.value.?.as(Tea, arena)`.
+    value: ?sdk.operation.Json = null,
     /// The record it pointed at is gone; the reference stays, marked so.
     missing: bool = false,
 
     pub const reference = true;
+    /// Handed over with what core read for it; JSON writes its id alone.
+    pub const publr_form = .lone;
 
     const Resolved = struct {
         id: []const u8,
         type: []const u8 = "",
-        value: ?std.json.Value = null,
+        value: ?sdk.operation.Json = null,
         missing: bool = false,
     };
 
@@ -98,6 +102,16 @@ pub const AnyRef = struct {
         const reach = try ctx.call(record_operations.Reach, .{
             .id = id,
         });
+
+        // Another plugin's internal record: there, of its type; what it holds is read
+        // through `internal.*`.
+        if (reach.internal) {
+            return .{
+                .id = id,
+                .type = reach.type,
+            };
+        }
+
         const reason = reach.reason orelse {
             // Not published yet, for a caller who reads live records only: its type alone.
             const got = ctx.call(record_operations.Get, .{
@@ -113,9 +127,7 @@ pub const AnyRef = struct {
             return .{
                 .id = id,
                 .type = got.record.type,
-                .value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena(), got.document, .{
-                    .allocate = .alloc_always,
-                }) catch return error.Invalid,
+                .value = got.document,
             };
         };
 
@@ -178,6 +190,7 @@ const record_flow = @import("record_flow.zig");
 const flow_model = @import("../../model/flow.zig");
 const status_module = @import("../../model/status.zig");
 const record_operations = @import("../../operations/record.zig");
+const mod_reads = @import("mod_reads.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
 const sdk = @import("../../sdk.zig");
 
@@ -188,6 +201,7 @@ pub const field_branches_max: u32 = 600;
 const FieldOption = enum {
     kind,
     validation,
+    visibility,
     searchable,
     filterable,
     sortable,
@@ -260,10 +274,15 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
             /// or in the trash, unless `.{ .trashed = true }`. Internal records have no trash.
             /// A dimension's read option reads each field in it (`.{ .language = "pl" }`).
             pub fn get(any_ctx: anytype, id: []const u8, get_options: anytype) sdk.Error!Held {
+                std.debug.assert(options.name.len > 0);
+
                 if (comptime internal) {
                     comptime check_internal_get(options.name, @TypeOf(get_options));
 
-                    std.debug.assert(id.len > 0);
+                    // An id comes from the caller's input: an empty one names no record.
+                    if (id.len == 0) {
+                        return error.NotFound;
+                    }
 
                     return Kept.get(queue.base_of(any_ctx), id);
                 }
@@ -284,6 +303,82 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 std.debug.assert(found.id.len > 0);
 
                 return if (comptime internal) found else held_of(found);
+            }
+
+            /// A walk over every record whose indexed `field` holds `value`, the oldest first:
+            /// `while (try lines.next()) |line|`, a page held at a time however many there are
+            /// (`publr.Rows`). `.newest()`, `.first(n)`, `.as(Wanted)` shape it before the
+            /// first row; `.count()`, `.any()`, `.one()` answer without walking. Internal
+            /// records only.
+            pub fn where(
+                any_ctx: anytype,
+                comptime field: std.meta.FieldEnum(Document),
+                value: anytype,
+            ) Walk(Document) {
+                comptime if (!internal) {
+                    @compileError("record " ++ options.name ++ ": `where` walks internal " ++
+                        "records; content is read with a query");
+                };
+
+                return .{
+                    .ctx = queue.base_of(any_ctx),
+                    .field = @tagName(field),
+                    .value = filter_of(value),
+                };
+            }
+
+            /// A walk over every record of the type, the oldest first: `where` with no
+            /// field. Internal records only.
+            pub fn all(any_ctx: anytype) Walk(Document) {
+                comptime if (!internal) {
+                    @compileError("record " ++ options.name ++ ": `all` walks internal " ++
+                        "records; content is read with a query");
+                };
+
+                return .{
+                    .ctx = queue.base_of(any_ctx),
+                    .field = null,
+                    .value = null,
+                };
+            }
+
+            /// A walk whose rows hold the fields `Wanted` names.
+            pub fn Walk(comptime Wanted: type) type {
+                return rows_module.Rows(Document, stored, Wanted);
+            }
+
+            /// A page of the records whose indexed `field` holds `value`: `which` says how
+            /// many (50, at most 200), from where, and from which end
+            /// (`.{ .limit = 10, .oldest = true }`). Internal records only.
+            pub fn page(
+                any_ctx: anytype,
+                comptime field: std.meta.FieldEnum(Document),
+                value: anytype,
+                which: Page,
+            ) sdk.Error![]const Kept.Found {
+                const ctx = queue.base_of(any_ctx);
+                const text = try filter_text(ctx, value);
+
+                comptime std.debug.assert(internal);
+
+                return Kept.page_of(ctx, Document, @tagName(field), text, which);
+            }
+
+            /// `page`, each record with only the fields `Wanted` names: a struct of some of
+            /// the document's fields, so a list that shows two fields reads two.
+            pub fn page_of(
+                any_ctx: anytype,
+                comptime Wanted: type,
+                comptime field: std.meta.FieldEnum(Document),
+                value: anytype,
+                which: Page,
+            ) sdk.Error![]const Kept.FoundOf(Wanted) {
+                const ctx = queue.base_of(any_ctx);
+                const text = try filter_text(ctx, value);
+
+                comptime std.debug.assert(internal);
+
+                return Kept.page_of(ctx, Wanted, @tagName(field), text, which);
             }
 
             /// Writes the fields `changes` names onto the record `held` read; the others keep
@@ -356,6 +451,50 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 return Kept.create(queue.base_of(any_ctx), value);
             }
 
+            /// Many new internal records at once, in as few calls as the pages they fill:
+            /// their ids, in order.
+            pub fn create_many(
+                any_ctx: anytype,
+                values: []const Document,
+            ) sdk.Error![]const []const u8 {
+                comptime if (!internal) {
+                    @compileError("record " ++ options.name ++
+                        ": `create_many` keeps internal records");
+                };
+
+                return Kept.create_many(queue.base_of(any_ctx), values);
+            }
+
+            /// Empties optional fields of an internal record:
+            /// `Visits.clear(ctx, held, .{ .note, .seen_at })`. Each holds nothing afterwards;
+            /// the other fields keep theirs. `save` never does this: a field it gives as
+            /// `null` is left as it was.
+            pub fn clear(any_ctx: anytype, held: Held, comptime fields: anytype) sdk.Error!void {
+                comptime if (!internal) {
+                    @compileError("record " ++ options.name ++
+                        ": `clear` empties fields of internal records");
+                };
+                std.debug.assert(held.id.len > 0);
+
+                return Kept.clear(queue.base_of(any_ctx), held.id, fields);
+            }
+
+            /// Writes each of `changes` onto the record of the same place in `ids`, in as few
+            /// calls as the pages they fill; the other fields keep theirs. No stale check:
+            /// for records this write's own code just read or made.
+            pub fn save_many(
+                any_ctx: anytype,
+                ids: []const []const u8,
+                changes: anytype,
+            ) sdk.Error!void {
+                comptime if (!internal) {
+                    @compileError("record " ++ options.name ++
+                        ": `save_many` writes internal records");
+                };
+
+                return Kept.save_many(queue.base_of(any_ctx), ids, changes);
+            }
+
             /// Erases an internal record for good; content leaves by the `trash` transition.
             pub fn delete(any_ctx: anytype, held: Held) sdk.Error!void {
                 comptime if (!internal) {
@@ -380,7 +519,7 @@ pub fn define(comptime Document: type, comptime options: anytype) type {
                 comptime record_flow.check_named(options, @tagName(named));
                 comptime std.debug.assert(!internal);
 
-                return transition_named(any_ctx, held.id, @tagName(named));
+                return transition_of(any_ctx, held.id, @tagName(named), type_name);
             }
 
             /// `transition` at a moment, made then as the person behind the call, with the
@@ -437,6 +576,283 @@ pub fn Store(
             value: Document,
         };
 
+        /// A record as the host lays it out in an installed plugin's own layout: its document
+        /// read by the host, once, never as text here.
+        const Shaped = struct {
+            id: []const u8,
+            version: i64,
+            created_at: i64 = 0,
+            document: Document,
+        };
+
+        const ShapedRow = struct {
+            id: []const u8,
+            type: []const u8,
+            version: i64,
+            status: []const u8,
+            changed: bool,
+        };
+
+        /// Whether reads come laid out by the host: an installed plugin's.
+        const shaped = guest.mode == .sandboxed;
+
+        fn shaped_item(ctx: *PluginCtx, got: Shaped) sdk.Error!Item {
+            var value = got.document;
+
+            std.debug.assert(got.id.len > 0);
+
+            try AnyRef.read_all(ctx, &value);
+
+            return .{
+                .id = got.id,
+                .version = got.version,
+                .value = value,
+            };
+        }
+
+        fn shaped_content(ctx: *PluginCtx, row: ShapedRow, document: Document) sdk.Error!Item {
+            var value = document;
+
+            std.debug.assert(row.id.len > 0);
+
+            try AnyRef.read_all(ctx, &value);
+
+            return .{
+                .id = row.id,
+                .version = row.version,
+                .status = row.status,
+                .changed = row.changed,
+                .value = value,
+            };
+        }
+
+        /// A content record laid out by the host, its document read there.
+        fn shaped_get(ctx: *PluginCtx, id: []const u8, pairs: []const Pair) sdk.Error!Item {
+            const Got = struct {
+                record: ShapedRow,
+                document: Document,
+            };
+            const asked: record_operations.Get.In = .{
+                .id = id,
+                .type = name,
+                .purpose = .edit,
+                .dimensions = .{
+                    .pairs = pairs,
+                },
+            };
+            const got = try ctx.read_shaped(
+                record_operations.Get.In,
+                Got,
+                record_operations.Get.name,
+                &asked,
+            );
+
+            std.debug.assert(id.len > 0);
+
+            if (!std.mem.eql(u8, got.record.type, name)) {
+                return error.NotFound;
+            }
+
+            return shaped_content(ctx, got.record, got.document);
+        }
+
+        /// Content records by id laid out by the host, their documents read there.
+        fn shaped_many(ctx: *PluginCtx, ids: []const []const u8) sdk.Error![]const Item {
+            return shaped_listed(ctx, ids, .delivery);
+        }
+
+        /// `shaped_many`, for `purpose`: `.edit` reads a record's pending changes, as `get`.
+        fn shaped_listed(
+            ctx: *PluginCtx,
+            ids: []const []const u8,
+            purpose: record_operations.Purpose,
+        ) sdk.Error![]const Item {
+            std.debug.assert(ids.len <= record_operations.list_max);
+
+            const Listed = struct {
+                records: []const ShapedRow,
+                documents: []const Document,
+            };
+            const asked: record_operations.List.In = .{
+                .type = name,
+                .ids = ids,
+                .limit = @intCast(ids.len),
+                .documents = true,
+                .expand = false,
+                .purpose = purpose,
+            };
+            const listed = try ctx.read_shaped(
+                record_operations.List.In,
+                Listed,
+                record_operations.List.name,
+                &asked,
+            );
+            const items = ctx.arena().alloc(Item, listed.records.len) catch {
+                return error.OutOfMemory;
+            };
+
+            if (listed.documents.len != listed.records.len) {
+                return error.Invalid;
+            }
+
+            for (listed.records, listed.documents, items) |row, document, *target| {
+                target.* = try shaped_content(ctx, row, document);
+            }
+
+            return items;
+        }
+
+        /// One record found, with when it was made.
+        pub const Found = FoundOf(Document);
+
+        /// One record found with only the fields `Wanted` names.
+        pub fn FoundOf(comptime Wanted: type) type {
+            return struct {
+                id: []const u8,
+                version: i64,
+                created_at: i64,
+                value: Wanted,
+
+                /// What a collection of them is called in the log.
+                pub const publr_name = name ++ " records";
+            };
+        }
+
+        /// A page of the records whose indexed `field` holds `value`, each with only the
+        /// fields `Wanted` names (a struct of some of the document's fields; the document
+        /// itself for all of them). Internal records only.
+        pub fn page_of(
+            any_ctx: anytype,
+            comptime Wanted: type,
+            field: []const u8,
+            value: []const u8,
+            options: Page,
+        ) sdk.Error![]const FoundOf(Wanted) {
+            const ctx: *PluginCtx = queue.base_of(any_ctx);
+
+            comptime std.debug.assert(internal);
+            std.debug.assert(field.len > 0);
+
+            const asked: internal_operations.Find.In = .{
+                .kind = name,
+                .field = field,
+                .value = value,
+                .limit = options.limit,
+                .offset = options.offset,
+                .oldest = options.oldest,
+                .after = options.after,
+                .fields = comptime projected(Document, Wanted),
+            };
+
+            return found_of(ctx, Wanted, &asked);
+        }
+
+        /// The records of `ids` (up to 200), each with only the fields `Wanted` names, in
+        /// one read; an id with no record is left out. Their references come as ids, unread.
+        /// Internal records only.
+        pub fn many_of(
+            any_ctx: anytype,
+            comptime Wanted: type,
+            ids: []const []const u8,
+        ) sdk.Error![]const FoundOf(Wanted) {
+            const ctx: *PluginCtx = queue.base_of(any_ctx);
+
+            comptime std.debug.assert(internal);
+            std.debug.assert(ids.len <= internal_operations.many_max);
+
+            if (ids.len == 0) {
+                return &.{};
+            }
+
+            const asked: internal_operations.Find.In = .{
+                .kind = name,
+                .ids = ids,
+                .limit = @intCast(ids.len),
+                .fields = comptime projected(Document, Wanted),
+            };
+
+            return found_of(ctx, Wanted, &asked);
+        }
+
+        /// What `internal.find` answers `asked`, each record's fields read as `Wanted`.
+        pub fn found_of(
+            ctx: *PluginCtx,
+            comptime Wanted: type,
+            asked: *const internal_operations.Find.In,
+        ) sdk.Error![]const FoundOf(Wanted) {
+            std.debug.assert(asked.limit > 0);
+
+            // A read of many is one call already: inside a modifier too it is made at
+            // once and laid out, never noted to be answered later.
+            if (comptime shaped) {
+                const noting = ctx.reads;
+
+                ctx.reads = null;
+                defer ctx.reads = noting;
+
+                return page_laid(ctx, Wanted, asked);
+            }
+
+            // Compiled in, the page's JSON and what reading it takes go back with the
+            // step: the caller keeps the records as its own structs alone.
+            var step = store_step(ctx, []const FoundOf(Wanted));
+            defer step.end();
+
+            const page = try ctx.call(internal_operations.Find, asked.*);
+            const found = ctx.arena().alloc(FoundOf(Wanted), page.records.len) catch {
+                return error.OutOfMemory;
+            };
+
+            for (page.records, found) |record, *target| {
+                target.* = .{
+                    .id = record.id,
+                    .version = record.version,
+                    .created_at = record.created_at,
+                    .value = record.document.as(Wanted, ctx.arena()) catch return error.Invalid,
+                };
+            }
+
+            return carried([]const FoundOf(Wanted), &step, found);
+        }
+
+        /// A page laid out by the host in an installed plugin's own layout.
+        fn page_laid(
+            ctx: *PluginCtx,
+            comptime Wanted: type,
+            asked: *const internal_operations.Find.In,
+        ) sdk.Error![]const FoundOf(Wanted) {
+            const Answered = struct {
+                records: []const struct {
+                    id: []const u8,
+                    version: i64,
+                    created_at: i64 = 0,
+                    document: Wanted,
+                },
+            };
+            const page = try ctx.read_shaped(
+                internal_operations.Find.In,
+                Answered,
+                internal_operations.Find.name,
+                asked,
+            );
+            const found = ctx.arena().alloc(FoundOf(Wanted), page.records.len) catch {
+                return error.OutOfMemory;
+            };
+
+            std.debug.assert(asked.limit > 0);
+
+            for (page.records, found) |record, *target| {
+                target.* = .{
+                    .id = record.id,
+                    .version = record.version,
+                    .created_at = record.created_at,
+                    .value = record.document,
+                };
+            }
+
+            return found;
+        }
+
         /// The record, content with its pending changes; not found when it is another
         /// type's.
         pub fn get(ctx: *PluginCtx, id: []const u8) sdk.Error!Item {
@@ -446,23 +862,67 @@ pub fn Store(
         /// The record as `get` reads it, content in the combination `pairs` names, each by a
         /// dimension's name or its read option's.
         pub fn get_in(ctx: *PluginCtx, id: []const u8, pairs: []const Pair) sdk.Error!Item {
-            std.debug.assert(id.len > 0);
+            // An id comes from the caller's input: an empty one names no record.
+            if (id.len == 0) {
+                return error.NotFound;
+            }
+
             std.debug.assert(!internal or pairs.len == 0);
 
             if (comptime internal) {
+                if (comptime shaped) {
+                    // A modifier's reads by id are noted and read together, laid out.
+                    if (ctx.reads) |reads| {
+                        return batched_get(ctx, reads, id);
+                    }
+
+                    const asked: internal_operations.Get.In = .{
+                        .kind = name,
+                        .id = id,
+                    };
+
+                    return shaped_item(ctx, try ctx.read_shaped(
+                        internal_operations.Get.In,
+                        Shaped,
+                        internal_operations.Get.name,
+                        &asked,
+                    ));
+                }
+
+                var step = store_step(ctx, Item);
+                defer step.end();
+
                 const got = try ctx.call(internal_operations.Get, .{
                     .kind = name,
                     .id = id,
                 });
 
-                return .{
+                return carried(Item, &step, .{
                     .id = got.id,
                     .version = got.version,
                     .value = try decode(ctx, got.document),
-                };
+                });
             } else {
+                if (comptime shaped) laid: {
+                    // A modifier's reads by id are noted and read together, laid out; one
+                    // in a dimension's combination is noted and answered on its own.
+                    if (ctx.reads) |reads| {
+                        if (pairs.len > 0) {
+                            break :laid;
+                        }
+
+                        return batched_get(ctx, reads, id);
+                    }
+
+                    return shaped_get(ctx, id, pairs);
+                }
+
+                var step = store_step(ctx, Item);
+                defer step.end();
+
                 const got = try ctx.call(record_operations.Get, .{
                     .id = id,
+                    .type = name,
                     .purpose = .edit,
                     .dimensions = .{
                         .pairs = pairs,
@@ -473,14 +933,135 @@ pub fn Store(
                     return error.NotFound;
                 }
 
-                return .{
+                return carried(Item, &step, .{
                     .id = got.record.id,
                     .version = got.record.version,
                     .status = got.record.status,
                     .changed = got.record.changed,
                     .value = try decode(ctx, got.document),
-                };
+                });
             }
+        }
+
+        /// `get` inside a modifier that runs over a batch: the id is noted and the pass
+        /// told to wait (`error.NotYet`); between passes every id noted of this type is read
+        /// in one call, laid out as `Document`, and the next pass is answered from those.
+        fn batched_get(ctx: *PluginCtx, reads: *mod_reads.Reads, id: []const u8) sdk.Error!Item {
+            std.debug.assert(id.len > 0);
+
+            const typed = try reads.typed_of(name, &batch_settle);
+
+            if (typed.items == null) {
+                const list = ctx.arena().create(std.ArrayList(Item)) catch {
+                    return error.OutOfMemory;
+                };
+
+                list.* = .empty;
+                typed.items = list;
+                typed.reader = ctx;
+            }
+
+            const at = try typed.where(ctx.arena(), id);
+            const list: *const std.ArrayList(Item) = @ptrCast(@alignCast(typed.items.?));
+
+            std.debug.assert(at < list.items.len);
+
+            return list.items[at];
+        }
+
+        /// The ids a batch noted and has not read, read a page at a time with no modifier
+        /// noting: each record is kept where `batched_get` finds it, or how its read ended.
+        fn batch_settle(typed: *mod_reads.Typed, arena: std.mem.Allocator) sdk.Error!void {
+            const ctx: *PluginCtx = @ptrCast(@alignCast(typed.reader.?));
+            const list: *std.ArrayList(Item) = @ptrCast(@alignCast(typed.items.?));
+            const noting = ctx.reads;
+
+            std.debug.assert(typed.pending().len > 0);
+
+            ctx.reads = null;
+            defer ctx.reads = noting;
+
+            while (typed.pending().len > 0) {
+                const pending = typed.pending();
+                const page = pending[0..@min(pending.len, record_operations.list_max)];
+
+                for (try batch_read(ctx, page)) |item| {
+                    const at: u32 = @intCast(list.items.len);
+
+                    list.append(arena, item) catch return error.OutOfMemory;
+                    typed.found.put(arena, item.id, .{
+                        .at = at,
+                    }) catch return error.OutOfMemory;
+                }
+
+                for (page) |id| {
+                    if (!typed.found.contains(id)) {
+                        try batch_alone(ctx, typed, list, arena, id);
+                    }
+                }
+
+                typed.asked += @intCast(page.len);
+            }
+        }
+
+        /// The records of `ids` as `get` reads them, in one call: content with its pending
+        /// changes, an internal record as kept.
+        fn batch_read(ctx: *PluginCtx, ids: []const []const u8) sdk.Error![]const Item {
+            std.debug.assert(ids.len > 0);
+            std.debug.assert(ids.len <= record_operations.list_max);
+
+            if (comptime internal) {
+                const found = try many_of(ctx, Document, ids);
+                const items = ctx.arena().alloc(Item, found.len) catch return error.OutOfMemory;
+
+                for (found, items) |record, *item| {
+                    item.* = .{
+                        .id = record.id,
+                        .version = record.version,
+                        .value = record.value,
+                    };
+                    try AnyRef.read_all(ctx, &item.value);
+                }
+
+                return items;
+            }
+
+            // A list that fails (a grant that reaches gets but no lists) leaves each id to
+            // be read on its own.
+            return shaped_listed(ctx, ids, .edit) catch |err| switch (err) {
+                error.OutOfMemory, error.Throttled, error.Unavailable => err,
+                else => &.{},
+            };
+        }
+
+        /// One id the batch's read did not answer, read on its own: a record the list does
+        /// not reach is still read, and one that is not there is kept as that.
+        fn batch_alone(
+            ctx: *PluginCtx,
+            typed: *mod_reads.Typed,
+            list: *std.ArrayList(Item),
+            arena: std.mem.Allocator,
+            id: []const u8,
+        ) sdk.Error!void {
+            std.debug.assert(id.len > 0);
+            std.debug.assert(ctx.reads == null);
+
+            const answer: mod_reads.Typed.Answer = if (comptime internal) .{
+                .failed = error.NotFound,
+            } else if (shaped_get(ctx, id, &.{})) |item| found: {
+                list.append(arena, item) catch return error.OutOfMemory;
+
+                break :found .{
+                    .at = @intCast(list.items.len - 1),
+                };
+            } else |err| switch (err) {
+                error.OutOfMemory, error.Throttled, error.Unavailable => return err,
+                else => .{
+                    .failed = err,
+                },
+            };
+
+            typed.found.put(arena, id, answer) catch return error.OutOfMemory;
         }
 
         /// The one record whose `field` holds `value`, or null; two make a conflict.
@@ -488,6 +1069,33 @@ pub fn Store(
             const text = try filter_text(ctx, value);
 
             if (comptime internal) {
+                if (comptime shaped) laid: {
+                    // A modifier's reads are noted and answered together, as JSON.
+                    if (ctx.reads != null) {
+                        break :laid;
+                    }
+
+                    const asked: internal_operations.FindOne.In = .{
+                        .kind = name,
+                        .field = field,
+                        .value = text,
+                    };
+                    const One = struct {
+                        record: ?Shaped = null,
+                    };
+                    const one = try ctx.read_shaped(
+                        internal_operations.FindOne.In,
+                        One,
+                        internal_operations.FindOne.name,
+                        &asked,
+                    );
+
+                    return if (one.record) |got| try shaped_item(ctx, got) else null;
+                }
+
+                var step = store_step(ctx, Item);
+                defer step.end();
+
                 const found = try ctx.call(internal_operations.FindOne, .{
                     .kind = name,
                     .field = field,
@@ -495,11 +1103,11 @@ pub fn Store(
                 });
                 const record = found.record orelse return null;
 
-                return .{
+                return try carried(Item, &step, .{
                     .id = record.id,
                     .version = record.version,
                     .value = try decode(ctx, record.document),
-                };
+                });
             } else {
                 const listed = try ctx.call(record_operations.List, .{
                     .type = name,
@@ -528,23 +1136,39 @@ pub fn Store(
             std.debug.assert(ids.len <= record_operations.list_max);
 
             if (comptime internal) {
-                var found: std.ArrayList(Item) = .empty;
+                // One read for all of them, never one an id.
+                const found = try many_of(ctx, Document, ids);
+                const items = ctx.arena().alloc(Item, found.len) catch return error.OutOfMemory;
 
-                for (ids) |id| {
-                    const item = get(ctx, id) catch |err| switch (err) {
-                        error.NotFound, error.Denied => continue,
-                        else => return err,
+                for (found, items) |record, *item| {
+                    item.* = .{
+                        .id = record.id,
+                        .version = record.version,
+                        .value = record.value,
                     };
-
-                    found.append(ctx.arena(), item) catch return error.OutOfMemory;
+                    try AnyRef.read_all(ctx, &item.value);
                 }
 
-                return found.items;
+                return items;
             }
 
             if (ids.len == 0) {
                 return &.{};
             }
+
+            // A read of many is one call already: inside a modifier too it is made at
+            // once and laid out, never noted to be answered later.
+            if (comptime shaped) {
+                const noting = ctx.reads;
+
+                ctx.reads = null;
+                defer ctx.reads = noting;
+
+                return shaped_many(ctx, ids);
+            }
+
+            var step = store_step(ctx, []const Item);
+            defer step.end();
 
             const listed = try ctx.call(record_operations.List, .{
                 .type = name,
@@ -567,11 +1191,50 @@ pub fn Store(
                 };
             }
 
-            return items;
+            return carried([]const Item, &step, items);
         }
 
         /// A new record holding `value`, content in its flow's starting status; its id.
         pub fn create(ctx: *PluginCtx, value: Document) sdk.Error![]const u8 {
+            // An installed plugin hands the record over as it lies: the host writes its JSON.
+            if (comptime guest.mode == .sandboxed) {
+                if (ctx.memo) |memo| {
+                    memo.forget();
+                }
+
+                const id = if (comptime internal) made: {
+                    const Sent = struct {
+                        kind: []const u8,
+                        document: Document,
+                    };
+                    const Create = internal_operations.Create;
+
+                    break :made (try ctx.call_shaped(Sent, Create.Out, Create.name, &.{
+                        .kind = name,
+                        .document = value,
+                    })).id;
+                } else made: {
+                    const Sent = struct {
+                        type: []const u8,
+                        document: Document,
+                    };
+                    const Create = record_operations.Create;
+
+                    break :made (try ctx.call_shaped(Sent, Create.Out, Create.name, &.{
+                        .type = name,
+                        .document = value,
+                    })).id;
+                };
+
+                std.debug.assert(id.len > 0);
+
+                return id;
+            }
+
+            // Compiled in, the document's JSON goes back with the step: the id is kept.
+            var step = ctx.scope();
+            defer step.end();
+
             const document = try encode(ctx, value);
             const id = if (comptime internal)
                 (try ctx.call(internal_operations.Create, .{
@@ -586,12 +1249,222 @@ pub fn Store(
 
             std.debug.assert(id.len > 0);
 
-            return id;
+            return step.keep(id);
+        }
+
+        /// Many new internal records at once, a page a call: their ids, in order.
+        pub fn create_many(ctx: *PluginCtx, values: []const Document) sdk.Error![]const []const u8 {
+            comptime std.debug.assert(internal);
+
+            const ids = ctx.arena().alloc([]const u8, values.len) catch return error.OutOfMemory;
+            var start: usize = 0;
+
+            while (start < values.len) {
+                const end = @min(values.len, start + internal_operations.many_max);
+
+                // An installed plugin sends the records as they lie: the host writes their JSON.
+                if (comptime guest.mode == .sandboxed) {
+                    const Sent = struct {
+                        kind: []const u8,
+                        documents: []const Document,
+                    };
+
+                    if (ctx.memo) |memo| {
+                        memo.forget();
+                    }
+
+                    // Each page's call works in memory of its own, given back before the
+                    // next: only the ids are carried out.
+                    var step = ctx.scope();
+                    defer step.end();
+
+                    const CreateMany = internal_operations.CreateMany;
+                    const made = try ctx.call_shaped(Sent, CreateMany.Out, CreateMany.name, &.{
+                        .kind = name,
+                        .documents = values[start..end],
+                    });
+
+                    if (made.ids.len != end - start) {
+                        return error.Invalid;
+                    }
+
+                    for (ids[start..end], made.ids) |*kept, id| {
+                        kept.* = try step.keep(id);
+                    }
+
+                    start = end;
+                    continue;
+                }
+
+                // Compiled in, each page's JSON goes back before the next is written.
+                var step = ctx.scope();
+                defer step.end();
+
+                const documents = ctx.arena().alloc(sdk.operation.Json, end - start) catch {
+                    return error.OutOfMemory;
+                };
+
+                for (values[start..end], documents) |value, *document| {
+                    document.* = try encode(ctx, value);
+                }
+
+                const made = try ctx.call(internal_operations.CreateMany, .{
+                    .kind = name,
+                    .documents = documents,
+                });
+
+                if (made.ids.len != documents.len) {
+                    return error.Invalid;
+                }
+
+                for (ids[start..end], made.ids) |*kept, id| {
+                    kept.* = try step.keep(id);
+                }
+
+                start = end;
+            }
+
+            std.debug.assert(start == values.len);
+
+            return ids;
+        }
+
+        /// Writes each of `changes` (a slice, each naming some of the document's fields) onto
+        /// the record at the same place in `ids`, a page a call; the other fields keep theirs.
+        pub fn save_many(
+            ctx: *PluginCtx,
+            ids: []const []const u8,
+            changes: anytype,
+        ) sdk.Error!void {
+            comptime std.debug.assert(internal);
+            std.debug.assert(ids.len == changes.len);
+
+            var start: usize = 0;
+
+            while (start < ids.len) {
+                const end = @min(ids.len, start + internal_operations.many_max);
+
+                if (comptime guest.mode == .sandboxed) {
+                    const One = struct {
+                        id: []const u8,
+                        document: std.meta.Elem(@TypeOf(changes)),
+                    };
+                    const Sent = struct {
+                        kind: []const u8,
+                        records: []const One,
+                    };
+                    const SaveMany = internal_operations.SaveMany;
+
+                    // Each page's call works in memory of its own, given back before the next.
+                    var step = ctx.scope();
+                    defer step.end();
+
+                    const records = ctx.arena().alloc(One, end - start) catch {
+                        return error.OutOfMemory;
+                    };
+
+                    for (ids[start..end], changes[start..end], records) |id, fields, *one| {
+                        if (id.len == 0) {
+                            return error.NotFound;
+                        }
+
+                        one.* = .{
+                            .id = id,
+                            .document = fields,
+                        };
+                    }
+
+                    if (ctx.memo) |memo| {
+                        memo.forget();
+                    }
+
+                    _ = try ctx.call_shaped(Sent, SaveMany.Out, SaveMany.name, &.{
+                        .kind = name,
+                        .records = records,
+                    });
+                    start = end;
+                    continue;
+                }
+
+                // Compiled in, each page's JSON goes back before the next is written.
+                var step = ctx.scope();
+                defer step.end();
+
+                const Written = internal_operations.SaveMany.Written;
+                const written = ctx.arena().alloc(Written, end - start) catch {
+                    return error.OutOfMemory;
+                };
+
+                for (ids[start..end], changes[start..end], written) |id, fields, *one| {
+                    if (id.len == 0) {
+                        return error.NotFound;
+                    }
+
+                    one.* = .{
+                        .id = id,
+                        .document = try encode(ctx, fields),
+                    };
+                }
+
+                _ = try ctx.call(internal_operations.SaveMany, .{
+                    .kind = name,
+                    .records = written,
+                });
+                start = end;
+            }
+
+            std.debug.assert(start == ids.len);
         }
 
         /// Writes `fields`, naming some of the document's fields; the others keep theirs.
         pub fn save(ctx: *PluginCtx, id: []const u8, fields: anytype) sdk.Error!void {
-            std.debug.assert(id.len > 0);
+            std.debug.assert(name.len > 0);
+
+            // An id comes from the caller's input: an empty one names no record.
+            if (id.len == 0) {
+                return error.NotFound;
+            }
+
+            // Fields given as values the compiler alone knows (`.{ .state = .placed }`) have no
+            // layout to hand over: those are written as JSON here, as before.
+            if (comptime guest.mode == .sandboxed and laid_out(@TypeOf(fields))) {
+                if (ctx.memo) |memo| {
+                    memo.forget();
+                }
+
+                if (comptime internal) {
+                    const Sent = struct {
+                        kind: []const u8,
+                        id: []const u8,
+                        document: @TypeOf(fields),
+                    };
+                    const Save = internal_operations.Save;
+
+                    _ = try ctx.call_shaped(Sent, Save.Out, Save.name, &.{
+                        .kind = name,
+                        .id = id,
+                        .document = fields,
+                    });
+                } else {
+                    const Sent = struct {
+                        id: []const u8,
+                        document: @TypeOf(fields),
+                        type: []const u8,
+                    };
+                    const Save = record_operations.Save;
+
+                    _ = try ctx.call_shaped(Sent, Save.Out, Save.name, &.{
+                        .id = id,
+                        .document = fields,
+                        .type = name,
+                    });
+                }
+
+                return;
+            }
+
+            var step = ctx.scope();
+            defer step.end();
 
             const document = try encode(ctx, fields);
 
@@ -605,13 +1478,39 @@ pub fn Store(
                 _ = try ctx.call(record_operations.Save, .{
                     .id = id,
                     .document = document,
+                    .type = name,
                 });
             }
         }
 
+        /// Empties optional fields of an internal record, by name; the others keep theirs.
+        pub fn clear(ctx: *PluginCtx, id: []const u8, comptime fields: anytype) sdk.Error!void {
+            comptime std.debug.assert(internal);
+
+            const names = comptime cleared_names(Document, name, fields);
+
+            if (id.len == 0) {
+                return error.NotFound;
+            }
+
+            if (ctx.memo) |memo| {
+                memo.forget();
+            }
+
+            _ = try ctx.call(internal_operations.Save, .{
+                .kind = name,
+                .id = id,
+                .document = try encode(ctx, .{}),
+                .clear = names,
+            });
+        }
+
         pub fn delete(ctx: *PluginCtx, id: []const u8) sdk.Error!void {
             comptime std.debug.assert(internal);
-            std.debug.assert(id.len > 0);
+            // An id comes from the caller's input: an empty one names no record.
+            if (id.len == 0) {
+                return error.NotFound;
+            }
 
             const deleted = try ctx.call(internal_operations.Delete, .{
                 .kind = name,
@@ -623,14 +1522,18 @@ pub fn Store(
             }
         }
 
-        /// The stored document, each reference to any record read as an input's is.
-        fn decode(ctx: *PluginCtx, document: []const u8) sdk.Error!Document {
-            std.debug.assert(document.len > 0);
+        /// The stored document as it is kept, its references ids.
+        fn unread(ctx: *PluginCtx, document: sdk.operation.Json) sdk.Error!Document {
+            std.debug.assert(name.len > 0);
 
-            var value = std.json.parseFromSliceLeaky(Document, ctx.arena(), document, .{
-                .ignore_unknown_fields = true,
-                .allocate = .alloc_always,
-            }) catch return error.Invalid;
+            return document.as(Document, ctx.arena()) catch error.Invalid;
+        }
+
+        /// The stored document, each reference to any record read as an input's is.
+        fn decode(ctx: *PluginCtx, document: sdk.operation.Json) sdk.Error!Document {
+            std.debug.assert(name.len > 0);
+
+            var value = document.as(Document, ctx.arena()) catch return error.Invalid;
 
             try AnyRef.read_all(ctx, &value);
 
@@ -639,19 +1542,144 @@ pub fn Store(
     };
 }
 
-fn encode(ctx: *PluginCtx, value: anytype) sdk.Error![]const u8 {
-    const text = std.json.Stringify.valueAlloc(ctx.arena(), value, .{
-        .emit_null_optional_fields = false,
-    }) catch return error.OutOfMemory;
+/// Which page of a list a read answers: every list read is a page, `limit` at most 200.
+pub const Page = struct {
+    limit: u32 = 50,
+    offset: u32 = 0,
+    /// The oldest first (the order they were made in) instead of the newest.
+    oldest: bool = false,
+    /// A walk's page: the records after this id, in the order of ids (`""` for the first).
+    after: ?[]const u8 = null,
+};
 
-    std.debug.assert(text.len > 0);
-    std.debug.assert(text[0] == '{');
+/// The fields a read asks for: `Wanted`'s, each one of `Document`'s with its type; none
+/// named when the whole document is wanted.
+pub fn projected(comptime Document: type, comptime Wanted: type) []const []const u8 {
+    comptime {
+        std.debug.assert(@typeInfo(Wanted) == .@"struct");
 
-    return text;
+        if (Wanted == Document) {
+            return &.{};
+        }
+
+        const info = @typeInfo(Wanted).@"struct";
+
+        for (info.field_names, info.field_types) |field_name, Field| {
+            if (!@hasField(Document, field_name)) {
+                @compileError("a page of " ++ @typeName(Document) ++ " has no field ." ++
+                    field_name);
+            }
+
+            if (@FieldType(Document, field_name) != Field) {
+                @compileError("." ++ field_name ++ " is read as the document keeps it: " ++
+                    @typeName(@FieldType(Document, field_name)));
+            }
+        }
+
+        return info.field_names;
+    }
+}
+
+/// Whether a value of `Shape` exists at run time with every field in it.
+fn laid_out(comptime Shape: type) bool {
+    comptime std.debug.assert(Shape != void);
+
+    return switch (@typeInfo(Shape)) {
+        .enum_literal, .comptime_int, .comptime_float, .null, .undefined, .type => false,
+        .optional => |info| laid_out(info.child),
+        .pointer => |info| laid_out(info.child),
+        .array => |info| laid_out(info.child),
+        .@"struct" => |info| for (info.field_types, info.field_attrs) |Field, attrs| {
+            if (attrs.@"comptime" or !laid_out(Field)) {
+                break false;
+            }
+        } else true,
+        else => true,
+    };
+}
+
+/// Compiled in: memory of its own for one read of a store, when what it answers can be
+/// copied whole out of it (`sdk/moved.zig`); otherwise the step holds nothing and the read
+/// works in the memory it began in. An installed plugin's reads come laid out by the host:
+/// the few it still reads as JSON work where they are.
+fn store_step(ctx: *PluginCtx, comptime Value: type) PluginCtx.Scope {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    if (comptime guest.mode == .sandboxed) {
+        return .{
+            .api = ctx,
+            .outer = ctx.arena(),
+            .memory = null,
+            // A step holding nothing gives back no walk.
+            .walks_mark = std.math.maxInt(u32),
+        };
+    }
+
+    if (comptime !sdk.moved.plain(Value)) {
+        return .{
+            .outer = ctx.arena(),
+            .work = null,
+        };
+    }
+
+    return ctx.scope();
+}
+
+/// What a store's step read, copied whole to the memory the step began in: the caller
+/// keeps the value alone, never the JSON it was read from.
+fn carried(comptime Value: type, step: *PluginCtx.Scope, value: Value) sdk.Error!Value {
+    step.leave();
+
+    if (comptime guest.mode == .sandboxed) {
+        return value;
+    }
+
+    // Only a step whose answer can be copied whole holds memory of its own.
+    std.debug.assert(step.work == null or comptime sdk.moved.plain(Value));
+
+    if (step.work == null) {
+        return value;
+    }
+
+    return sdk.moved.copy(Value, step.outer, value);
+}
+
+/// `value` as a record's document, a field holding nothing left out: JSON in Publr, bytes
+/// read where they lie in an installed plugin's module.
+fn encode(ctx: *PluginCtx, value: anytype) sdk.Error!sdk.operation.Json {
+    std.debug.assert(ctx.now().ms >= 0);
+
+    return sdk.operation.Json.document(ctx.arena(), value) catch error.OutOfMemory;
 }
 
 /// A value as a lookup matches it: text as it is, integers in decimal, `true`/`false`, a
 /// choice by name.
+/// `filter_text`'s value as a walk keeps it: a number stays one until the rows are read.
+fn filter_of(value: anytype) rows_module.Filter {
+    return switch (@typeInfo(@TypeOf(value))) {
+        .int, .comptime_int => .{
+            .number = @intCast(value),
+        },
+        .bool => .{
+            .text = if (value) "true" else "false",
+        },
+        .@"enum" => .{
+            .text = @tagName(value),
+        },
+        // A `publr.Account` is found by its id, as it is kept.
+        .@"struct" => if (comptime @import("../account_ref.zig").is_account(@TypeOf(value)) or
+            @import("ledger_define.zig").ref_kind(@TypeOf(value)) != null)
+            .{
+                .text = value.id,
+            }
+        else
+            @compileError("find a record by text, a number, an enum or a publr.Account"),
+        else => .{
+            .text = @as([]const u8, value),
+        },
+    };
+}
+
 fn filter_text(ctx: *PluginCtx, value: anytype) sdk.Error![]const u8 {
     std.debug.assert(ctx.now().ms >= 0);
 
@@ -661,6 +1689,12 @@ fn filter_text(ctx: *PluginCtx, value: anytype) sdk.Error![]const u8 {
         },
         .bool => if (value) "true" else "false",
         .@"enum" => @tagName(value),
+        // A `publr.Account` is found by its id, as it is kept.
+        .@"struct" => if (comptime @import("../account_ref.zig").is_account(@TypeOf(value)) or
+            @import("ledger_define.zig").ref_kind(@TypeOf(value)) != null)
+            value.id
+        else
+            @compileError("find a record by text, a number, an enum or a publr.Account"),
         else => @as([]const u8, value),
     };
 }
@@ -678,7 +1712,11 @@ pub fn get_typed(
     var count: u32 = 0;
     var trashed = false;
 
-    std.debug.assert(id.len > 0);
+    // An id comes from the caller's input: an empty one names no record.
+    if (id.len == 0) {
+        return error.NotFound;
+    }
+
     comptime std.debug.assert(std.meta.fieldNames(Options).len <= read_options_max + 1);
 
     // `.trashed`, and each other a dimension's read option with the code to read in.
@@ -722,14 +1760,30 @@ fn check_internal_get(comptime record: []const u8, comptime Options: type) void 
 /// Moves the record `id` by the transition named `name`. `.pending` when the caller may
 /// only draft: a person makes the transition later.
 pub fn transition_named(any_ctx: anytype, id: []const u8, name: []const u8) sdk.Error!Transitioned {
+    return transition_of(any_ctx, id, name, null);
+}
+
+/// `transition_named` on a record of `handle`, when the caller names its type: a plugin's
+/// own type moves whoever the request is for.
+fn transition_of(
+    any_ctx: anytype,
+    id: []const u8,
+    name: []const u8,
+    handle: ?[]const u8,
+) sdk.Error!Transitioned {
     const ctx = queue.base_of(any_ctx);
 
-    std.debug.assert(id.len > 0);
+    // An id comes from the caller's input: an empty one names no record.
+    if (id.len == 0) {
+        return error.NotFound;
+    }
+
     std.debug.assert(name.len > 0);
 
     const moved = try ctx.call(record_operations.Transition, .{
         .id = id,
         .transition = name,
+        .type = handle,
     });
 
     return if (moved.pending) .pending else .done;
@@ -755,19 +1809,45 @@ fn check_changes(
     }
 }
 
+/// The names `clear` was given (`.{ .note, .seen_at }`), each an optional field of the
+/// document: a field that must hold something cannot be emptied.
+fn cleared_names(
+    comptime Document: type,
+    comptime record: []const u8,
+    comptime fields: anytype,
+) []const []const u8 {
+    comptime {
+        std.debug.assert(record.len > 0);
+
+        var names: []const []const u8 = &.{};
+
+        for (fields) |field| {
+            const field_name = @tagName(field);
+
+            field_named(Document, record, field_name);
+
+            if (@typeInfo(@FieldType(Document, field_name)) != .optional) {
+                @compileError("record " ++ record ++ ": `" ++ field_name ++ "` always holds " ++
+                    "a value; `clear` empties optional fields");
+            }
+
+            names = names ++ [_][]const u8{field_name};
+        }
+
+        return names;
+    }
+}
+
 /// Whether two values of a field are the same, as they are stored.
 fn same(ctx: anytype, left: anytype, right: anytype) sdk.Error!bool {
     const arena = ctx.arena();
-    const left_text = std.json.Stringify.valueAlloc(arena, left, .{}) catch {
-        return error.OutOfMemory;
-    };
-    const right_text = std.json.Stringify.valueAlloc(arena, right, .{}) catch {
-        return error.OutOfMemory;
-    };
+    const Json = sdk.operation.Json;
+    const left_written = (Json.of(arena, left) catch return error.OutOfMemory).written();
+    const right_written = (Json.of(arena, right) catch return error.OutOfMemory).written();
 
-    std.debug.assert(left_text.len > 0);
+    std.debug.assert(left_written.len > 0);
 
-    return std.mem.eql(u8, left_text, right_text);
+    return std.mem.eql(u8, left_written, right_written);
 }
 
 /// What a transition answers: made, or waiting for a person.
@@ -899,6 +1979,8 @@ pub fn field_groups_of(comptime Plugin: type) []const content_type.Def {
             const Pseudo = struct {
                 pub const Doc = Fields;
                 pub const type_name = handle;
+                pub const owner_plugin = Plugin.manifest.name;
+                pub const own_kinds = @import("field_kind_define.zig").definitions_of(Plugin);
                 pub const given = .{
                     .name = handle,
                 };
@@ -963,6 +2045,15 @@ fn location_of(comptime given: anytype) conditions.Set {
     }
 }
 
+/// The plugin a record's name is under: `orders` of `orders.order`.
+fn own_plugin(comptime name: []const u8) []const u8 {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        return name[0 .. std.mem.indexOfScalar(u8, name, '.') orelse name.len];
+    }
+}
+
 /// An internal record's collection.
 pub fn collection_of(comptime Definition: type) internal_record.Collection {
     comptime {
@@ -974,7 +2065,7 @@ pub fn collection_of(comptime Definition: type) internal_record.Collection {
 
         return .{
             .kind = Definition.stored_name,
-            .indexed = indexed_of(options),
+            .indexed = indexed_of(options) ++ unique_unindexed(Definition),
             .append_only = @hasField(Options, "append_only") and options.append_only,
             .expires = if (@hasField(Options, "expires")) expires_of(options.expires) else null,
             .shared = scope == .project,
@@ -982,7 +2073,105 @@ pub fn collection_of(comptime Definition: type) internal_record.Collection {
                 Definition.type_name,
                 Definition.Doc,
             ),
+            .rules = rules_of(Definition),
+            .computed = @import("record_computed.zig").names_of(Definition),
         };
+    }
+}
+
+/// An internal record's top-level fields with rules: those `.fields` gives a `.validation`,
+/// and every provider field (its value names a provider of its contract).
+fn rules_of(comptime Definition: type) []const field_model.Def {
+    comptime {
+        const Document = Definition.Doc;
+        const given = Definition.given;
+        var rules: []const field_model.Def = &.{};
+
+        std.debug.assert(Definition.is_internal);
+
+        for (std.meta.fieldNames(Document), std.meta.fieldTypes(Document)) |name, Field| {
+            const optional = @typeInfo(Field) == .optional;
+            const Inner = if (optional) @typeInfo(Field).optional.child else Field;
+            const overrides = if (@hasField(@TypeOf(given), "fields") and
+                @hasField(@TypeOf(given.fields), name))
+                @field(given.fields, name)
+            else
+                .{};
+            const provider = @import("../provider_ref.zig").is_provider_ref(Inner);
+
+            // Worked out by its plugin, never written by a caller: no rule to check.
+            if (@import("record_computed.zig").is_computed(Definition, name)) {
+                continue;
+            }
+
+            const shown_to_some = @hasField(@TypeOf(overrides), "visibility");
+
+            if (!provider and !shown_to_some and !@hasField(@TypeOf(overrides), "validation")) {
+                continue;
+            }
+
+            var def: field_model.Def = .{
+                .name = name,
+                .label = name,
+                .kind = if (@hasField(@TypeOf(overrides), "kind"))
+                    overrides.kind
+                else
+                    kind_of(Definition.type_name, name, Inner),
+                .locked = true,
+                .many = is_list(Inner) and !is_rows(Inner),
+            };
+
+            def.options.number.decimals = places_of(Inner);
+
+            if (provider) {
+                def.options.provider = .{
+                    .contract = Inner.provider_contract,
+                };
+            }
+
+            apply(Definition.type_name, &def, overrides);
+
+            // Its plugin reads it whoever else may not.
+            if (def.visibility.hidden()) {
+                def.visibility.plugin = own_plugin(Definition.type_name);
+            }
+
+            const done = def;
+
+            rules = rules ++ [_]field_model.Def{done};
+        }
+
+        const kept = rules;
+
+        return kept;
+    }
+}
+
+/// A unique field `.indexed` leaves out: indexed too, as it is found by its value.
+fn unique_unindexed(comptime Definition: type) []const []const u8 {
+    comptime {
+        const indexed = indexed_of(Definition.given);
+        var names: []const []const u8 = &.{};
+
+        std.debug.assert(Definition.is_internal);
+
+        for (rules_of(Definition)) |rule| {
+            if (!rule.validation.unique) {
+                continue;
+            }
+
+            for (indexed) |name| {
+                if (std.mem.eql(u8, name, rule.name)) {
+                    break;
+                }
+            } else {
+                names = names ++ [_][]const u8{rule.name};
+            }
+        }
+
+        const done = names;
+
+        return done;
     }
 }
 
@@ -998,6 +2187,27 @@ fn expires_of(comptime given: anytype) internal_record.Expires {
             .after_days = given.after_days,
             .from = if (@hasField(@TypeOf(given), "from")) given.from else .updated,
         };
+    }
+}
+
+/// The plugin's own field kind whose value `Inner` is (`sampler.weight` for a `Weight`), for a
+/// group it places (`.register_fields`); null otherwise. Only a struct names its kind: a
+/// plain value (text, a number) is a plain field.
+fn own_kind_of(comptime Definition: type, comptime Inner: type) ?[]const u8 {
+    comptime {
+        if (!@hasDecl(Definition, "own_kinds")) {
+            return null;
+        }
+
+        std.debug.assert(Definition.owner_plugin.len > 0);
+
+        for (Definition.own_kinds) |Kind| {
+            if (@typeInfo(Inner) == .@"struct" and Kind.Shape == Inner) {
+                return Definition.owner_plugin ++ "." ++ Kind.verb;
+            }
+        }
+
+        return null;
     }
 }
 
@@ -1033,15 +2243,18 @@ fn field_in(
             @field(given.fields, name)
         else
             .{};
+        const own_kind = own_kind_of(Definition, Inner);
         const kind_given = @hasField(@TypeOf(overrides), "kind");
         const rows = is_rows(Inner);
-        const group = !kind_given and is_group(Inner);
+        const group = !kind_given and own_kind == null and is_group(Inner);
         var def: field_model.Def = .{
             .name = name,
             .label = label_of(plugin_define.first(Docs, key).?),
             .help = plugin_define.rest(Docs, key).?,
             .kind = if (kind_given)
                 overrides.kind
+            else if (own_kind) |kind|
+                kind
             else if (rows)
                 "repeater"
             else if (group)
@@ -1055,6 +2268,8 @@ fn field_in(
             .many = is_list(Inner) and !rows,
             .default = default_of(Field, attrs),
         };
+
+        def.options.number.decimals = places_of(Inner);
 
         if (rows or group) {
             const Row = if (rows) std.meta.Elem(Inner) else Inner;
@@ -1075,12 +2290,23 @@ fn field_in(
             def.options.to = &.{target_of(Inner)};
         }
 
+        if (@import("../provider_ref.zig").is_provider_ref(Inner)) {
+            def.options.provider = .{
+                .contract = Inner.provider_contract,
+            };
+        }
+
         if (@typeInfo(Inner) == .@"enum") {
             def.options.choices = std.meta.fieldNames(Inner);
         }
 
         if (std.meta.fieldNames(@TypeOf(overrides)).len > 0) {
             apply(Definition.type_name, &def, overrides);
+        }
+
+        // Its plugin reads it whoever else may not: the one declaring the type.
+        if (def.visibility.hidden()) {
+            def.visibility.plugin = own_plugin(Definition.type_name);
         }
 
         const done = def;
@@ -1124,7 +2350,8 @@ fn apply(
 
             // A repeater's `fields` are its rows' overrides, taken where the rows are made.
             const grouped = std.mem.eql(u8, name, "options") or
-                std.mem.eql(u8, name, "validation") or std.mem.eql(u8, name, "fields");
+                std.mem.eql(u8, name, "validation") or std.mem.eql(u8, name, "fields") or
+                std.mem.eql(u8, name, "visibility");
 
             if (!grouped) {
                 @field(def, name) = @field(given, name);
@@ -1133,7 +2360,7 @@ fn apply(
 
         // A group sets what it names; the rest keeps what the struct field gave (a field
         // that may be left out stays not required unless `.validation` says otherwise).
-        for ([_][]const u8{ "options", "validation" }) |group| {
+        for ([_][]const u8{ "options", "validation", "visibility" }) |group| {
             if (@hasField(@TypeOf(given), group)) {
                 const values = @field(given, group);
 
@@ -1186,9 +2413,37 @@ fn kind_of(
             return "reference";
         }
 
+        // A list of plain values: a field of their kind holding several (`[]const []const u8`
+        // is a list of text).
+        if (is_list(Type)) {
+            if (remote_fields.kind_of(std.meta.Elem(Type))) |kind| {
+                return kind;
+            }
+        }
+
+        // A list of groups: rows of a repeater.
+        if (is_rows(Type) and is_group(std.meta.Elem(Type))) {
+            return "repeater";
+        }
+
         return remote_fields.kind_of(Type) orelse @compileError("record " ++ record_name ++
             ": field `" ++ name ++ "` is " ++ @typeName(Type) ++ "; give it a kind: " ++
             "`.fields = .{ ." ++ name ++ " = .{ .kind = \"...\" } }`");
+    }
+}
+
+/// The places a `publr.Decimal` field keeps (a list of them too); null for any other.
+fn places_of(comptime Type: type) ?u32 {
+    comptime {
+        const Value = if (is_list(Type)) std.meta.Elem(Type) else Type;
+
+        std.debug.assert(@typeInfo(Value) != .optional);
+
+        if (@typeInfo(Value) != .@"struct" or !@hasDecl(Value, "decimal_places")) {
+            return null;
+        }
+
+        return Value.decimal_places;
     }
 }
 
@@ -1418,6 +2673,30 @@ test "a list of structs is a repeater, its rows' fields declared alike; text def
     try std.testing.expectEqualStrings("Product", lines.fields[0].label);
     try std.testing.expectEqualStrings("integer", lines.fields[1].kind);
     try std.testing.expect(!lines.fields[1].validation.required);
+}
+
+test "a decimal keeps its places and a list of text is one field holding several" {
+    const Weight = @import("decimal.zig").Decimal(3);
+    const Line = struct {
+        title: []const u8,
+        weight: Weight,
+        codes: []const []const u8 = &.{},
+    };
+    const Docs = plugin_define.Words(.{
+        .{ @typeName(Line), "Line" },
+        .{ @typeName(Line) ++ ".title", "Title" },
+        .{ @typeName(Line) ++ ".weight", "Weight" },
+        .{ @typeName(Line) ++ ".codes", "Codes" },
+    });
+    const Lines = define(Line, .{
+        .name = "shop.line",
+    });
+    const def = comptime content_type_of(Lines, Docs);
+
+    try std.testing.expectEqualStrings("decimal", def.fields[1].kind);
+    try std.testing.expectEqual(@as(?u32, 3), def.fields[1].options.number.decimals);
+    try std.testing.expectEqualStrings("string", def.fields[2].kind);
+    try std.testing.expect(def.fields[2].many);
 }
 
 test "a field says how it holds a dimension's values through its owner's field option" {
@@ -1652,7 +2931,9 @@ test "a record's references to any record read back as an input's: type, value, 
 
     try AnyRef.read_all(&ctx, &line);
     try std.testing.expectEqualStrings("post", line.item.type);
-    try std.testing.expectEqualStrings("Live", line.item.value.?.object.get("title").?.string);
+    const read = try line.item.value.?.read(system.arena);
+
+    try std.testing.expectEqualStrings("Live", read.get("title").?.text().?);
     try std.testing.expect(!line.item.missing);
     try std.testing.expect(line.others[0].missing);
     try std.testing.expect(line.others[0].value == null);

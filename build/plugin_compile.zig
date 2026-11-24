@@ -3,12 +3,18 @@
 //! SDK and the compiler's arguments, the Zig running this build compiles them for wasm32,
 //! `plugin check --file` makes the module whole. Publr carries no compiler of its own.
 //!
-//! `plugin_compile <publr> <zig> <cache> <name> <dir> <out> [--with <x.wasm>]...`
+//! `plugin_compile <publr> <zig> <cache> <name> <dir> <out> [--with <x.wasm>]... [--llvm]`
+//!
+//! `--llvm` compiles with LLVM, optimising for speed, for the modules Publr ships: an installed
+//! plugin runs metered in an interpreter, and LLVM's code takes a few times fewer instructions.
+//! Without it, Zig's own backend, as a person's build has it.
 const std = @import("std");
 
 /// The same as the `publr` command's (`../lib/zig`'s `wasm_flags`), but this Zig brings its
 /// own compiler_rt.
 const wasm_flags = [_][]const u8{ "-fno-llvm", "-fno-lld", "-fno-ubsan-rt", "-fno-entry" };
+/// LLVM's: it and its linker, the rest the same.
+const llvm_flags = [_][]const u8{ "-fno-ubsan-rt", "-fno-entry" };
 const output_bytes_max: u32 = 16 << 20;
 
 pub fn main(init: std.process.Init) !u8 {
@@ -29,7 +35,8 @@ pub fn main(init: std.process.Init) !u8 {
     const name = args[4];
     const dir = try std.fs.path.resolve(arena, &.{ here, args[5] });
     const out = try std.fs.path.resolve(arena, &.{ here, args[6] });
-    const with = try resolved(arena, here, args[7..]);
+    const llvm = std.mem.eql(u8, args[args.len - 1], "--llvm");
+    const with = try resolved(arena, here, args[7 .. args.len - @intFromBool(llvm)]);
 
     std.debug.assert(std.fs.path.isAbsolute(out));
     std.debug.assert(name.len > 0);
@@ -60,8 +67,8 @@ pub fn main(init: std.process.Init) !u8 {
     var compile: std.ArrayList([]const u8) = .empty;
 
     try compile.append(arena, zig);
-    try compile.appendSlice(arena, plan.args);
-    try compile.appendSlice(arena, &wasm_flags);
+    try compile.appendSlice(arena, if (llvm) try for_speed(arena, plan.args) else plan.args);
+    try compile.appendSlice(arena, if (llvm) &llvm_flags else &wasm_flags);
     try compile.appendSlice(arena, &.{ "--cache-dir", cache, "--global-cache-dir", cache });
 
     _ = try run(init, work, compile.items) orelse return 1;
@@ -82,6 +89,24 @@ pub fn main(init: std.process.Init) !u8 {
     try cwd.deleteTree(init.io, work);
 
     return 0;
+}
+
+/// The compiler's arguments with each module optimised for speed instead of size, stripped of
+/// debug information as a small build is.
+fn for_speed(arena: std.mem.Allocator, given: []const []const u8) ![]const []const u8 {
+    var changed: std.ArrayList([]const u8) = .empty;
+
+    for (given) |word| {
+        if (std.mem.eql(u8, word, "-Osmall")) {
+            try changed.appendSlice(arena, &.{ "-OReleaseFast", "-fstrip" });
+        } else {
+            try changed.append(arena, word);
+        }
+    }
+
+    std.debug.assert(changed.items.len >= given.len);
+
+    return changed.items;
 }
 
 /// `--with <x.wasm>` words, the files made absolute.

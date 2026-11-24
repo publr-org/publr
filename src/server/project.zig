@@ -62,6 +62,12 @@ pub const Project = struct {
     /// The working memory every context made for a request shares; null where there is no
     /// server (a context then sets its own aside).
     scratch: ?*sdk.Scratch = null,
+    /// Nested installed calls' working memory every request shares; null where there is no
+    /// server (a context then sets its own aside, when its arena has room).
+    call_scratch: ?*sdk.Scratch = null,
+    /// Compiled-in plugins' working memory every request shares; null where there is no
+    /// server (a plugin's work then stays in its caller's memory).
+    plugin_memory: ?*sdk.plugin_memory.Memory = null,
     /// The definitions a request has read, kept for it alone; null where there is no server.
     definitions: ?*sdk.DefinitionCache = null,
     /// The installed plugins installed, which every context made for a request carries.
@@ -100,10 +106,34 @@ pub const Project = struct {
     site_origin: []const u8 = "",
     /// Where plugins' outside calls may go, from the site's address (`outside_of`).
     outside: outside_model.Rule = .{},
+    /// This process serves a copy of the site (an environment or a branch), as whoever made
+    /// the copy says (`PUBLR_COPY`, `copy_of_environment`): its messages reach staff alone.
+    on_copy: bool = false,
     /// Asked before an app delivers a page or an island: the plugins' gates.
     delivery_gates: []const sdk.delivery.Gate = registry.native_plugins.merged_delivery_gates,
     /// Run before a page is drawn: the plugins' `publr.hook.request`s.
     request_hooks: []const sdk.page_request.Hook = registry.native_plugins.merged_request_hooks,
+
+    /// Whether the site's clock may move here (`operations/clock.zig`): a test site, served
+    /// over plain http by a laptop's `serve`, never production or a copy.
+    pub fn test_clock(project: *const Project) bool {
+        std.debug.assert(project.connection.transaction_depth == 0);
+
+        return !project.outside.production and !project.on_copy;
+    }
+
+    /// The site's time: the wall clock, moved by the test clock on a test site.
+    pub fn now_ms(project: *const Project) i64 {
+        const wall_ms = sdk.context.wall_clock_ms(project.io);
+
+        std.debug.assert(wall_ms >= 0);
+
+        if (!project.test_clock()) {
+            return wall_ms;
+        }
+
+        return @import("../operations/clock.zig").site_ms(project.connection, wall_ms);
+    }
 
     pub fn of(ctx: *const http.Context) *Project {
         std.debug.assert(ctx.user_data != null);
@@ -257,6 +287,19 @@ test "the session cookie is shared across subdomains only for a named domain" {
 /// origins (either may be empty): their hosts are its own, and so are the public addresses
 /// on the machine's interfaces; how calls leave is the host's (`PUBLR_EGRESS`). `serve` and
 /// its queue worker both get it from here.
+/// The variable the maker of a copy (an environment, a branch) sets, naming it: the process
+/// then serves a copy, never the site itself.
+pub const copy_variable = "PUBLR_COPY";
+
+/// Whether this process serves a copy of the site.
+pub fn copy_of_environment() bool {
+    std.debug.assert(copy_variable.len > 0);
+
+    const named = @import("../lib/environment.zig").get(copy_variable) orelse return false;
+
+    return named.len > 0;
+}
+
 pub fn outside_of(
     arena: std.mem.Allocator,
     site_origin: []const u8,

@@ -191,7 +191,9 @@ fn keep(
         if (!std.mem.eql(u8, try document_of(ctx.arena, card.item), document)) {
             _ = try registry.SDK.dispatch(ctx, record.Save, .{
                 .id = card.item.id,
-                .document = document,
+                .document = .{
+                    .text = document,
+                },
             });
         }
 
@@ -200,7 +202,9 @@ fn keep(
 
     const created = try registry.SDK.dispatch(ctx, record.Create, .{
         .type = design.moodboard_handle,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
         .app = app,
     });
 
@@ -251,7 +255,7 @@ fn board(ctx: *Ctx, app: []const u8) Error![]const Card {
         const options: std.json.ParseOptions = .{
             .ignore_unknown_fields = true,
         };
-        const read = json.parse(Item, arena, text, options) catch continue;
+        const read = json.parse(Item, arena, text.text, options) catch continue;
         var item = read;
 
         item.id = found.id;

@@ -1,0 +1,100 @@
+import { Publr } from "publr-jsx";
+import type { ViewCtx } from "../layouts/Document.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { SortableList } from "@publr/ui/SortableList.ptsx";
+import { SortableRow } from "@publr/ui/SortableRow.ptsx";
+import { Switch } from "@publr/ui/Switch.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type ProviderListProps = {
+  /** The contract whose providers are listed, one the page's plugin owns: `payments.method`. */
+  contract: string;
+  /** What the list is, for screen readers: "Payment providers". */
+  label: string;
+  /** Said when no provider of the contract is installed. */
+  empty: string;
+  /** Where a provider's settings open, `{name}` and `{plugin}` filled in; its plugin's
+   * settings page when empty. */
+  settings?: string;
+  ctx: ViewCtx;
+};
+
+type Row = { name: string; label: string; plugin: string; from: string; on: boolean };
+
+/** Where a row's Settings goes. */
+const settings_of = (settings: string, row: Row) =>
+  settings === ""
+    ? `/admin/settings/plugins/${row.plugin}`
+    : settings.replace("{name}", row.name).replace("{plugin}", row.plugin);
+
+/** A contract's providers on its owner's page (Shop › Settings › Payments): dragged into the
+ * order the owner tries them, each switched on or off, each with its settings. Reads and
+ * saves core's choice for the contract (`provider.list`, `provider.set`) as the person
+ * looking; the page's plugin must own the contract. */
+export function ProviderList({ contract, label, empty, settings = "", ctx }: ProviderListProps) {
+  const state = Publr.reactive({ rows: [] as Row[], loaded: false, busy: false });
+  const listed = ctx.query("provider.list", () => ({ contract: contract }));
+  const set = ctx.call("provider.set");
+
+  Publr.effect(() => {
+    const read = listed.value;
+    if (!read) return;
+    state.rows = read.providers.map((provider: { name: string; label: string; plugin: string }, at: number) => ({
+      name: provider.name,
+      label: read.shown[at].label,
+      plugin: provider.plugin,
+      from: read.shown[at].plugin,
+      on: read.on[at],
+    }));
+    state.loaded = true;
+  });
+
+  const save = async (order: string[]) => {
+    state.busy = true;
+    const off = state.rows.filter((row) => !row.on).map((row) => row.name);
+    await set({ contract: contract, order: order, off: off });
+    state.busy = false;
+  };
+  const changed = async (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    if (input.name === "order") {
+      await save(input.value.split(","));
+    } else if (input.name === "on") {
+      state.rows = state.rows.map((row) => (row.name === input.value ? { ...row, on: input.checked } : row));
+      await save(state.rows.map((row) => row.name));
+    }
+  };
+
+  return (
+    <div class="contents" onChange={changed}>
+      {state.loaded && state.rows.length === 0 && (
+        <Empty compact>
+          <Text variant="body-sm" tone="muted">
+            {empty}
+          </Text>
+        </Empty>
+      )}
+      {state.rows.length > 0 && (
+        <SortableList label={label}>
+          {state.rows.map((row) => (
+            <SortableRow id={row.name}>
+              <Switch name="on" value={row.name} checked={row.on} disabled={state.busy} />
+              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <Text as="span" variant="label-lg">
+                  {row.label}
+                </Text>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {Publr.t("from {plugin}", { plugin: row.from })}
+                </Text>
+              </div>
+              <Button href={settings_of(settings, row)} hierarchy="secondary" size="sm">
+                {Publr.t("Settings")}
+              </Button>
+            </SortableRow>
+          ))}
+        </SortableList>
+      )}
+    </div>
+  );
+}

@@ -24,6 +24,7 @@ pub const read = Store.read;
 pub const read_many = Store.read_many;
 pub const Owned = document_values.Owned;
 pub const referrers = Store.referrers;
+pub const referrers_page = Store.referrers_page;
 pub const find_by_text = Store.find_by_text;
 pub const find_by_integer = Store.find_by_integer;
 pub const read_integer = Store.read_integer;

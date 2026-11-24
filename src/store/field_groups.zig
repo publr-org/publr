@@ -138,14 +138,14 @@ pub const Item = struct {
 pub fn list(connection: *db.Db, arena: std.mem.Allocator, scope: Scope) Error![]const Item {
     std.debug.assert(@backingInt(scope) <= 2);
     var statement = try connection.prepare(
-        "SELECT owner, definition FROM field_groups WHERE scope = ?1 ORDER BY owner LIMIT 257",
+        "SELECT owner, definition FROM field_groups WHERE scope = ?1 ORDER BY owner LIMIT 201",
     );
     defer statement.finalize();
     try statement.bind_text(1, @tagName(scope));
     var rows: std.ArrayList(Item) = .empty;
 
     while (try statement.step()) {
-        if (rows.items.len == 256) {
+        if (rows.items.len == 200) {
             return error.Invalid;
         }
 

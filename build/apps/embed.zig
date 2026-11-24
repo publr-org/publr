@@ -155,6 +155,27 @@ pub fn templates(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
     return module_of(builder, files, source.written());
 }
 
+/// `<app>/i18n/*.po` as one generated module: a `File` per language, by its file name
+/// (`pl.po`): the app's own words' translations. None without the folder.
+pub fn translations(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
+    std.debug.assert(app_dir.len > 0);
+
+    var source: std.Io.Writer.Allocating = .init(builder.allocator);
+    const writer = &source.writer;
+    const files = builder.addWriteFiles();
+    const dir = builder.pathJoin(&.{ app_dir, "i18n" });
+
+    write_header(writer, dir);
+
+    for (files_under(builder, dir, ".po"), 0..) |path, index| {
+        write_entry(builder, writer, files, path[dir.len + 1 ..], path, @intCast(index));
+    }
+
+    writer.writeAll("};\n") catch diagnostic.fail("build input: out of memory", .{});
+
+    return module_of(builder, files, source.written());
+}
+
 fn source_extension(path: []const u8) bool {
     return std.mem.endsWith(u8, path, ".publr") or std.mem.endsWith(u8, path, ".js") or
         (std.mem.endsWith(u8, path, ".ts") and !std.mem.endsWith(u8, path, ".d.ts"));

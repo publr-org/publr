@@ -132,6 +132,63 @@ pub fn allows(ctx: *const Ctx, names: []const []const u8, operation_name: []cons
     return role.permit(roles, names, operation_name);
 }
 
+/// The operations visitors call, compiled in and installed: those for untrusted callers and
+/// those open to everyone. What a role's grants reach beyond them makes it staff.
+pub const Visitors = struct {
+    ctx: *const Ctx,
+
+    pub fn is_visitor(visitors: Visitors, name: []const u8) bool {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(visitors.ctx.now_ms >= 0);
+
+        const registry = @import("../server/registry.zig");
+
+        // Unrolled once over every operation: the budget grows with the list.
+        @setEvalBranchQuota(1000 + registry.SDK.operations.len * 8);
+
+        inline for (registry.SDK.operations) |Operation| {
+            if (std.mem.eql(u8, Operation.name, name)) {
+                const untrusted = @hasDecl(Operation, "untrusted_callers") and
+                    Operation.untrusted_callers;
+
+                return untrusted or (@hasDecl(Operation, "open") and Operation.open);
+            }
+        }
+
+        const sandboxed = visitors.ctx.sandboxed_plugins orelse return false;
+
+        if (name.len > @import("operation.zig").name_len_max) {
+            return false;
+        }
+
+        const found = sandboxed.find(name) orelse return false;
+
+        return found.open or (found.untrusted_callers orelse false);
+    }
+};
+
+/// Whether `grants` make a role staff (`role.staff_grants`), against the operations here now.
+pub fn staff_grants(ctx: *const Ctx, grants: []const []const u8) bool {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(grants.len <= role.grants_max * 4);
+
+    return role.staff_grants(grants, Visitors{
+        .ctx = ctx,
+    });
+}
+
+/// Whether the stored role `name` is staff; a role not stored grants nothing, so is not.
+pub fn staff(ctx: *const Ctx, name: []const u8) Error!bool {
+    std.debug.assert(ctx.now_ms >= 0);
+    std.debug.assert(name.len <= 64 << 10);
+
+    if (!try exists(ctx, name)) {
+        return false;
+    }
+
+    return staff_grants(ctx, try store.role_grants.of(ctx.db, ctx.arena, name));
+}
+
 fn contains(list: []const []const u8, wanted: []const u8) bool {
     std.debug.assert(wanted.len > 0);
     std.debug.assert(list.len <= role.grants_max * 4);

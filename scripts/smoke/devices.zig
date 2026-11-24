@@ -136,9 +136,7 @@ fn body_as(comptime Body: type, arena: std.mem.Allocator, answer: []const u8) !B
 
     const start = std.mem.indexOf(u8, answer, "\r\n\r\n") orelse return error.SmokeFailed;
 
-    return std.json.parseFromSliceLeaky(Body, arena, answer[start + 4 ..], .{
-        .ignore_unknown_fields = true,
-    });
+    return @import("publr_api").result(Body, arena, answer[start + 4 ..]);
 }
 
 fn expect_in(what: []const u8, text: []const u8, needle: []const u8) !void {

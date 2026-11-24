@@ -39,6 +39,8 @@ pub const Page = struct {
     /// A tab's primary action in its tabbed page's header; empty for none.
     action_label: []const u8 = "",
     action_href: []const u8 = "",
+    /// The type whose records it draws in place of the admin's form; empty for none.
+    record: []const u8 = "",
 
     pub fn declared(page: Page) bool {
         std.debug.assert(page.path.len > 0);
@@ -329,6 +331,7 @@ pub fn all(session: *const Session) admin.Error![]const Page {
                 .parent = page.parent,
                 .action_label = page.action_label,
                 .action_href = page.action_href,
+                .record = page.record,
             };
             const may = page.tabs or registry.SDK.may_named(&session.ctx, shown.gate());
 
@@ -359,12 +362,13 @@ fn native(comptime owned: @import("../../../sdk/plugin.zig").OwnedPage) Page {
             .blank_in_one = if (page.form) |form| form.blank_in_one else &.{},
             .suggest = if (page.form) |form| name_of(form.suggest) else "",
             .preview = if (page.form) |form| name_of(form.preview) else "",
-            .hidden = page.menu != null,
+            .hidden = page.menu != null or page.record.len > 0,
             .bare = page.bare,
             .tabs = page.tabs,
             .parent = page.parent,
             .action_label = if (page.action) |action| action.label else "",
             .action_href = if (page.action) |action| action.href else "",
+            .record = page.record,
         };
     }
 }
@@ -387,13 +391,22 @@ pub fn find(session: *const Session, plugin: []const u8, path: []const u8) admin
     return null;
 }
 
-/// The operations of `plugin`'s own: the only ones its frame may ask the admin to run.
+/// What a plugin owning contracts may also run from its pages, as the person looking: its
+/// providers listed, ordered and switched (`@publr/admin/ProviderList.ptsx`).
+const owner_operations = [_][]const u8{ "provider.list", "provider.set" };
+
+/// The operations of `plugin`'s own: the only ones its frame may ask the admin to run, and
+/// with contracts of its own, its providers' list.
 pub fn operations_of(session: *const Session, plugin: []const u8) admin.Error![]const []const u8 {
     std.debug.assert(session.signed_in());
     std.debug.assert(plugin.len > 0);
 
     var list: std.ArrayList([]const u8) = .empty;
     const owners = registry.registry.operation_owners;
+
+    if (owns_contracts(session, plugin)) {
+        try list.appendSlice(session.arena, &owner_operations);
+    }
 
     inline for (registry.SDK.operations, 0..) |Operation, index| {
         if (std.mem.eql(u8, owners[index], plugin)) {
@@ -414,6 +427,26 @@ pub fn operations_of(session: *const Session, plugin: []const u8) admin.Error![]
     }
 
     return list.items;
+}
+
+/// Whether `plugin` owns a contract, compiled in or installed.
+fn owns_contracts(session: *const Session, plugin: []const u8) bool {
+    std.debug.assert(plugin.len > 0);
+    std.debug.assert(registry.published_interfaces.len <= 64);
+
+    for (registry.published_interfaces) |interface| {
+        if (std.mem.eql(u8, interface.plugin, plugin) and interface.contracts.len > 0) {
+            return true;
+        }
+    }
+
+    for (manifests_of(session)) |manifest| {
+        if (std.mem.eql(u8, manifest.name, plugin) and manifest.contracts.len > 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 const Manifest = @import("../../../sdk/sandboxed_plugins.zig").Manifest;
@@ -453,6 +486,11 @@ fn sound(manifest: Manifest, page: ManifestPage) bool {
         }
     }
 
+    // Only the type's own plugin draws its records: `<plugin>.<type>`.
+    if (page.record.len > 0 and !own_type(manifest.name, page.record)) {
+        return false;
+    }
+
     if (page.operation.len > 0) {
         return own_kind(manifest, page.operation) == .read and page.save.len == 0;
     }
@@ -467,6 +505,30 @@ fn sound(manifest: Manifest, page: ManifestPage) bool {
 }
 
 const Kind = @import("../../../model/sandboxed_plugin.zig").Kind;
+
+/// Whether `handle` is a type `plugin` owns: named under it.
+pub fn own_type(plugin: []const u8, handle: []const u8) bool {
+    std.debug.assert(plugin.len > 0);
+
+    const dot = std.mem.indexOfScalar(u8, handle, '.') orelse return false;
+
+    return dot + 1 < handle.len and std.mem.eql(u8, handle[0..dot], plugin);
+}
+
+/// The page that draws records of `handle` in place of the form, when its plugin owns the
+/// type and the viewer may open the page.
+pub fn of_record(session: *const Session, handle: []const u8) admin.Error!?Page {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(handle.len > 0);
+
+    for (try all(session)) |page| {
+        if (page.record.len > 0 and std.mem.eql(u8, page.record, handle)) {
+            return page;
+        }
+    }
+
+    return null;
+}
 
 fn own_kind(manifest: Manifest, name: []const u8) ?Kind {
     std.debug.assert(manifest.name.len > 0);

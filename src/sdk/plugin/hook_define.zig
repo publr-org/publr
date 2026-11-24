@@ -36,6 +36,45 @@ pub fn on(comptime Target: type, comptime run: anytype) type {
     return hook(.on, Target, run);
 }
 
+/// `publr.hook.about("shop.product", publr.after(publr.operations.record.List, run))`: a
+/// `before` or `after` hook on an operation that names a content type (`type` in its input)
+/// hears only the calls about that type. Core checks before it runs the hook: an installed
+/// plugin is never started for a list or a write of another type. A call that names no type
+/// (a list of every type, a save by id) is still heard.
+pub fn about(comptime type_name: []const u8, comptime Definition: type) type {
+    comptime {
+        if (!is_hook(Definition)) {
+            @compileError("`publr.hook.about` takes a `publr.before` or a `publr.after`");
+        }
+
+        if (Definition.hook_stage != .before and Definition.hook_stage != .after) {
+            @compileError("`publr.hook.about` narrows a `before` or an `after` hook on an " ++
+                "operation: an `on` hook and a modifier hear by their names");
+        }
+
+        if (type_name.len == 0 or type_name.len > 128) {
+            @compileError("`publr.hook.about` takes a content type's handle");
+        }
+
+        return struct {
+            pub const publr_hook_definition = true;
+            pub const hook_stage = Definition.hook_stage;
+            pub const target = Definition.target;
+            pub const given_run = Definition.given_run;
+            pub const hook_about = type_name;
+        };
+    }
+}
+
+/// The content type a hook is about (`publr.hook.about`); empty for a hook on every call.
+fn about_of(comptime Definition: type) []const u8 {
+    comptime {
+        std.debug.assert(is_hook(Definition));
+
+        return if (@hasDecl(Definition, "hook_about")) Definition.hook_about else "";
+    }
+}
+
 /// A modifier: `publr.modify("variant.title", title)` changes the value applied under that
 /// name (`*` for one part: `*.title`), wherever its owner applies it.
 pub fn modify(comptime name: []const u8, comptime run: anytype) type {
@@ -50,6 +89,47 @@ pub fn modify(comptime name: []const u8, comptime run: anytype) type {
         return hook(.modify, Target, run);
     }
 }
+
+/// A batch modifier: `publr.modify_all("orders.charge", price_all)` with `fn (ctx:
+/// *publr.Ctx, charges: []Charge) publr.Error!void`. `run` is called once with every value
+/// applied (up to 200 a call) and changes them where they lie, so what it reads or asks
+/// another plugin it reads or asks once for all of them. Its error refuses the apply.
+pub fn modify_all(comptime name: []const u8, comptime run: anytype) type {
+    comptime {
+        modify_define.check_name(name);
+
+        const Target = struct {
+            pub const pattern = name;
+            pub const Value = modify_define.ValuesOf(run);
+            pub const whole = true;
+        };
+
+        return hook(.modify, Target, run);
+    }
+}
+
+/// The batch modifier a record's computed field brings (`record_computed.zig`): the one
+/// name core alone applies, `computed.<record>.<field>`, which `modify` refuses to others.
+pub fn owned_modify_all(
+    comptime name: []const u8,
+    comptime Taken: type,
+    comptime run: anytype,
+) type {
+    comptime {
+        std.debug.assert(record_computed.reserved(name));
+        std.debug.assert(sdk.mods.valid(name, false));
+
+        const Target = struct {
+            pub const pattern = name;
+            pub const Value = Taken;
+            pub const whole = true;
+        };
+
+        return hook(.modify, Target, run);
+    }
+}
+
+const record_computed = @import("record_computed.zig");
 
 /// `publr.hook.request(run)`: sees a page request before it is drawn; `run` takes
 /// `(ctx: *publr.Ctx, request: *publr.PageRequest)` and answers `publr.Answered`.
@@ -162,8 +242,19 @@ pub fn Described(
                 pub const pattern = Target.pattern;
                 pub const reason = text;
 
-                pub fn run(ctx: *PluginCtx, batch: *mods.Batch) sdk.Error!void {
-                    return modify_define.run_batch(Target.Value, given_run, ctx, batch);
+                /// What one value is to this modifier, and the function that changes one,
+                /// or all of them at once (`whole`, a `publr.modify_all`).
+                pub const Value = Target.Value;
+                pub const run_one = given_run;
+                pub const whole = @hasDecl(Target, "whole");
+
+                /// Over the values of one apply that read as `Value`, changed where they lie.
+                pub fn run(ctx: *PluginCtx, values: []Target.Value) sdk.Error!void {
+                    if (comptime whole) {
+                        return modify_define.run_all(Target.Value, given_run, ctx, values);
+                    }
+
+                    return modify_define.run_values(Target.Value, given_run, ctx, values);
                 }
             };
         }
@@ -179,12 +270,14 @@ pub fn Described(
                 pub const stage: Stage = .before;
                 pub const operation = name;
                 pub const reason = text;
+                pub const about = about_of(Definition);
                 pub const run = given_run;
             },
             .after => struct {
                 pub const stage: Stage = .after;
                 pub const operation = name;
                 pub const reason = text;
+                pub const about = about_of(Definition);
                 pub const run = given_run;
             },
             // An event's payload, or an operation's answer: what the hook gets from the queue.

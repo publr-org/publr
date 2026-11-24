@@ -192,13 +192,26 @@ pub fn login_page(request: *Request, response: *Response, ctx: *Context) Error!v
             return response.redirect(.see_other, back);
         }
 
-        const turned_back = try session.translated("This account has no access to the admin.", .{});
+        // Behind an identity-aware proxy an account with no role yet is waiting for an
+        // administrator: the page says so, with no form.
+        if (proxy_provider(&session) != null) {
+            return proxy_waiting(&session);
+        }
 
-        return render_login(&session, turned_back);
+        // Signed in on a site only: the admin shows its plain sign-in form, giving no reason.
+        return render_login(&session, null);
     }
 
     if (try sign_in_elsewhere(&session)) |location| {
         return response.redirect(.see_other, location);
+    }
+
+    const proxied = proxy_provider(&session);
+
+    // Behind an identity-aware proxy the proxy has said who this is: straight in, unless
+    // that was just refused, which the page then says.
+    if (proxied) |provider| {
+        return proxy_login(&session, provider);
     }
 
     // A site that trusts an issuer sends you there first; it sends you back signed in, or
@@ -246,6 +259,69 @@ fn sign_in_elsewhere(session: *const Session) Error!?[]const u8 {
     return null;
 }
 
+/// The login behind an identity-aware proxy: straight in through it, unless the person just
+/// signed out (they stay out until they choose to come back) or it refused them (the page
+/// says so). Never a password form: the proxy is the one way in.
+fn proxy_login(session: *Session, provider: *const sdk.provider.SignInProvider) Error!void {
+    std.debug.assert(provider.from_request != null);
+    std.debug.assert(!session.signed_in());
+
+    const arena = session.arena;
+    const path = try std.fmt.allocPrint(arena, "/auth/{s}?next={s}", .{
+        provider.name,
+        try return_of(session),
+    });
+    const signed_out = identity_module.signed_out_here(session.request);
+    const refused = admin.query_param(session, "identity") != null;
+
+    if (!signed_out and !refused) {
+        return session.response.redirect(.see_other, path);
+    }
+
+    const turned_away = "That account could not be signed in. Ask an administrator for access.";
+    const notice: ?[]const u8 = if (refused) try session.translated(turned_away, .{}) else null;
+    const request = try admin.chrome.signed_out_at(arena, session.project.admin_path());
+    const buttons = try arena.alloc(views.Login.ProvidersItem, 1);
+
+    buttons[0] = .{
+        .label = provider.label,
+        .icon = provider.icon,
+        .href = path,
+    };
+
+    try admin.render.page(session.response, arena, request, .ok, views.Login, .{
+        .notice = notice,
+        .providers = buttons,
+        .password = false,
+        .signed_out = signed_out,
+    });
+}
+
+/// Signed in behind an identity-aware proxy, with no role yet: an administrator still has to
+/// give one. No form and no buttons; nothing the person can do here.
+fn proxy_waiting(session: *Session) Error!void {
+    std.debug.assert(session.signed_in());
+    std.debug.assert(session.response.body.len == 0);
+
+    const arena = session.arena;
+    const request = try admin.chrome.signed_out_at(arena, session.project.admin_path());
+
+    try admin.render.page(session.response, arena, request, .ok, views.Login, .{
+        .password = false,
+        .waiting = true,
+    });
+}
+
+/// The sign-in provider read from the request, when one is declared and available.
+fn proxy_provider(session: *const Session) ?*const sdk.provider.SignInProvider {
+    std.debug.assert(session.ctx.now_ms > 0);
+    std.debug.assert(registry.sign_in_providers.len <= sdk.provider.providers_max);
+
+    const providers = registry.sign_in_providers;
+
+    return identity_module.proxy_for(providers, session.request, session.arena, session.project);
+}
+
 /// `<issuer>/sign-on?project=<audience>&return=/admin`, when an issuer is trusted.
 fn issuer_login(session: *Session) Error!?[]const u8 {
     std.debug.assert(session.ctx.now_ms > 0);
@@ -282,9 +358,9 @@ pub fn return_of(session: *const Session) Error![]const u8 {
     return admin.query_value(session.arena, wanted);
 }
 
-/// What an account whose roles reach none of the admin's operations is told: an app's
-/// visitor, whose own sign-in is the app's.
-pub const no_access = "This account has no access to the admin.";
+/// What a refused sign-in is told, whether the password was wrong or the account reaches none
+/// of the admin's operations: the reason is never given.
+pub const wrong_credentials = "wrong email or password";
 
 fn render_login(session: *const Session, problem: ?[]const u8) Error!void {
     const response = session.response;
@@ -353,6 +429,11 @@ pub fn login(request: *Request, response: *Response, ctx: *Context) Error!void {
         return render_login(&session, try session.translated("cross-origin request refused", .{}));
     }
 
+    // Behind an identity-aware proxy no password opens a session: back to its way in.
+    if (proxy_provider(&session)) |provider| {
+        return proxy_login(&session, provider);
+    }
+
     const email = form.text("email") orelse {
         return render_login(&session, try session.translated("email is required", .{}));
     };
@@ -413,7 +494,8 @@ pub fn start_session(
             .token = out.token,
         }) catch |err| return admin.fail(session, err, back);
 
-        const turned_back = try session.translated("This account has no access to the admin.", .{});
+        // Told exactly what a wrong password is told, so the answer never confirms a password.
+        const turned_back = try session.translated("wrong email or password", .{});
 
         return render_login(session, turned_back);
     }
@@ -483,5 +565,14 @@ pub fn logout(request: *Request, response: *Response, ctx: *Context) Error!void 
     }
 
     try identity_module.clear_session_cookie(session.project, request, response, ctx.arena);
+
+    // Behind a proxy the login page would sign the person straight back in: the proxy still
+    // says who they are. They stay signed out until they choose to sign in again.
+    if (proxy_provider(&session) != null) {
+        const mark = try identity_module.signed_out_cookie(request, ctx.arena, true);
+
+        try response.add_header("Set-Cookie", mark);
+    }
+
     try response.redirect(.see_other, "/admin/login");
 }

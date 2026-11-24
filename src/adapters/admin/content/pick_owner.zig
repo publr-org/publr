@@ -3,6 +3,7 @@
 //! before it is moved here.
 
 const std = @import("std");
+const sdk = @import("../../../sdk.zig");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
 const record_operations = @import("../../../operations/record.zig");
@@ -27,7 +28,7 @@ pub const Owner = union(enum) {
 pub fn owners_of(
     session: *Session,
     found: []const Record,
-    documents: []const []const u8,
+    documents: []const sdk.operation.Json,
     field: []const u8,
     via: []const u8,
     parent: []const u8,
@@ -48,7 +49,7 @@ pub fn owners_of(
             continue;
         }
 
-        const fields = std.json.parseFromSliceLeaky(Value, arena, text, .{}) catch continue;
+        const fields = std.json.parseFromSliceLeaky(Value, arena, text.text, .{}) catch continue;
         const held = if (fields == .object) fields.object.get(via) orelse .null else Value.null;
 
         // Pointing here by its live value but not listed: taken out, pending; free again.
@@ -107,7 +108,8 @@ fn members_of(
         .id = parent,
         .purpose = .edit,
     }) catch return ids.items;
-    const document = std.json.parseFromSliceLeaky(Value, session.arena, got.document, .{}) catch {
+    const text = got.document.text;
+    const document = std.json.parseFromSliceLeaky(Value, session.arena, text, .{}) catch {
         return ids.items;
     };
     const listed = if (document == .object) document.object.get(field) orelse .null else Value.null;

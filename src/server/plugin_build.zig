@@ -242,6 +242,10 @@ pub fn prepared(
     const views = @import("plugin_build/views.zig").lower(init, sdk, request.dir, built) catch {
         return null;
     };
+
+    @import("plugin_build/interactive.zig").lower(init, sdk, request.dir, built) catch {
+        return null;
+    };
     const interfaces = published_dir.with_packages(init, site.interfaces, request.with) catch {
         return null;
     };
@@ -295,7 +299,14 @@ pub fn finished(
 
     const source = try std.json.Stringify.valueAlloc(init.arena.allocator(), finish.files, .{});
     const stores = if (finish.views) |folder| try stores_of(init, folder) else null;
-    const manifest = try write_manifest(init, built, source, stores);
+    const components = try components_of(init, request.dir);
+    const interactive = try @import("plugin_build/interactive.zig").section_of(init, built);
+    const manifest = try write_manifest(init, built, .{
+        .source = source,
+        .stores = stores,
+        .components = components,
+        .interactive = interactive,
+    });
 
     try warn_left_out(init, request.name, manifest);
 
@@ -859,15 +870,71 @@ fn stores_of(init: std.process.Init, views: []const u8) !?[]const u8 {
 /// The most browser code a plugin's views may carry.
 const stores_bytes_max = 1 << 20;
 
+/// The site components the plugin brings (`components/<Name>.publr`), as `publr.components`
+/// carries them; null when it has none.
+fn components_of(init: std.process.Init, dir: []const u8) !?[]const u8 {
+    std.debug.assert(dir.len > 0);
+
+    const arena = init.arena.allocator();
+    const folder = try std.fs.path.join(arena, &.{ dir, "components" });
+    var handle = std.Io.Dir.cwd().openDir(init.io, folder, .{
+        .iterate = true,
+    }) catch return null;
+    defer handle.close(init.io);
+
+    var found: std.ArrayList(components_module.Carried) = .empty;
+    var entries = handle.iterate();
+
+    while (try entries.next(init.io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".publr")) {
+            continue;
+        }
+
+        const name = entry.name[0 .. entry.name.len - ".publr".len];
+
+        if (!components_module.valid_name(name) or
+            found.items.len == components_module.components_max)
+        {
+            report.err("publr plugin build: components/{s}: a component is " ++
+                "`<Name>.publr`, at most {d}", .{ entry.name, components_module.components_max });
+            return error.InvalidComponents;
+        }
+
+        try found.append(arena, .{
+            .name = try arena.dupe(u8, name),
+            .text = try handle.readFileAlloc(init.io, entry.name, arena, .limited(1 << 20)),
+        });
+    }
+
+    if (found.items.len == 0) {
+        return null;
+    }
+
+    return try std.json.Stringify.valueAlloc(arena, found.items, .{});
+}
+
+const components_module = @import("sandboxed_plugins/components.zig");
+
+/// What a built module carries besides its code.
+const Carried = struct {
+    /// The plugin's source, JSON.
+    source: []const u8,
+    /// Its views' browser code.
+    stores: ?[]const u8 = null,
+    /// Its site components, JSON.
+    components: ?[]const u8 = null,
+    /// Its interactive components, built for a place with no compiler, JSON.
+    interactive: ?[]const u8 = null,
+};
+
 /// Reads the manifest by running the module's `publr_manifest` in the sandbox, with no
 /// grants and nothing it could call, and writes it into the module's `publr` section, the
-/// plugin's source into `publr.source`, for the install gate's checks, and its views' browser
-/// code into `publr.stores`.
+/// plugin's source into `publr.source`, for the install gate's checks, its views' browser
+/// code into `publr.stores` and its site components into `publr.components`.
 fn write_manifest(
     init: std.process.Init,
     path: []const u8,
-    source: []const u8,
-    stores: ?[]const u8,
+    carried: Carried,
 ) ![]const u8 {
     std.debug.assert(path.len > 0);
 
@@ -883,7 +950,7 @@ fn write_manifest(
 
     try output.writer.writeAll(module);
     try wasm.section.write(&output.writer, plugin_manifest.section_name, manifest);
-    try wasm.section.write(&output.writer, plugin_manifest.source_section_name, source);
+    try wasm.section.write(&output.writer, plugin_manifest.source_section_name, carried.source);
 
     if (read.translations) |translations| {
         const name = plugin_manifest.translations_section_name;
@@ -891,8 +958,16 @@ fn write_manifest(
         try wasm.section.write(&output.writer, name, translations);
     }
 
-    if (stores) |code| {
+    if (carried.stores) |code| {
         try wasm.section.write(&output.writer, plugin_manifest.stores_section_name, code);
+    }
+
+    if (carried.components) |json| {
+        try wasm.section.write(&output.writer, plugin_manifest.components_section_name, json);
+    }
+
+    if (carried.interactive) |json| {
+        try wasm.section.write(&output.writer, plugin_manifest.interactive_section_name, json);
     }
 
     try cwd.writeFile(init.io, .{

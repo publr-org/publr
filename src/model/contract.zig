@@ -32,9 +32,16 @@ pub const Node = struct {
     values: []const []const u8 = &.{},
     /// A reference's content type: the caller sends an id, the operation gets the record.
     to: []const u8 = "",
+
+    pub const publr_form = .fields;
+
+    /// Written without its defaults: a manifest holds thousands.
+    pub fn jsonStringify(node: Node, writer: anytype) @TypeOf(writer.*).Error!void {
+        return @import("compact_json.zig").write(node, writer);
+    }
 };
 
-pub const Reason = enum { missing, unknown, kind, nullable, value };
+pub const Reason = enum { missing, unknown, kind, nullable, value, extra };
 
 /// Where two shapes disagree: a node of the user's side (or of the provider's, for a field
 /// the user leaves out), and why.
@@ -126,9 +133,10 @@ fn children_of(comptime Type: type) []const Child {
                     .name = "[]",
                     .required = true,
                 }},
-            // A reference, or an object whose keys come with the data (`json_object`).
-            .@"struct" => |info| if (@hasDecl(Type, "reference") or
-                @hasDecl(Type, "json_object")) &.{} else fields: {
+            // A reference, or an object whose keys come with the data (`json_object`, a map
+            // such as money's `{ "PLN": 12300 }`).
+            .@"struct" => |info| if (@hasDecl(Type, "reference") or is_json_map(Type) or
+                @hasDecl(Type, "json_object") or @hasDecl(Type, "json_scalar")) &.{} else fields: {
                 var children: [info.field_names.len]Child = undefined;
 
                 for (
@@ -152,6 +160,30 @@ fn children_of(comptime Type: type) []const Child {
             },
             else => &.{},
         };
+    }
+}
+
+/// `std.json.ArrayHashMap(V)`: an object whose keys come with the data, as money's map.
+pub fn is_json_map(comptime Type: type) bool {
+    comptime {
+        std.debug.assert(@typeInfo(Type) != .void);
+
+        const info = switch (@typeInfo(Type)) {
+            .@"struct" => |info| info,
+            else => return false,
+        };
+
+        if (info.field_names.len != 1 or !@hasField(Type, "map")) {
+            return false;
+        }
+
+        const Map = @FieldType(Type, "map");
+
+        if (!@hasDecl(Map, "KV")) {
+            return false;
+        }
+
+        return Type == std.json.ArrayHashMap(@FieldType(Map.KV, "value"));
     }
 }
 
@@ -213,21 +245,83 @@ fn kind_of(comptime Type: type) Kind {
             .float, .comptime_float => .number,
             .bool => .boolean,
             .@"enum" => .enumeration,
-            .@"struct" => if (@hasDecl(Type, "reference")) .reference else .object,
+            // A value written as one scalar (`publr.Time` as its ms, `publr.Decimal` as text).
+            .@"struct" => if (@hasDecl(Type, "json_scalar"))
+                Type.json_scalar
+            else if (@hasDecl(Type, "reference"))
+                .reference
+            else
+                .object,
             .pointer => |info| if (info.size == .slice and info.child == u8) .string else .list,
             else => @compileError("contract: " ++ @typeName(Type) ++ " has no JSON shape"),
         };
     }
 }
 
+/// Whether a contract's provider takes what the contract sends: it declares only the fields
+/// it uses, each one the contract sends at the same path, of the same kind, null only
+/// where the provider takes null, its values ones the provider knows. The contract's other
+/// fields are left out when the part is called (`ignore_unknown_fields`, compiled in and
+/// installed alike), so a provider written before a field was added still fits.
+pub fn check_provider_input(sent: []const Node, accepted: []const Node) ?Problem {
+    std.debug.assert(sent.len > 0 and sent.len <= nodes_max);
+    std.debug.assert(accepted.len > 0 and accepted.len <= nodes_max);
+
+    for (accepted, 0..) |node, index| {
+        const at = counterpart(accepted, @intCast(index), sent) orelse return .{
+            .node = @intCast(index),
+            .on_user_side = false,
+            .reason = .extra,
+        };
+        const theirs = sent[at];
+
+        if (theirs.kind != node.kind or !std.mem.eql(u8, theirs.to, node.to)) {
+            return .{
+                .node = @intCast(index),
+                .on_user_side = false,
+                .reason = .kind,
+            };
+        }
+
+        if (theirs.optional and !node.optional) {
+            return .{
+                .node = @intCast(index),
+                .on_user_side = false,
+                .reason = .nullable,
+            };
+        }
+
+        if (!subset(theirs.values, node.values)) {
+            return .{
+                .node = @intCast(index),
+                .on_user_side = false,
+                .reason = .value,
+            };
+        }
+    }
+
+    return null;
+}
+
 /// Whether a provider accepts what a user sends: every field it requires is sent, every
 /// field sent is one it knows, kinds agree, nothing it refuses as null may be null.
+///
+/// A field sent that the provider does not know is left out of what it reads when the
+/// sender has a default for it (a field added to a contract later, which an older provider
+/// ignores), with everything inside it.
 pub fn check_input(sent: []const Node, accepted: []const Node) ?Problem {
     std.debug.assert(sent.len > 0 and sent.len <= nodes_max);
     std.debug.assert(accepted.len > 0 and accepted.len <= nodes_max);
 
+    var ignored: [nodes_max]bool = @splat(false);
+
     for (sent, 0..) |node, index| {
         const provider = counterpart(sent, @intCast(index), accepted) orelse {
+            if (may_be_absent(sent, &ignored, @intCast(index))) {
+                ignored[index] = true;
+                continue;
+            }
+
             return .{
                 .node = @intCast(index),
                 .on_user_side = true,
@@ -283,12 +377,23 @@ pub fn check_input(sent: []const Node, accepted: []const Node) ?Problem {
 
 /// Whether a provider gives what a user reads: every field read is given, kinds agree,
 /// nothing the user takes as present may be null, every value given is one the user knows.
+///
+/// A field read that the provider does not give takes its default when the reader has one
+/// (a field added to a contract later, which an older provider never answers), with
+/// everything inside it.
 pub fn check_output(read: []const Node, given: []const Node) ?Problem {
     std.debug.assert(read.len > 0 and read.len <= nodes_max);
     std.debug.assert(given.len > 0 and given.len <= nodes_max);
 
+    var defaulted: [nodes_max]bool = @splat(false);
+
     for (read, 0..) |node, index| {
         const provider = counterpart(read, @intCast(index), given) orelse {
+            if (may_be_absent(read, &defaulted, @intCast(index))) {
+                defaulted[index] = true;
+                continue;
+            }
+
             return .{
                 .node = @intCast(index),
                 .on_user_side = true,
@@ -323,6 +428,25 @@ pub fn check_output(read: []const Node, given: []const Node) ?Problem {
     }
 
     return null;
+}
+
+/// Whether `nodes[index]` may be missing on the other side: it has a default (or may be
+/// null), or sits inside a node that is missing already. Nodes come parents first.
+fn may_be_absent(nodes: []const Node, absent: *const [nodes_max]bool, index: u32) bool {
+    std.debug.assert(index < nodes.len);
+    std.debug.assert(nodes.len <= nodes_max);
+
+    if (index == 0) {
+        return false;
+    }
+
+    const node = nodes[index];
+
+    if (!node.required or node.optional) {
+        return true;
+    }
+
+    return node.parent >= 0 and absent[@intCast(node.parent)];
 }
 
 /// The node of `other` at the same path as `nodes[index]`: the same field names from the
@@ -417,7 +541,7 @@ pub fn path_of(nodes: []const Node, index: u32, buffer: []u8) []const u8 {
 }
 
 pub fn reason_text(reason: Reason) []const u8 {
-    std.debug.assert(@backingInt(reason) <= @backingInt(Reason.value));
+    std.debug.assert(@backingInt(reason) <= @backingInt(Reason.extra));
 
     return switch (reason) {
         .missing => "is not there",
@@ -425,6 +549,7 @@ pub fn reason_text(reason: Reason) []const u8 {
         .kind => "is of another kind",
         .nullable => "may be null",
         .value => "has a value the other side does not know",
+        .extra => "is not one the contract sends",
     };
 }
 
@@ -492,4 +617,119 @@ test "shapes: described from types, compatible as subsets" {
     const read = comptime describe(ReadsAbsent);
 
     try std.testing.expectEqualStrings("total", path_of(read, absent.node, &buffer));
+
+    // A contract grown since the provider was built: a field sent with a default it ignores,
+    // a field read with a default it never gives, whatever is inside each.
+    const SendsMore = struct {
+        sku: []const u8,
+        quantity: u32,
+        gift: ?struct {
+            note: []const u8,
+        } = null,
+        channel: []const u8 = "web",
+    };
+    const ReadsMore = struct {
+        lines: []const struct {
+            size: enum { small, large, huge },
+            weight: u32 = 0,
+        },
+        carrier: struct {
+            name: []const u8,
+        } = .{
+            .name = "",
+        },
+    };
+
+    try std.testing.expect(check_input(comptime describe(SendsMore), provider) == null);
+    try std.testing.expect(check_output(comptime describe(ReadsMore), provider) == null);
+}
+
+test "shapes: a contract's provider declares only the fields it uses" {
+    const Sent = struct {
+        order: []const u8,
+        amount: i64,
+        note: ?[]const u8 = null,
+        size: enum { small, large },
+        lines: []const struct {
+            sku: []const u8,
+            quantity: u32,
+        } = &.{},
+    };
+    const Uses = struct {
+        amount: i64,
+        lines: []const struct {
+            sku: []const u8,
+        } = &.{},
+    };
+    const Invents = struct {
+        amount: i64,
+        colour: []const u8 = "",
+    };
+    const Retyped = struct {
+        amount: []const u8,
+    };
+    const NeverNull = struct {
+        note: []const u8,
+    };
+    const FewerValues = struct {
+        size: enum { small },
+    };
+    const sent = comptime describe(Sent);
+
+    try std.testing.expect(check_provider_input(sent, comptime describe(Uses)) == null);
+    try std.testing.expect(check_provider_input(sent, comptime describe(Sent)) == null);
+
+    const invents = check_provider_input(sent, comptime describe(Invents)).?;
+    const retyped = check_provider_input(sent, comptime describe(Retyped)).?;
+    const never_null = check_provider_input(sent, comptime describe(NeverNull)).?;
+    const fewer = check_provider_input(sent, comptime describe(FewerValues)).?;
+
+    try std.testing.expectEqual(Reason.extra, invents.reason);
+    try std.testing.expect(!invents.on_user_side);
+    try std.testing.expectEqual(Reason.kind, retyped.reason);
+    try std.testing.expectEqual(Reason.nullable, never_null.reason);
+    try std.testing.expectEqual(Reason.value, fewer.reason);
+}
+
+/// Whether two shapes are the same, node for node.
+pub fn same_shape(first: []const Node, second: []const Node) bool {
+    std.debug.assert(first.len <= nodes_max * 64);
+    std.debug.assert(second.len <= nodes_max * 64);
+
+    if (first.ptr == second.ptr and first.len == second.len) {
+        return true;
+    }
+
+    if (first.len != second.len) {
+        return false;
+    }
+
+    for (first, second) |one, other| {
+        const same = one.parent == other.parent and one.kind == other.kind and
+            one.optional == other.optional and one.required == other.required and
+            std.mem.eql(u8, one.name, other.name) and std.mem.eql(u8, one.to, other.to) and
+            same_names(one.values, other.values);
+
+        if (!same) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn same_names(first: []const []const u8, second: []const []const u8) bool {
+    std.debug.assert(first.len <= 1 << 16);
+
+    if (first.len != second.len) {
+        return false;
+    }
+
+    for (first, second) |one, other| {
+        if (!std.mem.eql(u8, one, other)) {
+            return false;
+        }
+    }
+
+    return true;
 }

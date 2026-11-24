@@ -187,6 +187,10 @@ pub fn problem(manifest: *const sandboxed_plugin.Manifest) ?[]const u8 {
             return "a permission names domains it does not take";
         }
 
+        if (ask.plugins.len > 0 and entry.narrowing != .plugins) {
+            return "a permission names plugins it does not take";
+        }
+
         if (ask.domains.len > outside.domains_max) {
             return "http.fetch lists more than 32 domains";
         }

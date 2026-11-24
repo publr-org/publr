@@ -206,10 +206,7 @@ export const show_earlier = async () => {
   state.fetching_earlier = true;
   try {
     const before = state.steps[0].position;
-    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(state.id)}&before=${before}`);
-    const response = await fetch(address, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(`${response.status}`);
-    const read = await response.json();
+    const read: any = await Publr.send("ai.conversation", { id: state.id, before });
     const added = read.steps.map((step: Shown & { pictures: string[] }) => {
       const entry = step.href.startsWith("/admin/trash?entry=") ? step.href.slice(19) : "";
       return {
@@ -373,10 +370,7 @@ const refresh = async () => {
   asking = true;
   try {
     const after = state.steps.length > 0 ? state.steps[state.steps.length - 1].position : 0;
-    const address = Publr.url(`/api/ai.conversation?id=${encodeURIComponent(state.id)}&after=${after}`);
-    const response = await fetch(address, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(`${response.status}`);
-    const read = await response.json();
+    const read: any = await Publr.send("ai.conversation", { id: state.id, after });
     if (read.steps.length > 0) {
       const added = read.steps.map((step: Shown & { pictures: string[] }) => ({
         ...step,
@@ -478,10 +472,10 @@ const tell_browser = (name: string, detail: unknown) => {
 /** The browser call the page handed over last, so each goes once. */
 let handed = 0;
 
-const hand_over = (pending: { number: number; call: string } | undefined) => {
+const hand_over = (pending: { number: number; call: unknown } | undefined) => {
   if (!state.browser || !pending || pending.number <= handed) return;
   handed = pending.number;
-  tell_browser("call", { conversation: state.id, number: pending.number, call: JSON.parse(pending.call) });
+  tell_browser("call", { conversation: state.id, number: pending.number, call: pending.call });
 };
 
 const browser_ready = () => {
@@ -819,16 +813,7 @@ export const open_step = async (event: MouseEvent) => {
 };
 
 const post = async (operation: string, body: unknown) => {
-  const response = await fetch(Publr.url(`/api/${operation}`), {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "X-Csrf-Token": state.csrf },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const failed = await response.json().catch(() => ({}));
-    throw new Error(failed.message ?? failed.error ?? `${response.status}`);
-  }
+  await Publr.send(operation, body);
 };
 
 /** One removal back from the trash, as it was. */

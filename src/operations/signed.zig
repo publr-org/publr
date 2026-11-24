@@ -138,7 +138,7 @@ test "sign-in hooks: before refuses, after writes in the same write, administrat
     var names: [8][]const u8 = undefined;
 
     for (kept.records, 0..) |record, index| {
-        names[index] = record.document;
+        names[index] = record.document.text;
     }
 
     const all = try std.mem.join(system.arena, "|", names[0..kept.records.len]);
@@ -209,7 +209,7 @@ test "sign-in hooks fail closed, only read in before, carry the visitor, spare a
     var names: [8][]const u8 = undefined;
 
     for (kept.records, 0..) |record, index| {
-        names[index] = record.document;
+        names[index] = record.document.text;
     }
 
     const all = try std.mem.join(system.arena, "|", names[0..kept.records.len]);

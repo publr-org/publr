@@ -1,5 +1,7 @@
 import { Chrome } from "./Chrome.ptsx";
+import { EditorAside } from "../components/EditorAside.ptsx";
 import { PluginFrame } from "../components/PluginFrame.ptsx";
+import { RecordPanels } from "../components/RecordEditor/RecordPanels.ptsx";
 
 export type FramePageProps = {
   title: string;
@@ -10,15 +12,25 @@ export type FramePageProps = {
   page: string;
   csrf: string;
   operations: string[];
+  /** A page drawing a record: the panels plugins add to its type, beside the frame. */
+  panels?: Array<{ label: string; plugin: string; from: string; src: string; operations: string }>;
 };
 
 /** A plugin's own page: the chrome, with the plugin frame filling the sheet under the
- * crumbs. What the plugin draws stays inside the frame. */
-export function FramePage({ title, parents = [], src, plugin, page, csrf, operations }: FramePageProps) {
+ * crumbs. What the plugin draws stays inside the frame. A page drawing a record has the
+ * panels plugins add to its type beside it, as beside a form. */
+export function FramePage({ title, parents = [], src, plugin, page, csrf, operations, panels = [] }: FramePageProps) {
   return (
     <Chrome title={title} parents={parents}>
-      <div data-slot="pages" class="flex flex-1 flex-col">
-        <PluginFrame src={src} title={title} plugin={plugin} page={page} csrf={csrf} operations={operations} />
+      <div data-slot="pages" class="flex flex-1 max-md:flex-col">
+        <div class="flex min-w-0 flex-1 flex-col">
+          <PluginFrame src={src} title={title} plugin={plugin} page={page} csrf={csrf} operations={operations} />
+        </div>
+        {panels.length > 0 && (
+          <EditorAside>
+            <RecordPanels csrf={csrf} panels={panels} />
+          </EditorAside>
+        )}
       </div>
     </Chrome>
   );

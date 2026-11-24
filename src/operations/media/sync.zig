@@ -329,7 +329,9 @@ const Folders = struct {
             return error.OutOfMemory;
         const created = try term.published(ctx, .{
             .taxonomy = media.folders_handle,
-            .document = document,
+            .document = .{
+                .text = document,
+            },
             .parent = parent,
         });
 

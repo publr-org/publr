@@ -32,6 +32,9 @@ pub const Transition = struct {
         id: []const u8,
         transition: []const u8,
         expected_version: ?i64 = null,
+        /// The type the record is of: another type's is not found. A plugin's code naming
+        /// its own type moves it whoever the request is for.
+        type: ?[]const u8 = null,
     };
     pub const Out = struct {
         status: []const u8,
@@ -53,6 +56,7 @@ pub const Transition = struct {
         .id = "The record id",
         .transition = "The transition's name, `publish`",
         .expected_version = "The `version` you read; refuse if it changed",
+        .type = "The type the record must be of; another type's is not found",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -60,6 +64,14 @@ pub const Transition = struct {
 
         if (in.id.len > 64 << 10) {
             return error.Invalid;
+        }
+
+        if (in.type) |handle| {
+            const found = try record_operations.domain.crud.get(ctx, granted, in.id, .edit, null);
+
+            if (!std.mem.eql(u8, found.record.type, handle)) {
+                return error.NotFound;
+            }
         }
 
         const expected = in.expected_version;
@@ -371,7 +383,7 @@ fn publish_set(
     std.debug.assert(in.id.len > 0);
     std.debug.assert(ctx.db.transaction_depth >= 1);
 
-    const text = in.changes orelse "{}";
+    const text = if (in.changes) |changes| changes.text else "{}";
     const parsed = @import("../../lib/json.zig").parse(std.json.Value, ctx.arena, text, .{}) catch {
         return error.Invalid;
     };
@@ -449,7 +461,9 @@ pub const RunScheduled = struct {
         const out = if (next.changes.len > 0 or next.held_back != null)
             try registry.SDK.call(ctx, Publish, .{
                 .id = in.id,
-                .changes = if (next.changes.len > 0) next.changes else null,
+                .changes = if (next.changes.len > 0) .{
+                    .text = next.changes,
+                } else null,
                 .held_back = next.held_back,
             })
         else
@@ -549,7 +563,7 @@ pub const Publish = struct {
         id: []const u8,
         expected_version: ?i64 = null,
         /// Only these fields, over what is live: a JSON object of each key and its value.
-        changes: ?[]const u8 = null,
+        changes: ?sdk.operation.Json = null,
         /// What it holds back with them; null leaves it as it is.
         held_back: ?[]const u8 = null,
     };
@@ -719,7 +733,9 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     var anon = harness.ctx(.anonymous);
     const created = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
-        .document = "{\"title\":\"One\",\"body\":\"first\"}",
+        .document = .{
+            .text = "{\"title\":\"One\",\"body\":\"first\"}",
+        },
     });
     _ = try SDK.dispatch(&editor, Publish, .{
         .id = created.id,
@@ -727,7 +743,9 @@ test "pending edits: save on a live record parks, publish applies, discard drops
 
     const parked = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Two\",\"body\":\"second\"}",
+        .document = .{
+            .text = "{\"title\":\"Two\",\"body\":\"second\"}",
+        },
     });
     try std.testing.expect(parked.changed);
     const public_view = try SDK.dispatch(&anon, record_operations.Get, .{
@@ -760,7 +778,9 @@ test "pending edits: save on a live record parks, publish applies, discard drops
     try std.testing.expect(unpublished.changed);
     const still_parked = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Three\",\"body\":\"third\"}",
+        .document = .{
+            .text = "{\"title\":\"Three\",\"body\":\"third\"}",
+        },
     });
     try std.testing.expect(still_parked.changed);
     // Signed in, a read is the latest copy, pending changes and all.
@@ -785,7 +805,9 @@ test "pending edits: save on a live record parks, publish applies, discard drops
 
     _ = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = created.id,
-        .document = "{\"title\":\"Four\",\"body\":\"x\"}",
+        .document = .{
+            .text = "{\"title\":\"Four\",\"body\":\"x\"}",
+        },
     });
     _ = try SDK.dispatch(&editor, DiscardChanges, .{
         .id = created.id,
@@ -885,10 +907,7 @@ fn hear(ctx: *Ctx, emitted: sdk.Event.Emitted, _: bool) void {
     std.debug.assert(emitted.name.len > 0);
     std.debug.assert(ctx.trail != null);
 
-    ctx.trail.?.emitted(.{
-        .name = emitted.name,
-        .subject = emitted.subject,
-    });
+    ctx.trail.?.emitted(emitted.name, emitted.subject);
 }
 
 fn heard(trail: *const sdk.trail.Trail, name: []const u8) bool {
@@ -931,14 +950,18 @@ test "a document whose rows were replaced from outside lands as a person's move 
 
     const created = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Hello\",\"slug\":\"hello\"}",
+        .document = .{
+            .text = "{\"title\":\"Hello\",\"slug\":\"hello\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, Publish, .{
         .id = created.id,
     });
     const other = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Taken\",\"slug\":\"taken\"}",
+        .document = .{
+            .text = "{\"title\":\"Taken\",\"slug\":\"taken\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, Publish, .{
         .id = other.id,
@@ -1025,18 +1048,24 @@ test "signed-in reads match the latest copy; a preview reads it too and writes n
     });
     const live = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
-        .document = "{\"title\":\"One\",\"body\":\"first\"}",
+        .document = .{
+            .text = "{\"title\":\"One\",\"body\":\"first\"}",
+        },
     });
     _ = try SDK.dispatch(&editor, Publish, .{
         .id = live.id,
     });
     _ = try SDK.dispatch(&editor, record_operations.Save, .{
         .id = live.id,
-        .document = "{\"title\":\"Two\",\"body\":\"pendingword\"}",
+        .document = .{
+            .text = "{\"title\":\"Two\",\"body\":\"pendingword\"}",
+        },
     });
     _ = try SDK.dispatch(&editor, record_operations.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Draft\"}",
+        .document = .{
+            .text = "{\"title\":\"Draft\"}",
+        },
     });
 
     // Signed in, search and field filters match the latest copy; a visitor's, the live one.
@@ -1085,7 +1114,9 @@ test "signed-in reads match the latest copy; a preview reads it too and writes n
 
     const refused = SDK.dispatch(&preview, record_operations.Save, .{
         .id = live.id,
-        .document = "{\"title\":\"Three\"}",
+        .document = .{
+            .text = "{\"title\":\"Three\"}",
+        },
     });
     try std.testing.expect(std.meta.isError(refused));
 }

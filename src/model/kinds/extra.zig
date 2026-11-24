@@ -79,3 +79,17 @@ pub fn time(def: field.Def, value: Value, path: []const u8, problems: *field.Pro
         problems.add(path, "use a time between 00:00 and 23:59");
     }
 }
+
+/// A provider's name as it registered: whether one is registered is the write's to check.
+pub fn provider(def: field.Def, value: Value, path: []const u8, problems: *field.Problems) void {
+    std.debug.assert(def.name.len > 0);
+    std.debug.assert(path.len > 0);
+
+    if (value != .string) {
+        return;
+    }
+
+    if (!@import("../identity.zig").valid_provider(value.string)) {
+        problems.add(path, "name a provider: [a-z][a-z0-9_]*, at most 32 characters");
+    }
+}

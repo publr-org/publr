@@ -122,7 +122,7 @@ pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
 fn apply_hooks(
     ctx: *Ctx,
     records: []const store.records.Record,
-    documents: []const []const u8,
+    documents: []const sdk.operation.Json,
     titles: []Title,
 ) Error!void {
     std.debug.assert(records.len == titles.len);
@@ -146,7 +146,7 @@ fn apply_type(
     ctx: *Ctx,
     type_name: []const u8,
     records: []const store.records.Record,
-    documents: []const []const u8,
+    documents: []const sdk.operation.Json,
     titles: []Title,
 ) Error!void {
     std.debug.assert(type_name.len > 0);
@@ -161,7 +161,7 @@ fn apply_type(
             continue;
         }
 
-        const fields = std.json.parseFromSliceLeaky(std.json.Value, arena, document, .{
+        const fields = std.json.parseFromSliceLeaky(std.json.Value, arena, document.text, .{
             .allocate = .alloc_always,
         }) catch std.json.Value.null;
 

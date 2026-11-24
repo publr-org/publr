@@ -346,9 +346,52 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/routes.zig` | 288 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the apps as the fallback) and a `testing.Flow` that drives the full router |
 | `server/project.zig` | 130 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |
 | `server/sandboxed_plugins.zig` | 248 | The installed plugins the server holds: the sandbox's runtime, every plugin loaded from its row and file, the hook and operation index, the roles plugins declare |
-| `server/sandboxed_plugins/interface.zig` | 375 | The `sdk.plugins.Plugins` every context carries: find and run a plugin's operation, run its hooks, read a module to install, reload after a change |
-| `server/sandboxed_plugins/invoke.zig` | 316 | One call into a plugin, as itself and within its limits; the host functions it may call (`publr_call`, `publr_emit`, `publr_log`) |
-| `server/sandboxed_plugins/loaded.zig` | 179 | One installed plugin: its module, manifest, grants with their flags, own types, limits, and its disposable instance |
+| `server/sandboxed_plugins/interface.zig` | 760 | The `sdk.plugins.Plugins` every context carries: find and run a plugin's operation, run its hooks, read a module to install, reload after a change, open and end a request on the plugins |
+| `server/sandboxed_plugins/invoke.zig` | 873 | One call into a plugin, as itself and within its limits, its input as it comes (`Passed`: JSON text, or as another plugin handed it over), or one hook over many items (`invoke_many`); the host functions it may call (`publr_emit`, `publr_log`, `publr_enqueue`) |
+| `server/sandboxed_plugins/said_memory.zig` | 178 | A plugin's memory said in the log: an entry that ran out of it, a request that left it more than half full, each with the largest collection it made |
+| `server/sandboxed_plugins/described.zig` | 207 | A plugin's description of a type's layout: its parts (numbers, texts, enums, lists, pointers, optionals, structs, unions, free-form values) and how many bytes each takes |
+| `server/sandboxed_plugins/given.zig` | 386 | A value a plugin hands over, copied out of its memory with every address and length checked, the bytes read bounded and its addresses followed 64 deep at most |
+| `server/sandboxed_plugins/given_typed.zig` | 370 | That value read straight into one of core's own types (an operation's `In`): `null` as `null`, numbers and texts by their kind |
+| `server/sandboxed_plugins/laid.zig` | 280 | A value built for a plugin in the layout it described, in zeroed memory, addressed from 0 until the plugin makes room |
+| `server/sandboxed_plugins/laid_typed.zig` | 283 | One of core's own values (an operation's `Out`) laid out straight from the struct |
+| `server/sandboxed_plugins/transfer.zig` | 379 | A value moved from one plugin's layout to another's with nothing in between, fields, enum tags and a union's alternatives by name |
+| `server/sandboxed_plugins/held.zig` | 299 | A value core keeps between two plugins: copied whole out of the sender, one piece of bytes |
+| `server/sandboxed_plugins/shaped_call.zig` | 308 | `publr_call_shaped`: a plugin's call read into a compiled-in operation's `In` and its `Out` laid out, or handed on whole to another plugin's operation |
+| `server/sandboxed_plugins/shaped_entry.zig` | 291 | One entry of a plugin (operation, hook, modifier, job, rule, field kind) run with its envelope built in the plugin's layout |
+| `server/sandboxed_plugins/described_parser.zig` | 397 | That description read into its parts: every size, count and name bounded, a part naming one it is inside of only where it lies at an address of its own |
+| `server/sandboxed_plugins/described_reader.zig` | 58 | The description's bytes taken in order, never past their end |
+| `server/sandboxed_plugins/described_checks.zig` | 305 | What a description's parts must be to one another, checked once all are read; which parts hold a union |
+| `server/sandboxed_plugins/given_json.zig` | 374 | That value written as JSON, for what core keeps as JSON and the outer edge: a keyed list as an object, a union by its alternative's name, a decimal as its text |
+| `server/sandboxed_plugins/given_object.zig` | 189 | A struct of core's read from an object a plugin handed over: fields by name, defaults, a key per dimension gathered |
+| `server/sandboxed_plugins/laid_json.zig` | 383 | That value built from JSON: what core keeps as JSON, the outer edge, a field's default |
+| `server/sandboxed_plugins/transfer_scalars.zig` | 105 | A number, a decimal or a text read out of one layout for another |
+| `server/sandboxed_plugins/transfer_shapeless.zig` | 89 | A free-form value and a union moved between two layouts |
+| `server/sandboxed_plugins/shaped_read.zig` | 126 | What a call says about itself, copied out of the plugin and checked: its description, its unions, an event's payload and a job's input written as JSON once |
+| `server/sandboxed_plugins/shaped_answer.zig` | 199 | `publr_shaped_take`, `publr_answer`: an answer waiting for the room the plugin makes, and an entry's answer copied out while it is still there |
+| `server/sandboxed_plugins/drawing.zig` | 225 | `publr_frame`: the frame a plugin's page is for and who is looking, laid out for its view; `publr_translate`: one message of a view in the person's language |
+| `server/sandboxed_plugins/drawing_page.zig` | 270 | `publr_draw`: a whole page a plugin's view described, drawn in one call: each component's props read where they lie into the design system's own `Props`, every address, name, prop and size checked |
+| `ui/drawn.zig` | 135 | One component an installed plugin may draw, by name, its props from whoever reads them |
+| `ui/drawn_placed.zig` | 440 | A described page put together: each placeholder replaced by what was drawn for it, at any depth, attributes moved onto the root drawn; bounded in size, depth and replacements |
+| `sdk/plugin/view_wire.zig` | 175 | What a view hands over to be drawn: the page and component structs, a component's props described by the plugin's build, the placeholder |
+| `server/sandboxed_plugins/loaded.zig` | 267 | One installed plugin: its module, manifest, grants with their flags, own types, limits, each entry's layout read once, and its instance: kept while a request is open on the host, dropped with the request, or at once when a call spoils it |
+| `server/sandboxed_plugins/batched.zig` | 233 | `publr_invoke_batch`, `publr_item`: one hook run for many items in one call into the module, each item's end and answer kept apart; a module built before batches is run item by item |
+| `server/sandboxed_plugins/hooks_many.zig` | 118 | Installed `before` and `after` hooks over the inputs of a bulk write: each plugin's hook entered once for all still going, and only for the inputs it is about (`interface.zig`, `hears`) |
+| `server/sandboxed_plugins/projected.zig` | 150 | What an `on` hook waits in the queue with: of an event, the fields the hook's own type names, read by its layout where the value lies and written as JSON once |
+| `server/sandboxed_plugins/modifying.zig` | 257 | Installed modifiers over the values of one apply, held laid out, in turn, in working memory given back after each: the answer laid over the values where they lie, a value of another type handed over alone; a modifier that fails refuses the apply |
+| `server/sandboxed_plugins/applied.zig` | 319 | The values of one apply as core holds them between two modifiers: one piece, each value in its owner's layout; made from an installed plugin's memory or from core's own structs, read back the same way |
+| `server/sandboxed_plugins/applied_over.zig` | 326 | A modifier's answers laid over the held values: one piece in the values' layout with the modifier's own fields added; an answer that cannot lie over its value leaves it |
+| `server/sandboxed_plugins/applied_typed.zig` | 216 | The held values as a compiled-in modifier takes them: read into its structs, its answer laid over them like any other |
+| `server/sandboxed_plugins/applied_trees.zig` | 158 | Held values whose shape comes with the data: what the outer edge sent as JSON, what core read from storage |
+| `server/sandboxed_plugins/merged.zig` | 254 | What a modifier wrote laid over the value it was given, where both lie: fields by name, anything else replaced, shape-with-data parts as trees |
+| `server/sandboxed_plugins/merged_lists.zig` | 259 | The lists of a merge: item by item, by each item's `id`, a keyed list by its keys |
+| `server/sandboxed_plugins/merged_tree.zig` | 213 | Two trees merged by the same rules, for parts whose shape comes with the data and for hooks' changes |
+| `server/sandboxed_plugins/merged_shape.zig` | 425 | The layout the values take once a modifier's answer lies over them: their own, with the fields only the modifier has |
+| `server/sandboxed_plugins/merged_added.zig` | 119 | A field only a modifier has, copied into that layout as one that may hold nothing |
+| `server/sandboxed_plugins/merged_rooms.zig` | 141 | Every size, offset and alignment of a layout core puts together itself |
+| `server/sandboxed_plugins/described_text.zig` | 264 | A description written again from its parts: one part on its own, or a layout core put together |
+| `server/sandboxed_plugins/given_tree.zig` | 298 | A value a plugin handed over as the tree it stands for, read where it lies |
+| `server/sandboxed_plugins/shaped_apply.zig` | 147 | A plugin's `ctx.mod`: its values copied out once, held laid out through `mod.apply`, laid back in its layout |
+| `server/sandboxed_plugins/scenarios_instances.zig` | 250 | A plugin's instance on the fixture `keeper`: one for a request, none left for the next, dropped on a trap, nested work counted against the call's budget, a bulk write's hook entered once, a modifier out of its budget refusing the apply |
 | `server/sandboxed_plugins/files.zig` | 224 | Modules on the data drive by their hash, uploads arriving in pieces, the sweep of files no row names |
 | `server/sandboxed_plugins/scenarios.zig` | 518 | The sandbox end to end on the fixture plugins: install, call, revoke, update, remove, the admin's pages |
 
@@ -399,7 +442,9 @@ Grouped by kind. Lines are the whole file, tests included.
 | `model/field.zig` | 299 | Field kinds, options, `Def`, validation of field definitions |
 | `model/content_type.zig` | 153 | A content type `Def`, its validation, JSON encode/decode, id from handle |
 | `model/validate.zig` | 416 | A JSON document against a type's fields: problems |
+| `model/key_page.zig` | 90 | A page of a list held in memory, in the order of its keys: the window after `after` and the next page's key |
 | `model/document.zig` | 487 | A document as rows and back: `flatten` (object to rows, dotted paths, ordinals), `assemble` (rows to object), title and slug rules, path lookup |
+| `model/json_fields.zig` | 180 | A JSON object cut to some of its fields, and one text field read from it, where the text lies: nothing is built in between |
 | `model/status.zig` | 189 | The status registry (`draft/published/archived/trashed`, transitions), extensible by plugins |
 | `model/convert.zig` | 159 | Value conversion when a field changes kind |
 | `model/evolution.zig` | 200 | Diff two type definitions into a plan (removed, converted, needs rewrite) |
@@ -448,9 +493,12 @@ Grouped by kind. Lines are the whole file, tests included.
 | `operations/record/lifecycle.zig` | 227 | `record transition/publish/discard_changes/delete/purge`, declared |
 | `operations/record/reach.zig` | 366 | `record reach`: why a record is out of the caller's reach (`access`, `not_shared`, `deleted`) and the payload that stands in its place; tests of what an app reaches |
 | `operations/health.zig` + `health/cases.zig` | 350 + 270 | `health list/count/keep/unlink`: Site Health's broken references, worked out from the references (`store.values.suspect_links`), kept ones in `health_kept` |
-| `operations/health/translations.zig` | 380 | `health translations/choose_translation/missing_translations`: disagreements and coverage read through `Ctx.translations`, picks under the `translation_choices` setting |
+| `operations/health/translations.zig` | 380 | `health translations/choose_translation/missing_translations`: disagreements a page at a time read through `Ctx.translations`, picks under the `translation_choices` setting |
+| `operations/health/coverage.zig` | 80 | `health coverage`: how much of each domain's messages each language translates, a page at a time |
 | `operations/taxonomy.zig` | 330 | `taxonomy create/update/get/list/delete/validate`, declared over the term domain |
 | `operations/term.zig` + `term/lifecycle.zig` | 560 + 230 | The term domain, `term create/get/save/list/tree/validate` with the parent rules, and the lifecycle with purge refusing children and members |
+| `operations/internal/computed.zig` + `computed_reads.zig` | 450 + 180 | Computed fields of internal records kept fresh: checked on every read, worked out by the owner's function and the field's mod with no reader, stored, and noted in `lib/deps` with what they read |; `computed_reads` gathers what the work read, until when it holds, and the stamp of the code and modifiers that made it
+| `operations/internal/computed_operations.zig` | 235 | `internal sum` (a whole number added up by the database, values freshened a page at a time) and `internal holds_until` |
 | `operations/record/fixture.zig` | 18 | The `post` type the record tests write against |
 | `operations/snapshot.zig` | 211 | `snapshot list/get/take/restore/prune` |
 | `operations/view.zig` | 339 | `view list/get/create/update/delete`: private, owner-bound |
@@ -499,6 +547,7 @@ Grouped by kind. Lines are the whole file, tests included.
 |---|---|---|
 | `sdk.zig` | 700 | `Registry`, `SDK(registry)`: `dispatch`, `admit`, `run` in a tx, one error boundary (`as_outcome`), hooks, events; `may` (whether a caller may call an operation) and `reaches_admin` (whether it may use the admin) |
 | `sdk/operation.zig` | 330 | What an operation type must declare; `resource_of(in)`; `Docs(In)`; name helpers (`namespace.verb`, `app.<feature>.verb`) |
+| `sdk/operation/values.zig` | 290 | The rule that `In` and `Out` hold values: a text field whose example is a JSON object or array, or whose doc line says JSON, is a compile error naming the operation and the field; `verbatim` names another system's text passed through (an HTTP body) |
 | `sdk/context.zig` | 104 | `Ctx`: caller, db, io, arena, auth, clock, events |
 | `sdk/caller.zig` | 174 | `Caller` union (anonymous, user with its roles, system, token, machine, plugin) |
 | `sdk/grant.zig` | 267 | `Grant`: allow/deny, type and status filters, transitions, row filter |
@@ -507,17 +556,51 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin.zig` | 647 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
 | `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
-| `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host as JSON, the exports generated for a plugin, its manifest among them |
+| `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host in the plugin's own structs, the exports generated for a plugin, its manifest among them |
+| `sdk/plugin/shape_wire.zig` | 260 | A struct's layout described at build time, so the host reads values where they lie and writes answers in the plugin's own memory; how a struct with its own JSON says how it lies (`publr_form`) |
+| `sdk/plugin/shape_said.zig` | 233 | How each kind of type is said in a description |
+| `sdk/plugin/shape_default.zig` | 212 | A field's default as JSON, said in the description at build time |
+| `sdk/plugin/shape_parts.zig` | 205 | A value's unions beside its block: listed by the guest for what it hands over, built from what the host laid out |
+| `sdk/free_value.zig` | 396 | A value whose shape comes with the data, in bytes read where they lie: its getters, and the check that it is well made |
+| `sdk/free_builder.zig` | 252 | Writes such a value part by part |
+| `sdk/free_json.zig` | 233 | Such a value to and from JSON, where Publr keeps or sends JSON |
+| `sdk/free_typed.zig` | 254 | A struct written as such a value, with no text in between |
+| `sdk/free_read.zig` | 225 | Such a value read as a struct |
+| `sdk/free_comptime.zig` | 244 | An example's JSON read into such a value at build time |
+| `sdk/operation/json.zig` | 301 | `operation.Json`: JSON text in Publr, bytes read where they lie in an installed plugin's module, one way to work with it in both |
+| `sdk/operation/lists.zig` | 330 | The rule that every list of an operation's input or answer holds a page (200) unless its struct's `limits` says fewer, checked as the operation runs; what answering a page at a time (`after` in, `next` out) is |
+| `sdk/money.zig` | 201 | `publr.Money`: a list of amounts by currency, handed over as it lies, `{ "PLN": 12300 }` in JSON |
+| `sdk/extended_laid.zig` | 179 | The fields plugins add to a list read's rows, as an installed plugin's module holds them |
+| `sdk/plugin/wire_json.zig` | 1479 | JSON at a cost close to its bytes, for what still crosses as JSON (`publr.json`) |
+| `sdk/plugin/read_memo.zig` | 177 | Reads one call made already, answered again until the plugin writes; a scope drops the ones it made |
+| `sdk/plugin/collections.zig` | 277 | `publr.List(T)`, `publr.IdMap(V)`, `publr.IdList(V)`: a plugin's own collections, made with `init(ctx)`, growing in the memory they were made in and telling what they hold |
+| `sdk/plugin/pages.zig` | 130 | `publr.pages`: every page of an operation that answers a page at a time, walked with one page held at once |
+| `sdk/plugin/held_note.zig` | 49 | Where a collection tells what it holds: the plugins' memory compiled in, the host (`publr_held`) installed |
+| `sdk/plugin/rows.zig` | 328 | `Records.where`, `Records.all`: walks over internal records, a page held at a time, each row's memory given back at the next |
+| `sdk/plugin/record_computed.zig` | 196 | A record's computed fields: which fields, the batch modifier each brings under `computed.<record>.<field>`, `publr.Computed` |
+| `sdk/plugin/walks.zig` | 95 | The walks a plugin has open, given back with the work or scope they were opened in; `walks/native.zig` (145) and `walks/guest.zig` (180) for each mode |
+| `sdk/plugin/id_map.zig` | 141 | Maps keyed by text that is mostly ids, hashed in 64-bit steps (an installed plugin does 128-bit ones in software) |
+| `sdk/plugin/mod_reads.zig` | 478 | What a modifier reads while it runs over a batch: a `get` noted per record type and read once for the batch, laid out as the record's struct (`Typed`); any other read noted and asked once per distinct input |
+| `sdk/plugin/mod_reads_laid.zig` | 147 | How an installed plugin keeps those reads: asked and answered as its own structs, told apart by the input's bytes |
+| `sdk/plugin/laid_key.zig` | 127 | A value's bytes as what a read is remembered by: read where it lies, nothing built |
+| `sdk/plugin/guest_memory.zig` | 46 | An installed plugin's memory: its `heap` and each call's `Arena`, over the module's linear memory |
+| `sdk/plugin/guest_memory/runs.zig` | 400 | Free pages kept as runs: taken, given back, joined and split; a memory for tests |
+| `sdk/plugin/guest_memory/arena.zig` | 381 | One call's or one scope's memory: small requests fill blocks of pages, all given back at its end |
+| `sdk/plugin/guest_memory/large.zig` | 166 | An arena's requests of a page or more: pages of their own, grown, shrunk and freed by pages |
+| `sdk/plugin/guest_memory/heap.zig` | 207 | The plugin's general allocator: whole pages from 16 KiB, the small allocator below |
 | `sdk/plugin/route.zig` | 211 | What a compiled-in plugin's routes and operator commands may be: under prefixes it owns, at most 16 and 8 |
 | `sdk/plugin/admin_slots.zig` | 66 | A plugin in the admin: its pages, panels, a top bar item, row actions |
 | `sdk/plugin/state.zig` | 71 | A compiled-in plugin's `State` and the process it is made from |
 | `sdk/structure.zig` | 34 | Which events change a project's structure |
 | `sdk/scratch.zig` | 109 | A request's scratch: working memory for a loop's items, given back after each |
+| `sdk/plugin_memory.zig` | 152 | Compiled-in plugins' working memory: one piece set aside per process, in pages, on the installed plugins' allocator (`plugin/guest_memory`) |
+| `sdk/plugin_memory/work.zig` | 356 | One piece of a compiled-in plugin's work in an arena of its own: `begin`, `leave`, `end`; a refusal's words carried out |
+| `sdk/hook_memory.zig` | 141 | A compiled-in hook run in memory of its own: what it changed copied to its caller's, what it left alone not |
 | `sdk/help.zig` | 311 | An operation's `--help`: its fields, output, failures and example, for core and installed plugins alike |
 | `sdk/plugin/wire.zig` | 107 | What crosses the sandbox's boundary: error codes, the result cell, the envelopes |
 | `sdk/sandboxed_plugins.zig` | 195 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
 | `sdk/plugin_access.zig` | 188 | A plugin's granted permissions turned into the grant for one request |
-| `sdk/call_json.zig` | 189 | Calling an operation by name with JSON in and out, a built-in one or a plugin's, through the same steps |
+| `sdk/call_json.zig` | 600 | Calling an operation by name through the same steps: a built-in one with JSON in and out, an installed plugin's with its input and answer as they come (`sandboxed_plugins.Passed`), JSON written only for the log and a removal list. `Working`: the request's working memory taken for one piece of a plugin's work (an installed operation, a queued job or `on` run, core's apply of modifiers), each call into core given back as it answers; a call out of it fails, never runs twice |
 | `sdk/plugin/context.zig` | 56 | `PluginCtx`: the narrowed ctx a plugin operation receives |
 | `sdk/plugin/types.zig` | 139 | Content types declared by plugins: create/update on bootstrap, lock declared fields, keep hand-added ones |
 | `lib/auth/password.zig` | 110 | Argon2id hashing and checking |

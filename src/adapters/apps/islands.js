@@ -79,7 +79,7 @@
   // that arrives — PublrJS wires an inserted subtree the same way it tears one
   // down when it is removed — so the loader inserts nodes and stops there,
   // which is all a polyfill for a platform feature should do.
-  const patch = (element, content) => {
+  const patch = (element, content, template) => {
     if (!element.isConnected) return;
     const roots = Array.from(content.children);
     if (roots.length === 1) {
@@ -88,6 +88,49 @@
       roots[0].dataset.islandKind = element.hasAttribute('credentials') ? 'dynamic' : 'static';
     }
     element.replaceWith(content);
+    if (roots.length === 1 && template && element.hasAttribute('follow')) {
+      follow(roots[0], src_of(element), template);
+    }
+  };
+
+  // A `follow` island is drawn again when something it read changes ("Waiting for
+  // payment…" turning "Paid"): its fragment says what it read and as of which change, and
+  // while it is shown the page asks `/_live` whether any of it changed since. When it did,
+  // the island is fetched again, as the visitor; what it showed stays until the new one
+  // arrives.
+  const follow_every_ms = 3000;
+  const follow = (root, src, template) => {
+    const keys = (template.getAttribute('data-follows') ?? '').split(' ').filter(Boolean);
+    let since = template.getAttribute('data-revision');
+    if (!keys.length || !since) return;
+    const live = src.slice(0, src.indexOf('/_islands/')) + '/_live';
+    const ask = async () => {
+      if (!root.isConnected) return;
+      if (document.hidden) {
+        setTimeout(ask, follow_every_ms);
+        return;
+      }
+      let answer = null;
+      try {
+        const query = `?since=${since}&keys=${encodeURIComponent(keys.join(','))}`;
+        const response = await fetch(live + query, { credentials: 'same-origin', cache: 'no-store' });
+        if (response.ok) answer = await response.json();
+      } catch {
+        answer = null;
+      }
+      if (answer?.changed) {
+        const placeholder = document.createElement('publr-island');
+        placeholder.setAttribute('src', src);
+        placeholder.setAttribute('credentials', '');
+        placeholder.setAttribute('follow', '');
+        placeholder.append(root.cloneNode(true));
+        root.replaceWith(placeholder);
+        return;
+      }
+      if (answer) since = String(answer.revision);
+      setTimeout(ask, follow_every_ms);
+    };
+    setTimeout(ask, follow_every_ms);
   };
 
   // One request, then every placeholder it answers. A response carries one
@@ -106,12 +149,13 @@
     const fragment = document.createRange().createContextualFragment(await response.text());
     const patches = new Map();
     for (const template of fragment.querySelectorAll('template[patchfor]')) {
-      patches.set(template.getAttribute('patchfor'), template.content);
+      patches.set(template.getAttribute('patchfor'), template);
     }
 
     for (const element of elements) {
-      const content = patches.get(key_of(element)) ?? (patches.size ? null : fragment);
-      if (content) patch(element, content.cloneNode(true));
+      const template = patches.get(key_of(element));
+      const content = template ? template.content : (patches.size ? null : fragment);
+      if (content) patch(element, content.cloneNode(true), template);
     }
   };
 

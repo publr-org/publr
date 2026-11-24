@@ -1,5 +1,6 @@
 import { Field } from "@publr/ui/Field.ptsx";
 import { FieldDescription } from "@publr/ui/FieldDescription.ptsx";
+import { FieldError } from "@publr/ui/FieldError.ptsx";
 import { FieldLabel } from "@publr/ui/FieldLabel.ptsx";
 import { RecordValue } from "./RecordValue.ptsx";
 
@@ -55,10 +56,13 @@ export type CellOption = { value: string; label: string; selected: boolean };
 
 export type RecordCellProps = Cell & {
   options: Array<CellOption>;
+  /** What the last refused save said of it; empty when nothing. */
+  error?: string;
 };
 
-/** A field inside a group or a repeater item: its label, its control, its help line. Drawn
- * by the server for what a page shows first, and by the browser for an item opened later. */
+/** A field inside a group or a repeater item: its label, its control, its help line, what a
+ * refused save said of it. Drawn by the server for what a page shows first, and by the
+ * browser for an item opened later. */
 export function RecordCell({
   name,
   conditions,
@@ -92,6 +96,7 @@ export function RecordCell({
   types,
   accept,
   can_upload,
+  error = "",
 }: RecordCellProps) {
   return (
     <div data-conditions={conditions} data-field-path={name} data-value-kind={value_kind}
@@ -129,6 +134,7 @@ export function RecordCell({
         can_upload={can_upload}
       />
       {help !== "" && <FieldDescription>{help}</FieldDescription>}
+      {error !== "" && <FieldError>{error}</FieldError>}
     </Field></div>
   );
 }

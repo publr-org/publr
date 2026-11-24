@@ -230,7 +230,9 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
     var anon = harness.ctx(.anonymous);
     const created = try SDK.dispatch(&admin, term_operations.Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"One\"}",
+        .document = .{
+            .text = "{\"name\":\"One\"}",
+        },
     });
     _ = try SDK.dispatch(&admin, Publish, .{
         .id = created.id,
@@ -238,7 +240,9 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
 
     const parked = try SDK.dispatch(&admin, term_operations.Save, .{
         .id = created.id,
-        .document = "{\"name\":\"Two\"}",
+        .document = .{
+            .text = "{\"name\":\"Two\"}",
+        },
     });
     try std.testing.expect(parked.changed);
     const public_view = try SDK.dispatch(&anon, term_operations.Get, .{
@@ -256,7 +260,9 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
 
     _ = try SDK.dispatch(&admin, term_operations.Save, .{
         .id = created.id,
-        .document = "{\"name\":\"Three\"}",
+        .document = .{
+            .text = "{\"name\":\"Three\"}",
+        },
     });
     _ = try SDK.dispatch(&admin, DiscardChanges, .{
         .id = created.id,
@@ -269,7 +275,9 @@ test "term lifecycle: pending edits, publish, delete; purge refuses children and
 
     const child = try SDK.dispatch(&admin, term_operations.Create, .{
         .taxonomy = "topics",
-        .document = "{\"name\":\"Child\"}",
+        .document = .{
+            .text = "{\"name\":\"Child\"}",
+        },
         .parent = created.id,
     });
     try std.testing.expectError(error.Conflict, SDK.dispatch(&admin, Purge, .{

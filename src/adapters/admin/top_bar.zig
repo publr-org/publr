@@ -77,7 +77,8 @@ fn entries_of(session: *const Session) []const Node {
         const icon = std.meta.stringToEnum(@FieldType(Entry.Props, "icon"), entry.icon);
         const node = admin.render.view(session.arena, Entry, .{
             .href = entry.href,
-            .label = entry.label,
+            // In the viewer's language, as the sidebars say a plugin's labels.
+            .label = session.declared(entry.label) catch entry.label,
             .icon = icon orelse .package,
             .count = items.count_of(reading, entry),
         }) catch continue;

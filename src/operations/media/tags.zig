@@ -100,7 +100,9 @@ fn create(ctx: *Ctx, wanted: []const u8) Error![]const u8 {
         return error.OutOfMemory;
     const created = try term.published(ctx, .{
         .taxonomy = model.media.tags_handle,
-        .document = document,
+        .document = .{
+            .text = document,
+        },
     });
 
     std.debug.assert(created.id.len > 0);

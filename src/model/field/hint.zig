@@ -61,6 +61,9 @@ const Bound = struct {
     value: ?f64,
 };
 
+/// The part naming the file families a media field takes; the admin names each family.
+pub const media_template = "Files: {types}";
+
 const Listed = struct {
     template: []const u8,
     name: []const u8,
@@ -312,7 +315,7 @@ fn listed(
             .values = rules.url.hosts,
         },
         .{
-            .template = "Files: {types}",
+            .template = media_template,
             .name = "types",
             .values = rules.media.types,
         },

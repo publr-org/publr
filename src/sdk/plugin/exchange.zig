@@ -146,7 +146,8 @@ fn answered(
 ) Error!provider.Claims {
     std.debug.assert(limit_ms > 0);
 
-    const claims = try declared.exchange(exchange, callback);
+    const swap = declared.exchange orelse return error.Unavailable;
+    const claims = try swap(exchange, callback);
     const finished = std.Io.Clock.awake.now(exchange.inner.io);
 
     // Its own work ran past the step's time: given up on all the same.

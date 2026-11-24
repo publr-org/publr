@@ -322,7 +322,9 @@ pub fn Of(comptime Domain: type) type {
         }
 
         /// The `before` or `after` hooks on each record's transition events, as a move of
-        /// its own runs them: one a hook refuses is refused, the rest go on.
+        /// its own runs them: one a hook refuses is refused, the rest go on. Records that
+        /// emit the same event are heard together: an installed plugin's hook is entered
+        /// once for all of them (`sdk/bulk.zig`).
         fn hooks_on_each(
             ctx: *Ctx,
             comptime stage: sdk.hooks.Stage,
@@ -331,28 +333,37 @@ pub fn Of(comptime Domain: type) type {
         ) Error!void {
             std.debug.assert(heard.len == refused.len);
 
-            for (heard, refused) |found, *reason| {
-                const one = found orelse continue;
+            // Every transition of the type first, then the transition's own hook point.
+            inline for (.{ false, true }) |own| {
+                const done = ctx.arena.alloc(bool, heard.len) catch return error.OutOfMemory;
+                const payloads = ctx.arena.alloc(?[]const u8, heard.len) catch {
+                    return error.OutOfMemory;
+                };
 
-                if (reason.* == null) {
-                    hooks_on_one(ctx, stage, one) catch |err| {
-                        reason.* = try bulk.reason_of(ctx, err);
-                    };
+                @memset(done, false);
+
+                for (heard, 0..) |found, first| {
+                    const one = found orelse continue;
+                    const name = if (own) one.named else one.name;
+
+                    if (done[first] or name.len == 0) {
+                        continue;
+                    }
+
+                    @memset(payloads, null);
+
+                    for (heard[first..], first..) |other, place| {
+                        const same = other orelse continue;
+                        const other_name = if (own) same.named else same.name;
+
+                        if (!done[place] and std.mem.eql(u8, other_name, name)) {
+                            payloads[place] = same.payload;
+                            done[place] = true;
+                        }
+                    }
+
+                    try registry.SDK.bulk.on_each(ctx, stage, name, payloads, refused);
                 }
-            }
-        }
-
-        fn hooks_on_one(
-            ctx: *Ctx,
-            comptime stage: sdk.hooks.Stage,
-            heard: lifecycle.Heard,
-        ) Error!void {
-            std.debug.assert(heard.name.len > 0);
-
-            try registry.SDK.hooks_on(ctx, stage, heard.name, heard.payload, true);
-
-            if (heard.named.len > 0) {
-                try registry.SDK.hooks_on(ctx, stage, heard.named, heard.payload, true);
             }
         }
 

@@ -10,9 +10,15 @@ const registry = @import("registry.zig");
 const lifecycle = @import("../operations/plugin/lifecycle.zig");
 const files_module = @import("sandboxed_plugins/files.zig");
 const invoke_module = @import("sandboxed_plugins/invoke.zig");
-const Loaded = @import("sandboxed_plugins/loaded.zig").Loaded;
+const loaded_module = @import("sandboxed_plugins/loaded.zig");
+const Loaded = loaded_module.Loaded;
 const interface = @import("sandboxed_plugins/interface.zig");
 const translations_module = @import("sandboxed_plugins/translations.zig");
+const components_module = @import("sandboxed_plugins/components.zig");
+const interactive_module = @import("sandboxed_plugins/interactive.zig");
+const counted_module = @import("sandboxed_plugins/counted.zig");
+const said_memory = @import("sandboxed_plugins/said_memory.zig");
+const loading = @import("sandboxed_plugins/loading.zig");
 pub const transient_module = @import("sandboxed_plugins/transient.zig");
 const Languages = @import("languages.zig").Languages;
 
@@ -21,8 +27,25 @@ pub const hash_len = files_module.hash_len;
 
 /// WAMR's own pool: modules, instances' bookkeeping, stacks. Linear memories are mapped
 /// apart, each held to its plugin's memory limit. In the browser the browser's WebAssembly
-/// keeps its own, so the pool is only the least the API takes.
+/// keeps its own, so the pool is only the least the API takes. The least it starts with: it
+/// grows to what the plugins loaded take (`heap_for`).
 pub const heap_bytes: u32 = if (wasm.in_browser) wasm.heap_bytes_min else 32 << 20;
+/// What a loaded module takes of the pool for each byte of it: its code as the interpreter
+/// rewrites it, its tables and data.
+pub const heap_per_module_byte: u64 = 4;
+/// What each loaded plugin's instance takes of the pool beside its module: its stack and
+/// bookkeeping.
+pub const heap_per_plugin: u64 = 2 << 20;
+
+/// The pool every plugin of `module_bytes` in all, `plugins` of them, loaded at once, each
+/// instantiated in one call chain, takes.
+pub fn heap_for(module_bytes: u64, plugins: u64) u64 {
+    std.debug.assert(plugins <= sandboxed_plugins_max * 2);
+    std.debug.assert(module_bytes <= @as(u64, sandboxed_plugins_max) * 2 * (16 << 20));
+
+    return @max(heap_bytes, heap_bytes + module_bytes * heap_per_module_byte +
+        plugins * heap_per_plugin);
+}
 pub const sandboxed_plugins_max: u32 = model.sandboxed_plugin.sandboxed_plugins_max;
 
 /// A loaded plugin's views' browser code (`publr.stores`), served to its frame.
@@ -68,11 +91,20 @@ pub const Host = struct {
     /// Each loaded plugin's views' browser code, when it brings any, read beside its
     /// translations.
     stores: std.ArrayList(Stores) = .empty,
+    /// Each loaded plugin's site components, read beside its translations.
+    components: std.ArrayList(sdk.sandboxed_plugins.Component) = .empty,
+    /// Each loaded plugin's interactive components, read beside its translations.
+    interactive: std.ArrayList(sdk.sandboxed_plugins.Interactive) = .empty,
     /// The catalogues they join, told after every load; none in a process without them.
     languages: ?*Languages = null,
     /// The plugins this server was started with (`serve --plugin`), loaded after the
     /// installed ones; null without any.
     transient: ?*transient_module.Transient = null,
+    /// Requests open now (`request_begin`): while any is, a plugin's instance serves every
+    /// call into it; the last one's end drops every instance.
+    requests: u32 = 0,
+    /// The open request's own figures, and whether its lines are said (`counted.zig`).
+    counted: counted_module.Request = .{},
 
     pub fn init(host: *Host, gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !void {
         std.debug.assert(dir.len > 0);
@@ -94,6 +126,8 @@ pub const Host = struct {
         host.translations = .empty;
         host.languages = null;
         host.transient = null;
+        host.requests = 0;
+        host.counted = .{};
         host.statuses = null;
         host.kinds = null;
         host.manifests = &.{};
@@ -104,7 +138,7 @@ pub const Host = struct {
     }
 
     pub fn deinit(host: *Host) void {
-        std.debug.assert(host.heap.len == heap_bytes);
+        std.debug.assert(host.heap.len >= heap_bytes);
         std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
         for (host.loaded.items) |*loaded| {
@@ -126,201 +160,72 @@ pub const Host = struct {
 
     /// Unloads everything and loads every enabled plugin again from its row and file:
     /// at start, and after any change to the plugins. A plugin that no longer loads is
-    /// logged and left out; the others run.
+    /// logged and left out; the others run (`loading.zig`).
     pub fn load_all(host: *Host, connection: *@import("../lib/db.zig").Db) !void {
         std.debug.assert(connection.transaction_depth == 0);
         std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
-        for (host.loaded.items) |*loaded| {
-            loaded.deinit();
-        }
-
-        host.loaded.clearRetainingCapacity();
-        _ = host.translations_arena.reset(.retain_capacity);
-        host.translations = .empty;
-        host.stores = .empty;
-
-        var arena_state = std.heap.ArenaAllocator.init(host.gpa);
-        defer arena_state.deinit();
-
-        const rows = try store.sandboxed_plugins.list(connection, arena_state.allocator());
-
-        var keep: std.ArrayList([]const u8) = .empty;
-
-        for (rows) |row| {
-            const kept = [_]?[]const u8{ row.hash, row.next_hash, row.previous_hash };
-
-            for (kept) |hash_or_null| {
-                if (hash_or_null) |hash| {
-                    try keep.append(arena_state.allocator(), hash);
-                }
-            }
-
-            if (!row.enabled) {
-                continue;
-            }
-
-            host.load_one(row) catch |err| {
-                std.log.err("plugin {s} did not load: {t}", .{ row.name, err });
-            };
-        }
-
-        // A plugin in the trash keeps its modules until it goes for good.
-        const in_trash = try store.trash.plugin_modules(
-            connection,
-            arena_state.allocator(),
-            sandboxed_plugins_max * 3,
-        );
-
-        try keep.appendSlice(arena_state.allocator(), in_trash);
-        host.files.sweep(keep.items);
-
-        if (host.transient) |transient| {
-            for (transient.plugins) |plugin| {
-                host.load_transient(plugin) catch |err| {
-                    std.log.err("plugin {s} did not load: {t}", .{ plugin.row.name, err });
-                };
-            }
-        }
-
-        try host.reindex();
-
-        if (host.languages) |languages| {
-            try languages.set_installed(host.translations.items);
-        }
+        return loading.load_all(host, connection);
     }
 
-    /// A transient plugin, unless an installed one of its name is loaded.
-    fn load_transient(host: *Host, plugin: transient_module.Plugin) !void {
-        std.debug.assert(plugin.bytes.len > 0);
-
-        if (host.find_loaded(plugin.row.name) != null) {
-            std.log.err("plugin {s} is installed here: --plugin {s} left out", .{
-                plugin.row.name,
-                plugin.row.name,
-            });
-            return;
-        }
-
-        try host.load_bytes(plugin.row, try host.gpa.dupe(u8, plugin.bytes));
-        host.loaded.items[host.loaded.items.len - 1].transient = host.transient;
-    }
-
-    fn load_one(host: *Host, row: store.sandboxed_plugins.Row) !void {
-        std.debug.assert(row.name.len > 0);
-        std.debug.assert(files_module.valid_hash(row.hash));
-
-        try host.load_bytes(row, try host.files.read(host.gpa, row.hash));
-    }
-
-    fn load_bytes(host: *Host, row: store.sandboxed_plugins.Row, bytes: []u8) !void {
-        std.debug.assert(row.name.len > 0);
-        std.debug.assert(bytes.len > 0);
-
-        // Read before loading: the runtime rewrites the bytes it loads.
-        const arena = host.translations_arena.allocator();
-        const brought = try translations_module.of(arena, row.name, bytes);
-
-        try host.translations.appendSlice(arena, brought);
-
-        const stores_name = @import("../sdk/plugin/manifest.zig").stores_section_name;
-        const code = wasm.section.find(bytes, stores_name) catch null;
-
-        if (code) |found| {
-            if (found.len > 0) {
-                try host.stores.append(arena, .{
-                    .plugin = try arena.dupe(u8, row.name),
-                    .code = try arena.dupe(u8, found),
-                });
-            }
-        }
-
-        const slot = try host.loaded.addOne(host.gpa);
-        errdefer _ = host.loaded.pop();
-
-        try slot.init(host.gpa, &host.runtime, row, bytes);
-    }
-
-    fn reindex(host: *Host) !void {
+    /// What the request open now cost in every plugin, the instances still held included.
+    pub fn counted_total(host: *const Host) counted_module.Plugin {
         std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
-        _ = host.index_arena.reset(.retain_capacity);
-        host.hooks = .empty;
-        host.operations = .empty;
-        host.statuses = null;
-        host.kinds = null;
-        host.manifests = &.{};
-        host.off = &.{};
+        return counted_module.total_of(host.loaded.items);
+    }
 
-        const arena = host.index_arena.allocator();
-        var statuses: std.ArrayList(model.flow.Added) = .empty;
-        const manifests = try arena.alloc(model.sandboxed_plugin.Manifest, host.loaded.items.len);
-        const there = try providers_of(arena, host.loaded.items);
+    /// A request begins: an HTTP request, or a top-level call outside one. Until it ends,
+    /// each plugin is instantiated at most once and that instance serves every call into it.
+    pub fn request_begin(host: *Host) void {
+        std.debug.assert(host.requests < loaded_module.requests_open_max);
+        std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
-        for (host.loaded.items, 0..) |*loaded, plugin_index| {
-            const manifest = &loaded.manifest;
-            const index: u32 = @intCast(plugin_index);
+        // With none open, none was left: a request never begins on another's instances.
+        if (host.requests == 0) {
+            host.drop_idle();
+            host.counted.begin();
 
-            manifests[plugin_index] = manifest.*;
-
-            for (manifest.operations, 0..) |operation, entry| {
-                const target: Target = .{
-                    .sandboxed_plugin = index,
-                    .entry = @intCast(entry),
-                };
-
-                try host.operations.put(arena, operation.name, target);
-            }
-
-            for (manifest.hooks, 0..) |hook, position| {
-                if (lifecycle.hook_refused(hook.stage, hook.target)) {
-                    std.log.warn("{s}: a {t} hook on {s} is never loaded", .{
-                        loaded.name(),
-                        hook.stage,
-                        hook.target,
-                    });
-                    continue;
-                }
-
-                const key = try model.sandboxed_plugin.hook_key(arena, hook);
-
-                const user = model.sandboxed_plugin.contract_user(manifest);
-
-                if (!model.plugin_contracts.remote_on(user, there, hook.target)) {
-                    continue;
-                }
-
-                if (loaded.holds(key)) {
-                    const entry: u32 = @intCast(manifest.operations.len + position);
-                    const target: Target = .{
-                        .sandboxed_plugin = index,
-                        .entry = entry,
-                    };
-
-                    try add_hook(&host.hooks, arena, key, target);
-                }
-            }
-
-            for (manifest.statuses) |added| {
-                if (loaded.holds(try model.sandboxed_plugin.status_key(arena, added))) {
-                    try statuses.append(arena, added);
-                }
+            for (host.loaded.items) |*loaded| {
+                loaded.counted = .{};
+                loaded.largest = .{};
             }
         }
 
-        if (statuses.items.len > 0) {
-            const built_in = registry.registered_statuses;
-            const both = [_][]const model.flow.Added{ built_in, statuses.items };
+        host.requests += 1;
+    }
 
-            host.statuses = try std.mem.concat(arena, model.flow.Added, &both);
+    /// Every instance no call is running on, dropped: what begins next begins on fresh ones.
+    /// A queued run begins and ends with this, whatever request it runs inside: one run
+    /// never works on what another left in a plugin's memory.
+    pub fn drop_idle(host: *Host) void {
+        std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
+        std.debug.assert(host.requests <= loaded_module.requests_open_max);
+
+        for (host.loaded.items) |*loaded| {
+            // A call still running on one keeps it until that call's own end.
+            if (loaded.running == 0) {
+                loaded.drop_instance();
+            }
         }
+    }
 
-        host.manifests = manifests;
-        host.off = try off_of(arena, manifests, there);
+    /// A request ends. The last one open takes every instance with it: nothing a plugin
+    /// kept in its memory is there for the next request, whoever makes it.
+    pub fn request_end(host: *Host) void {
+        std.debug.assert(host.requests > 0);
+        std.debug.assert(host.loaded.items.len <= sandboxed_plugins_max);
 
-        const known = try registry.with_kinds(arena, registry.Kinds.all, manifests);
+        host.requests -= 1;
 
-        host.kinds = if (known.len == registry.Kinds.all.len) null else known;
+        if (host.requests == 0) {
+            host.drop_idle();
+            said_memory.half_full(host.loaded.items, &host.counted);
+
+            if (host.counted.on) {
+                counted_module.say(&host.counted, host.loaded.items);
+            }
+        }
     }
 
     /// Whether `plugin`'s remote `name` is off.
@@ -352,83 +257,33 @@ pub const Host = struct {
     }
 };
 
-/// Every remote off, of the compiled-in plugins and the loaded ones, against what is there.
-fn off_of(
-    arena: std.mem.Allocator,
-    manifests: []const model.sandboxed_plugin.Manifest,
-    there: []const model.plugin_contracts.Provider,
-) ![]const Off {
-    std.debug.assert(manifests.len <= sandboxed_plugins_max);
-
-    const fit = model.plugin_contracts;
-    const natives = registry.native_users();
-    var list: std.ArrayList(Off) = .empty;
-    var found: [fit.findings_max]fit.Finding = undefined;
-
-    for (0..natives.len + manifests.len) |index| {
-        const user = if (index < natives.len)
-            natives[index]
-        else
-            model.sandboxed_plugin.contract_user(&manifests[index - natives.len]);
-        const count = fit.check(user, there, &found);
-
-        for (found[0..count]) |finding| {
-            try list.append(arena, .{
-                .plugin = user.plugin,
-                .name = finding.name,
-            });
-        }
-    }
-
-    return list.items;
-}
-
-/// The compiled-in plugins and the loaded ones, as providers of operations' shapes.
-fn providers_of(
-    arena: std.mem.Allocator,
-    loaded: []const Loaded,
-) ![]const model.plugin_contracts.Provider {
-    std.debug.assert(loaded.len <= sandboxed_plugins_max);
-
-    const natives = try registry.native_providers(arena);
-    const list = try arena.alloc(model.plugin_contracts.Provider, natives.len + loaded.len);
-
-    @memcpy(list[0..natives.len], natives);
-
-    for (loaded, list[natives.len..]) |*one, *provider| {
-        provider.* = try model.sandboxed_plugin.contract_provider(arena, &one.manifest);
-    }
-
-    return list;
-}
-
-fn add_hook(
-    hooks: *std.StringHashMapUnmanaged([]const Target),
-    arena: std.mem.Allocator,
-    key: []const u8,
-    target: Target,
-) !void {
-    std.debug.assert(key.len > 0);
-    std.debug.assert(target.entry < 1024);
-
-    const existing = hooks.get(key) orelse &[_]Target{};
-    const extended = try arena.alloc(Target, existing.len + 1);
-
-    @memcpy(extended[0..existing.len], existing);
-    extended[existing.len] = target;
-    try hooks.put(arena, key, extended);
-}
-
 test {
     _ = @import("sandboxed_plugins/scenarios.zig");
     _ = @import("sandboxed_plugins/scenarios_remotes.zig");
     _ = @import("sandboxed_plugins/scenarios_hook_runs.zig");
+    _ = @import("sandboxed_plugins/scenarios_user_types.zig");
+    _ = @import("sandboxed_plugins/scenarios_staff.zig");
+    _ = @import("sandboxed_plugins/scenarios_internal_rules.zig");
+    _ = @import("sandboxed_plugins/scenarios_laid_out.zig");
+    _ = @import("sandboxed_plugins/scenarios_hostile.zig");
     _ = @import("sandboxed_plugins/scenarios_errors.zig");
     _ = @import("sandboxed_plugins/scenarios_reads.zig");
     _ = @import("sandboxed_plugins/scenarios_domains.zig");
     _ = @import("sandboxed_plugins/scenarios_queued.zig");
     _ = @import("sandboxed_plugins/scenarios_taxonomies.zig");
+    _ = @import("sandboxed_plugins/scenarios_enable_many.zig");
+    _ = @import("sandboxed_plugins/scenarios_soak.zig");
+    _ = @import("sandboxed_plugins/scenarios_placed_fields.zig");
+    _ = @import("sandboxed_plugins/scenarios_made_files.zig");
+    _ = @import("sandboxed_plugins/scenarios_test_clock.zig");
+    _ = @import("sandboxed_plugins/scenarios_ledger.zig");
+    _ = @import("sandboxed_plugins/scenarios_instances.zig");
+    _ = @import("sandboxed_plugins/scenarios_counted.zig");
     _ = files_module;
     _ = interface;
     _ = translations_module;
+    _ = components_module;
+    _ = counted_module;
+    _ = loading;
+    _ = @import("sandboxed_plugins/indexing.zig");
 }

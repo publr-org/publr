@@ -6,7 +6,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const model = @import("../model.zig");
-const mods = @import("mods.zig");
 const registry = @import("../server/registry.zig");
 
 const Ctx = sdk.Ctx;
@@ -29,25 +28,28 @@ pub const Applied = struct {
 pub fn of(ctx: *Ctx) Error![]const Entry {
     std.debug.assert(ctx.now_ms >= 0);
 
+    if (ctx.site_currencies) |read| {
+        return read;
+    }
+
     if (!registry.SDK.modified(ctx, mod_name)) {
         return &.{};
     }
 
-    var items = [_]std.json.Value{.{
-        .object = .empty,
-    }};
-    try items[0].object.put(ctx.arena, "currencies", .{
-        .array = .init(ctx.arena),
-    });
-    var batch: mods.Batch = .{
-        .items = &items,
+    // A typed value, held laid out through the modifiers: no text is written for it.
+    const made = registry.SDK.modify_all(ctx, mod_name, Applied, &.{.{}}) catch |err| {
+        return if (err == error.Invalid) &.{} else err;
     };
 
-    try registry.SDK.modify(ctx, mod_name, &batch);
+    if (made.len != 1) {
+        return &.{};
+    }
 
-    const applied = std.json.parseFromValueLeaky(Applied, ctx.arena, batch.items[0], .{
-        .ignore_unknown_fields = true,
-    }) catch return &.{};
+    const applied = made[0];
+    // Kept for the rest of the call only in memory that lasts it. A call working in a
+    // scratch given back item by item (a write of many records) asks again for the next.
+    const lasting = ctx.kept_memory();
+    const memory = lasting orelse ctx.arena;
     var kept: std.ArrayList(Entry) = .empty;
 
     for (applied.currencies) |entry| {
@@ -58,11 +60,27 @@ pub fn of(ctx: *Ctx) Error![]const Entry {
         const well_formed = model.money.entry_problem(entry) == null;
 
         if (well_formed and entry_of(kept.items, entry.code) == null) {
-            kept.append(ctx.arena, entry) catch return error.OutOfMemory;
+            kept.append(memory, try copied(memory, entry)) catch return error.OutOfMemory;
         }
     }
 
+    if (lasting != null) {
+        ctx.site_currencies = kept.items;
+    }
+
     return kept.items;
+}
+
+fn copied(memory: std.mem.Allocator, entry: Entry) error{OutOfMemory}!Entry {
+    std.debug.assert(entry.code.len > 0);
+
+    return .{
+        .code = try memory.dupe(u8, entry.code),
+        .symbol = try memory.dupe(u8, entry.symbol),
+        .format = try memory.dupe(u8, entry.format),
+        .decimal = try memory.dupe(u8, entry.decimal),
+        .thousands = try memory.dupe(u8, entry.thousands),
+    };
 }
 
 /// The default currency, or one the site lists by its code; null when there is none.
@@ -186,16 +204,22 @@ test "money: amounts per currency, any ISO 4217 one while no plugin names the si
         \\ {"name":"price","label":"Price","kind":"money"}]}
     ;
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = definition,
+        .definition = .{
+            .text = definition,
+        },
     });
 
     const cheap = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "product",
-        .document = "{\"title\":\"Cheap\",\"price\":{\"GBP\":850,\"JPY\":1500}}",
+        .document = .{
+            .text = "{\"title\":\"Cheap\",\"price\":{\"GBP\":850,\"JPY\":1500}}",
+        },
     });
     const dear = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "product",
-        .document = "{\"title\":\"Dear\",\"price\":{\"GBP\":2400}}",
+        .document = .{
+            .text = "{\"title\":\"Dear\",\"price\":{\"GBP\":2400}}",
+        },
     });
 
     for ([_][]const u8{ cheap.id, dear.id }) |id| {
@@ -207,7 +231,7 @@ test "money: amounts per currency, any ISO 4217 one while no plugin names the si
     const got = try registry.SDK.dispatch(&system, records.Get, .{
         .id = cheap.id,
     });
-    try std.testing.expect(std.mem.indexOf(u8, got.document, "\"JPY\":1500") != null);
+    try std.testing.expect(std.mem.indexOf(u8, got.document.text, "\"JPY\":1500") != null);
 
     const found = try registry.SDK.dispatch(&system, records.List, .{
         .type = "product",
@@ -218,7 +242,9 @@ test "money: amounts per currency, any ISO 4217 one while no plugin names the si
 
     const not_iso = registry.SDK.dispatch(&system, records.Create, .{
         .type = "product",
-        .document = "{\"title\":\"Odd\",\"price\":{\"ABC\":1}}",
+        .document = .{
+            .text = "{\"title\":\"Odd\",\"price\":{\"ABC\":1}}",
+        },
     });
     try std.testing.expectError(error.Invalid, not_iso);
 

@@ -19,19 +19,16 @@ export async function send(file: File, csrf: string): Promise<{ name: string; up
   do {
     const piece = bytes.subarray(offset, offset + piece_bytes);
     const last = offset + piece.length >= bytes.length;
-    const response = await fetch(Publr.url("/api/plugin.upload"), {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
-      body: JSON.stringify({ file: file.name, offset, data: base64_of(piece), last }),
-    });
-    if (!response.ok) {
-      const answer = await response.json().catch(() => ({ error: "" }));
-      throw new Error(answer.message ?? answer.error ?? Publr.t("stopped at {offset} bytes", { offset }));
-    }
+    const answer = (await Publr.send(
+      "plugin.upload",
+      { file: file.name, offset, data: base64_of(piece), last },
+      { csrf },
+    ).catch((error: Error) => {
+      throw new Error(error.message || Publr.t("stopped at {offset} bytes", { offset }));
+    })) as { added?: unknown };
     offset += piece.length;
     state.note = Publr.t("Uploading… {percent}%", { percent: Math.round((offset / bytes.length) * 100) });
-    if (last) return (await response.json()).added;
+    if (last) return answer.added;
   } while (offset < bytes.length);
   throw new Error(Publr.t("the file is empty"));
 }

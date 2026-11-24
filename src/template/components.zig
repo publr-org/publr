@@ -14,7 +14,7 @@ const Node = ast.Node;
 const Template = ast.Template;
 const Attr = markup.Attr;
 
-const island_attributes = [_][]const u8{ "island", "dynamic", "prerender", "eager" };
+const island_attributes = [_][]const u8{ "island", "dynamic", "prerender", "eager", "follow" };
 
 /// What a component tag's attributes say: the island markers, the cache policy, and
 /// the props with their literal spellings (empty for an expression).
@@ -27,6 +27,8 @@ const CallSite = struct {
     condition: []const u8 = "",
     prerender: bool = false,
     eager: bool = false,
+    /// `follow`: a dynamic island drawn again when what it read changes.
+    follow: bool = false,
     max_age: ?u32 = null,
     props: std.ArrayList(ast.PropArg) = .empty,
     literals: std.ArrayList([]const u8) = .empty,
@@ -124,6 +126,7 @@ fn read_attribute(
         site.dynamic_bare = site.dynamic_bare or std.mem.eql(u8, attr.name, "dynamic");
         site.prerender = site.prerender or std.mem.eql(u8, attr.name, "prerender");
         site.eager = site.eager or std.mem.eql(u8, attr.name, "eager");
+        site.follow = site.follow or std.mem.eql(u8, attr.name, "follow");
 
         return;
     }
@@ -543,6 +546,13 @@ fn emit_island(
     // interactive, exactly as it makes it an island-bearing page.
     template.has_interactive = template.has_interactive or callee.has_interactive;
 
+    if (site.follow and !callee.dynamic) {
+        return compiler.fail(
+            "<{s} follow> follows what a dynamic island reads: add `dynamic`",
+            .{name},
+        );
+    }
+
     const key = try compile.island_key(compiler.arena, callee.rel, site.literals.items);
     try register_island(compiler, name, callee, index, site, key, max_age);
 
@@ -573,6 +583,7 @@ fn emit_island(
             .prerender = site.prerender,
             .deferred = !site.eager,
             .condition = site.condition,
+            .follow = site.follow,
             .fallback = fallback,
         },
     });

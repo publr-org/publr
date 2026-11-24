@@ -1,6 +1,9 @@
 const std = @import("std");
 const db = @import("../lib/db.zig");
 
+pub const values = @import("operation/values.zig");
+pub const lists = @import("operation/lists.zig");
+
 pub const name_len_max: u32 = 64;
 pub const type_depth_max: u32 = 8;
 pub const fields_max: u32 = 64;
@@ -259,6 +262,14 @@ pub fn validate(comptime Operation: type) void {
 
         validate_deprecated(Operation);
 
+        if (values.problem(Operation)) |message| {
+            @compileError(message);
+        }
+
+        if (lists.problem(Operation)) |message| {
+            @compileError(message);
+        }
+
         if (@hasDecl(Operation, "failures")) {
             for (Operation.failures) |failure| {
                 if (!valid_failure(failure)) {
@@ -311,33 +322,9 @@ pub fn assert_name(comptime name: []const u8) void {
     }
 }
 
-/// JSON an operation answers as it is, written through untouched: a query's result.
-pub const Json = struct {
-    text: []const u8,
-
-    pub fn jsonStringify(json: Json, writer: anytype) !void {
-        std.debug.assert(json.text.len > 0);
-
-        try writer.beginWriteRaw();
-        try writer.writer.writeAll(json.text);
-        writer.endWriteRaw();
-    }
-
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !Json {
-        const value = try std.json.Value.jsonParse(allocator, source, options);
-        const text = std.json.Stringify.valueAlloc(allocator, value, .{}) catch {
-            return error.OutOfMemory;
-        };
-
-        return .{
-            .text = text,
-        };
-    }
-};
+/// A value whose shape comes with the data, as an operation's `In` or `Out` holds it: JSON
+/// text in Publr, bytes read where they lie in an installed plugin's module.
+pub const Json = @import("operation/json.zig").Json;
 
 pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
     comptime {

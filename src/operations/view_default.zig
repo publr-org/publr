@@ -51,7 +51,7 @@ pub const Default = struct {
         type: []const u8,
     };
     pub const Out = struct {
-        query: []const u8,
+        query: sdk.operation.Json,
         layer: []const u8,
         /// Administrators saved a default for everyone.
         everyone: bool,
@@ -65,7 +65,9 @@ pub const Default = struct {
         .type = "post",
     };
     pub const example_out: Out = .{
-        .query = example_query,
+        .query = .{
+            .text = example_query,
+        },
         .layer = "core",
         .everyone = false,
         .title_field = "title",
@@ -211,9 +213,9 @@ pub const Default = struct {
         .layer = "Where it came from: `mine`, `everyone`, `plugin` or `core`",
         .everyone = "Whether administrators saved a default for everyone",
         .title_field = "The field the first column shows: the record's title",
-        .columns = "Every column the list can show",
-        .filterable = "The fields offered to filter by, each with its operators",
-        .orderable = "What the list can be ordered by",
+        .columns = "Every column the list can show, the first 200",
+        .filterable = "The fields offered to filter by, each with its operators, the first 200",
+        .orderable = "What the list can be ordered by, the first 200",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
@@ -224,27 +226,39 @@ pub const Default = struct {
         const everyone = try stored(ctx, null, row.id);
         const resolved = data_view.resolve(ctx.arena, registry.kinds(ctx), .{
             .handle = row.def.handle,
-            .fields = row.def.fields,
+            .fields = try readable(ctx, row.def.fields),
             .plugin = row.def.view,
             .everyone = everyone,
             .mine = try stored(ctx, owner, row.id),
         }) catch return error.OutOfMemory;
 
         return .{
-            .query = model.view.encode(ctx.arena, resolved.start) catch return error.Invalid,
+            .query = .{
+                .text = model.view.encode(ctx.arena, resolved.start) catch return error.Invalid,
+            },
             .layer = @tagName(resolved.layer),
             .everyone = everyone != null,
             .title_field = row.def.title_field,
-            .columns = try plugin_columns(ctx, row.def.handle, try columns_of(
+            .columns = first_page(Named, try plugin_columns(ctx, row.def.handle, try columns_of(
                 ctx,
                 row.def,
                 resolved.columns,
-            )),
-            .filterable = try filterable_of(ctx, resolved.filterable),
-            .orderable = try columns_of(ctx, row.def, resolved.orderable),
+            ))),
+            .filterable = first_page(Filterable, try filterable_of(ctx, resolved.filterable)),
+            .orderable = first_page(Named, try columns_of(ctx, row.def, resolved.orderable)),
         };
     }
 };
+
+/// What the view options offer, at most a page of each: a type's fields with core's
+/// columns may come to a few more.
+fn first_page(comptime Item: type, items: []const Item) []const Item {
+    const end = @min(items.len, sdk.operation.page_limit_max);
+
+    std.debug.assert(end <= items.len);
+
+    return items[0..end];
+}
 
 pub const SaveDefault = struct {
     pub const name = "view.save_default";
@@ -257,7 +271,7 @@ pub const SaveDefault = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         type: []const u8,
-        query: []const u8,
+        query: sdk.operation.Json,
         for_everyone: bool = false,
     };
     pub const Out = struct {
@@ -265,7 +279,9 @@ pub const SaveDefault = struct {
     };
     pub const example: In = .{
         .type = "post",
-        .query = "{\"order\":\"title\",\"per_page\":50}",
+        .query = .{
+            .text = "{\"order\":\"title\",\"per_page\":50}",
+        },
     };
     pub const example_out: Out = .{
         .saved = true,
@@ -286,7 +302,7 @@ pub const SaveDefault = struct {
         }
 
         const row = try type_of(ctx, in.type);
-        const checked = try view_operations.check_query(ctx, in.query);
+        const checked = try view_operations.check_query(ctx, in.query.text);
         var filters = model.view.decode(ctx.arena, checked) catch return error.Invalid;
 
         filters.types = &.{};
@@ -423,6 +439,30 @@ fn columns_of(
     return out;
 }
 
+/// The fields the caller may read (`.visibility`): the only ones a list shows, filters or
+/// orders by.
+fn readable(ctx: *Ctx, fields: []const model.field.Def) Error![]const model.field.Def {
+    std.debug.assert(fields.len <= model.field.fields_max);
+
+    const visibility = @import("document/visibility.zig");
+
+    if (!visibility.any_hidden(fields)) {
+        return fields;
+    }
+
+    var kept: std.ArrayList(model.field.Def) = .empty;
+
+    for (fields) |field| {
+        if (!field.visibility.hidden() or visibility.sees(ctx, field.visibility)) {
+            kept.append(ctx.arena, field) catch return error.OutOfMemory;
+        }
+    }
+
+    std.debug.assert(kept.items.len <= fields.len);
+
+    return kept.items;
+}
+
 fn label_of(def: model.content_type.Def, name: []const u8) []const u8 {
     std.debug.assert(name.len > 0);
 
@@ -489,10 +529,12 @@ test "a type's default view: core's, everyone's, the caller's own; reset goes a 
     const root_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "root@example.com",
         .display_name = "Root",
+        .roles = &.{"editor"},
     });
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
     var root = harness.ctx(.{
         .user = .{
@@ -508,30 +550,36 @@ test "a type's default view: core's, everyone's, the caller's own; reset goes a 
     });
 
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = try model.content_type.encode(
-            harness.fixed.allocator(),
-            model.content_type.test_post,
-        ),
+        .definition = .{
+            .text = try model.content_type.encode(
+                harness.fixed.allocator(),
+                model.content_type.test_post,
+            ),
+        },
     });
 
     const fresh = try SDK.dispatch(&ada, Default, .{
         .type = "post",
     });
     try std.testing.expectEqualStrings("core", fresh.layer);
-    try std.testing.expect(std.mem.indexOf(u8, fresh.query, "\"-updated\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, fresh.query.text, "\"-updated\"") != null);
     try std.testing.expectEqualStrings("Views", fresh.filterable[2].label);
     try std.testing.expectEqualStrings("more", fresh.filterable[2].operators[3].id);
 
     const everyone_in: SaveDefault.In = .{
         .type = "post",
-        .query = "{\"order\":\"title\"}",
+        .query = .{
+            .text = "{\"order\":\"title\"}",
+        },
         .for_everyone = true,
     };
     try std.testing.expectError(error.Denied, SDK.dispatch(&ada, SaveDefault, everyone_in));
     _ = try SDK.dispatch(&root, SaveDefault, everyone_in);
     _ = try SDK.dispatch(&ada, SaveDefault, .{
         .type = "post",
-        .query = "{\"order\":\"-views\",\"per_page\":50}",
+        .query = .{
+            .text = "{\"order\":\"-views\",\"per_page\":50}",
+        },
     });
 
     const mine = try SDK.dispatch(&ada, Default, .{
@@ -539,8 +587,8 @@ test "a type's default view: core's, everyone's, the caller's own; reset goes a 
     });
     try std.testing.expectEqualStrings("mine", mine.layer);
     try std.testing.expect(mine.everyone);
-    try std.testing.expect(std.mem.indexOf(u8, mine.query, "\"-views\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, mine.query, "\"type_view\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, mine.query.text, "\"-views\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, mine.query.text, "\"type_view\":true") != null);
     try std.testing.expectEqualStrings("everyone", (try SDK.dispatch(&root, Default, .{
         .type = "post",
     })).layer);

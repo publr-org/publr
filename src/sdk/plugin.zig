@@ -14,6 +14,7 @@ const content_type = @import("../model/content_type.zig");
 const field = @import("../model/field.zig");
 const kinds = @import("../model/kinds.zig");
 const role = @import("../model/role.zig");
+const user_type = @import("../model/user_type.zig");
 const provider = @import("provider.zig");
 const runtime = @import("plugin/sandboxed.zig");
 const db = @import("../lib/db.zig");
@@ -35,6 +36,8 @@ pub const OwnedCollection = struct {
     collection: InternalCollection,
 };
 pub const Role = role.Declared;
+/// A type of user a plugin registers, in `.user_types`: `.{ .name, .label, .apps }`.
+pub const UserType = user_type.Declared;
 pub const SignInProvider = provider.SignInProvider;
 /// What a plugin declares to run in the sandbox: see `plugin/sandboxed.zig`.
 pub const Limits = runtime.Limits;
@@ -416,6 +419,35 @@ pub fn roles_of(comptime Plugin: type) []const Role {
     }
 }
 
+/// The types of user a plugin registers (`.user_types`), each marked with the plugin.
+pub fn user_types_of(comptime Plugin: type) []const user_type.Declared {
+    comptime {
+        std.debug.assert(@hasDecl(Plugin, "manifest"));
+
+        if (!plugin_define.has(Plugin, "user_types")) {
+            return &.{};
+        }
+
+        const given: []const user_type.Declared = plugin_define.get(Plugin, "user_types");
+        var list: []const user_type.Declared = &.{};
+
+        for (given) |declared| {
+            var owned = declared;
+
+            owned.plugin = Plugin.manifest.name;
+            list = list ++ &[_]user_type.Declared{owned};
+        }
+
+        if (user_type.problem(list)) |found| {
+            @compileError("plugin " ++ Plugin.manifest.name ++ ": " ++ found);
+        }
+
+        const done = list;
+
+        return done;
+    }
+}
+
 /// Every remote a plugin declares names a plugin it depends on or works with. When that
 /// plugin is compiled in too: one it needs must fit, or the build fails; one it only works
 /// with that does not fit (or is outside the range) is off, and why.
@@ -599,7 +631,16 @@ fn owned_of(comptime Plugin: type) []const []const u8 {
 
 pub fn Merged(comptime plugins: anytype) type {
     comptime {
-        @setEvalBranchQuota(100_000);
+        // Merging checks each plugin's declarations (its providers' and remotes' shapes):
+        // the budget grows with what the plugins declare, never fixed.
+        const published = @import("published.zig");
+        var declared_total: u32 = 0;
+
+        for (plugins) |Plugin| {
+            declared_total += published.declared_count(Plugin);
+        }
+
+        @setEvalBranchQuota(100_000 + declared_total * published.branches_per_declared);
 
         var operations: []const type = &.{};
         var namespaces: []const sdk.operation.Namespace = &.{};
@@ -624,6 +665,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
         var providers: []const @import("../model/provider.zig").Registered = &.{};
+        var user_types: []const user_type.Declared = &.{};
         var routes: []const route.Declared = &.{};
         var row_actions: []const RowAction = &.{};
         var pages: []const OwnedPage = &.{};
@@ -843,6 +885,7 @@ pub fn Merged(comptime plugins: anytype) type {
             }
 
             providers = providers ++ @import("contract.zig").registered_of(Plugin);
+            user_types = user_types ++ user_types_of(Plugin);
 
             if (plugin_define.has(Plugin, "sign_in_provider")) {
                 var declared: SignInProvider = plugin_define.get(Plugin, "sign_in_provider");
@@ -850,6 +893,10 @@ pub fn Merged(comptime plugins: anytype) type {
                 declared.plugin = Plugin.manifest.name;
                 sign_in_providers = sign_in_providers ++ &[_]SignInProvider{declared};
             }
+        }
+
+        if (user_type.problem(user_types)) |found| {
+            @compileError("the plugins' user types: " ++ found);
         }
 
         if (delivery_gates.len > sdk.delivery.gates_max) {
@@ -867,6 +914,13 @@ pub fn Merged(comptime plugins: anytype) type {
                 if (std.mem.eql(u8, declared.name, other.name)) {
                     @compileError("two plugins declare the sign-in provider " ++ declared.name);
                 }
+            }
+
+            const both_read = declared.from_request != null and
+                provider.from_request_of(sign_in_providers[index + 1 ..]) != null;
+
+            if (both_read) {
+                @compileError("two sign-in providers read the request; a site has one proxy");
             }
         }
 
@@ -954,6 +1008,8 @@ pub fn Merged(comptime plugins: anytype) type {
             pub const merged_sign_in_providers = sign_in_providers;
             /// Every provider the plugins register into a contract, in plugin order.
             pub const merged_providers = providers;
+            /// Every type of user the plugins register, in plugin order.
+            pub const merged_user_types = user_types;
             pub const merged_routes = routes;
             /// Every plugin's actions on other pages' rows, in name order.
             pub const merged_row_actions = row_actions;
@@ -1169,7 +1225,9 @@ pub const testing = struct {
 
                 _ = try ctx.call(record.Create, .{
                     .type = "hello.greeting",
-                    .document = document,
+                    .document = .{
+                        .text = document,
+                    },
                 });
 
                 const all = try ctx.call(record.List, .{

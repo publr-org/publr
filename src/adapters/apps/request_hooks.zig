@@ -8,6 +8,9 @@ const identity_module = @import("../rest/identity.zig");
 const site_dimensions = @import("../../operations/dimensions.zig");
 const model_dimension = @import("../../model/dimension.zig");
 const Project = @import("../../server/project.zig").Project;
+const request_data = @import("../../sdk/request_data.zig");
+const registry = @import("../../server/registry.zig");
+const visitor = @import("visitor.zig");
 
 const Request = http.Request;
 const Response = http.Response;
@@ -23,6 +26,10 @@ pub fn run(
 ) !bool {
     std.debug.assert(target.path.len > 0);
     std.debug.assert(project.request_hooks.len <= sdk.page_request.hooks_max);
+
+    if (try door(project, target, request, response, arena)) {
+        return true;
+    }
 
     if (project.request_hooks.len == 0) {
         return false;
@@ -61,6 +68,106 @@ pub fn run(
     target.place.chosen = try chosen_of(&ctx, page.chosen_pairs());
 
     return false;
+}
+
+/// What plugins read at the door: a path under a prefix one answers runs its operation and
+/// sends the visitor where it says; a landing bringing query parameters plugins read is kept
+/// for the visitor. True when the visitor was sent elsewhere.
+fn door(
+    project: *const Project,
+    target: *const Project.Target,
+    request: *Request,
+    response: *Response,
+    arena: std.mem.Allocator,
+) !bool {
+    std.debug.assert(target.path.len > 0);
+    std.debug.assert(project.connection.transaction_depth == 0);
+
+    var ctx = identity_module.context(project, arena, .system);
+
+    ctx.address = sdk.limits.address_of(arena, request.peer(), request.header("x-forwarded-for"));
+
+    const referrer = request.header("referer") orelse "";
+
+    if (try request_data.answering(&ctx, target.path)) |found| {
+        const visitor_id = try visitor.ensure(project, request, response, arena);
+
+        try request_data.record(&ctx, visitor_id, target.path, request.query(), referrer);
+
+        return redirect_by(&ctx, found, visitor_id, target.path, response);
+    }
+
+    if (request.query().len == 0 or !try reads_queries(&ctx)) {
+        return false;
+    }
+
+    const visitor_id = try visitor.ensure(project, request, response, arena);
+
+    request_data.record(&ctx, visitor_id, target.path, request.query(), referrer) catch |err| {
+        std.log.warn("visit not kept: {t}", .{err});
+    };
+
+    return false;
+}
+
+fn reads_queries(ctx: *sdk.Ctx) !bool {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    for (try request_data.declared(ctx)) |one| {
+        if (one.may_read and one.reads.query.len > 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// The plugin's operation answering a prefix, run as the plugin for the visitor: where it
+/// sends them, a path on the site. One that fails, or names no path, leaves the page as is.
+fn redirect_by(
+    ctx: *sdk.Ctx,
+    found: request_data.Answering,
+    visitor_id: []const u8,
+    path: []const u8,
+    response: *Response,
+) !bool {
+    std.debug.assert(found.operation.len > 0);
+    std.debug.assert(path.len > 0);
+
+    const Answer = struct {
+        to: []const u8 = "",
+        status: u16 = 302,
+    };
+
+    ctx.plugin = found.plugin;
+    ctx.visitor = visitor_id;
+
+    const input = try std.json.Stringify.valueAlloc(ctx.arena, .{
+        .path = path,
+        .rest = found.rest,
+    }, .{});
+    const output = registry.SDK.call_json(ctx, found.operation, input) catch |err| {
+        std.log.warn("{s} did not answer {s}: {t}", .{ found.operation, path, err });
+        return false;
+    };
+    const answer = std.json.parseFromSliceLeaky(Answer, ctx.arena, output, .{
+        .ignore_unknown_fields = true,
+    }) catch return false;
+    const local = answer.to.len > 0 and answer.to[0] == '/' and
+        (answer.to.len == 1 or (answer.to[1] != '/' and answer.to[1] != '\\'));
+    const status: u16 = switch (answer.status) {
+        301, 302, 303, 307, 308 => answer.status,
+        else => 302,
+    };
+
+    if (!local) {
+        return false;
+    }
+
+    try response.set_header("Cache-Control", "no-store");
+    try response.redirect(@fromBackingInt(@intCast(status)), answer.to);
+
+    return true;
 }
 
 fn header_of(source: *const anyopaque, name: []const u8) ?[]const u8 {

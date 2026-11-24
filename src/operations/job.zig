@@ -32,16 +32,30 @@ pub const List = struct {
     pub const description = "The jobs waiting to run and the ones that failed for good";
     pub const details =
         \\Administrators only. Waiting jobs come first, soonest due first, then the failed
-        \\ones; at most 200. Changes nothing.
+        \\ones, a page of 200 at a time: `next` continues it. Changes nothing.
     ;
     pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
+    pub const In = struct {
+        after: []const u8 = "",
+    };
     pub const Out = struct {
-        jobs: []const store.job_queue.Listed,
+        jobs: []const Listed,
+        /// Where the next page of jobs starts; empty after the last.
+        next: []const u8 = "",
         /// The jobs that run again and again, as the administrator set them.
         repeating: []const Repeating = &.{},
         /// The site's time zone, which repeating jobs' times are read in.
         time_zone: []const u8 = "UTC",
+    };
+    pub const Listed = struct {
+        id: i64,
+        plugin: []const u8,
+        name: []const u8,
+        input: sdk.operation.Json,
+        due_at: i64,
+        attempts: i64,
+        state: []const u8,
+        problem: []const u8,
     };
     pub const Repeating = struct {
         plugin: []const u8,
@@ -60,25 +74,33 @@ pub const List = struct {
             .id = 7,
             .plugin = "hello",
             .name = "show",
-            .input = "{\"greeting\":\"0a1b2c3d4e5f60718293a4b5\"}",
+            .input = .{
+                .text = "{\"greeting\":\"0a1b2c3d4e5f60718293a4b5\"}",
+            },
             .due_at = 1792405860000,
             .attempts = 0,
             .state = "waiting",
             .problem = "",
         }},
     };
+    pub const field_docs: sdk.operation.Docs(In) = .{
+        .after = "The page after this one: the `next` the last page answered",
+    };
     pub const output_docs: sdk.operation.Docs(Out) = .{
-        .jobs = "Each job: its id, its plugin and name, its input as JSON, when it is due " ++
+        .jobs = "Each job: its id, its plugin and name, its input, when it is due " ++
             "(ms), how many runs failed, `waiting` or `failed`, and the last problem",
+        .next = "The next page's `after`; empty after the last",
         .repeating = "Each repeating job: its plugin and name, how often (`every`, " ++
             "`minutes`), the hour and minute it runs at on the site's clock, and whether " ++
             "it is paused",
         .time_zone = "The site's time zone, `UTC` unless one was chosen",
     };
 
-    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(ctx.now_ms >= 0);
+
+        const from = try position_of(in.after);
 
         const declared = try registry.SDK.jobs.repeating(ctx);
         const repeating = try ctx.arena.alloc(Repeating, declared.len);
@@ -95,13 +117,67 @@ pub const List = struct {
             };
         }
 
+        const page_max = sdk.operation.page_limit_max;
+        const queued = try store.job_queue.list_after(ctx.db, ctx.arena, from, page_max);
+        const listed = try ctx.arena.alloc(Listed, queued.len);
+
+        for (queued, listed) |job, *shown| {
+            shown.* = .{
+                .id = job.id,
+                .plugin = job.plugin,
+                .name = job.name,
+                .input = .{
+                    .text = if (job.input.len > 0) job.input else "{}",
+                },
+                .due_at = job.due_at,
+                .attempts = job.attempts,
+                .state = job.state,
+                .problem = job.problem,
+            };
+        }
+
+        const last = if (queued.len == page_max) queued[queued.len - 1] else null;
+
         return .{
-            .jobs = try store.job_queue.list(ctx.db, ctx.arena, 200),
+            .jobs = listed,
+            .next = if (last) |job| std.fmt.allocPrint(ctx.arena, "{d}:{d}:{d}", .{
+                @intFromBool(std.mem.eql(u8, job.state, "failed")),
+                job.due_at,
+                job.id,
+            }) catch return error.OutOfMemory else "",
             .repeating = repeating,
             .time_zone = try store.settings.get(ctx.db, ctx.arena, jobs.zone_key) orelse "UTC",
         };
     }
 };
+
+/// `<failed 0 or 1>:<due_at>:<id>`, as `List` answers it in `next`; null for the first page.
+fn position_of(after: []const u8) Error!?store.job_queue.Position {
+    if (after.len == 0) {
+        return null;
+    }
+
+    if (after.len > 64) {
+        return error.Invalid;
+    }
+
+    std.debug.assert(after.len > 0 and after.len <= 64);
+
+    var parts = std.mem.splitScalar(u8, after, ':');
+    const failed = parts.next() orelse return error.Invalid;
+    const due_at = parts.next() orelse return error.Invalid;
+    const job_id = parts.next() orelse return error.Invalid;
+
+    if (parts.next() != null or failed.len != 1 or (failed[0] != '0' and failed[0] != '1')) {
+        return error.Invalid;
+    }
+
+    return .{
+        .failed = failed[0] == '1',
+        .due_at = std.fmt.parseInt(i64, due_at, 10) catch return error.Invalid,
+        .id = std.fmt.parseInt(i64, job_id, 10) catch return error.Invalid,
+    };
+}
 
 pub const Answer = struct {
     pub const name = "job.answer";
@@ -307,7 +383,46 @@ pub const SetTimeZone = struct {
     }
 };
 
-pub const operations = [_]type{ List, Answer, RunAgain, Schedule, SetTimeZone };
+pub const TimeZone = struct {
+    pub const name = "project.time_zone";
+    pub const open = true;
+    pub const description = "The site's time zone: its name and its rule";
+    pub const details =
+        \\Anyone. What a plugin's `ctx.time_zone()` answers: the zone's name (`Europe/Warsaw`,
+        \\`UTC` until one is chosen with `project.set_time_zone`) and its rule as a POSIX
+        \\time zone string, summer time included, for reading moments on the site's clock.
+    ;
+    pub const kind: sdk.operation.Kind = .read;
+    pub const In = struct {};
+    pub const Out = struct {
+        name: []const u8,
+        rule: []const u8,
+    };
+    pub const example: In = .{};
+    pub const example_out: Out = .{
+        .name = "Europe/Warsaw",
+        .rule = "CET-1CEST,M3.5.0,M10.5.0/3",
+    };
+    pub const output_docs: sdk.operation.Docs(Out) = .{
+        .name = "The zone's name",
+        .rule = "Its rule: offsets and when summer time starts and ends",
+    };
+
+    pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(ctx.now_ms >= 0);
+
+        const chosen = try store.settings.get(ctx.db, ctx.arena, jobs.zone_key) orelse "UTC";
+        const rule = zone.rule_of(chosen) orelse "UTC0";
+
+        return .{
+            .name = chosen,
+            .rule = rule,
+        };
+    }
+};
+
+pub const operations = [_]type{ List, Answer, RunAgain, Schedule, SetTimeZone, TimeZone };
 
 /// Who owns core's own queued work on the job queue.
 pub const core = store.job_queue.core;
@@ -474,6 +589,7 @@ const runs = .{
     .{ "find_wait", @import("plugin/market.zig").wait_job },
     .{ "media_import", @import("media/import.zig").import_job },
     .{ "transcribe", @import("ai/speech.zig").transcribe_job },
+    .{ "ledger_expire", @import("ledger.zig").expire_job },
 };
 
 /// Runs core's job `name` (the worker, `registry.core_job`); answers why it failed, empty
@@ -519,10 +635,12 @@ test "work waited on: waiting until its job answers, read only by who asked, kep
     const ada_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "ada@example.com",
         .display_name = "Ada",
+        .roles = &.{"editor"},
     });
     const bo_account = try SDK.dispatch(&admin, users.Create, .{
         .email = "bo@example.com",
         .display_name = "Bo",
+        .roles = &.{"editor"},
     });
     var ada = harness.ctx(.{
         .user = .{

@@ -146,7 +146,10 @@ test "core's migrations from before the baseline are neither run nor unknown, an
     defer kept.finalize();
 
     try std.testing.expect(try kept.step());
-    try std.testing.expectEqual(@as(i64, 2), (try kept.read(Row, arena)).count);
+    // The two kept, beside the rows of core's own migrations since the baseline.
+    const recorded: i64 = 2 + @as(i64, @intCast(db.migrations.core.len));
+
+    try std.testing.expectEqual(recorded, (try kept.read(Row, arena)).count);
 }
 
 test "a column this release needs and no migration made is refused, nothing changed" {

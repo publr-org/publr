@@ -1,5 +1,6 @@
 //! What crosses the sandbox's boundary, shared by the host and the guest: both are built from
-//! this file, so a status means the same on either side. Everything else is JSON.
+//! this file, so a status means the same on either side. Values cross in the plugin's own
+//! structs (`shape_wire.zig`).
 const std = @import("std");
 const operation = @import("../operation.zig");
 
@@ -63,6 +64,34 @@ pub fn error_of(code: u32) Error {
     return error.Invalid;
 }
 
+/// One message asked of the host's catalogues (`publr_translate`): where its texts are in
+/// the guest's memory, and the number its plural is chosen by, when it has one.
+pub const Message = extern struct {
+    context: u32,
+    context_len: u32,
+    id: u32,
+    id_len: u32,
+    plural: u32,
+    plural_len: u32,
+    counted: u32,
+    count: f64,
+
+    pub fn of(context: []const u8, id: []const u8, plural: []const u8, count: ?f64) Message {
+        std.debug.assert(id.len > 0);
+
+        return .{
+            .context = @truncate(@intFromPtr(context.ptr)),
+            .context_len = @intCast(context.len),
+            .id = @truncate(@intFromPtr(id.ptr)),
+            .id_len = @intCast(id.len),
+            .plural = @truncate(@intFromPtr(plural.ptr)),
+            .plural_len = @intCast(plural.len),
+            .counted = @intFromBool(count != null),
+            .count = count orelse 0,
+        };
+    }
+};
+
 /// Who is calling, as the host's `ctx.caller()` sees it, so the guest's answers the same.
 pub const Caller = struct {
     from: @import("caller_view.zig").Kind = .plugin,
@@ -75,15 +104,20 @@ pub const Caller = struct {
     granted: bool = false,
 };
 
+/// The answer an entry is handed when it reads none: every entry but an `after` hook.
+pub const None = struct {};
+
 /// What the guest reads around its entry's own input: when it runs and for whom, whether a
 /// queued job runs its last attempt, and the operation's answer an `after` hook reads. `Out`
-/// is `struct {}` for every entry but an `after` hook.
+/// is `None` for every entry but an `after` hook.
 pub fn Envelope(comptime In: type, comptime Out: type) type {
     return struct {
         now_ms: i64,
         on_behalf_of: ?[]const u8 = null,
         visitor: []const u8 = "",
         caller: Caller = .{},
+        /// The language the call speaks (`pl`); empty when none is known.
+        language: []const u8 = "",
         last: bool = false,
         in: In,
         out: ?Out = null,

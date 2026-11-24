@@ -16,7 +16,20 @@ export const state = Publr.reactive({
 const page_address = /^([a-z0-9-]{1,48})?(\?[^#]*)?$/;
 const admin_address = /^\/admin(\/[^\s#]*)?$/;
 
-export function go(to: string, plugin: string, current: string) {
+export function go(to: string, plugin: string, current: string, frame?: HTMLIFrameElement) {
+  // The frame's own address (a view asking `ctx.navigate(location.pathname + search)` once
+  // a write went through) is the admin page around it, never the bare frame: a panel's
+  // page is drawn again, a page's opens with the query asked.
+  const own = frame ? own_query(frame, to) : null;
+  const same = frame ? new URL(frame.src, window.location.href).search === own : false;
+  if (own !== null && (current === "" || same)) {
+    window.location.reload();
+    return;
+  }
+  if (own !== null) {
+    window.location.href = Publr.url(`/admin/plugin/${plugin}/${current}${own}`);
+    return;
+  }
   // The frame's links were written under the page's base (`/branches/x/admin/…`).
   to = Publr.path(to);
   if (admin_address.test(to)) {
@@ -30,19 +43,76 @@ export function go(to: string, plugin: string, current: string) {
   window.location.href = Publr.url(`/admin/plugin/${plugin}/${page}${match[2] ?? ""}`);
 }
 
-export async function run(operation: string, input: unknown, csrf: string): Promise<unknown> {
-  const response = await fetch(
-    Publr.url(`/api/${operation}`),
-    {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Csrf-Token": csrf },
-      body: JSON.stringify(input ?? {}),
+/** When `to` is an absolute path to the frame's own document, its query (`?id=…`, or
+ * empty); else null. */
+function own_query(frame: HTMLIFrameElement, to: string): string | null {
+  if (!to.startsWith("/")) return null;
+  const at = new URL(frame.src, window.location.href);
+  const asked = new URL(to, at);
+  return asked.pathname === at.pathname ? asked.search : null;
+}
+
+/** What a frame's reads read, as the change log's keys, and the revision they were read
+ * at: while it is on screen the admin asks `/admin/live` every few seconds whether one
+ * changed, and tells the frame to read again when one did. */
+type Followed = { keys: Set<string>; since: number; timer: number };
+const followed = new WeakMap<HTMLIFrameElement, Followed>();
+const follow_ms = 3000;
+
+async function look(frame: HTMLIFrameElement, follow: Followed) {
+  if (!frame.isConnected) {
+    clearInterval(follow.timer);
+    followed.delete(frame);
+    return;
+  }
+  if (document.hidden || follow.keys.size === 0) return;
+  const keys = Array.from(follow.keys).join(",");
+  const asked = `/admin/live?since=${follow.since}&keys=${encodeURIComponent(keys)}`;
+  const response = await fetch(Publr.url(asked), { credentials: "same-origin" }).catch(() => null);
+  const answer = response && response.ok ? await response.json().catch(() => null) : null;
+  if (!answer || !answer.changed) return;
+  follow.keys.clear();
+  follow.since = Number(answer.revision) || follow.since;
+  reply(frame, { kind: "changed" });
+}
+
+/** Keeps what a read the frame asked for read, from its answer's headers. */
+function follow(frame: HTMLIFrameElement | undefined, response: Response) {
+  const keys = response.headers.get("X-Publr-Follows");
+  const revision = Number(response.headers.get("X-Publr-Revision"));
+  if (!frame || !keys || !Number.isFinite(revision)) return;
+  let held = followed.get(frame);
+  if (!held) {
+    held = { keys: new Set(), since: revision, timer: 0 };
+    const kept = held;
+    held.timer = setInterval(() => look(frame, kept), follow_ms) as unknown as number;
+    followed.set(frame, held);
+  }
+  held.since = Math.min(held.since, revision);
+  for (const key of keys.split(",")) held.keys.add(key);
+}
+
+/** What a frame is told of a failed call: the message, and when the server refused it, its
+ * code and field problems (`Publr.send` refuses with both). */
+export function refusal(id: number, error: unknown): object {
+  const refused = error as { message?: string; code?: string; problems?: unknown };
+  return {
+    id,
+    ok: false,
+    error: String(refused.message ?? ""),
+    code: typeof refused.code === "string" ? refused.code : "",
+    problems: Array.isArray(refused.problems) ? refused.problems : [],
+  };
+}
+
+export async function run(operation: string, input: unknown, csrf: string, frame?: HTMLIFrameElement): Promise<unknown> {
+  return Publr.send(operation, input, {
+    csrf,
+    headers: { "X-Publr-Follow": "1" },
+    response: (response) => {
+      if (response.ok) follow(frame, response);
     },
-  );
-  const answer = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `refused (${response.status})`);
-  return answer;
+  });
 }
 
 export function reply(frame: HTMLIFrameElement, answer: object) {
@@ -64,9 +134,9 @@ export async function answer(
     return;
   }
   try {
-    reply(frame, { id, ok: true, value: await run(operation, input, csrf) });
+    reply(frame, { id, ok: true, value: await run(operation, input, csrf, frame) });
   } catch (error) {
-    reply(frame, { id, ok: false, error: (error as Error).message });
+    reply(frame, refusal(id, error));
   }
 }
 
@@ -90,7 +160,7 @@ export const received = (event: MessageEvent) => {
   if (!frame || event.source !== frame.contentWindow || !message || message.publr !== 1) return;
   if (message.kind === "hello") reply(frame, { kind: "ready" });
   if (message.kind === "height") state.height = Math.min(Math.max(Number(message.height) || 0, 0), 100000);
-  if (message.kind === "navigate") go(String(message.to), state.plugin, state.page);
+  if (message.kind === "navigate") go(String(message.to), state.plugin, state.page, frame);
   const id = Number(message.id);
   if (message.kind === "call") answer(frame, id, String(message.operation), message.input, state.operations, state.csrf);
   if (message.kind === "log") log(frame, id, Number(message.after) || 0, state.plugin, state.csrf);
@@ -126,7 +196,7 @@ export function PluginFrame({ src, title, plugin, page, csrf, operations, fill =
         src={src}
         title={title}
         sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-        class="block min-h-full w-full flex-1 border-0"
+        class="block min-h-full w-full flex-auto shrink-0 border-0"
         style={fill ? "height:100vh" : state.height > 0 ? `height:${state.height}px` : ""}
         onWindowMessage={received}
       ></iframe>

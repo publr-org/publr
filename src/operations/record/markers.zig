@@ -32,7 +32,7 @@ pub const Marker = struct {
     href: []const u8 = "",
 };
 
-pub const markers_max: u32 = 256;
+pub const markers_max: u32 = 200;
 
 /// The name a type's markers are applied under: `promo.markers`.
 pub fn markers_name(arena: std.mem.Allocator, type_name: []const u8) Error![]const u8 {
@@ -56,7 +56,7 @@ pub fn Markers(comptime Domain: type) type {
         pub const open = true;
         pub const In = struct {
             type: []const u8,
-            document: []const u8,
+            document: sdk.operation.Json,
             /// The record, saved: what it holds back is never required.
             id: []const u8 = "",
         };
@@ -66,7 +66,9 @@ pub fn Markers(comptime Domain: type) type {
         pub const example_signed_in = true;
         pub const example: In = .{
             .type = "post",
-            .document = "{\"title\":\"Hello\"}",
+            .document = .{
+                .text = "{\"title\":\"Hello\"}",
+            },
         };
         pub const example_out: Out = .{
             .markers = &.{},
@@ -96,7 +98,8 @@ pub fn Markers(comptime Domain: type) type {
                 };
             }
 
-            const record = @import("../../lib/json.zig").parse(Value, ctx.arena, in.document, .{
+            const text = in.document.text;
+            const record = @import("../../lib/json.zig").parse(Value, ctx.arena, text, .{
                 .allocate = .alloc_always,
             }) catch return error.Invalid;
             const held_back = if (in.id.len == 0) "" else blk: {

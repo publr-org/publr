@@ -39,6 +39,10 @@ pub const Input = struct {
     verified: bool = false,
     name: ?[]const u8 = null,
     avatar: ?[]const u8 = null,
+    /// Behind an identity-aware proxy, the roles a new account gets when nobody holds the
+    /// identity: what an administrator chose for new members (none at all, or staff too).
+    /// Null: no account is made this way. The system alone passes it.
+    new_account_roles: ?[]const []const u8 = null,
 };
 
 /// The identity as the model sees it; `Invalid` when the provider or id is malformed.
@@ -78,6 +82,8 @@ pub const in_docs: sdk.operation.Docs(Input) = .{
     .verified = "Whether the provider vouches for that email",
     .name = "A display name, if the provider gives one",
     .avatar = "An avatar URL, if the provider gives one",
+    .new_account_roles = "Behind an identity-aware proxy, the roles a new account gets " ++
+        "when nobody holds the identity; the system alone passes it",
 };
 
 pub const SignIn = struct {
@@ -128,7 +134,13 @@ pub const SignIn = struct {
         std.debug.assert(ctx.now_ms >= 0);
 
         const identity = try identity_of(in);
-        const resolved = try resolve(ctx, identity);
+        // Only the system speaks for the proxy's standing rule: nobody else makes an account
+        // with roles by signing in.
+        if (in.new_account_roles != null and ctx.caller != .system) {
+            return error.Denied;
+        }
+
+        const resolved = try resolve(ctx, identity, in.new_account_roles);
         const found = try store.users.find_by_id(ctx.db, ctx.arena, resolved.user_id) orelse {
             return error.BadCredentials;
         };
@@ -164,7 +176,11 @@ const Resolved = struct {
 };
 
 /// Whose identity this is, linking or creating on the way; `BadCredentials` when nobody's.
-fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
+fn resolve(
+    ctx: *Ctx,
+    identity: model.Identity,
+    new_account_roles: ?[]const []const u8,
+) Error!Resolved {
     std.debug.assert(ctx.caller != .anonymous);
     std.debug.assert(model.valid(identity));
 
@@ -198,6 +214,10 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
         };
     }
 
+    if (new_account_roles) |roles| {
+        return new_member(ctx, identity, email, roles);
+    }
+
     const open_role = try store.settings.get(ctx.db, ctx.arena, open_sign_up_key) orelse {
         ctx.keep(publr_auth.IdentityRefused, .{
             .provider = identity.provider,
@@ -211,11 +231,58 @@ fn resolve(ctx: *Ctx, identity: model.Identity) Error!Resolved {
         return error.Invalid;
     }
 
+    // A role that reaches the admin now (its grants changed since) makes no account.
+    if (try sdk.stored_roles.staff(ctx, open_role)) {
+        return error.Denied;
+    }
+
     const user_id = try store.users.insert(ctx.db, ctx.io, ctx.arena, .{
         .email = email,
         .display_name = display_name(identity, email),
         .password_hash = null,
         .roles = &.{open_role},
+        .now_ms = ctx.now_ms,
+    });
+
+    try link(ctx, user_id, identity);
+    ctx.emit(@import("user.zig").UserCreated, .{
+        .user = user_id,
+    });
+
+    return .{
+        .user_id = user_id,
+        .created = true,
+    };
+}
+
+/// A new account behind an identity-aware proxy, with the roles an administrator chose for
+/// new members of the organisation, staff roles included. The one exception to "only staff
+/// make staff": staff made the rule and the proxy vouches for the person. Never sign-up,
+/// a user type, an app's actions or a signed link: those stay visitor-only.
+fn new_member(
+    ctx: *Ctx,
+    identity: model.Identity,
+    email: []const u8,
+    roles: []const []const u8,
+) Error!Resolved {
+    std.debug.assert(ctx.caller == .system);
+    std.debug.assert(identity.verified);
+
+    if (roles.len > role.user_roles_max) {
+        return error.Invalid;
+    }
+
+    for (roles) |name| {
+        if (!try sdk.stored_roles.exists(ctx, name)) {
+            return error.Invalid;
+        }
+    }
+
+    const user_id = try store.users.insert(ctx.db, ctx.io, ctx.arena, .{
+        .email = email,
+        .display_name = display_name(identity, email),
+        .password_hash = null,
+        .roles = roles,
         .now_ms = ctx.now_ms,
     });
 
@@ -277,9 +344,9 @@ pub const Configure = struct {
     pub const description = "Open or close sign-up through providers, and with which role";
     pub const details =
         \\Administrators only. `open_sign_up` names the role a new account gets when a
-        \\provider identity nobody holds signs in with a verified email: any declared role
-        \\but `admin`. Empty closes sign-up again: only accounts that exist sign in, which
-        \\is the default.
+        \\provider identity nobody holds signs in with a verified email: a visitor's role,
+        \\never one reaching the admin (refused as denied). Empty closes sign-up again: only
+        \\accounts that exist sign in, which is the default.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -289,10 +356,10 @@ pub const Configure = struct {
         open_sign_up: []const u8,
     };
     pub const example: In = .{
-        .open_sign_up = "editor",
+        .open_sign_up = "customer",
     };
     pub const example_out: Out = .{
-        .open_sign_up = "editor",
+        .open_sign_up = "customer",
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .open_sign_up = "The role new accounts get, or empty to sign in existing accounts only",
@@ -317,6 +384,11 @@ pub const Configure = struct {
 
         if (!declared or std.mem.eql(u8, in.open_sign_up, role.admin)) {
             return error.Invalid;
+        }
+
+        // Signing up makes a visitor, never staff: a role reaching the admin is refused.
+        if (try sdk.stored_roles.staff(ctx, in.open_sign_up)) {
+            return error.Denied;
         }
 
         try store.settings.set(ctx.db, open_sign_up_key, in.open_sign_up, ctx.now_ms);
@@ -445,9 +517,20 @@ test "open sign-up creates an account with the role, from a verified email only"
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Configure, admin));
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Configure, unknown));
 
+    // A visitor's role only: one reaching the admin is refused.
+    const staff_role: Configure.In = .{
+        .open_sign_up = "editor",
+    };
+    try std.testing.expectError(error.Denied, SDK.dispatch(&system, Configure, staff_role));
+
+    _ = try SDK.dispatch(&system, @import("role.zig").Create, .{
+        .name = "customer",
+        .label = "Customer",
+        .grants = &.{"app.*"},
+    });
     _ = try SDK.dispatch(&system, Configure, Configure.example);
     const opened = try SDK.dispatch(&system, Status, .{});
-    try std.testing.expectEqualStrings("editor", opened.open_sign_up);
+    try std.testing.expectEqualStrings("customer", opened.open_sign_up);
 
     var unverified = example_in;
     unverified.verified = false;
@@ -460,7 +543,7 @@ test "open sign-up creates an account with the role, from a verified email only"
 
     const created = try SDK.dispatch(&system, SignIn, example_in);
     try std.testing.expect(created.created);
-    try std.testing.expectEqualStrings("editor", created.roles[0]);
+    try std.testing.expectEqualStrings("customer", created.roles[0]);
 
     const connection = &harness.fixture.connection;
     const arena = harness.fixed.allocator();

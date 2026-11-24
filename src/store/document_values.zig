@@ -429,6 +429,41 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             return found.items;
         }
 
+        /// A page of `referrers` (live values only), after the pair `after` names, at most
+        /// `limit`: what a list of them shows a page at a time.
+        pub fn referrers_page(
+            connection: *db.Db,
+            arena: std.mem.Allocator,
+            target_id: []const u8,
+            after: Referrer,
+            limit: u32,
+        ) db.Error![]Referrer {
+            std.debug.assert(target_id.len > 0);
+            std.debug.assert(limit > 0 and limit <= 1000);
+
+            var select = try connection.prepare("SELECT DISTINCT record, field FROM " ++ table ++
+                " WHERE slot = 'live' AND kind = 'ref' AND value = ?1 AND " ++
+                "(record, field) > (?2, ?3) ORDER BY record, field LIMIT ?4");
+            defer select.finalize();
+
+            try select.bind_text(1, target_id);
+            try select.bind_text(2, after.record_id);
+            try select.bind_text(3, after.field);
+            try select.bind_int(4, limit);
+
+            var found: std.ArrayList(Referrer) = .empty;
+
+            while (try select.step()) {
+                const row = try select.read(Referrer, arena);
+
+                found.append(arena, row) catch return error.OutOfMemory;
+            }
+
+            std.debug.assert(found.items.len <= limit);
+
+            return found.items;
+        }
+
         /// Another document of a type (not `except`) holding a text value in a field, if any
         /// (unique lookups).
         pub fn find_by_text(

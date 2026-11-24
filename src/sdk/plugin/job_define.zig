@@ -38,6 +38,7 @@ pub const DueInput = struct {
 const minute_ms: i64 = 60 * 1000;
 const hour_ms: i64 = 60 * minute_ms;
 const day_ms: i64 = 24 * hour_ms;
+const year_ms: i64 = 365 * day_ms;
 
 /// A job code queues with `ctx.enqueue(Job, in)`: `publr.job.define(In, .{ .name, .run,
 /// .on_failure, .on_conflict })`.
@@ -156,15 +157,16 @@ fn at_of(comptime given: anytype) At {
     return made;
 }
 
-/// `.due = .{ .field = .starts_at, .before = .{ .days = 3 } }` on a job of a content record
-/// (`publr.job.define(Events.record, ...)`), the field a `publr.Time`.
+/// `.due = .{ .field = .starts_at, .before = .{ .days = 3 } }` on a job of a record, content
+/// or internal (`publr.job.define(Events.record, ...)`), the field a `publr.Time`; with
+/// `.yearly = true` it runs on every return of the date (`.field = .birthday`).
 fn due_of(comptime Record: type, comptime given: anytype) Due {
     comptime {
         const Given = @TypeOf(given);
 
-        if (!@hasDecl(Record, "publr_record_definition") or Record.is_internal) {
-            @compileError("a job with `.due` takes the content record it follows: " ++
-                "`publr.job.define(Events.record, .{ .due = ... })`");
+        if (!@hasDecl(Record, "publr_record_definition")) {
+            @compileError("a job with `.due` takes the record it follows: " ++
+                "`publr.job.define(Subscriptions.record, .{ .due = ... })`");
         }
 
         if (!@hasField(Given, "field")) {
@@ -185,22 +187,31 @@ fn due_of(comptime Record: type, comptime given: anytype) Due {
         }
 
         var offset_ms: i64 = 0;
+        var yearly = false;
 
         for (std.meta.fieldNames(Given)) |name| {
             if (std.mem.eql(u8, name, "before")) {
                 offset_ms -= offset_of(given.before);
             } else if (std.mem.eql(u8, name, "after")) {
                 offset_ms += offset_of(given.after);
+            } else if (std.mem.eql(u8, name, "yearly")) {
+                yearly = given.yearly;
             } else if (!std.mem.eql(u8, name, "field")) {
-                @compileError("`.due` takes `.field`, `.before` and `.after`, not `." ++ name ++
-                    "`");
+                @compileError("`.due` takes `.field`, `.before`, `.after` and `.yearly`, not `." ++
+                    name ++ "`");
             }
+        }
+
+        if (yearly and (offset_ms <= -year_ms or offset_ms >= year_ms)) {
+            @compileError("`.due`: a yearly moment's offset is under a year");
         }
 
         return .{
             .type = Record.type_name,
             .field = field,
             .offset_ms = offset_ms,
+            .internal = Record.is_internal,
+            .yearly = yearly,
         };
     }
 }

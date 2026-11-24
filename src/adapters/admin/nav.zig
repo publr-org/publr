@@ -91,7 +91,8 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
         const by_status: Filters = .{
             .clauses = &clauses,
         };
-        const row = try row_of(arena, status.label, by_status, address, on_view);
+        const label = try session.declared(status.label);
+        const row = try row_of(arena, label, by_status, address, on_view);
         statuses.append(arena, row) catch return error.OutOfMemory;
     }
 
@@ -104,7 +105,7 @@ pub fn nav_content(session: *Session, current: Current) Error!admin.render.Node 
 
     const in_sections = try @import("sections.zig").all(session);
 
-    for (listed.types) |summary| {
+    for (try @import("nouns.zig").summaries(session, types.Summary, listed.types)) |summary| {
         // A plugin's section lists its own types; they are not listed twice.
         if (summary.menu_hidden or model.design.is_design(summary.handle) or
             @import("sections.zig").holds(in_sections, summary.handle))

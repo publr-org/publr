@@ -337,11 +337,23 @@ test "the last identity of an account without a password cannot be dropped" {
     var system = harness.ctx(.system);
 
     try SDK.bootstrap(&system);
-    _ = try SDK.dispatch(&system, identity_operations.Configure, .{
+    _ = try SDK.dispatch(&system, @import("../role.zig").Create, .{
+        .name = "member",
+        .label = "Member",
+        .grants = &.{"app.*"},
+    });
+    // Open sign-up makes visitors only: a role reaching the admin is refused.
+    const staff_role = SDK.dispatch(&system, identity_operations.Configure, .{
         .open_sign_up = "editor",
+    });
+
+    try std.testing.expectError(error.Denied, staff_role);
+    _ = try SDK.dispatch(&system, identity_operations.Configure, .{
+        .open_sign_up = "member",
     });
     const sign_in = identity_operations.SignIn;
     const created = try SDK.dispatch(&system, sign_in, identity_operations.example_in);
+    // Acting as an editor on the account that signed up: the identities are what is tested.
     var as_created = harness.ctx(.{
         .user = .{
             .id = created.user_id,

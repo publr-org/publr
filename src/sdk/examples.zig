@@ -17,20 +17,38 @@ pub fn check(comptime registry: type, comptime plugin: []const u8) !void {
     const declared = registry.registry;
     var failed: u32 = 0;
 
-    inline for (declared.operations, 0..) |Operation, index| {
-        const ours = comptime std.mem.eql(u8, declared.operation_owners[index], plugin) and
-            @hasDecl(Operation, "definition");
+    inline for (comptime owned(declared, plugin)) |index| {
+        const Operation = declared.operations[index];
 
-        if (ours) {
-            run_one(registry.SDK, Operation) catch |err| {
-                std.debug.print("example of {s}: {t}\n", .{ Operation.name, err });
-                failed += 1;
-            };
-        }
+        run_one(registry.SDK, Operation) catch |err| {
+            std.debug.print("example of {s}: {t}\n", .{ Operation.name, err });
+            failed += 1;
+        };
     }
 
     if (failed > 0) {
         return error.ExampleFailed;
+    }
+}
+
+/// Where the plugin's own operations (`publr.operation.define`) are in the registry, found
+/// once: a budget that grows with the registry, never a scan per operation.
+fn owned(comptime declared: sdk.Registry, comptime plugin: []const u8) []const u32 {
+    comptime {
+        // Each owner's name compared once, a few branches a byte.
+        @setEvalBranchQuota(1000 + declared.operations.len * (plugin.len + 16) * 4);
+
+        std.debug.assert(declared.operation_owners.len == declared.operations.len);
+
+        var found: []const u32 = &.{};
+
+        for (declared.operations, declared.operation_owners, 0..) |Operation, owner, index| {
+            if (std.mem.eql(u8, owner, plugin) and @hasDecl(Operation, "definition")) {
+                found = found ++ .{index};
+            }
+        }
+
+        return found;
     }
 }
 
@@ -71,9 +89,21 @@ fn lacking(ctx: *const sdk.Ctx, comptime Operation: type, err: anyerror) bool {
         error.NotFound, error.Denied, error.BadCredentials, error.Conflict => true,
         error.Unavailable => true,
         error.Invalid => ctx.problems.len == 0,
-        error.Failed => declared_failure(Operation, ctx.failure),
+        error.Failed => declared_failure(Operation, ctx.failure) or not_found(ctx.failure),
         else => false,
     };
+}
+
+/// Nothing found, or the site's state, in the words of an operation the example's own
+/// called (a ledger account an empty site never opened, nothing owed on it yet): a 404 or a
+/// 409 is never a refusal of the example's input, as `NotFound` and `Conflict` are not.
+fn not_found(failure: ?sdk.operation.Failure) bool {
+    const named = failure orelse return false;
+
+    std.debug.assert(named.status >= 400);
+    std.debug.assert(named.status <= 599);
+
+    return named.status == 404 or named.status == 409;
 }
 
 fn declared_failure(comptime Operation: type, failure: ?sdk.operation.Failure) bool {

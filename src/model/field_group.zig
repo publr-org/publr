@@ -149,6 +149,75 @@ fn rule_applies(rule: conditions.Rule, context: Context) bool {
     });
 }
 
+/// Whether a plugin's group is placed on records of the type `handle`: a location group
+/// naming `destination` content holds, its other rules by core's fields alone (a plugin's
+/// rule has no record to decide on here). A group placed nowhere in particular (no location)
+/// is not placed on types: types are named.
+pub fn placed_on_type(declared: Options, handle: []const u8) bool {
+    std.debug.assert(handle.len > 0);
+    std.debug.assert(declared.location.len <= conditions.groups_max);
+
+    if (!declared.active) {
+        return false;
+    }
+
+    const context: Context = .{
+        .destination = .content,
+        .type = handle,
+    };
+
+    for (declared.location) |group| {
+        var names_content = false;
+        var matched = group.rules.len > 0;
+
+        for (group.rules) |rule| {
+            const content = std.mem.eql(u8, rule.field, "destination") and
+                std.mem.eql(u8, rule.value, "content") and rule.operator == .equal;
+
+            names_content = names_content or content;
+
+            if (!rule_applies(rule, context)) {
+                matched = false;
+            }
+        }
+
+        if (names_content and matched) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+test "a group is placed on the types its content location names, never by default" {
+    const placed: Options = .{
+        .location = &.{.{
+            .rules = &.{
+                .{
+                    .field = "destination",
+                    .value = "content",
+                },
+                .{
+                    .field = "type",
+                    .value = "products.product",
+                },
+            },
+        }},
+    };
+
+    try std.testing.expect(placed_on_type(placed, "products.product"));
+    try std.testing.expect(!placed_on_type(placed, "post"));
+    try std.testing.expect(!placed_on_type(.{}, "post"));
+    try std.testing.expect(!placed_on_type(.{
+        .location = &.{.{
+            .rules = &.{.{
+                .field = "destination",
+                .value = "user",
+            }},
+        }},
+    }, "post"));
+}
+
 /// The fields as checked: as they are while the group applies, else with nothing required
 /// (a copy in `arena`).
 pub fn checked_fields(

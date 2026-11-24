@@ -9,6 +9,7 @@ const template_render = @import("../../template/render.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
+const user_types = @import("../../sdk/user_types.zig");
 const model_dimension = @import("../../model/dimension.zig");
 const record_operations = @import("../../operations/record.zig");
 const user_operations = @import("../../operations/user.zig");
@@ -40,6 +41,13 @@ pub const islands_prefix = "/_islands/";
 pub const assets_prefix = "/_app/";
 /// The app's compiled stylesheet, among its assets.
 pub const stylesheet = engine.compile.stylesheet;
+
+/// What a dynamic island read, and the index's revision before it read it: a page following
+/// it asks what changed after that revision.
+pub const Follows = struct {
+    deps: Deps,
+    revision: u64,
+};
 
 /// What a render read, as the index's keys. Bounded: a render past `keys_max` distinct
 /// reads marks the set incomplete; callers must not certify it as fresh.
@@ -386,6 +394,9 @@ pub const Context = struct {
     params: Params = .{},
     /// Set by the static build to learn what the page read.
     deps: ?*Deps = null,
+    /// A dynamic island learning what it read, for a page following it (`follow`): its
+    /// `deps` are these.
+    follows: ?*Follows = null,
     /// The render's loaded entries; null reads every reference afresh.
     memo: ?*Memo = null,
     /// A per-request render (a live page, a dynamic fragment): dynamic islands flatten.
@@ -489,6 +500,10 @@ pub const Context = struct {
             }
 
             try ctx.write_module(writer, "stores.js");
+
+            for (ctx.app.spec.interactive_modules) |path| {
+                try ctx.write_module(writer, path);
+            }
         }
 
         if (!page.page_islands()) {
@@ -750,7 +765,7 @@ pub const Context = struct {
         const entries = try ctx.arena.alloc(Entry, listed.records.len);
 
         for (listed.records, listed.documents, entries) |record, text, *out| {
-            out.* = try ctx.adopt(record, text);
+            out.* = try ctx.adopt(record, text.text);
         }
 
         return entries;
@@ -885,7 +900,7 @@ pub const Context = struct {
             error.NotFound => return error.EntryNotFound,
             else => return err,
         };
-        return ctx.entry_of(got.record, got.document);
+        return ctx.entry_of(got.record, got.document.text);
     }
 
     /// A record and its document text as templates read them.
@@ -1047,7 +1062,7 @@ pub const Context = struct {
             return ctx.app.built_at;
         }
 
-        return sdk.context.wall_clock_ms(ctx.project.io);
+        return ctx.project.now_ms();
     }
 
     /// The caller a per-request render reads records as: the request's session user, within
@@ -1131,6 +1146,9 @@ pub const Context = struct {
             return blank;
         }
 
+        // Unrolled once over every operation: the budget grows with the list.
+        @setEvalBranchQuota(1000 + registry.SDK.operations.len * 8);
+
         inline for (registry.SDK.operations) |Operation| {
             if (std.mem.eql(u8, Operation.name, operation)) {
                 return ctx.run(Operation, blank);
@@ -1161,6 +1179,10 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.visitor = ctx.visitor_id;
+
+        if (ctx.deps) |deps| {
+            sdk_ctx.reads = deps.reads();
+        }
 
         const out = registry.SDK.dispatch(&sdk_ctx, Operation, in) catch return blank;
         const text = try std.json.Stringify.valueAlloc(ctx.arena, out, .{});
@@ -1240,7 +1262,7 @@ pub const Context = struct {
     pub fn sdk_context(ctx: *const Context) sdk.Ctx {
         std.debug.assert(ctx.project.connection.transaction_depth == 0);
         std.debug.assert(ctx.live or ctx.preview or ctx.caller == .anonymous);
-        std.debug.assert(ctx.deps == null or ctx.caller == .anonymous);
+        std.debug.assert(ctx.deps == null or ctx.caller == .anonymous or ctx.follows != null);
 
         var sdk_ctx = identity_module.context(ctx.project, ctx.arena, ctx.caller);
         // A preview reads as whoever opened it, every record as its edit copy; a page drawn
@@ -1253,6 +1275,12 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.address_code = ctx.place.code;
+
+        // A plugin's words on the page are in the page's language, whatever the admin speaks.
+        if (ctx.place.locale.len > 0) {
+            sdk_ctx.language.locale = ctx.place.locale;
+        }
+
         sdk_ctx.dimensions = site_dimensions.page_pairs(
             &sdk_ctx,
             ctx.place.code,
@@ -1279,6 +1307,22 @@ pub fn identify(
     std.debug.assert(app.spec.roles.len <= @import("../../model/app.zig").roles_max);
 
     const identity = identity_module.identify_on_site(request, arena, project);
+
+    // An account holding types of user and no staff role is somebody only in the apps one
+    // of its types opens.
+    if (identity.user_types.len > 0 and identity.caller == .user) {
+        var reading = identity_module.context(project, arena, .system);
+        const opened = user_types.opens_any(
+            &reading,
+            identity.user_types,
+            identity.caller.user.roles,
+            app.spec.name,
+        ) catch false;
+
+        if (!opened) {
+            return .{};
+        }
+    }
 
     if (app.spec.roles.len == 0 or identity.caller != .user) {
         return identity;
@@ -1348,7 +1392,7 @@ pub fn user_field_of(
     const document = @import("../../lib/json.zig").parse(
         std.json.Value,
         arena,
-        got.document,
+        got.document.text,
         .{},
     ) catch return null;
     const dot = std.mem.indexOfScalar(u8, path, '.') orelse return null;

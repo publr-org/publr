@@ -21,6 +21,7 @@ each concern lives in `build/<topic>.zig`.
 | `zig build migration-draft` | Draft `src/lib/db/migrations/unreleased.zig` from what `schema.sql` adds to the last release's. |
 | `zig build two-mode` | Run every test plugin installed and compiled in, and compare the answers. |
 | `zig build sandboxed-plugins` | Build the plugins under `-Dsandboxed-plugins` as installed plugins into `zig-out/sandboxed-plugins/<name>.wasm`, with the `publr` just built; see [The plugins](#the-plugins). |
+| `zig build scale` | With a shop's plugins under `-Dplugins` (or the preset's): build them as modules, install them in a fresh site and take one big order through every step at 20, 200 and 2,000 lines (other sizes after `--`), each step's cost held to its budget; see [The scale check](#the-scale-check). Not part of `verify-full`: it builds thirteen modules with LLVM and takes minutes. |
 | `zig build browser` | Build the browser target into `zig-out/browser/` (`publr.wasm`, `index.html`, `publr-worker.js`); see [Publr in the browser](browser.md). |
 | `zig build vendor-import` | Re-import `vendor/` from local upstream archives (`-Darchives=<dir>`, default `.vendor-archives/`). |
 | `zig build vendor-cache-check` | Prove a no-op build recompiles no vendor C. |
@@ -35,7 +36,7 @@ each concern lives in `build/<topic>.zig`.
 | `-Dapps=<dir>` | `apps` | the folder of apps compiled in, relative to this repository; absent is none (`build/apps.zig`) |
 | `-Dapps-max=<n>` | `32` | how many apps one project may compile in, 1 to 1024 |
 | `-Dplugins=<dir>` | `plugins` | the folder of plugins, one each, relative to this repository; `publr.zon` beside it names the ones compiled in (`.plugins = .{ .native = ... }`), the rest are built for the sandbox |
-| `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/plugins` and `<dir>/publr.zon` (each option above still wins); the binary reads the preset's apps wherever it runs when the project has no `apps/` of its own |
+| `-Dpreset=<dir>` | none | a project's parts at once: `<dir>/apps`, `<dir>/plugins` and `<dir>/publr.zon` (each option above still wins); the binary reads the preset's apps wherever it runs when the project has no `apps/` of its own; a change to its `publr.zon`, or a plugin folder added or removed, configures the build again |
 
 ## Vendors and libraries
 
@@ -83,10 +84,14 @@ the build compiles what it printed, with its cache under `.zig-cache/publr-plugi
 plugin, the `publr` module and a generated root that exports the module's entry points
 (`publr_alloc`, `publr_free`, `publr_invoke`, `publr_manifest`) for `wasm32-freestanding`
 with a 256 KiB stack, by Zig's own backend (no LLVM, so modules are larger than an LLVM
-build's). The `publr`
-module is the core's own source, packed into the binary with the build (`sdk_archive`);
-what the sandbox never reaches (SQLite, the HTTP server, the apps) is an empty module in
-its place, so a plugin that reaches for them fails to compile. The manifest (see
+build's). `zig build sandboxed-plugins`, which builds the modules Publr ships, compiles
+with LLVM instead, optimised for speed (`--llvm`): an installed plugin runs metered in
+WAMR's interpreter, where LLVM's code takes three to four times fewer instructions than
+Zig's own backend's; the test plugins keep the command's backend, so its path stays
+tested. The `publr` module is the core's own source, packed into the binary with the build
+(`sdk_archive`); what the sandbox never reaches (SQLite, the HTTP server, the apps) is an
+empty module in its place, so a plugin that reaches for them fails to compile. The manifest
+(see
 [Plugins](../plugins.md#installed-plugins-dlp)) is read by running `publr_manifest` in the
 sandbox and written into the module's `publr` custom section. The WebAssembly runtime
 itself is `../lib/wasm` (WAMR's fast interpreter, vendored), a path dependency like
@@ -209,3 +214,27 @@ CodeLLDB configurations: `publr serve (8090)`, `publr <command>` (asks for the a
 and `publr tests`, which runs `zig build test-exe` first to put the test binary at
 `zig-out/bin/publr-tests`. Breakpoints in `.zig` files work; the recommended extensions are
 `vadimcn.vscode-lldb` and `ziglang.vscode-zig`.
+
+## The scale check
+
+`zig build scale -Dplugins=../plugins` (or `-Dpreset=<dir>`) guards what plugins cost,
+installed and compiled in. It is declared when the plugins' folder holds the shop's thirteen
+plugins and `checkout/e2e/budgets.sh`. The step builds the modules and two Publrs of its
+own, whatever `publr.zon` compiles in: one with none of the shop compiled in, which gets
+the modules installed, and one with all thirteen compiled in. It runs that script on each,
+one after the other: for each order size a fresh site, the staff's steps on one order (add
+lines, set customer, place, the first and the tenth payment, view, refund, history, the
+order's page) and a visitor's over HTTP (add to cart, view, choose delivery, place). Publr itself counts each
+step (`PUBLR_COUNTERS`, [plugins.md](../plugins.md#what-a-request-cost)): instructions,
+calls into core, invocations, instances, the most memory a plugin held, core's call scratch
+and request arena. Each figure is held to the step's row in `checkout/e2e/budgets.txt`; one
+over its budget fails the step with the size, the step, the measure and both numbers. The
+budgets live with the plugins they measure. Compiled in, a step's row is named
+`compiled.<step>`: nothing is counted in instructions, calls or instances there, so the row
+holds the pieces of work the plugins began, the most memory they held together, and core's
+call scratch and request arena. To set them again after a deliberate change:
+`MEASURE=1 sh checkout/e2e/budgets.sh <publr> <modules>` prints what it measured as rows
+(`-` for the modules with a Publr that has the shop compiled in).
+
+It is its own step, not part of `verify` or `verify-full`: the modules are compiled with
+LLVM (minutes from an empty cache) and the run itself takes about a minute.

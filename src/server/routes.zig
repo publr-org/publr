@@ -8,6 +8,7 @@ const heartbeat = @import("../operations/heartbeat.zig");
 const http = @import("../lib/http.zig");
 const admin = @import("../adapters/admin.zig");
 const identity_module = @import("../adapters/rest/identity.zig");
+const visitor_auth = @import("../adapters/rest/visitor_auth.zig");
 const rest_auth = @import("../adapters/rest/auth.zig");
 const rest_providers = @import("../adapters/rest/providers.zig");
 const apps_adapter = @import("../adapters/apps.zig");
@@ -64,6 +65,8 @@ pub fn register(router: *http.Router) void {
     router.post("/api/auth/sign-in", &rest_auth.sign_in);
     router.post("/api/auth/sign-out", &rest_auth.sign_out);
     router.post("/api/auth/set-password", &rest_auth.set_password);
+    router.post("/api/auth/sign-up", &visitor_auth.sign_up);
+    router.post("/api/auth/reset", &visitor_auth.reset);
     router.get("/api/auth/session", &rest_auth.whoami);
     router.get("/auth/sign-on", &rest_auth.sign_on);
     router.post("/auth/sign-on", &rest_auth.sign_on);
@@ -94,6 +97,7 @@ pub fn register(router: *http.Router) void {
 
     provider_routes.register(router);
     webhook_routes.register(router);
+    @import("../adapters/rest/links.zig").register(router);
     admin.register(router);
     media_adapter.register(router);
     rest.register(router);
@@ -103,7 +107,7 @@ pub fn register(router: *http.Router) void {
         0
     else
         19 + plugin_operator_commands.routes_count;
-    const fixed = 9 + operator_routes + provider_routes.routes_count +
+    const fixed = 12 + operator_routes + provider_routes.routes_count +
         webhook_routes.routes_count + native_plugin_routes.routes_count -
         native_plugin_routes.streams_count;
 
@@ -330,6 +334,7 @@ test "the admin's door: an account whose roles reach none of its operations stay
     const visitor = try registry.SDK.dispatch(&system, users.Create, .{
         .email = "v@x.test",
         .display_name = "V",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
     const connection = system.db;
@@ -345,7 +350,9 @@ test "the admin's door: an account whose roles reach none of its operations stay
         "/admin/login",
         "email=v%40x.test&password=correct+horse+battery",
     );
-    try std.testing.expect(std.mem.indexOf(u8, refused.body, admin.auth_pages.no_access) != null);
+    const refusal = admin.auth_pages.wrong_credentials;
+
+    try std.testing.expect(std.mem.indexOf(u8, refused.body, refusal) != null);
     try std.testing.expectEqualStrings("", flow.cookie);
 
     // Signed in elsewhere (an app's own sign-in), every admin URL sends it back.
@@ -363,7 +370,7 @@ test "the admin's door: an account whose roles reach none of its operations stay
     }
 
     const login = try flow.call("GET", "/admin/login", "");
-    try std.testing.expect(std.mem.indexOf(u8, login.body, admin.auth_pages.no_access) != null);
+    try std.testing.expect(std.mem.indexOf(u8, login.body, refusal) == null);
 }
 
 test "the rail shows an editor Content, and an administrator Structure and Settings too" {
@@ -399,6 +406,7 @@ test "the rail shows an editor Content, and an administrator Structure and Setti
     _ = try registry.SDK.dispatch(&system, users.Create, .{
         .email = "ed@x.test",
         .display_name = "Ed",
+        .roles = &.{"editor"},
         .password = "correct horse battery",
     });
     flow.cookie = "";

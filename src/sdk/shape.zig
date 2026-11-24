@@ -3,7 +3,8 @@ const std = @import("std");
 pub const Error = error{ShapeMismatch};
 
 const sample_len_max: u32 = 4 << 10;
-const answer_len_max: u32 = 64 << 10;
+/// An answer is read back in the request's arena, so no part of it is larger.
+const answer_len_max: u32 = @import("../model/limits.zig").request_arena_bytes;
 
 /// The documented output and the real one, compared the way documentation can promise:
 /// the same fields present, the same optionals set, lists empty or not together, flags and

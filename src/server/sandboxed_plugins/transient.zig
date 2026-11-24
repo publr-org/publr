@@ -104,10 +104,12 @@ pub const Transient = struct {
 
         for (transient.plugins) |plugin| {
             const text = plugin.row.manifest;
-            const manifest = try json.parse(sandboxed_plugin.Manifest, arena, text, .{
+            var manifest = try json.parse(sandboxed_plugin.Manifest, arena, text, .{
                 .allocate = .alloc_always,
                 .ignore_unknown_fields = true,
             });
+
+            try sandboxed_plugin.resolve_shapes(arena, &manifest);
 
             var transaction = try transient.connection.transaction();
             errdefer transaction.rollback();
@@ -150,10 +152,12 @@ fn read(arena: std.mem.Allocator, io: std.Io, path: []const u8) !Plugin {
         std.log.err("--plugin {s}: not a plugin built for Publr", .{path});
         return error.NotAPlugin;
     };
-    const manifest = try json.parse(sandboxed_plugin.Manifest, arena, text, .{
+    var manifest = try json.parse(sandboxed_plugin.Manifest, arena, text, .{
         .allocate = .alloc_always,
         .ignore_unknown_fields = true,
     });
+
+    try sandboxed_plugin.resolve_shapes(arena, &manifest);
 
     if (!sandboxed_plugin.valid_name(manifest.name)) {
         return error.NotAPlugin;
@@ -207,6 +211,25 @@ fn row_of(
 
 /// Whether a transient plugin's call `name` with `input` is a record call on its own types
 /// (or names no type: by id, only its own records are there to reach).
+/// `own_record_call` for a call whose input is read already: the type it names, if any.
+pub fn own_record(own_types: []const []const u8, name: []const u8, named: ?[]const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    if (!std.mem.startsWith(u8, name, "record.")) {
+        return false;
+    }
+
+    const asked = named orelse return true;
+
+    for (own_types) |own| {
+        if (std.mem.eql(u8, own, asked)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 pub fn own_record_call(own_types: []const []const u8, name: []const u8, input: []const u8) bool {
     std.debug.assert(name.len > 0);
 
@@ -237,4 +260,8 @@ test "a transient plugin's record calls on its own types are its own" {
     try std.testing.expect(own_record_call(&own, "record.get", "{\"id\":\"abc\"}"));
     try std.testing.expect(!own_record_call(&own, "record.list", "{\"type\":\"post\"}"));
     try std.testing.expect(!own_record_call(&own, "user.list", "{}"));
+    try std.testing.expect(own_record(&own, "record.list", "clone_progress.run"));
+    try std.testing.expect(own_record(&own, "record.get", null));
+    try std.testing.expect(!own_record(&own, "record.list", "post"));
+    try std.testing.expect(!own_record(&own, "user.list", null));
 }

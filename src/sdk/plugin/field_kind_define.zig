@@ -5,7 +5,10 @@
 //! is how a value reads in list cells, search and on the site. `.editor` is a view
 //! (`publr.views.all.PlaceEditor`) the edit form draws in the plugin frame; its `ctx` carries
 //! the value, its problems, the field's options and `change(value)`, which hands it to the form.
+//! `.code_only = true` keeps it out of the type builder: only the plugin's code puts it on a
+//! type, in a group it places on another plugin's records (a product's weight).
 const std = @import("std");
+const Json = @import("../operation.zig").Json;
 const kinds = @import("../../model/kinds.zig");
 const field_model = @import("../../model/field.zig");
 const plugin_define = @import("define.zig");
@@ -14,7 +17,7 @@ const sdk = @import("../../sdk.zig");
 const plugin_context = @import("context.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 
-const option_names = [_][]const u8{ "name", "validate", "text", "editor", "icon" };
+const option_names = [_][]const u8{ "name", "validate", "text", "editor", "icon", "code_only" };
 
 pub fn kind(comptime Value: type, comptime options: anytype) type {
     comptime {
@@ -70,6 +73,7 @@ pub fn described(
             .text = if (texted) &Texted(Definition).text else null,
             .editor = if (edited) &Edited(Definition).draw else null,
             .searchable_allowed = texted,
+            .code_only = code_only_of(options),
         };
     }
 }
@@ -241,14 +245,70 @@ pub fn manifested(comptime Definition: type, comptime Docs: type) sandboxed_plug
             .validates = @hasField(@TypeOf(options), "validate"),
             .texts = @hasField(@TypeOf(options), "text"),
             .edits = @hasField(@TypeOf(options), "editor"),
+            .code_only = code_only_of(options),
         };
     }
 }
 
-/// What an installed kind's `validate` and `text` are handed: the stored value.
+/// What an installed kind's `validate` and `text` are handed: the stored value, and, when
+/// it is kept as text holding JSON, what that text reads as.
 pub const Stored = struct {
-    value: std.json.Value,
+    value: Json,
+    parsed: ?Json = null,
 };
+
+/// `Stored` as core hands it over.
+const Handed = struct {
+    value: std.json.Value,
+    parsed: ?std.json.Value = null,
+
+    fn of(arena: std.mem.Allocator, value: std.json.Value) Handed {
+        std.debug.assert(value != .number_string);
+
+        if (value != .string) {
+            return .{
+                .value = value,
+            };
+        }
+
+        return .{
+            .value = value,
+            .parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, value.string, .{}) catch
+                null,
+        };
+    }
+};
+
+/// A stored value read as the kind's own type, in an installed plugin's module: text
+/// holding JSON is read as what it holds, unless the kind's value is a text itself.
+pub fn stored_as(comptime Value: type, arena: std.mem.Allocator, stored: Stored) !Value {
+    const held = try stored.value.read(arena);
+
+    std.debug.assert(@sizeOf(Value) <= 1 << 16);
+
+    if (held.kind() == .text and Value != []const u8) {
+        const parsed = stored.parsed orelse return error.Invalid;
+
+        return parsed.as(Value, arena);
+    }
+
+    return stored.value.as(Value, arena);
+}
+
+/// `problems_of` over a value handed to an installed plugin's module.
+pub fn problems_stored(
+    comptime Definition: type,
+    arena: std.mem.Allocator,
+    stored: Stored,
+) []const []const u8 {
+    const parsed = stored_as(Definition.Shape, arena, stored) catch {
+        return &.{"not a value of this kind"};
+    };
+
+    std.debug.assert(@sizeOf(Definition.Shape) <= 1 << 16);
+
+    return problems_found(Definition, arena, parsed);
+}
 
 /// What an installed kind's `editor` is handed: the path its frame is served under.
 pub const Drawn = struct {
@@ -265,6 +325,17 @@ pub fn problems_of(
     const parsed = decoded(Definition.Shape, arena, value) catch {
         return &.{"not a value of this kind"};
     };
+
+    std.debug.assert(@sizeOf(Definition.Shape) <= 1 << 16);
+
+    return problems_found(Definition, arena, parsed);
+}
+
+fn problems_found(
+    comptime Definition: type,
+    arena: std.mem.Allocator,
+    parsed: Definition.Shape,
+) []const []const u8 {
     var found: operation_define.Problems(Wrapped(Definition.Shape)) = .{};
 
     if (comptime @hasField(@TypeOf(Definition.given), "validate")) {
@@ -298,7 +369,16 @@ pub fn installed(id: []const u8, declared: sandboxed_plugin.FieldKind) kinds.Kin
         .text = if (declared.texts) &installed_text else null,
         .editor = if (declared.edits) &installed_editor else null,
         .searchable_allowed = declared.texts,
+        .code_only = declared.code_only,
     };
+}
+
+fn code_only_of(comptime options: anytype) bool {
+    comptime {
+        std.debug.assert(options.name.len > 0);
+
+        return @hasField(@TypeOf(options), "code_only") and options.code_only;
+    }
 }
 
 fn installed_check(
@@ -312,9 +392,9 @@ fn installed_check(
     const reader = problems.reader orelse return problems.add(path, "can't be checked here");
     const ctx: *sdk.Ctx = @ptrCast(@alignCast(reader));
     const sandboxed = ctx.sandboxed_plugins orelse return problems.add(path, "can't be checked");
-    const input = sdk.stringify(ctx.arena, Stored{
-        .value = value,
-    }) catch return problems.add(path, "can't be checked");
+    const input = sdk.stringify(ctx.arena, Handed.of(ctx.arena, value)) catch {
+        return problems.add(path, "can't be checked");
+    };
     const answered = sandboxed.extra(ctx, .kind_validate, def.kind, input) catch {
         return problems.add(path, "can't be checked: its plugin did not answer");
     };
@@ -332,9 +412,7 @@ fn installed_check(
 fn installed_text(ctx: *anyopaque, id: []const u8, value: std.json.Value) ?[]const u8 {
     const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
     const sandboxed = inner.sandboxed_plugins orelse return null;
-    const input = sdk.stringify(inner.arena, Stored{
-        .value = value,
-    }) catch return null;
+    const input = sdk.stringify(inner.arena, Handed.of(inner.arena, value)) catch return null;
     const answered = sandboxed.extra(inner, .kind_text, id, input) catch return null;
 
     std.debug.assert(id.len > 0);

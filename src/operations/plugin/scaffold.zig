@@ -20,7 +20,7 @@ pub const Source = struct {
     content: []const u8,
 };
 
-const icons_list = "plus\nx-close\nchevron-up\nchevron-down\nlist-unordered\n";
+const icons_list = "x-close\nchevron-up\nchevron-down\nlist-unordered\n";
 
 pub const Scaffold = struct {
     pub const name = "plugin.scaffold";
@@ -86,10 +86,8 @@ fn files_of(arena: std.mem.Allocator, name: []const u8, shape: Shape) Error![]co
     // A form is a declaration the admin draws; a list draws itself, in the plugin frame.
     if (shape == .list) {
         const page = try filled(arena, @embedFile("scaffold/list_page.ptsx.txt"), name, pascal);
-        const island = try filled(arena, @embedFile("scaffold/list_island.ptsx.txt"), name, pascal);
 
         try add(arena, &files, try path_of(arena, pascal, "Page"), page);
-        try add(arena, &files, try path_of(arena, pascal, "List"), island);
         try add(arena, &files, "ui/icons.txt", icons_list);
     }
 
@@ -176,13 +174,16 @@ test "a starter names its files and code after the plugin" {
     const files = try files_of(arena, "guest_book", .list);
 
     try std.testing.expectEqualStrings("ui/GuestBookPage.ptsx", files[1].path);
-    try std.testing.expectEqualStrings("ui/GuestBookList.ptsx", files[2].path);
+    try std.testing.expectEqualStrings("ui/icons.txt", files[2].path);
     try std.testing.expect(std.mem.indexOf(u8, files[0].content, ".name = \"guest_book\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, files[0].content, "__") == null or
         std.mem.indexOf(u8, files[0].content, "__name__") == null);
     const form = try files_of(arena, "guest_book", .form);
 
-    try std.testing.expect(std.mem.indexOf(u8, files[2].content, "\"guest_book.add\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, files[1].content, "\"guest_book.add\"") != null);
+    // Drawn on the design system, installed or compiled in alike.
+    try std.testing.expect(std.mem.indexOf(u8, files[1].content, "class=") == null);
+    try std.testing.expect(std.mem.indexOf(u8, files[0].content, "publr.views.render(") != null);
     try std.testing.expect(std.mem.indexOf(u8, files[0].content, "\"Guest book\"") != null);
     try std.testing.expectEqual(@as(usize, 1), form.len);
     try std.testing.expect(std.mem.indexOf(u8, form[0].content, ".form = .{") != null);

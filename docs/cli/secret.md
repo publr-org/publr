@@ -10,13 +10,15 @@ from what
 an administrator set here, sealed with the project's key: `PUBLR_SECRET_KEY` (64 hex
 digits), else `secret.key` beside the database (mode 0600, made when the first secret is
 set). Back the key up with the database: without it, what was set cannot be read again. A
-value is never answered back. Administrators only; no plugin reaches these. Back to the
+value is never answered back. Administrators only; no plugin reaches these, but for
+`secret digest`, a plugin's alone. Back to the
 [CLI reference](../cli.md).
 
 | Command | What |
 |---|---|
 | `secret list [--limit <n>] [--offset <n>]` | The secrets set (by name), then those declared and not set, 50 a page (`--limit` up to 200): where each value comes from (`environment`, `kept`, `missing`) and the plugins that declare it, installed and built in; `key` says where the key is, `total` counts them all |
 | `secret set --name <NAME> --value <value>` | Set a value, replacing any; up to 8 KiB. Masked in the activity log |
+| `secret digest --algorithm <a> --text <text> [--key] [--chain] [--encoding] [--compare]` | A plugin's alone: the hash of `--text` with its `{secret:NAME}` filled in by core (`md5`, `sha1`, `sha256`, `sha384`, `sha512`, or `hmac_sha256`, `hmac_sha384`, `hmac_sha512` keyed with `--key`, each `--chain` step first turning the key into its HMAC), as `hex` or `base64`; with `--compare`, `matches` says in constant time whether that signature is the digest. Each secret named is declared in the plugin's `.secrets` and set |
 | `secret remove --name <NAME>` | Forget a value into the trash (`trash restore` puts it back in use); an environment variable of the same name is left as it is |
 
 ```

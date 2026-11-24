@@ -64,6 +64,14 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
         return code;
     }
 
+    // The apps' interactive components built before the server starts: it links no compiler.
+    const folder = @import("../adapters/apps.zig").folder;
+    const apps_dir = folder.resolve_dir(init.io, flags.apps.apps_dir);
+
+    if (!try @import("apps_interactive.zig").build(init, db_path, apps_dir)) {
+        return 1;
+    }
+
     // Everything the run holds is let go before this process becomes the new binary.
     switch (try serve_project(init, db_path, flags)) {
         .stopped => return 0,
@@ -302,6 +310,8 @@ fn project_of(
         .plugin_states = &application.plugin_states,
         .files = application.files_of(),
         .scratch = &application.scratch,
+        .call_scratch = &application.call_scratch,
+        .plugin_memory = &application.plugin_memory,
         .definitions = &application.definitions,
         .languages = &application.languages,
         .limits = &application.limits,
@@ -368,6 +378,7 @@ fn split_hosts(
         project.site_origin,
         project.admin_origin,
     );
+    project.on_copy = @import("project.zig").copy_of_environment();
 
     std.debug.assert(project.split());
 }
@@ -639,6 +650,20 @@ fn rebuild_for_plugins(project: *const routes.Project) void {
     std.debug.assert(project.connection.transaction_depth == 0);
     std.debug.assert(project.apps.len > 0);
 
+    // An app leaving a provider slot draws the plugins' components: loaded again, which
+    // builds it again.
+    for (project.apps) |*app| {
+        if (app.spec.slotted) {
+            if (project.apps_host) |host| {
+                host.reload() catch |err| {
+                    std.log.err("apps: not loaded again for the plugins: {t}", .{err});
+                };
+
+                return;
+            }
+        }
+    }
+
     for (project.apps) |*app| {
         if (app.output == null or app.program == null) {
             continue;
@@ -686,10 +711,9 @@ fn run_loop(
         }
 
         if (plugins.changed()) {
-            // Changed in the worker: loaded again here, as it loads again what changed here.
-            if (worker != null) {
-                plugins.reload();
-            }
+            // Changed by another process (the worker, a command run beside it): loaded
+            // again here, whether a worker runs or not.
+            plugins.reload();
 
             if (project.apps.len > 0) {
                 rebuild_for_plugins(project);
@@ -1238,7 +1262,9 @@ test "an app whose build fails answers 503 until a publish lets it build" {
         "\"public\":true,\"title_field\":\"\",\"fields\":[" ++
         "{\"name\":\"hero\",\"label\":\"Hero\",\"kind\":\"string\"}]}";
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = homepage,
+        .definition = .{
+            .text = homepage,
+        },
     });
     var index = try deps.Index.open(system.db, .{
         .quiet_ms = deps.quiet_ms,
@@ -1300,7 +1326,9 @@ test "an app whose build fails answers 503 until a publish lets it build" {
     try std.testing.expect(std.mem.indexOf(u8, due.body, "\"next_due\":") != null);
     const recovered = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "homepage",
-        .document = "{\"hero\":\"Recovered homepage\"}",
+        .document = .{
+            .text = "{\"hero\":\"Recovered homepage\"}",
+        },
     });
     _ = try registry.SDK.dispatch(&system, records.Publish, .{
         .id = recovered.id,

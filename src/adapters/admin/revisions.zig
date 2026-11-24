@@ -70,6 +70,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .record_title = record_title,
             .record_href = try record_href(arena, full.record.id),
             .status = full.record.status,
+            .status_label = try status_label(&session, full.record.status),
             .changed = full.record.changed,
             .updated = admin.time_text(arena, full.record.updated_at),
             .updated_by = full.record.updated_by orelse "",
@@ -112,7 +113,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
         .seq = seq,
     }) catch |err| return admin.fail(&session, err, back);
     const arena = session.arena;
-    const document = snapshot_object(arena, item.document) catch |err| {
+    const document = snapshot_object(arena, item.document.?.text) catch |err| {
         return admin.fail(&session, err, back);
     };
     const fields = try fields_of(arena, got.definition.fields, document);
@@ -268,4 +269,15 @@ fn snapshot_object(arena: std.mem.Allocator, text: []const u8) error{Invalid}!st
     }
 
     return document.object;
+}
+
+/// A record's status as the person reads it: its label in their language.
+fn status_label(session: *admin.Session, id: []const u8) admin.Error![]const u8 {
+    std.debug.assert(session.signed_in());
+
+    const statuses = @import("../../operations/status.zig");
+    const known = statuses.known(&session.ctx) catch return error.OutOfMemory;
+    const found = statuses.find_in(known, id) orelse return id;
+
+    return session.declared(found.label);
 }

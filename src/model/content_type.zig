@@ -187,7 +187,7 @@ pub const Def = struct {
     /// The plugin that declared it (its manifest name), empty for hand-made types.
     owner: []const u8 = "",
     editor: []const u8 = "form",
-    editor_config: []const u8 = "{}",
+    editor_config: @import("editor.zig").Config = .{},
     title_field: []const u8 = "title",
     statuses: []const []const u8 = &.{},
     /// Its own statuses and the transitions between them; empty: core's flow.

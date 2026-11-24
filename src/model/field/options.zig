@@ -82,6 +82,11 @@ pub const Container = struct {
     add_label: []const u8 = "",
 };
 
+/// The contract whose registered providers a provider field names.
+pub const Provider = struct {
+    contract: []const u8 = "",
+};
+
 /// What a media field's editor offers: creating new files, linking existing ones.
 pub const Media = struct {
     create: bool = true,
@@ -118,6 +123,7 @@ pub const Options = struct {
     reference: Reference = .{},
     container: Container = .{},
     media: Media = .{},
+    provider: Provider = .{},
 
     /// Written sparsely: only what differs from the defaults, groups included, so a
     /// definition carries what was set and reads as such.

@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const id_len_max: u32 = 32;
 pub const statuses_max: u32 = 64;
-pub const transitions_max: u32 = 256;
+pub const transitions_max: u32 = 200;
 
 pub const Color = enum { neutral, info, success, warning, danger };
 

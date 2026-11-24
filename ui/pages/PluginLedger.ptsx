@@ -1,0 +1,95 @@
+import { Publr } from "publr-jsx";
+import { IndexPage } from "../layouts/IndexPage.ptsx";
+import { LedgerAccounts } from "../components/LedgerAccounts.ptsx";
+import { LedgerFilters } from "../components/LedgerFilters.ptsx";
+import { Button } from "@publr/ui/Button.ptsx";
+import { Callout } from "@publr/ui/Callout.ptsx";
+import { Empty } from "@publr/ui/Empty.ptsx";
+import { EmptyDescription } from "@publr/ui/EmptyDescription.ptsx";
+import { EmptyTitle } from "@publr/ui/EmptyTitle.ptsx";
+import { TabNav } from "@publr/ui/TabNav.ptsx";
+import { TabNavLink } from "@publr/ui/TabNavLink.ptsx";
+
+export type PluginLedgerProps = {
+  name: string;
+  summary: string;
+  /** The plugin is gone: its accounts stay, read only. */
+  gone: boolean;
+  /** The plugin's own page, for the Overview tab; empty when it is gone. */
+  overview_href: string;
+  /** The plugins list it is under. */
+  plugins_href: string;
+  /** Its Log tab; empty when it is gone. */
+  log_href: string;
+  /** Its Webhooks tab; empty when it declares none. */
+  webhooks_href?: string;
+  /** This page. */
+  ledger_href: string;
+  names: Array<{ value: string; label: string; selected: boolean }>;
+  unit: string;
+  holder: string;
+  accounts: Array<{
+    href: string;
+    label: string;
+    plugin: string;
+    holder: string;
+    holder_href: string;
+    unit: string;
+    balance: string;
+    held: string;
+    available: string;
+    closed: boolean;
+  }>;
+  /** Whether a filter is on: an empty list then says nothing matched. */
+  filtered: boolean;
+  /** The next page; empty on the last. */
+  next_href: string;
+};
+
+/** A plugin's Ledger tab: its ledger accounts, read only, each opening its history. */
+export function PluginLedger({ name, summary, gone, overview_href, plugins_href, log_href, webhooks_href = "", ledger_href, names, unit, holder, accounts, filtered, next_href }: PluginLedgerProps) {
+  return (
+    <IndexPage
+      title={name}
+      parents={[{ label: Publr.t("Plugins"), href: plugins_href }]}
+      description={summary}
+      tabs={
+        <TabNav label={name}>
+          {overview_href !== "" && <TabNavLink href={overview_href}>{Publr.t("Overview")}</TabNavLink>}
+          {log_href !== "" && <TabNavLink href={log_href}>{Publr.t("Log")}</TabNavLink>}
+          {webhooks_href !== "" && <TabNavLink href={webhooks_href}>{Publr.t("Webhooks")}</TabNavLink>}
+          <TabNavLink href={ledger_href} active>
+            {Publr.t("Ledger")}
+          </TabNavLink>
+        </TabNav>
+      }
+      notice={
+        gone && (
+          <Callout tone="info" title={Publr.t("This plugin is gone")}>
+            {Publr.t("Its accounts and transfers stay on the books, read only.")}
+          </Callout>
+        )
+      }
+      filters={<LedgerFilters action={ledger_href} names={names} unit={unit} holder={holder} />}
+      empty={
+        accounts.length === 0 && (
+          <Empty>
+            <EmptyTitle>{filtered ? Publr.t("No accounts match") : Publr.t("No accounts yet")}</EmptyTitle>
+            <EmptyDescription>
+              {Publr.t("The plugin opens its accounts when it first moves something. Nobody types a transfer here: corrections go through the plugin's own operations.")}
+            </EmptyDescription>
+          </Empty>
+        )
+      }
+      footer={
+        next_href !== "" && (
+          <Button href={next_href} hierarchy="secondary" size="sm">
+            {Publr.t("Next")}
+          </Button>
+        )
+      }
+    >
+      <LedgerAccounts accounts={accounts} />
+    </IndexPage>
+  );
+}

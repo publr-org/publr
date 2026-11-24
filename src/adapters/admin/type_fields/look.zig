@@ -92,7 +92,7 @@ fn fill_numbers(props: *Props, arena: std.mem.Allocator, kind: Kind, field: Fiel
     props.has_number = kind.control == .number;
     props.unit = set.number.unit;
     props.unit_after = set.number.unit_after;
-    props.has_decimals = kind.storage == .real;
+    props.has_decimals = kind.has.places;
     props.decimals = try rules.count_text(arena, set.number.decimals);
     props.number_control = @tagName(set.number.control);
     props.can_rating = kind.storage == .int and kind.control == .number;

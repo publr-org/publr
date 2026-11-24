@@ -1,0 +1,56 @@
+import { Publr } from "publr-jsx";
+import { IndexSection } from "./IndexSection.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type PluginAnswersProps = {
+  /** What each of the plugin's providers answered when it was installed or last updated:
+   * its defaults, kept by core and read by the contract's owner. */
+  answers: Array<{
+    contract: string;
+    provider: string;
+    version: string;
+    lines: Array<{ name: string; value: string }>;
+  }>;
+};
+
+/** A plugin's answers at install, read only: they change only when the plugin updates. */
+export function PluginAnswers({ answers }: PluginAnswersProps) {
+  return (
+    <>
+      {answers.map((answer) => (
+        <IndexSection
+          title={Publr.t("What {provider} told {contract}", { provider: answer.provider, contract: answer.contract })}
+          description={Publr.t("Answered when version {version} was installed. It changes only with an update.", { version: answer.version })}
+          empty={answer.lines.length === 0 ? Publr.t("It answered nothing.") : undefined}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{Publr.t("Answer")}</TableHead>
+                <TableHead>{Publr.t("Value")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {answer.lines.map((line) => (
+                <TableRow>
+                  <TableCell>
+                    <Text variant="body-sm">{line.name}</Text>
+                  </TableCell>
+                  <TableCell>
+                    <Text variant="body-sm" tone="muted">{line.value}</Text>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </IndexSection>
+      ))}
+    </>
+  );
+}

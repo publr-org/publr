@@ -33,12 +33,14 @@ pub const namespace: sdk.operation.Namespace = .{
 };
 
 pub const translations = @import("health/translations.zig");
+pub const coverage = @import("health/coverage.zig");
 pub const operations = [_]type{
     List,
     Count,
     Keep,
     Unlink,
     translations.Translations,
+    coverage.Coverage,
     translations.ChooseTranslation,
     translations.MissingTranslations,
 };
@@ -188,7 +190,7 @@ pub const Count = struct {
             .after = "",
         }, &counting, Counting.visit);
 
-        const disagreeing = try translations.listed(ctx);
+        const disagreeing = try translations.listed(ctx, 0);
 
         return .{
             .count = counting.count + disagreeing.open,
@@ -357,7 +359,9 @@ test "site health: a type no longer shared and a deleted target are cases; keep 
 
     for ([_]model.content_type.Def{ stock, product }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = try model.content_type.encode(system.arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(system.arena, def),
+            },
         });
     }
 
@@ -381,7 +385,9 @@ test "site health: a type no longer shared and a deleted target are cases; keep 
     stock.shared = null;
     _ = try SDK.dispatch(&system, types.Update, .{
         .type = "stock",
-        .definition = try model.content_type.encode(system.arena, stock),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, stock),
+        },
     });
     _ = try SDK.dispatch(&system, record_operations.Delete, .{
         .id = cup,
@@ -461,7 +467,9 @@ test "site health: cases come a page at a time, a case's records counted across 
 
     for ([_]model.content_type.Def{ stock, product }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = try model.content_type.encode(system.arena, def),
+            .definition = .{
+                .text = try model.content_type.encode(system.arena, def),
+            },
         });
     }
 

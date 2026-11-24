@@ -34,7 +34,7 @@ saves them from the content list's View menu. Up to 64 per user. Back to the
 ```
 $ publr --as ada@example.com view create --name "My drafts" \
     --query '{"clauses":[{"key":"status","operator":"is","value":"draft"},{"key":"created","operator":"by","value":"me"}]}'
-{ "id": "5e6f…", "name": "My drafts", "query": "{\"types\":[],…}", … }
+{ "id": "5e6f…", "name": "My drafts", "query": { "types": [], … }, … }
 $ publr --as ada@example.com view list
 { "views": [ { "id": "5e6f…", "name": "My drafts", … } ] }
 $ publr --as ada@example.com view update --id 5e6f… --name "Drafts"

@@ -1,0 +1,103 @@
+import { Publr } from "publr-jsx";
+import { Link } from "@publr/ui/Link.ptsx";
+import { Status } from "@publr/ui/Status.ptsx";
+import { Table } from "@publr/ui/Table.ptsx";
+import { TableBody } from "@publr/ui/TableBody.ptsx";
+import { TableCell } from "@publr/ui/TableCell.ptsx";
+import { TableHead } from "@publr/ui/TableHead.ptsx";
+import { TableHeader } from "@publr/ui/TableHeader.ptsx";
+import { TableRow } from "@publr/ui/TableRow.ptsx";
+import { Text } from "@publr/ui/Text.ptsx";
+
+export type LedgerAccountsProps = {
+  /** Show the plugin each account is kept by: Settings › Ledger lists every plugin's. */
+  plugins?: boolean;
+  accounts: Array<{
+    /** The account's page. */
+    href: string;
+    /** Its name in words. */
+    label: string;
+    /** The plugin that keeps it. */
+    plugin: string;
+    /** Whose it is, in words; empty for none. */
+    holder: string;
+    /** The holder's page; empty when it has none. */
+    holder_href: string;
+    unit: string;
+    /** The posted balance, written in the unit. */
+    balance: string;
+    /** What holds keep of it, written in the unit. */
+    held: string;
+    /** The balance once every hold posts, written in the unit. */
+    available: string;
+    closed: boolean;
+  }>;
+};
+
+/** Ledger accounts as a plugin's Ledger tab and Settings › Ledger list them: read only, each
+ * opening its own page. */
+export function LedgerAccounts({ plugins = false, accounts }: LedgerAccountsProps) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{Publr.t("Account")}</TableHead>
+          {plugins && <TableHead>{Publr.t("Plugin")}</TableHead>}
+          <TableHead>{Publr.t("Holder")}</TableHead>
+          <TableHead>{Publr.t("Unit")}</TableHead>
+          <TableHead align="right">{Publr.t("Balance")}</TableHead>
+          <TableHead align="right">{Publr.t("On hold")}</TableHead>
+          <TableHead align="right">{Publr.t("Available")}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {accounts.map((account) => (
+          <TableRow>
+            <TableCell>
+              <div class="flex flex-wrap items-center gap-2">
+                <Link href={account.href}>{account.label}</Link>
+                {account.closed && <Status tone="neutral">{Publr.t("Closed")}</Status>}
+              </div>
+            </TableCell>
+            {plugins && (
+              <TableCell>
+                <Text as="span" variant="body-sm" tone="muted">
+                  {account.plugin}
+                </Text>
+              </TableCell>
+            )}
+            <TableCell>
+              {account.holder_href !== "" ? (
+                <Link href={account.holder_href}>{account.holder}</Link>
+              ) : (
+                <Text as="span" variant="body-sm" tone="muted">
+                  {account.holder}
+                </Text>
+              )}
+            </TableCell>
+            <TableCell>
+              <Text as="span" variant="body-sm" tone="muted">
+                {account.unit}
+              </Text>
+            </TableCell>
+            <TableCell align="right" classes="whitespace-nowrap">
+              <Text as="span" variant="body-sm">
+                {account.balance}
+              </Text>
+            </TableCell>
+            <TableCell align="right" classes="whitespace-nowrap">
+              <Text as="span" variant="body-sm" tone="muted">
+                {account.held}
+              </Text>
+            </TableCell>
+            <TableCell align="right" classes="whitespace-nowrap">
+              <Text as="span" variant="body-sm">
+                {account.available}
+              </Text>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}

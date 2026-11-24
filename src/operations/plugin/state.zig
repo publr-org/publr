@@ -88,17 +88,109 @@ pub fn decode(arena: std.mem.Allocator, row: store.sandboxed_plugins.Row) Error!
     };
 }
 
+/// What parsing a manifest of `len` bytes takes at most: the values it parses into beside
+/// the text, which its texts point into.
+pub fn parse_bytes(len: u64) u64 {
+    std.debug.assert(manifest_factor > 1);
+    std.debug.assert(len <= std.math.maxInt(u32));
+
+    return parse_slack_bytes + len * manifest_factor;
+}
+
+/// How many times its length a manifest's parsed values take, at most.
+pub const manifest_factor: u32 = 4;
+const parse_slack_bytes: u32 = 64 << 10;
+
 pub fn parse_manifest(arena: std.mem.Allocator, text: []const u8) Error!sandboxed_plugin.Manifest {
     std.debug.assert(text.len > 0);
     std.debug.assert(sandboxed_plugin.format > 0);
 
-    const manifest = json.parse(sandboxed_plugin.Manifest, arena, text, parse_options) catch {
-        return error.Invalid;
+    // Its texts point into `text` where they hold no escapes: a manifest is large, and
+    // whoever holds it holds the row it came from.
+    var manifest = json.parse(sandboxed_plugin.Manifest, arena, text, .{
+        .allocate = .alloc_if_needed,
+        .ignore_unknown_fields = true,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.Invalid,
     };
 
-    if (manifest.format != sandboxed_plugin.format) {
+    if (!sandboxed_plugin.format_known(&manifest)) {
         return error.Invalid;
     }
+
+    try sandboxed_plugin.resolve_shapes(arena, &manifest);
+
+    return manifest;
+}
+
+/// Of a manifest, only what the plugin provides other plugins (its operations' shapes, its
+/// records, events, contracts and dimensions): its words, help and pages left unread, so a
+/// loop over every plugin reads a fraction of each.
+pub fn parse_provided(arena: std.mem.Allocator, text: []const u8) Error!sandboxed_plugin.Manifest {
+    std.debug.assert(text.len > 0);
+    std.debug.assert(sandboxed_plugin.format > 0);
+
+    const Operation = sandboxed_plugin.Operation;
+    const Provided = struct {
+        format: u32,
+        name: []const u8,
+        version: []const u8,
+        operations: []const struct {
+            name: []const u8,
+            kind: sandboxed_plugin.Kind,
+            input: @FieldType(Operation, "input") = &.{},
+            output: @FieldType(Operation, "output") = &.{},
+            input_shape: ?u32 = null,
+            output_shape: ?u32 = null,
+        } = &.{},
+        shapes: @FieldType(sandboxed_plugin.Manifest, "shapes") = &.{},
+        content_types: @FieldType(sandboxed_plugin.Manifest, "content_types") = &.{},
+        internal_records: @FieldType(sandboxed_plugin.Manifest, "internal_records") = &.{},
+        events: @FieldType(sandboxed_plugin.Manifest, "events") = &.{},
+        contracts: @FieldType(sandboxed_plugin.Manifest, "contracts") = &.{},
+        dimensions: @FieldType(sandboxed_plugin.Manifest, "dimensions") = &.{},
+    };
+    const provided = json.parse(Provided, arena, text, .{
+        .allocate = .alloc_if_needed,
+        .ignore_unknown_fields = true,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.Invalid,
+    };
+    const operations = try arena.alloc(Operation, provided.operations.len);
+
+    for (provided.operations, operations) |given, *operation| {
+        operation.* = .{
+            .name = given.name,
+            .kind = given.kind,
+            .description = "",
+            .input = given.input,
+            .output = given.output,
+            .input_shape = given.input_shape,
+            .output_shape = given.output_shape,
+        };
+    }
+
+    var manifest: sandboxed_plugin.Manifest = .{
+        .format = provided.format,
+        .name = provided.name,
+        .version = provided.version,
+        .summary = "",
+        .operations = operations,
+        .shapes = provided.shapes,
+        .content_types = provided.content_types,
+        .internal_records = provided.internal_records,
+        .events = provided.events,
+        .contracts = provided.contracts,
+        .dimensions = provided.dimensions,
+    };
+
+    if (!sandboxed_plugin.format_known(&manifest)) {
+        return error.Invalid;
+    }
+
+    try sandboxed_plugin.resolve_shapes(arena, &manifest);
 
     return manifest;
 }
@@ -281,4 +373,64 @@ test "requests show where each one stands, with each flag asked for as set now" 
     try std.testing.expectEqual(permission.Tier.medium, shown[0].tier);
     try std.testing.expectEqual(@as(usize, 2), (try with(arena, &.{"a"}, "b")).len);
     try std.testing.expectEqual(@as(usize, 0), (try without(arena, &.{"a"}, "a")).len);
+}
+
+test "a plugin with many operations sharing a large answer is read as a provider in a scratch" {
+    const contract = model.contract;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const nodes = try arena.alloc(contract.Node, 200);
+
+    nodes[0] = .{
+        .parent = -1,
+        .kind = .object,
+    };
+
+    for (nodes[1..], 1..) |*node, index| {
+        node.* = .{
+            .parent = 0,
+            .name = try std.fmt.allocPrint(arena, "field_{d}", .{index}),
+            .kind = .integer,
+        };
+    }
+
+    const operations = try arena.alloc(sandboxed_plugin.Operation, 60);
+
+    for (operations, 0..) |*operation, index| {
+        operation.* = .{
+            .name = try std.fmt.allocPrint(arena, "shop.operation_{d}", .{index}),
+            .kind = .write,
+            .description = "Changes the order",
+            .output = nodes,
+        };
+    }
+
+    var manifest: sandboxed_plugin.Manifest = .{
+        .name = "shop",
+        .version = "0.1.0",
+        .summary = "A shop",
+        .operations = operations,
+    };
+
+    try sandboxed_plugin.share_shapes(arena, &manifest);
+
+    const text = try std.json.Stringify.valueAlloc(arena, manifest, .{
+        .emit_null_optional_fields = false,
+    });
+
+    // The answer is written once, not sixty times.
+    try std.testing.expect(text.len < 16 << 10);
+
+    var buffer: [256 << 10]u8 = undefined;
+    var fixed: std.heap.FixedBufferAllocator = .init(&buffer);
+    const provided = try parse_provided(fixed.allocator(), text);
+
+    try std.testing.expectEqual(@as(usize, 60), provided.operations.len);
+    try std.testing.expectEqual(@as(usize, 200), provided.operations[59].output.len);
+    try std.testing.expectEqualStrings("field_199", provided.operations[59].output[199].name);
+
+    const whole = try parse_manifest(arena, text);
+
+    try std.testing.expectEqual(@as(usize, 200), whole.operations[0].output.len);
 }

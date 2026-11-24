@@ -13,6 +13,7 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 const override = model.operation_override;
 const Answer = @import("../model/caller_answer.zig").Answer;
+const key_page = @import("../model/key_page.zig");
 
 pub const namespace: sdk.operation.Namespace = .{
     .name = "operation",
@@ -113,15 +114,18 @@ pub const List = struct {
         \\call it, whether it destroys what cannot be had back, and who may call it and its
         \\limit, as declared, overridden and in effect. Then each built-in namespace with what
         \\people call it and the area roles list it under. `public` lists only the operations
-        \\their plugins publish for outside developers (`.public_api`): the API reference.
+        \\their plugins publish for outside developers (`.public_api`): the API reference. A
+        \\page at a time, in the order of their names: `next` continues it.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         public: bool = false,
+        after: []const u8 = "",
     };
     pub const Out = struct {
         operations: []const Described,
         namespaces: []const Grouped,
+        next: []const u8 = "",
     };
     pub const example: In = .{};
     pub const example_out: Out = .{
@@ -135,6 +139,7 @@ pub const List = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .public = "Only those published for outside developers (`.public_api`)",
+        .after = "The page after this name: the `next` the last page answered",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .operations = "Each operation: name, kind, plugin, description, untrusted_callers, " ++
@@ -142,42 +147,130 @@ pub const List = struct {
             "in_effect)",
         .namespaces = "Each built-in namespace: name, label, summary and area (content, " ++
             "site, people, system, background)",
+        .next = "The next page's `after`; empty after the last",
     };
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(registry.SDK.operations.len > 0);
 
-        var listed: std.ArrayList(Described) = .empty;
+        const named = try names_of(ctx, in.public);
+        const page = key_page.window(named.keys, in.after, sdk.operation.page_limit_max);
+        const listed = ctx.arena.alloc(Described, page.end - page.start) catch {
+            return error.OutOfMemory;
+        };
 
-        inline for (registry.SDK.operations, 0..) |Operation, index| {
-            const found = declared_native(Operation, index);
-
-            if (!in.public or found.described.public_api) {
-                listed.append(ctx.arena, try in_effect(ctx, found.described)) catch {
-                    return error.OutOfMemory;
-                };
-            }
-        }
-
-        for (installed(ctx)) |manifest| {
-            for (manifest.operations) |declared| {
-                const found = declared_installed(manifest.name, declared);
-
-                if (!in.public or found.described.public_api) {
-                    listed.append(ctx.arena, try in_effect(ctx, found.described)) catch {
-                        return error.OutOfMemory;
-                    };
-                }
-            }
+        // Only the page's operations are read in full, each from where its name came.
+        for (named.places[page.start..page.end], listed) |place, *out| {
+            out.* = try in_effect(ctx, described_at(ctx, place));
         }
 
         return .{
-            .operations = listed.items,
+            .operations = listed,
             .namespaces = &grouped,
+            .next = page.next,
         };
     }
 };
+
+/// Where a listed operation's declaration is: a compiled-in one by its place in the
+/// registry, an installed one by its manifest and its place there.
+const Place = struct {
+    native: ?u32,
+    manifest: u32 = 0,
+    declared: u32 = 0,
+};
+
+/// The listed operations' names, sorted, and where each one's declaration is.
+const Named = struct {
+    keys: []const []const u8,
+    places: []const Place,
+};
+
+const Entry = struct {
+    key: []const u8,
+    place: Place,
+
+    fn less(_: void, left: Entry, right: Entry) bool {
+        return key_page.before(left.key, right.key);
+    }
+};
+
+fn names_of(ctx: *Ctx, public: bool) Error!Named {
+    const manifests = installed(ctx);
+    var count: u64 = registry.SDK.operations.len;
+
+    for (manifests) |manifest| {
+        count += manifest.operations.len;
+    }
+
+    var entries = std.ArrayList(Entry).initCapacity(ctx.arena, @intCast(count)) catch {
+        return error.OutOfMemory;
+    };
+
+    inline for (registry.SDK.operations, 0..) |Operation, index| {
+        if (!public or declared_native(Operation, index).described.public_api) {
+            entries.appendAssumeCapacity(.{
+                .key = Operation.name,
+                .place = .{
+                    .native = index,
+                },
+            });
+        }
+    }
+
+    for (manifests, 0..) |manifest, manifest_index| {
+        for (manifest.operations, 0..) |declared, declared_index| {
+            const shown = declared_installed(manifest.name, declared).described;
+
+            if (!public or shown.public_api) {
+                entries.appendAssumeCapacity(.{
+                    .key = shown.name,
+                    .place = .{
+                        .native = null,
+                        .manifest = @intCast(manifest_index),
+                        .declared = @intCast(declared_index),
+                    },
+                });
+            }
+        }
+    }
+
+    std.mem.sort(Entry, entries.items, {}, Entry.less);
+
+    const keys = ctx.arena.alloc([]const u8, entries.items.len) catch return error.OutOfMemory;
+    const places = ctx.arena.alloc(Place, entries.items.len) catch return error.OutOfMemory;
+
+    for (entries.items, keys, places) |entry, *key, *place| {
+        key.* = entry.key;
+        place.* = entry.place;
+    }
+
+    std.debug.assert(keys.len <= count);
+
+    return .{
+        .keys = keys,
+        .places = places,
+    };
+}
+
+fn described_at(ctx: *const Ctx, place: Place) Described {
+    const native = place.native orelse {
+        const manifest = installed(ctx)[place.manifest];
+
+        return declared_installed(manifest.name, manifest.operations[place.declared]).described;
+    };
+
+    std.debug.assert(native < registry.SDK.operations.len);
+
+    inline for (registry.SDK.operations, 0..) |Operation, index| {
+        if (index == native) {
+            return declared_native(Operation, index).described;
+        }
+    }
+
+    unreachable;
+}
 
 const grouped = grouped: {
     var all: [registry.SDK.namespaces.len]Grouped = undefined;
@@ -257,7 +350,7 @@ pub const Get = struct {
 };
 
 /// The hooks on the operation `name` and on its event, compiled in and installed.
-fn hooks_on(ctx: *Ctx, name: []const u8) Error![]const Hook {
+pub fn hooks_on(ctx: *Ctx, name: []const u8) Error![]const Hook {
     std.debug.assert(name.len > 0);
     const declared = registry.registry;
 
@@ -643,9 +736,33 @@ test "a site's limit and answer read in, and back to the code's" {
         },
     });
 
-    const listed = try registry.SDK.dispatch(&admin, List, .{});
+    // A page at a time, in the order of names, each name once.
+    var after: []const u8 = "";
+    var seen: u64 = 0;
+    var last: []const u8 = "";
 
-    try std.testing.expect(listed.operations.len >= registry.SDK.operations.len);
+    for (0..registry.SDK.operations.len) |_| {
+        const page = try registry.SDK.dispatch(&admin, List, .{
+            .after = after,
+        });
+
+        try std.testing.expect(page.operations.len <= sdk.operation.page_limit_max);
+
+        for (page.operations) |listed| {
+            try std.testing.expect(std.mem.order(u8, last, listed.name) == .lt);
+            last = listed.name;
+        }
+
+        seen += page.operations.len;
+        after = page.next;
+
+        if (after.len == 0) {
+            break;
+        }
+    }
+
+    try std.testing.expect(seen >= registry.SDK.operations.len);
+    try std.testing.expectEqual(@as(usize, 0), after.len);
 
     const limited = try registry.SDK.dispatch(&admin, Limit, .{
         .name = "operation.list",

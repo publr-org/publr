@@ -493,7 +493,9 @@ pub fn Of(comptime Domain: type) type {
             const who = authorize orelse return true;
             const through_app = ctx.app_plugins != null;
 
-            return operation_define.admits(who.answered(), ctx.caller, through_app);
+            const answer = who.answered();
+
+            return operation_define.admits(answer, ctx.caller, through_app, from_plugin(ctx));
         }
 
         /// Moves a record that was just saved straight into its live document: its pending

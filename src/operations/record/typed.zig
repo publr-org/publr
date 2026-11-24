@@ -26,6 +26,8 @@ pub fn Ref(comptime Doc: type, comptime type_handle: []const u8) type {
         pub const Document = Doc;
         pub const handle = type_handle;
         pub const reference = true;
+        /// Handed over with its record; JSON writes its id alone.
+        pub const publr_form = .lone;
 
         const Resolved = struct {
             id: []const u8,

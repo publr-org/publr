@@ -76,13 +76,19 @@ pub fn Routes(comptime providers: []const SignInProvider, comptime exchange: Exc
             const wanted = http.Form.query_param(arena, request.query(), "next") orelse "/";
             const local = rest_auth.local_path(wanted) and wanted.len <= next_len_max;
             const next = if (local) wanted else "/";
+
+            if (provider.from_request) |reading| {
+                return from_request(request, response, ctx, provider, reading, next);
+            }
+
+            const authorize_url = provider.authorize_url orelse return unknown(response);
             var state_buffer: [ids.len]u8 = undefined;
             var verifier_buffer: [verifier_len]u8 = undefined;
             const project = Project.of(ctx);
             const state = ids.random(project.io, &state_buffer);
             const verifier = fresh_verifier(project.io, &verifier_buffer);
             var challenge_buffer: [base64.Encoder.calcSize(32)]u8 = undefined;
-            const location = provider.authorize_url(arena, .{
+            const location = authorize_url(arena, .{
                 .callback_url = try callback_url(arena, request, provider.name),
                 .state = state,
                 .code_challenge = challenge_of(verifier, &challenge_buffer),
@@ -108,6 +114,11 @@ pub fn Routes(comptime providers: []const SignInProvider, comptime exchange: Exc
 
             const arena = ctx.arena;
             const provider = offered(request, ctx) orelse return unknown(response);
+
+            if (provider.from_request != null) {
+                return unknown(response);
+            }
+
             const project = Project.of(ctx);
             const gone = "{s}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0{s}";
             const cleared = try std.fmt.allocPrint(arena, gone, .{
@@ -175,6 +186,66 @@ pub fn Routes(comptime providers: []const SignInProvider, comptime exchange: Exc
             return if (offering) provider else null;
         }
     };
+}
+
+/// A provider read from the request: the header the proxy in front set names the person,
+/// and they are signed in at once, with no redirect and no exchange.
+fn from_request(
+    request: *Request,
+    response: *Response,
+    ctx: *Context,
+    provider: *const SignInProvider,
+    reading: sdk.provider.FromRequest,
+    next: []const u8,
+) Error!void {
+    std.debug.assert(next.len > 0 and next[0] == '/');
+    std.debug.assert(provider.from_request != null);
+
+    const arena = ctx.arena;
+    const project = Project.of(ctx);
+    // Signing in through the proxy ends a sign-out (`signed_out_cookie_name`), whatever the
+    // outcome: a refusal says so instead.
+    const cleared = try identity_module.signed_out_cookie(request, arena, false);
+
+    try response.set_header("Cache-Control", "no-store");
+
+    const value = request.header(reading.header) orelse {
+        return refuse(response, cleared, "the proxy's header is missing", null);
+    };
+    var system = identity_module.context(project, arena, .system);
+    const found = reading.read(&system, value) catch |err| {
+        return refuse(response, cleared, "reading the proxy's header", err);
+    };
+    const claims = found orelse {
+        return refuse(response, cleared, "the proxy's header does not check out", null);
+    };
+
+    if (!std.mem.eql(u8, claims.provider, provider.name) or claims.subject.len == 0) {
+        return refuse(response, cleared, "the proxy's header named another provider", null);
+    }
+
+    const decide = reading.new_member orelse &null_member;
+    const new_account_roles = decide(&system, claims) catch |err| {
+        return refuse(response, cleared, "deciding what a new member gets", err);
+    };
+
+    try settle(request, response, project, .{
+        .new_account_roles = new_account_roles,
+        .provider = provider.name,
+        .id = claims.subject,
+        .email = claims.email,
+        .verified = claims.verified,
+        .name = claims.name,
+        .avatar = claims.avatar,
+    }, next, cleared);
+}
+
+/// A provider without a rule for new members: nobody gets an account by arriving.
+fn null_member(_: *sdk.Ctx, claims: sdk.provider.Claims) sdk.Error!?[]const []const u8 {
+    std.debug.assert(claims.provider.len > 0);
+    std.debug.assert(claims.subject.len > 0);
+
+    return null;
 }
 
 /// Someone signed in gains the identity; anyone else becomes the account it belongs to.
@@ -386,8 +457,13 @@ fn decode(arena: std.mem.Allocator, text: []const u8) ?[]const u8 {
 
 const user_operations = @import("../../operations/user.zig");
 
+const test_providers = [_]SignInProvider{
+    sdk.provider.testing.trusting,
+    sdk.provider.testing.missing,
+    sdk.provider.testing.forwarded,
+};
 const TestRoutes = Routes(
-    &.{ sdk.provider.testing.trusting, sdk.provider.testing.missing },
+    &test_providers,
     compiled,
 );
 
@@ -417,10 +493,23 @@ const Flow = struct {
     fn get(flow: *Flow, path: []const u8, cookie: []const u8) !http.Response {
         std.debug.assert(path[0] == '/');
 
+        return flow.get_with(path, cookie, "");
+    }
+
+    /// A GET carrying `lines` too: whole header lines, each ending in CRLF.
+    fn get_with(
+        flow: *Flow,
+        path: []const u8,
+        cookie: []const u8,
+        lines: []const u8,
+    ) !http.Response {
+        std.debug.assert(path[0] == '/');
+        std.debug.assert(lines.len == 0 or std.mem.endsWith(u8, lines, "\r\n"));
+
         const head = try std.fmt.allocPrint(
             flow.arena,
-            "GET {s} HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n\r\n",
-            .{ path, cookie },
+            "GET {s} HTTP/1.1\r\nHost: h\r\nCookie: {s}\r\n{s}\r\n",
+            .{ path, cookie, lines },
         );
         const parsed = try http.parse(head);
         const wire = parsed.complete;
@@ -607,4 +696,192 @@ test "next must be a path on this site" {
     const signed = try flow.get(path, begun.cookie);
 
     try std.testing.expectEqualStrings("/", signed.header("Location").?);
+}
+
+test "a provider read from the request signs in from the proxy's header alone" {
+    // Refusals are what this checks: their warnings are expected.
+    std.testing.log_level = .err;
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    var flow: Flow = undefined;
+    flow.init(&harness, arena_state.allocator());
+
+    var system = harness.ctx(.system);
+    try user_operations.seed_admin(&system);
+
+    const path = "/auth/forwarded?next=/admin/content";
+    const refused = [_][]const u8{
+        "",
+        "x-test-identity: nobody\r\n",
+        "x-test-identity: 9:eve@example.com\r\n",
+    };
+
+    for (refused) |lines| {
+        const answer = try flow.get_with(path, "", lines);
+        try std.testing.expectEqualStrings(refused_path, answer.header("Location").?);
+    }
+
+    const signed = try flow.get_with(path, "", "x-test-identity: 7:admin@example.com\r\n");
+    try std.testing.expectEqual(@as(u16, 303), signed.status.code());
+    try std.testing.expectEqualStrings("/admin/content", signed.header("Location").?);
+    const session_cookie = signed.header("Set-Cookie").?;
+    const session_prefix = identity_module.cookie_name ++ "=";
+    try std.testing.expect(std.mem.startsWith(u8, session_cookie, session_prefix));
+
+    // No callback: nothing comes back from a proxy.
+    const callback_path = "/auth/forwarded/callback?state=a&code=b";
+    try std.testing.expectEqual(@as(u16, 404), (try flow.get(callback_path, "")).status.code());
+}
+
+test "behind a proxy a session holds only while the header names its account" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var flow: Flow = undefined;
+    flow.init(&harness, arena);
+
+    var system = harness.ctx(.system);
+    try user_operations.seed_admin(&system);
+
+    const in: identity_operations.Input = .{
+        .provider = "forwarded",
+        .id = "7",
+        .email = "admin@example.com",
+        .verified = true,
+    };
+    var signing = identity_module.context(&flow.project, arena, .system);
+    const ada = try registry.SDK.dispatch(&signing, identity_operations.SignIn, in);
+    const cases = [_]struct {
+        lines: []const u8,
+        holds: bool,
+    }{
+        .{
+            .lines = "x-test-identity: 7:admin@example.com\r\n",
+            .holds = true,
+        },
+        .{
+            .lines = "",
+            .holds = false,
+        },
+        .{
+            .lines = "x-test-identity: nobody\r\n",
+            .holds = false,
+        },
+        .{
+            .lines = "x-test-identity: 8:admin@example.com\r\n",
+            .holds = false,
+        },
+    };
+
+    for (cases) |case| {
+        const head = try std.fmt.allocPrint(
+            arena,
+            "GET /admin HTTP/1.1\r\nHost: h\r\nCookie: {s}={s}\r\n{s}\r\n",
+            .{ identity_module.cookie_name, ada.token, case.lines },
+        );
+        const parsed = try http.parse(head);
+        const wire = parsed.complete;
+        const request: http.Request = .{
+            .inner = &wire,
+            .body = "",
+        };
+        const on_site = identity_module.identify_on_site(&request, arena, &flow.project);
+        try std.testing.expect(on_site.session != null);
+
+        const checked = identity_module.vouched_by_proxy(
+            &test_providers,
+            &request,
+            arena,
+            &flow.project,
+            on_site,
+        );
+        try std.testing.expectEqual(case.holds, checked.session != null);
+
+        // Without a provider read from the request, nothing changes.
+        const plain = identity_module.vouched_by_proxy(
+            test_providers[0..2],
+            &request,
+            arena,
+            &flow.project,
+            on_site,
+        );
+        try std.testing.expect(plain.session != null);
+    }
+}
+
+test "a proxy's rule for new members makes the account with the roles it names, and only that" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+    try user_operations.seed_admin(&system);
+
+    const sign_in = identity_operations.SignIn;
+    const editor: identity_operations.Input = .{
+        .provider = "forwarded",
+        .id = "21",
+        .email = "new@example.com",
+        .verified = true,
+        .new_account_roles = &.{"editor"},
+    };
+    const made = try registry.SDK.dispatch(&system, sign_in, editor);
+    try std.testing.expect(made.created);
+    try std.testing.expectEqualStrings("editor", made.roles[0]);
+
+    // No role: the account waits for an administrator.
+    var waiting = editor;
+    waiting.id = "22";
+    waiting.email = "waiting@example.com";
+    waiting.new_account_roles = &.{};
+    const held = try registry.SDK.dispatch(&system, sign_in, waiting);
+    try std.testing.expect(held.created);
+    try std.testing.expectEqual(@as(usize, 0), held.roles.len);
+
+    var no_such_role = editor;
+    no_such_role.id = "23";
+    no_such_role.email = "unknown@example.com";
+    no_such_role.new_account_roles = &.{"nobody_role"};
+    const invalid = registry.SDK.dispatch(&system, sign_in, no_such_role);
+    try std.testing.expectError(error.Invalid, invalid);
+
+    var unverified = editor;
+    unverified.id = "24";
+    unverified.email = "unverified@example.com";
+    unverified.verified = false;
+    const refused = registry.SDK.dispatch(&system, sign_in, unverified);
+    try std.testing.expectError(error.BadCredentials, refused);
+
+    // Only the system speaks for the proxy's rule.
+    const admin = (try registry.SDK.dispatch(&system, user_operations.List, .{})).users[0];
+    var as_admin = harness.ctx(.{
+        .user = .{
+            .id = admin.id,
+            .roles = &.{"admin"},
+        },
+    });
+    var asked = editor;
+    asked.id = "25";
+    asked.email = "asked@example.com";
+    try std.testing.expectError(error.Denied, registry.SDK.dispatch(&as_admin, sign_in, asked));
+
+    // An account that exists is linked as it is: the rule never changes its roles.
+    var existing = editor;
+    existing.id = "26";
+    existing.email = "admin@example.com";
+    existing.new_account_roles = &.{};
+    const linked = try registry.SDK.dispatch(&system, sign_in, existing);
+    try std.testing.expect(!linked.created);
+    try std.testing.expectEqualStrings("admin", linked.roles[0]);
 }

@@ -45,13 +45,13 @@ pub const SandboxedPlugins = struct {
 };
 
 /// `zig build sandboxed-plugins`: the plugins under `-Dplugins` that are not compiled in,
-/// built into `zig-out/sandboxed-plugins/<name>.wasm`.
+/// built into `zig-out/sandboxed-plugins/<name>.wasm`. Answers every module as built for it.
 pub fn add_step(
     builder: *std.Build,
     publr: *std.Build.Step.Compile,
     dir: []const u8,
     native: native_plugins.Native,
-) void {
+) SandboxedPlugins {
     std.debug.assert(builder.root.sub_path.len == 0);
     std.debug.assert(dir.len > 0);
 
@@ -59,7 +59,7 @@ pub fn add_step(
         "sandboxed-plugins",
         "Build the plugins under -Dplugins that are not compiled in, for the sandbox",
     );
-    const built = add(builder, publr, dir);
+    const built = add_built(builder, publr, dir, .llvm);
 
     for (built.names, built.files) |name, file| {
         if (native_plugins.is_native(native, name)) {
@@ -76,12 +76,28 @@ pub fn add_step(
 
         step.dependOn(&install.step);
     }
+
+    return built;
 }
 
 /// Each plugin under `dir` built as the `publr` command builds one: `publr` (just built)
 /// prepares it, the Zig running this build compiles it for wasm32, `publr` checks the module
-/// (`plugin_compile.zig`).
+/// (`plugin_compile.zig`). Zig's own backend, as the command's compiler has no other.
 pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8) SandboxedPlugins {
+    return add_built(builder, publr, dir, .self_hosted);
+}
+
+/// Which code generator compiles a module: Zig's own, as a person's `publr plugin build`
+/// has it, or LLVM optimising for speed, for the modules Publr ships (`zig build
+/// sandboxed-plugins`): the same source, a few times fewer instructions in the sandbox.
+pub const Backend = enum { self_hosted, llvm };
+
+fn add_built(
+    builder: *std.Build,
+    publr: *std.Build.Step.Compile,
+    dir: []const u8,
+    backend: Backend,
+) SandboxedPlugins {
     std.debug.assert(dir.len > 0);
     std.debug.assert(builder.root.sub_path.len == 0);
 
@@ -97,14 +113,71 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
         }),
     });
 
-    // Those building against others (`builds_with.zon`) after the rest, with each one's module.
-    for ([_]bool{ false, true }) |second| for (names, 0..) |name, index| {
-        const source = builder.pathJoin(&.{ dir, name });
-        const with = builds_with(builder, source);
+    // Each after the ones it builds against (`builds_with.zon`), with their modules, at any
+    // depth: a round builds every plugin whose own are built.
+    const done = builder.allocator.alloc(bool, names.len) catch @panic("OOM");
+    var left: u32 = @intCast(names.len);
+    var rounds: u32 = 0;
 
-        if ((with.len > 0) != second) {
+    @memset(done, false);
+
+    while (left > 0) : (rounds += 1) {
+        if (rounds == names.len) {
+            diagnostic.fail("builds_with.zon: the plugins under {s} build against each other " ++
+                "in a loop", .{dir});
+        }
+
+        left -= add_round(builder, .{
+            .publr = publr,
+            .backend = backend,
+            .compiler = compiler,
+            .dir = dir,
+            .cache = cache,
+            .names = names,
+            .files = files,
+            .done = done,
+        });
+    }
+
+    return .{
+        .names = names,
+        .files = files,
+    };
+}
+
+const Round = struct {
+    publr: *std.Build.Step.Compile,
+    backend: Backend,
+    compiler: *std.Build.Step.Compile,
+    dir: []const u8,
+    cache: []const u8,
+    names: []const []const u8,
+    files: []std.Build.LazyPath,
+    done: []bool,
+};
+
+/// Builds every plugin not built yet whose plugins to build against are: how many.
+fn add_round(builder: *std.Build, round: Round) u32 {
+    const names = round.names;
+    const files = round.files;
+    var made: u32 = 0;
+
+    std.debug.assert(names.len == round.done.len);
+
+    for (names, 0..) |name, index| {
+        const source = builder.pathJoin(&.{ round.dir, name });
+        const with = beside(builder, names, builds_with(builder, source));
+
+        if (round.done[index] or !all_done(names, round.done, with, name)) {
             continue;
         }
+
+        round.done[index] = true;
+        made += 1;
+
+        const compiler = round.compiler;
+        const publr = round.publr;
+        const cache = round.cache;
 
         const run = builder.addRunArtifact(compiler);
 
@@ -118,20 +191,77 @@ pub fn add(builder: *std.Build, publr: *std.Build.Step.Compile, dir: []const u8)
             run.addFileArg(built_before(names, files[0..names.len], other, name));
         }
 
+        if (round.backend == .llvm) {
+            run.addArg("--llvm");
+        }
+
         // What a fixture leaves out of the sandbox is a notice for plugin authors; these
         // leave it out on purpose. A failed build still fails the step, on its exit code.
         _ = run.captureStdErr(.{});
 
-        // A folder argument is cached by its path alone: each source file is an input.
-        for (embed.files_under(builder, source, ".zig")) |path| {
-            run.addFileInput(builder.path(path));
+        // A folder argument is cached by its path alone: each source file is an input, its
+        // components and interactive components too.
+        for ([_][]const u8{ ".zig", ".publr", ".ptsx", ".po", ".svg" }) |extension| {
+            for (embed.files_under(builder, source, extension)) |path| {
+                run.addFileInput(builder.path(path));
+            }
         }
-    };
+    }
 
-    return .{
-        .names = names,
-        .files = files,
-    };
+    return made;
+}
+
+/// Whether each plugin `name` builds against is built already.
+fn all_done(
+    names: []const []const u8,
+    done: []const bool,
+    with: []const []const u8,
+    name: []const u8,
+) bool {
+    std.debug.assert(names.len == done.len);
+    std.debug.assert(name.len > 0);
+
+    for (with) |other| {
+        const found = for (names, done) |candidate, built| {
+            if (std.mem.eql(u8, candidate, other)) {
+                break built;
+            }
+        } else diagnostic.fail("{s}/builds_with.zon names {s}, which is not beside it", .{
+            name,
+            other,
+        });
+
+        if (!found) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// The plugins of `with` that are beside it, among `names`: one it works with only when present
+/// (`compatible_with`) is built without when absent; one it depends on and imports fails its
+/// own build, naming it.
+fn beside(
+    builder: *std.Build,
+    names: []const []const u8,
+    with: []const []const u8,
+) []const []const u8 {
+    std.debug.assert(names.len > 0);
+    std.debug.assert(with.len < 1 << 10);
+
+    var kept: std.ArrayList([]const u8) = .empty;
+
+    for (with) |other| {
+        for (names) |candidate| {
+            if (std.mem.eql(u8, candidate, other)) {
+                kept.append(builder.allocator, other) catch @panic("OOM");
+                break;
+            }
+        }
+    }
+
+    return kept.items;
 }
 
 /// The plugins `<source>/builds_with.zon` names (`.{ "parcels" }`), whose published
@@ -347,6 +477,9 @@ fn discover(builder: *std.Build, dir: []const u8) []const []const u8 {
 
     var names: std.ArrayList([]const u8) = .empty;
     var iterator = root.iterate();
+
+    // A plugin's folder added or removed configures the build again.
+    repository.read_under(builder, dir, .folder);
 
     while (iterator.next(io) catch null) |entry| {
         const folder = entry.kind == .directory or entry.kind == .sym_link;

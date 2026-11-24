@@ -72,14 +72,16 @@ pub const Create = struct {
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
-        definition: []const u8,
+        definition: sdk.operation.Json,
     };
     pub const Out = struct {
         id: []const u8,
         handle: []const u8,
     };
     pub const example: In = .{
-        .definition = new_definition,
+        .definition = .{
+            .text = new_definition,
+        },
     };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
@@ -96,11 +98,11 @@ pub const Create = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.definition.len > content_type.definition_bytes_max + 1) {
+        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
             return error.Invalid;
         }
 
-        const row = try definition.create(ctx, in.definition);
+        const row = try definition.create(ctx, in.definition.text);
 
         return .{
             .id = row.id,
@@ -126,7 +128,7 @@ pub const Update = struct {
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
         type: []const u8,
-        definition: []const u8,
+        definition: sdk.operation.Json,
         drop_content: bool = false,
     };
     pub const Out = struct {
@@ -137,7 +139,9 @@ pub const Update = struct {
     };
     pub const example: In = .{
         .type = "post",
-        .definition = example_definition,
+        .definition = .{
+            .text = example_definition,
+        },
     };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
@@ -164,7 +168,7 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        const updated = try definition.update(ctx, in.type, in.definition, in.drop_content);
+        const updated = try definition.update(ctx, in.type, in.definition.text, in.drop_content);
 
         return .{
             .id = updated.id,
@@ -329,14 +333,16 @@ pub const Validate = struct {
     pub const description = "Check a JSON definition and list every problem without saving";
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
-        definition: []const u8,
+        definition: sdk.operation.Json,
     };
     pub const Out = struct {
         valid: bool,
         problems: []const Problem,
     };
     pub const example: In = .{
-        .definition = "{\"handle\":\"Post\",\"name\":\"\",\"fields\":[]}",
+        .definition = .{
+            .text = "{\"handle\":\"Post\",\"name\":\"\",\"fields\":[]}",
+        },
     };
     pub const example_out: Out = .{
         .valid = false,
@@ -355,11 +361,11 @@ pub const Validate = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
 
-        if (in.definition.len > content_type.definition_bytes_max + 1) {
+        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
             return error.Invalid;
         }
 
-        const report = try definition.validate(ctx, in.definition);
+        const report = try definition.validate(ctx, in.definition.text);
 
         return .{
             .valid = report.valid,
@@ -384,7 +390,9 @@ test "definition input limits are checked before preparation and domain checks" 
 
     for ([_][]const u8{ too_many_fields, too_many_statuses }) |input_text| {
         try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&ctx, Create, .{
-            .definition = input_text,
+            .definition = .{
+                .text = input_text,
+            },
         }));
         try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
     }

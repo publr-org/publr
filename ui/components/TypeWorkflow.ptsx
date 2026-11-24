@@ -122,19 +122,8 @@ const settle = (flow: { statuses: FlowStatus[]; transitions: FlowTransition[] })
   state.loaded = true;
 };
 
-const call = async (operation: string, body?: Record<string, unknown>) => {
-  const read = body === undefined;
-  const query = read ? `?type=${encodeURIComponent(state.type)}` : "";
-  const response = await fetch(Publr.url(`/api/${operation}${query}`), {
-    method: read ? "GET" : "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", Accept: "application/json", "X-Csrf-Token": state.csrf },
-    body: read ? undefined : JSON.stringify({ type: state.type, ...body }),
-  });
-  const answer = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(answer.message ?? answer.error ?? `${response.status}`);
-  return answer;
-};
+const call = (operation: string, body?: Record<string, unknown>): Promise<any> =>
+  Publr.send(operation, { type: state.type, ...body }, { csrf: state.csrf });
 
 /** Runs a change and draws the flow it answers; a refusal is said under the table. */
 const change = async (operation: string, body: Record<string, unknown>) => {
@@ -148,8 +137,7 @@ const change = async (operation: string, body: Record<string, unknown>) => {
 
 const load = async () => {
   try {
-    const response = await fetch(Publr.url("/api/role.list"), { credentials: "same-origin", headers: { Accept: "application/json" } });
-    const listed = response.ok ? await response.json() : { roles: [] };
+    const listed: any = await Publr.send("role.list", {}).catch(() => ({ roles: [] }));
     roles = (listed.roles ?? []).filter((role: { name: string }) => role.name !== "admin");
     settle(await call("flow.get"));
   } catch (error) {

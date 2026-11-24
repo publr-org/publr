@@ -16,10 +16,12 @@ pub fn write(init: std.process.Init, dir: []const u8, manifest: []const u8) !voi
     std.Io.Dir.cwd().access(init.io, ui_dir, .{}) catch return;
 
     const Manifest = model.sandboxed_plugin.Manifest;
-    const parsed = try std.json.parseFromSliceLeaky(Manifest, arena, manifest, .{
+    var parsed = try std.json.parseFromSliceLeaky(Manifest, arena, manifest, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     });
+
+    try model.sandboxed_plugin.resolve_shapes(arena, &parsed);
     const operations = try arena.alloc(operation_types.Operation, parsed.operations.len);
 
     for (parsed.operations, operations) |declared, *operation| {

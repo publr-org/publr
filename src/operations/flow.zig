@@ -808,7 +808,9 @@ const Testing = struct {
         var by = site.person("editor");
         const made = try registry_sdk().dispatch(&by, testing_record.Create, .{
             .type = "guestbook.entry",
-            .document = "{\"title\":\"Lovely\"}",
+            .document = .{
+                .text = "{\"title\":\"Lovely\"}",
+            },
         });
 
         std.debug.assert(made.id.len > 0);
@@ -842,7 +844,9 @@ fn start(site: *Testing) !void {
 
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, testing_types.Create, .{
-        .definition = try model.content_type.encode(system.arena, reviewed_type),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, reviewed_type),
+        },
     });
 
     std.debug.assert(system.now_ms >= 0);
@@ -1023,15 +1027,17 @@ test "a site type on core's flow takes a status and a transition of its own" {
     var system = site.harness.ctx(.system);
 
     _ = try SDK.dispatch(&system, testing_types.Create, .{
-        .definition = try model.content_type.encode(system.arena, .{
-            .handle = "post",
-            .name = "Post",
-            .fields = &.{.{
-                .name = "title",
-                .label = "Title",
-                .kind = "string",
-            }},
-        }),
+        .definition = .{
+            .text = try model.content_type.encode(system.arena, .{
+                .handle = "post",
+                .name = "Post",
+                .fields = &.{.{
+                    .name = "title",
+                    .label = "Title",
+                    .kind = "string",
+                }},
+            }),
+        },
     });
     _ = try SDK.dispatch(&admin, AddStatus, .{
         .type = "post",
@@ -1050,7 +1056,9 @@ test "a site type on core's flow takes a status and a transition of its own" {
 
     const made = try SDK.dispatch(&admin, testing_record.Create, .{
         .type = "post",
-        .document = "{\"title\":\"Hi\"}",
+        .document = .{
+            .text = "{\"title\":\"Hi\"}",
+        },
     });
 
     try std.testing.expectEqualStrings("post.in_review", try site.moved(&admin, made.id, "review"));

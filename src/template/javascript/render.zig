@@ -96,6 +96,12 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                             vm.context,
                             @intFromBool(std.mem.eql(u8, text, "true")),
                         ),
+                        .json => try vm.check(api.JS_ParseJSON(
+                            vm.context,
+                            (try vm.arena.dupeSentinel(u8, text, 0)).ptr,
+                            text.len,
+                            "publr:prop",
+                        )),
                     };
                     try vm.set(props, prop.name, value);
                 }
@@ -312,7 +318,13 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             }, frame.depth + 1, frame.execution);
         }
 
-        pub fn native_props(renderer: *const Renderer, frame: *Frame) !void {
+        /// `objects`: what a plain object is to the callee, an entry it reads (a template),
+        /// or its JSON (a PJSX component, drawn by JavaScript).
+        pub fn native_props(
+            renderer: *const Renderer,
+            frame: *Frame,
+            objects: enum { entries, json },
+        ) !void {
             std.debug.assert(frame.template.compiled);
 
             if (frame.props.javascript.len == 0) {
@@ -342,6 +354,15 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                     const handle = try vm.get(prop.value, "__publr_entry");
                     defer vm.free(handle);
                     var index: u32 = 0;
+
+                    if (objects == .json and !api.JS_IsNumber(handle)) {
+                        try props.append(renderer.arena, .{
+                            .name = prop.name,
+                            .value = try json_of(vm, prop.value),
+                            .kind = .json,
+                        });
+                        continue;
+                    }
 
                     if (!api.JS_IsNumber(handle) or
                         api.JS_ToUint32(vm.context, &index, handle) < 0 or
@@ -615,4 +636,23 @@ fn is_void(name: []const u8) bool {
     }
 
     return false;
+}
+
+/// A plain object or list as `JSON.stringify` writes it.
+fn json_of(vm: *VM, value: Value) ![]const u8 {
+    std.debug.assert(api.JS_IsObject(value));
+
+    const text = try vm.check(api.JS_JSONStringify(
+        vm.context,
+        value,
+        api.publr_js_undefined(),
+        api.publr_js_undefined(),
+    ));
+    defer vm.free(text);
+
+    if (!api.JS_IsString(text)) {
+        return error.InvalidJavaScriptProp;
+    }
+
+    return vm.text(text);
 }

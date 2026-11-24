@@ -84,6 +84,10 @@ pub const files = [_]File{
         .text = @embedFile("../operations/page.zig"),
     },
     .{
+        .path = "operations/stretch.zig",
+        .text = @embedFile("../operations/stretch.zig"),
+    },
+    .{
         .path = "operations/submit.zig",
         .text = @embedFile("../operations/submit.zig"),
     },
