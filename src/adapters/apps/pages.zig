@@ -389,9 +389,12 @@ fn render(
         "";
 
     if (route.live and !view_allowed(project, request, ctx.arena, caller, visitor_id)) {
+        const words = "Too many requests. Please try again in a minute.";
+
         try response.set_header("Cache-Control", "no-store");
         try response.set_header("Retry-After", "60");
-        return response.text(.too_many_requests, "Too many requests. Please try again in a minute.");
+
+        return response.text(.too_many_requests, words);
     }
 
     var redirect_to: ?[]const u8 = null;

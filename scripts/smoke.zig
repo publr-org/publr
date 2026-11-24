@@ -601,7 +601,7 @@ fn expect_site(init: std.process.Init, port: u16) !void {
         },
         .{
             .path = "/_islands/signed-in",
-            .needle = "<template patchfor=\"signed-in\">",
+            .needle = "<template patchfor=\"signed-in\"",
         },
         .{
             .path = "/_app/app.css",

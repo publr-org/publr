@@ -42,14 +42,16 @@ pub fn main(init: std.process.Init) !u8 {
 
         const asks = comptime skipped(Operation.name);
         // A plugin's code alone calls it: no command runs it.
-        const plugins_only = comptime @hasDecl(Operation, "plugins_only") and Operation.plugins_only;
+        const plugins_only = comptime @hasDecl(Operation, "plugins_only") and
+            Operation.plugins_only;
 
         if ((builds and !publr.toolchain.carried) or asks or plugins_only) {
             continue;
         }
 
         // Every operation is checked, so one run names every example that does not hold.
-        const held = if (check(init, binary, work_dir, Operation)) |_| true else |err| switch (err) {
+        const checking = check(init, binary, work_dir, Operation);
+        const held = if (checking) |_| true else |err| switch (err) {
             error.ParityFailed => false,
             else => return err,
         };
