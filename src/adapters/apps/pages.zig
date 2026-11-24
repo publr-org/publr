@@ -23,6 +23,8 @@ const Project = @import("../../server/project.zig").Project;
 const Target = Project.Target;
 const App = @import("state.zig").App;
 const Caller = @import("../../sdk.zig").Caller;
+const identity_module = @import("../rest/identity.zig");
+const registry = @import("../../server/registry.zig");
 
 const Request = http.Request;
 const Response = http.Response;
@@ -307,6 +309,26 @@ fn serve(
     }
 }
 
+/// A live page view counted once against the visitor's general limit: the reads the page
+/// makes while it is drawn are not counted one by one.
+fn view_allowed(
+    project: *const Project,
+    request: *Request,
+    arena: std.mem.Allocator,
+    caller: Caller,
+    visitor_id: []const u8,
+) bool {
+    var sdk_ctx = identity_module.request_context(project, request, arena, caller);
+    sdk_ctx.visitor = visitor_id;
+
+    registry.SDK.check_limits(&sdk_ctx, "page.view", null) catch |err| switch (err) {
+        error.Throttled => return false,
+        else => return true,
+    };
+
+    return true;
+}
+
 pub fn unavailable(response: *Response, reason: []const u8) !void {
     std.debug.assert(response.body.len == 0);
     try response.set_header("Cache-Control", "no-store");
@@ -365,6 +387,13 @@ fn render(
         try visitor.ensure(project, request, response, ctx.arena)
     else
         "";
+
+    if (route.live and !view_allowed(project, request, ctx.arena, caller, visitor_id)) {
+        try response.set_header("Cache-Control", "no-store");
+        try response.set_header("Retry-After", "60");
+        return response.text(.too_many_requests, "Too many requests. Please try again in a minute.");
+    }
+
     var redirect_to: ?[]const u8 = null;
     const html = render_page(ctx.arena, app, route.template, .{
         .arena = ctx.arena,

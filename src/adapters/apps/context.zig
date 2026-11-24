@@ -1275,6 +1275,9 @@ pub const Context = struct {
         sdk_ctx.app_plugins = ctx.app.spec.plugins;
         sdk_ctx.app_reach = ctx.app.spec.name;
         sdk_ctx.address_code = ctx.place.code;
+        // The page's own reads, drawn on the server, are the site's code and not the
+        // visitor's calls: the page view itself is counted once, where it is served.
+        sdk_ctx.limits = null;
 
         // A plugin's words on the page are in the page's language, whatever the admin speaks.
         if (ctx.place.locale.len > 0) {
