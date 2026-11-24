@@ -483,6 +483,48 @@ test "a forged pass keeps nothing" {
     try std.testing.expect(kept.header("Set-Cookie") == null);
 }
 
+test "a file uploaded on the admin's host is added for the person signed in there" {
+    var harness: Harness = undefined;
+    try split_harness(&harness);
+    defer harness.deinit();
+
+    const root = try harness.scratch.dir.realPathFileAlloc(
+        std.testing.io,
+        ".",
+        harness.arena_state.allocator(),
+    );
+    var disk = try @import("../lib/files.zig").Disk.open(std.testing.io, root);
+    defer disk.close();
+
+    harness.flow.project.files = .{
+        .disk = &disk,
+    };
+
+    const arena = harness.arena_state.allocator();
+    const cookie = try sign_in(&harness);
+    const library = try get(&harness, admin_host, "/admin/media", try std.fmt.allocPrint(
+        arena,
+        "Cookie: {s}\r\n",
+        .{cookie},
+    ));
+    const marker = "name=\"publr-csrf\" content=\"";
+    const start = (std.mem.indexOf(u8, library.body, marker) orelse return error.NoCsrf) +
+        marker.len;
+    const csrf = library.body[start..][0..std.mem.indexOfScalar(u8, library.body[start..], '"').?];
+
+    try std.testing.expect(csrf.len > 0);
+
+    const head = try harness.flow.head(
+        "POST /media/upload?filename=notes.txt HTTP/1.1\r\nHost: {s}\r\n" ++
+            "Origin: https://{s}\r\nCookie: {s}\r\nX-Csrf-Token: {s}\r\n" ++
+            "Content-Length: 5\r\n\r\n",
+        .{ admin_host, admin_host, cookie, csrf },
+    );
+    const uploaded = try harness.flow.call(head, "notes");
+
+    try std.testing.expectEqual(.created, uploaded.status);
+}
+
 test "an admin on a shared host answers under its own path, its cookies kept there" {
     var harness: Harness = undefined;
     try split_harness(&harness);

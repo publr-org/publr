@@ -162,7 +162,9 @@ fn finish(context: *anyopaque, response: *http.Response, ctx: *http.Context) any
     try response.json(.created, added);
 }
 
-/// Who the upload is for, worked out again from the session cookie its head carried.
+/// Who the upload is for, worked out again from the session cookie its head carried. The
+/// head's host and proxy were checked in `open`; only the session is read again here, since
+/// the rebuilt head has neither.
 fn caller_of(state: *const Upload, arena: std.mem.Allocator) @import("../../sdk.zig").Caller {
     std.debug.assert(state.session_len <= sessions.token_len);
 
@@ -181,7 +183,7 @@ fn caller_of(state: *const Upload, arena: std.mem.Allocator) @import("../../sdk.
         .body = "",
     };
 
-    return identity.identify(&request, arena, state.project).caller;
+    return identity.identify_on_site(&request, arena, state.project).caller;
 }
 
 fn refusal(
