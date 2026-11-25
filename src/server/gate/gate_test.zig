@@ -199,3 +199,42 @@ test "a table a release added is made without a migration" {
     try std.testing.expectEqual(gate.Outcome.updated, try site.open("0.3.0"));
     try std.testing.expect(try db.schema.has_table(&site.connection, "secrets"));
 }
+
+test "a migration a release recorded as unreleased is recorded by its name, and runs no more" {
+    var site: Site = undefined;
+    try site.init();
+    defer site.deinit();
+
+    const released = db.migrations.core[db.migrations.core.len - 1];
+
+    _ = try site.open("0.8.0");
+
+    // What release 0.8.0 recorded: its own migration, with its text, named `unreleased`.
+    var rename = try site.connection.prepare(
+        "UPDATE migrations SET name = 'unreleased' WHERE source = 'publr' AND name = ?1",
+    );
+    defer rename.finalize();
+
+    try rename.bind_text(1, released.name);
+    try rename.exec();
+
+    const arena = site.arena_state.allocator();
+    const found = try gate.status(&site.connection, &site.runtime, arena);
+
+    try std.testing.expectEqual(@as(usize, 1), found.plan.superseded.len);
+    try std.testing.expectEqual(@as(usize, 0), found.plan.unknown.len);
+    try std.testing.expect(!found.refused());
+    try std.testing.expectEqual(gate.Outcome.updated, try site.open("0.8.0"));
+    try std.testing.expectEqual(gate.Outcome.unchanged, try site.open("0.8.0"));
+
+    const names = try db.migration.applied(&site.connection, arena);
+
+    var named: u32 = 0;
+
+    for (names) |row| {
+        try std.testing.expect(!std.mem.eql(u8, row.name, db.migration.unreleased));
+        named += @intFromBool(std.mem.eql(u8, row.name, released.name));
+    }
+
+    try std.testing.expectEqual(@as(u32, 1), named);
+}

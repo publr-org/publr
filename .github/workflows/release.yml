@@ -151,8 +151,18 @@ jobs:
           migrations=src/lib/db/migrations
           if [ -f fixtures/upgrade/START ] && [ -f "$migrations/unreleased.zig" ]; then
             mv "$migrations/unreleased.zig" "$migrations/$VERSION.zig"
-            perl -pi -e 's/"unreleased"/"$ENV{VERSION}"/; s/migrations\/unreleased\.zig/migrations\/$ENV{VERSION}.zig/g' "$migrations.zig"
+            # The entry that imports unreleased.zig takes the version as its name, whether it
+            # spelled it "unreleased" or migration.unreleased.
+            perl -0pi -e 's/(\.of\(\s*"[^"]+",\s*)(?:migration\.unreleased|"unreleased")(,\s*\@import\("migrations\/unreleased\.zig"\))/$1"$ENV{VERSION}"$2/; s/migrations\/unreleased\.zig/migrations\/$ENV{VERSION}.zig/g' "$migrations.zig"
             grep -q "migrations/$VERSION.zig" "$migrations.zig" || { echo "::error::$migrations.zig does not list unreleased.zig"; exit 1; }
+            perl -0ne 'exit 1 unless /\.of\(\s*"[^"]+",\s*"\Q$ENV{VERSION}\E",\s*\@import\("migrations\/\Q$ENV{VERSION}\E\.zig"\)/' "$migrations.zig" \
+              || { echo "::error::$migrations.zig does not name the entry for $VERSION.zig \"$VERSION\""; exit 1; }
+          fi
+          # With no unreleased.zig, no entry may still be named unreleased: a released binary
+          # would record its migration so.
+          if [ ! -f "$migrations/unreleased.zig" ] && \
+             ! perl -0ne 'exit 1 if /\.of\(\s*"[^"]+",\s*(?:migration\.unreleased|"unreleased")\s*,/' "$migrations.zig"; then
+            echo "::error::$migrations.zig names an entry unreleased, and there is no unreleased.zig"; exit 1
           fi
 
       - uses: ./publr/.github/actions/workspace
@@ -334,10 +344,13 @@ jobs:
           EOF
           # This release's upgrade site and the lived site are its assets, never repository
           # files: the next releases' upgrade tests fetch them (.github/actions/upgrade-sites).
+          # A pre-release: `releases/latest`, which new sites and updates take, stays on the
+          # release Cloud runs until Cloud's release workflow adopts this one and marks it Latest.
           gh release create "$TAG" dist/* $(ls upgrade/upgrade-sites/*.tar.gz 2>/dev/null) \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$TAG" \
+            --prerelease \
             --notes-file notes.md \
             --generate-notes
 

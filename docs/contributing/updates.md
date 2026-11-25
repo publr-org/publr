@@ -49,3 +49,12 @@ release is the start release or later.
 Released migrations are compared with their tags and may never change. The Release workflow
 makes the new site with the release binary and puts the table of results in the release
 notes.
+
+**A release is published as a pre-release.** New sites, the `publr` command's updates and
+Settings › Updates take only the Latest release, so none gets ahead of Cloud; Cloud's own
+release workflow marks a release Latest when Cloud starts running it.
+
+**The workflow names the release's migration.** It renames `unreleased.zig` to
+`<version>.zig` and gives its entry in `src/lib/db/migrations.zig` the version as its name,
+so a released binary never records a migration as `unreleased`. It fails when an entry is
+still named `unreleased` and there is no `unreleased.zig`.

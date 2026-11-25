@@ -16,7 +16,7 @@ pub const baseline = "0.7.5";
 pub const core = [_]migration.Migration{
     .of(
         "publr",
-        migration.unreleased,
+        "0.8.0",
         @import("migrations/0.8.0.zig"),
         @embedFile("migrations/0.8.0.zig"),
     ),
