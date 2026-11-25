@@ -58,6 +58,7 @@ These open the database without the gate, so they work on one it refuses:
 |---|---|
 | `publr db check` | What this release would find opening the database; exit 1 when it would refuse it |
 | `publr db verify` | Whether the database file is whole (every page, index and reference read); exit 1 when it is damaged. Run it on a copy before counting the copy as a backup |
+| `publr db conform [--dry-run]` | Bring a database this release refuses only for its shape to this release's shape, after a backup; exit 2 when it is not one to conform. See [Updates](../updates.md) |
 | `publr db tables` | Every table, its rows, and whether it is core's |
 | `publr db draft <schema.sql>` | The next migration, drafted from what this build's schema adds to that one |
 | `publr backups` | The backups taken before each update, newest first |

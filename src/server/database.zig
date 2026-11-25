@@ -10,6 +10,10 @@ pub const help =
     \\  db check                What this release would find opening the database: the
     \\                          release that last opened it, migrations to run, and every
     \\                          way its shape differs; exits 1 when the gate would refuse it
+    \\  db conform [--dry-run]  Bring a database this release refuses only for its shape (one
+    \\                          a development build made) to this release's shape: tables
+    \\                          rebuilt, refused indexes dropped, what has no place written to
+    \\                          left-out.json in the backup taken first; --dry-run only lists it
     \\  db tables               Every table, its rows, and whether it is core's
     \\  db verify               Whether the database file is whole: every page and index
     \\                          read, every reference followed; exits 1 when it is damaged
@@ -37,6 +41,14 @@ pub fn run(
 
     if (std.mem.eql(u8, command, "db") and args.len == 2 and std.mem.eql(u8, args[1], "check")) {
         return check(init, out, db_path);
+    }
+
+    if (std.mem.eql(u8, command, "db") and args.len >= 2 and std.mem.eql(u8, args[1], "conform")) {
+        const dry_run = args.len == 3 and std.mem.eql(u8, args[2], "--dry-run");
+
+        if (args.len == 2 or dry_run) {
+            return @import("database/conform.zig").run(init, out, db_path, dry_run);
+        }
     }
 
     if (std.mem.eql(u8, command, "db") and args.len == 2 and std.mem.eql(u8, args[1], "tables")) {
@@ -116,6 +128,10 @@ fn check(init: std.process.Init, out: *std.Io.Writer, db_path: [:0]const u8) !u8
             difference.expected,
             difference.live,
         });
+    }
+
+    if (status.failure) |failure| {
+        try out.print("refused    migrations: run on a copy, they failed with {s}\n", .{failure});
     }
 
     const refused = status.refused();

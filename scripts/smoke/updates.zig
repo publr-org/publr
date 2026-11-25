@@ -1,6 +1,6 @@
-//! A site's updates from the outside: what `db check` and `db tables` find, the backups and
-//! a restore of one that is not there, `update status` from a running server, and the
-//! Settings › Updates page behind the sign-in; then the site moved whole (`bundles.zig`).
+//! A site's updates from the outside: what `db check`, `db conform` and `db tables` find,
+//! the backups and a restore of one that is not there, `update status` from a running server,
+//! and the Settings › Updates page behind the sign-in; then the site moved whole (`bundles.zig`).
 const std = @import("std");
 const smoke = @import("../smoke.zig");
 
@@ -15,10 +15,13 @@ pub fn expect_updates(init: std.process.Init, binary: []const u8, work_dir: []co
     const setup = [_][]const u8{
         "project", "init", "--email", email, "--display_name", "Updates", "--password", password,
     };
+    const conform = [_][]const u8{ "db", "conform", "--dry-run" };
 
     try std.Io.Dir.cwd().createDirPath(init.io, dir);
     try smoke.expect_contains(init, binary, dir, &setup, "\"roles\": [");
     try smoke.expect_contains(init, binary, dir, &.{ "db", "check" }, "would open it");
+    try smoke.expect_contains(init, binary, dir, &conform, "nothing to do");
+    try smoke.expect_contains(init, binary, dir, conform[0..2], "nothing to do");
     try smoke.expect_contains(init, binary, dir, &.{ "db", "tables" }, "users 1 core");
     try smoke.expect_contains(init, binary, dir, &.{ "db", "verify" }, "whole");
     try smoke.expect_contains(init, binary, dir, &.{"backups"}, "No backups yet");

@@ -33,7 +33,32 @@ Every command and `serve` open the database through one gate before anything rea
 
 `publr db check` says what the gate would find without opening it: the release that last
 opened the database, the migrations to run, and every way the shape differs, each one
-`fine` or `refused`. `publr db tables` counts every table's rows.
+`fine` or `refused`. It runs the migrations on a copy in memory first, as the gate would, so
+a database with migrations to run is one it opens. `publr db tables` counts every table's
+rows.
+
+## A database a development build made
+
+A development build of Publr may make a database whose shape its release does not have: the
+migration changed before the release. The release refuses it. `publr db conform` brings it
+to the release's shape:
+
+1. It backs the whole site up first, as every update does, and names the backup.
+2. It runs what the gate runs: the migrations, the missing tables.
+3. It rebuilds each table whose shape the release refuses, and drops the unique indexes and
+   triggers the release does not have.
+4. A row the release's rules refuse, and a value of a column the release does not have, are
+   left out: written to `left-out.json` in that backup, never dropped unseen. A column the
+   release holds without NOT NULL and default, where the database held its default for
+   "none", gets NULL in its place.
+5. It forgets migrations no release knows (`unreleased`) and records the release's own.
+
+All of it is one transaction; it lands only when `publr db check` would then open the
+database. `--dry-run` changes nothing and lists the same lines: `rebuild <table>`,
+`drop index <name>`, `null <table>.<column>`, `leave-out <table> <n> rows`,
+`leave-out <table>.<column> <n> values`, then `conform: <n> change(s), <m> left out`, or
+`conform: nothing to do`. It refuses a damaged database, a newer release's, and one without
+a settings table, with exit 2.
 
 ## Backups
 

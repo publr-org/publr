@@ -9,6 +9,9 @@ const builtin = @import("builtin");
 
 pub const backup = @import("gate/backup.zig");
 pub const probes = @import("gate/probes.zig");
+pub const conform = @import("gate/conform.zig");
+pub const Status = @import("gate/status.zig").Status;
+pub const status = @import("gate/status.zig").status;
 
 /// The setting that names the release that last opened the database.
 pub const release_key = "publr.release";
@@ -124,11 +127,11 @@ fn pass(connection: *db.Db, opening: Opening) !Outcome {
 
 /// The migrations the database records that this release's chain reads: none before the
 /// table exists, and none of core's from before its baseline.
-fn recorded_migrations(
+pub fn recorded_migrations(
     connection: *db.Db,
     arena: std.mem.Allocator,
 ) ![]const db.migration.Applied {
-    std.debug.assert(connection.transaction_depth == 0);
+    std.debug.assert(connection.transaction_depth <= 1);
     std.debug.assert(db.migrations.baseline.len > 0);
 
     if (!try db.schema.has_table(connection, "migrations")) {
@@ -217,31 +220,38 @@ fn update(
 
     if (steps.record_release) {
         try settings.set(connection, release_key, opening.release, opening.now_ms);
-        try record_update(connection, arena, opening, steps.before);
+        try record_update(connection, arena, .{
+            .from = steps.before,
+            .to = opening.release,
+            .at_ms = opening.now_ms,
+        });
     }
 
     try transaction.commit();
 }
 
+/// One release taking over a database from another.
+pub const Update = struct {
+    /// The release that opened it last; empty when none is recorded.
+    from: []const u8,
+    to: []const u8,
+    at_ms: i64,
+};
+
 /// `publr.updated` in the activity log, from the system: what Deployments shows as the line
 /// between deployments made under one release and the next.
-fn record_update(
-    connection: *db.Db,
-    arena: std.mem.Allocator,
-    opening: Opening,
-    before: []const u8,
-) !void {
+pub fn record_update(connection: *db.Db, arena: std.mem.Allocator, moved: Update) !void {
     std.debug.assert(connection.transaction_depth >= 1);
-    std.debug.assert(opening.release.len > 0);
+    std.debug.assert(moved.to.len > 0);
 
     const input = try std.json.Stringify.valueAlloc(arena, .{
-        .from = before,
-        .to = opening.release,
+        .from = moved.from,
+        .to = moved.to,
     }, .{});
 
     try activity.append(connection, .{
         .id = 0,
-        .at = opening.now_ms,
+        .at = moved.at_ms,
         .actor = "system",
         .app = "",
         .operation = "publr.updated",
@@ -266,7 +276,7 @@ fn make_fresh(connection: *db.Db, opening: Opening) !void {
 
 /// `schema.sql` and every compiled-in plugin's tables: creates what is missing, leaves
 /// what is there.
-fn apply_schema(connection: *db.Db) !void {
+pub fn apply_schema(connection: *db.Db) !void {
     std.debug.assert(connection.transaction_depth <= 1);
     std.debug.assert(db.schema.sql.len > 0);
 
@@ -274,49 +284,8 @@ fn apply_schema(connection: *db.Db) !void {
     try registry.SDK.apply_schemas(connection);
 }
 
-/// What opening the database would find, without changing it: for `publr db check`.
-pub const Status = struct {
-    /// The release that last opened it; null when none is recorded.
-    release: ?[]const u8,
-    plan: db.migration.Plan,
-    differences: []const db.shape.Difference,
-
-    pub fn refused(found: Status) bool {
-        std.debug.assert(found.differences.len <= db.shape.tables_max * db.shape.columns_max);
-
-        for (found.differences) |difference| {
-            if (!difference.compatible) {
-                return true;
-            }
-        }
-
-        return found.plan.unknown.len > 0 and !found.plan.newer_compatible();
-    }
-};
-
-pub fn status(connection: *db.Db, runtime: *db.Runtime, arena: std.mem.Allocator) !Status {
-    std.debug.assert(connection.transaction_depth == 0);
-    std.debug.assert(runtime.open_count >= 1);
-
-    var expected = try expected_database(runtime);
-    defer expected.close();
-
-    const recorded = try recorded_migrations(connection, arena);
-    const has_settings = try db.schema.has_table(connection, "settings");
-
-    return .{
-        .release = if (has_settings) try settings.get(connection, arena, release_key) else null,
-        .plan = try db.migration.plan_of(arena, registry.SDK.migrations, recorded),
-        .differences = try db.shape.compare(
-            arena,
-            try db.shape.read(&expected, arena),
-            try db.shape.read(connection, arena),
-        ),
-    };
-}
-
 /// The shape this release expects: its schema, made in memory.
-fn expected_database(runtime: *db.Runtime) !db.Db {
+pub fn expected_database(runtime: *db.Runtime) !db.Db {
     std.debug.assert(runtime.open_count >= 1);
 
     var expected = try db.open(runtime, ":memory:");
@@ -357,7 +326,7 @@ fn check_shape(connection: *db.Db, expected: *db.Db, arena: std.mem.Allocator) !
     }
 }
 
-fn check_integrity(connection: *db.Db, arena: std.mem.Allocator) !void {
+pub fn check_integrity(connection: *db.Db, arena: std.mem.Allocator) !void {
     std.debug.assert(connection.transaction_depth >= 1);
 
     const Row = struct {
@@ -433,7 +402,7 @@ fn refuse_newer(
 
 /// Why the gate refuses, for whoever started Publr; the tests that provoke one check the
 /// error instead.
-fn refusal(comptime format: []const u8, args: anytype) void {
+pub fn refusal(comptime format: []const u8, args: anytype) void {
     if (builtin.is_test) {
         return;
     }
@@ -443,4 +412,5 @@ fn refusal(comptime format: []const u8, args: anytype) void {
 
 test {
     _ = @import("gate/gate_test.zig");
+    _ = @import("gate/conform.zig");
 }
