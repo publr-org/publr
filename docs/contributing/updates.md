@@ -47,12 +47,12 @@ and checks the shape, every fact, the site served, a write, and that the gate's 
 it back; `-Dupgrade-previous=<publr>` also checks the release before runs on the result, when that
 release is the start release or later.
 Released migrations are compared with their tags and may never change. The Release workflow
-makes the new site with the release binary and puts the table of results in the release
-notes.
+makes the new site with the release binary; its notes are the changelog.
 
-**A release is published as a pre-release.** New sites, the `publr` command's updates and
-Settings › Updates take only the Latest release, so none gets ahead of Cloud; Cloud's own
-release workflow marks a release Latest when Cloud starts running it.
+**A release is Latest as soon as it is published.** Publr releases stand on their own: Cloud
+runs them when its own release moves to them. Tools that must not get ahead of Cloud (the
+`publr` command and Desktop, for new sites and for updating sites on a computer) follow the
+release Cloud runs, which they ask Cloud for.
 
 **The workflow names the release's migration.** It renames `unreleased.zig` to
 `<version>.zig` and gives its entry in `src/lib/db/migrations.zig` the version as its name,
