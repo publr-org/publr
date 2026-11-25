@@ -1124,6 +1124,31 @@ rounds. A modifier is pure: no writes, no outside calls. `publr mod list` shows 
 modifier, whose it is and why. A `pre` hook is built-in only, registered with
 `host.middleware` (see [The server](#the-server)).
 
+Core applies two values of its own. `money.currencies` (`{ currencies }`) names the site's
+currencies. `media.base` (`{ base }`, empty: the site's own address) is where every media
+address Publr writes starts: a modifier that sets `base` to an origin, a path under it at
+most (`https://media.example.com`), sends browsers there for every file of the media
+library and its resized copies, in pages, API answers and the admin; an answer that is not
+an `http(s)` address without a query is left out. Nothing else uses it. It is asked once a
+page or a call, and a built page depends on it: call `publr.mod_changed` with
+`media.base` when the address the modifier answers from changes.
+
+```zig
+/// The value core applies as `media.base`.
+const Base = struct {
+    base: []const u8 = "",
+};
+
+/// Serves the site's media from the address this plugin keeps
+fn based(ctx: *publr.Ctx, value: *Base) publr.Error!void {
+    const kept = try stored.read(ctx) orelse return;   // its own record
+
+    value.base = kept.value.origin;
+}
+
+.hooks = .{ publr.modify("media.base", based) },
+```
+
 A mod runs where its owner applies it, each time. A computed field's mod,
 `<record>.<field>`, runs when the value is worked out, and its answer is stored and seen by
 everyone ([Computed fields](#computed-fields)). Change a value there when the change

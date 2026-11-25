@@ -206,7 +206,7 @@ const restamp = () => {
 const tile_of = (item: ListedMedia): PickerItem => ({
   ...shown_media(item),
   video: item.family === "video" && !item.missing,
-  src: Publr.url(`/media/${item.key}`),
+  src: Publr.url(item.url),
   selected: false,
   held: false,
 });

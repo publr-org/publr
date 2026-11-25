@@ -9,6 +9,7 @@ const template_render = @import("../../template/render.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const identity_module = @import("../rest/identity.zig");
+const media_base_module = @import("../../sdk/media_base.zig");
 const user_types = @import("../../sdk/user_types.zig");
 const model_dimension = @import("../../model/dimension.zig");
 const record_operations = @import("../../operations/record.zig");
@@ -203,6 +204,8 @@ pub const Memo = struct {
     entries: std.StringHashMapUnmanaged(Context.Entry) = .empty,
     /// Each type's fields, read once when a template prints a field of a plugin's kind.
     fields: std.StringHashMapUnmanaged([]const model_field.Def) = .empty,
+    /// Where media addresses start (`Context.media_base`), read once a render.
+    media_base: ?[]const u8 = null,
 };
 
 const model_field = @import("../../model/field.zig");
@@ -538,25 +541,36 @@ pub const Context = struct {
             }
 
             for (font.faces) |face| {
-                try write_face(writer, font.family, face);
+                // A file of the media library starts where the site's media is served.
+                const library_file = std.mem.startsWith(u8, face.src, media_base_module.prefix);
+                const start = if (library_file) try ctx.media_base() else "";
+
+                try write_face(writer, font.family, start, face);
             }
         }
     }
 
-    /// One hosted file as an `@font-face`; the family and the source were checked when the
-    /// font was written (`design.valid_font_face`), so neither can end the rule.
-    fn write_face(writer: *std.Io.Writer, family: []const u8, face: model_app.FontFace) !void {
+    /// One hosted file as an `@font-face`, its source after `start`; the family and the
+    /// source were checked when the font was written (`design.valid_font_face`), and `start`
+    /// by `media_base.valid`, so none can end the rule.
+    fn write_face(
+        writer: *std.Io.Writer,
+        family: []const u8,
+        start: []const u8,
+        face: model_app.FontFace,
+    ) !void {
         std.debug.assert(family.len > 0 and face.src.len > 0);
         std.debug.assert(face.weight_min <= face.weight_max);
 
         const style: []const u8 = if (face.italic) "italic" else "normal";
 
         try writer.print("<style>@font-face{{font-family:\"{s}\";font-weight:{d} {d};" ++
-            "font-style:{s};font-display:swap;src:url(\"{s}\")}}</style>", .{
+            "font-style:{s};font-display:swap;src:url(\"{s}{s}\")}}</style>", .{
             family,
             face.weight_min,
             face.weight_max,
             style,
+            start,
             face.src,
         });
     }
@@ -610,6 +624,34 @@ pub const Context = struct {
         }
 
         return std.mem.concat(ctx.arena, u8, &.{ base, ctx.place.address }) catch base;
+    }
+
+    /// Where the media library's addresses start on this page (`sdk/media_base.zig`): empty
+    /// for the site's own, else what a plugin gave through the mod `media.base`. Read once a
+    /// render; a page depends on it as it depends on what it reads.
+    pub fn media_base(ctx: *const Context) ![]const u8 {
+        std.debug.assert(ctx.app.spec.name.len > 0);
+
+        if (ctx.memo) |memo| {
+            if (memo.media_base) |read| {
+                return read;
+            }
+        }
+
+        if (ctx.deps) |deps| {
+            deps.record_key(media_base_module.dependency_key);
+        }
+
+        var sdk_ctx = ctx.sdk_context();
+        const base = try media_base_module.of(&sdk_ctx);
+
+        std.debug.assert(base.len == 0 or base[0] != '/');
+
+        if (ctx.memo) |memo| {
+            memo.media_base = base;
+        }
+
+        return base;
     }
 
     /// An `/_app/...` URL under the app's mount, with the fingerprint of the build. The

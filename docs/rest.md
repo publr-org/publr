@@ -102,7 +102,9 @@ max-age=31536000, immutable` with an `ETag` of its hash (and the copy's suffix) 
 to the rest. Every answer carries a Content-Security-Policy with `sandbox`, so an SVG or
 a text file opened on its own runs nothing. A file larger than one response (2 MiB)
 answers `413` to a request for the whole file; ranges of it, and its resized copies, are
-served.
+served. When a plugin serves the site's media from another address (the mod `media.base`,
+[Content](content.md)), the addresses Publr writes point there instead; this route still
+answers for the files it has.
 
 `POST /media/upload?filename=<name>[&folder=<id>]` adds a file to the library: the
 body is the file's bytes as they are (no form, no base64), taken as they arrive and

@@ -63,16 +63,17 @@ pub fn apply(context: Context, rel: []const u8, page: []const u8) ![]const u8 {
     const part_overrides = try context.arena.alloc(overrides.Part, parts.len);
 
     const base = context.url_base();
+    const media = try context.media_base();
 
     for (parts, part_overrides) |part, *out| {
         out.* = .{
             .name = part.name,
-            .output = try address.markup_under(context.arena, base, part.output),
+            .output = try address.markup_under(context.arena, base, media, part.output),
         };
     }
 
     const template_output: ?[]const u8 = if (template.len > 0)
-        try address.markup_under(context.arena, base, template[0].output)
+        try address.markup_under(context.arena, base, media, template[0].output)
     else
         null;
 

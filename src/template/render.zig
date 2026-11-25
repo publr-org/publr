@@ -20,20 +20,46 @@ const Template = ast.Template;
 
 pub const Error = error{NestingTooDeep};
 
-/// What `set:html` or `set:markdown` prints, made safe and put under the base path: the
-/// Markdown converted first, then the same sanitizer for both.
+/// What a root path in a URL attribute goes under: the project's base path, and where
+/// media addresses start when a plugin gave that (`address.prefix_of`).
+const Bases = struct {
+    base: []const u8,
+    media: []const u8,
+};
+
+/// What `set:html` or `set:markdown` prints, made safe and put under the base path (its
+/// media addresses under `media`, when a plugin gave one): the Markdown converted first,
+/// then the same sanitizer for both.
 pub fn printed_markup(
     arena: std.mem.Allocator,
     text: []const u8,
     is_markdown: bool,
     base: []const u8,
+    media: []const u8,
 ) ![]const u8 {
     std.debug.assert(base.len == 0 or base[0] == '/');
 
     const html = if (is_markdown) try markdown.to_html(arena, text, .{}) else text;
     const clean = try sanitize.sanitize(arena, html, .content);
 
-    return address.markup_under(arena, base, clean);
+    return address.markup_under(arena, base, media, clean);
+}
+
+/// Where the context's media addresses start (`media_base` in the apps' context), asked
+/// only when `text` holds one; empty for the site's own, and for a context that has no such
+/// idea.
+pub fn media_of(ctx: anytype, text: []const u8) ![]const u8 {
+    const Context = @typeInfo(@TypeOf(ctx)).pointer.child;
+
+    if (!@hasDecl(Context, "media_base") or std.mem.indexOf(u8, text, "/media/") == null) {
+        return "";
+    }
+
+    const media = try ctx.media_base();
+
+    std.debug.assert(media.len == 0 or media[0] != '/');
+
+    return media;
 }
 
 /// Escapes the five HTML-special characters.
@@ -471,6 +497,11 @@ pub fn Renderer(comptime Ctx: type) type {
                 .attr => |attr| try renderer.write_attr(writer, frame, attr),
                 .asset => |path| try frame.ctx.asset_url(writer, path),
                 .url_base => try writer.writeAll(frame.ctx.url_base()),
+                .media_base => {
+                    const media = try media_of(frame.ctx, "/media/");
+
+                    try writer.writeAll(if (media.len > 0) media else frame.ctx.url_base());
+                },
                 .classes => |text| if (@hasDecl(Ctx, "write_classes")) {
                     try frame.ctx.write_classes(writer, text);
                 } else {
@@ -506,6 +537,7 @@ pub fn Renderer(comptime Ctx: type) type {
                 const value = try Bridge.eval(renderer, frame, expr.node.javascript);
                 return Bridge.write_raw(frame.execution.vm.?, writer, value, .{
                     .base = base,
+                    .ctx = frame.ctx,
                     .kind = raw.kind,
                 });
             }
@@ -522,7 +554,13 @@ pub fn Renderer(comptime Ctx: type) type {
                 return json_script.write_string(writer, text);
             }
 
-            const markup = try printed_markup(renderer.arena, text, raw.kind == .markdown, base);
+            const markup = try printed_markup(
+                renderer.arena,
+                text,
+                raw.kind == .markdown,
+                base,
+                try media_of(frame.ctx, text),
+            );
 
             try writer.writeAll(markup);
         }
@@ -576,7 +614,10 @@ pub fn Renderer(comptime Ctx: type) type {
                 return writer.writeByte('"');
             }
 
-            try write_quoted(writer, name, frame.ctx.url_base(), text);
+            try write_quoted(writer, name, .{
+                .base = frame.ctx.url_base(),
+                .media = try media_of(frame.ctx, text),
+            }, text);
         }
 
         /// ` name="text"`; a root path in a URL attribute under the base the project is
@@ -584,11 +625,11 @@ pub fn Renderer(comptime Ctx: type) type {
         fn write_quoted(
             writer: *std.Io.Writer,
             name: []const u8,
-            base: []const u8,
+            bases: Bases,
             text: []const u8,
         ) anyerror!void {
             std.debug.assert(name.len > 0);
-            std.debug.assert(base.len == 0 or base[0] == '/');
+            std.debug.assert(bases.base.len == 0 or bases.base[0] == '/');
 
             try writer.print(" {s}=\"", .{name});
 
@@ -597,9 +638,7 @@ pub fn Renderer(comptime Ctx: type) type {
                     return writer.writeAll(address.inert ++ "\"");
                 }
 
-                if (address.needs_base(base, text)) {
-                    try writer.writeAll(base);
-                }
+                try writer.writeAll(address.prefix_of(bases.base, bases.media, text));
             }
 
             try escape(writer, text);

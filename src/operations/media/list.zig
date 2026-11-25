@@ -5,6 +5,7 @@ const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const term = @import("../term.zig");
 const library = @import("library.zig");
+const media_base = @import("../../sdk/media_base.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -163,9 +164,12 @@ pub const List = struct {
         const limit = @max(1, @min(in.limit, listing.page_max));
         const rows = try listing.items(ctx.db, ctx.arena, filter, limit, in.offset);
         const items = try ctx.arena.alloc(library.Item, rows.len);
+        const base = try media_base.of(ctx);
 
         for (rows, items) |row, *item| {
-            item.* = library.item_of(row, row.title);
+            const url = try media_base.under(ctx.arena, base, row.storage_key);
+
+            item.* = library.item_of(row, row.title, url);
         }
 
         return .{

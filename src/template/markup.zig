@@ -601,8 +601,10 @@ fn write_literal_attribute(compiler: *Compiler, attr: Attr, verbatim: []const u8
         if (address.url_attribute(attr.name) and root_path(value)) {
             try compiler.static(" ");
             try compiler.static(attr.name);
+            const media = std.mem.startsWith(u8, value, "/media/");
+
             try compiler.static("=\"");
-            try compiler.push(.url_base);
+            try compiler.push(if (media) .media_base else .url_base);
             try compiler.static(value);
             try compiler.static("\"");
 

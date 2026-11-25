@@ -159,8 +159,9 @@ pub const Changed = struct {
             return error.OutOfMemory;
         };
 
-        // What this call read of the site's currencies is read again after the change.
+        // What this call read of the site's currencies and media base is read again.
         ctx.site_currencies = null;
+        ctx.media_base = null;
 
         var index: deps.Index = .{
             .db = ctx.db,

@@ -131,7 +131,7 @@ pub fn file_of(arena: std.mem.Allocator, item: media.Item) Error!File {
         .id = item.id,
         .title = if (item.title.len > 0) item.title else item.filename,
         .thumb = if (image)
-            try print(arena, "/media/{s}?w=480&h=480&fit=cover", .{item.key})
+            try print(arena, "{s}?w=480&h=480&fit=cover", .{item.url})
         else
             "",
         .image = image and !item.missing,

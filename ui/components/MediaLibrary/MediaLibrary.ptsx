@@ -25,7 +25,7 @@ export type MediaItem = {
   image: boolean;
   /** A video: the tile shows its first frame from `src`. */
   video: boolean;
-  /** The file itself: `/media/<key>`. */
+  /** The file itself: `/media/<key>`, or under the base a plugin gives (`media.base`). */
   src: string;
   /** Its type as people say it: `PDF`, `MP4`. */
   kind: string;
@@ -143,7 +143,7 @@ export const state = Publr.reactive({
   file_name: "",
   file_facts: "",
   file_uploaded: "",
-  /** Where the file is served: `/media/<key>`. */
+  /** Where the file is served: `/media/<key>`, or under the base `media.base` gives. */
   file_src: "",
   file_preview: "",
   file_image: false,
@@ -300,7 +300,8 @@ const filter_from = (address: string) => {
 
 type Listed = {
   items: Array<{ id: string; title: string; filename: string; family: string; size: number;
-    width: number | null; height: number | null; key: string; missing: boolean; pending: boolean }>;
+    width: number | null; height: number | null; key: string; url: string; missing: boolean;
+    pending: boolean }>;
   total: number;
   all: number;
   unsorted: number;
@@ -334,10 +335,10 @@ const shaped = (listed: Listed) => {
       id: item.id,
       title: item.title,
       href: file_href(item.id),
-      thumb: item.family === "image" ? `/media/${item.key}?w=480&h=480&fit=cover` : "",
+      thumb: item.family === "image" ? `${item.url}?w=480&h=480&fit=cover` : "",
       image: item.family === "image" && !item.missing && !item.pending,
       video: item.family === "video" && !item.missing && !item.pending,
-      src: `/media/${item.key}`,
+      src: item.url,
       kind: extension,
       icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
       facts: item.pending ? Publr.t("Downloading…") : facts_of(item) + added_of(listed, item.id),
@@ -415,9 +416,9 @@ const open_file = async () => {
     state.file_name = item.filename;
     state.file_facts = facts_of(item);
     state.file_uploaded = new Date(item.created_at).toLocaleString();
-    state.file_src = `/media/${item.key}`;
+    state.file_src = item.url;
     state.file_image = item.family === "image" && !item.missing;
-    state.file_preview = state.file_image ? `/media/${item.key}?w=1600` : "";
+    state.file_preview = state.file_image ? `${item.url}?w=1600` : "";
     state.file_kind = extension_of(item);
     state.file_shown = item.missing ? "other" : state.file_image ? "image" : item.family === "video" ? "video" :
       item.family === "audio" ? "audio" : item.family === "pdf" ? "pdf" : "other";

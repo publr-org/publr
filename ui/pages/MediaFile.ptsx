@@ -16,7 +16,7 @@ export type MediaFileProps = {
   /** `JPEG · 2400 × 1600 · 1.2 MB`. */
   facts: string;
   uploaded: string;
-  /** Where it is served: `/media/<key>`. */
+  /** Where it is served: `/media/<key>`, or under the base `media.base` gives. */
   url: string;
   preview: string;
   image: boolean;

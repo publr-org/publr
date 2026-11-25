@@ -9,6 +9,7 @@ const sanitize = @import("../../lib/sanitize.zig");
 const ids = @import("../../lib/id.zig");
 const record = @import("../record.zig");
 const library = @import("library.zig");
+const media_base = @import("../../sdk/media_base.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -262,7 +263,7 @@ pub fn reserved(ctx: *Ctx, filename: []const u8, folder: ?[]const u8) Error!libr
 
     try store.media.insert(ctx.db, row);
 
-    return library.item_of(row, title_of(filename));
+    return library.item_of(row, title_of(filename), try media_base.url(ctx, key));
 }
 
 /// A Pending file's bytes, checked as an upload's are, kept under its key, and its facts
@@ -354,7 +355,9 @@ pub fn added(ctx: *Ctx, kept: Kept) Error!library.Item {
 
     try store.media.insert(ctx.db, row);
 
-    return library.item_of(row, title_of(kept.filename));
+    const url = try media_base.url(ctx, row.storage_key);
+
+    return library.item_of(row, title_of(kept.filename), url);
 }
 
 fn clean_svg(ctx: *Ctx, bytes: []const u8) Error![]const u8 {

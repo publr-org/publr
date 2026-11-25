@@ -18,6 +18,8 @@ export type ListedMedia = {
   width: number | null;
   height: number | null;
   key: string;
+  /** Where it is served: `/media/<key>`, or under the base a plugin gives. */
+  url: string;
   missing: boolean;
 };
 
@@ -34,7 +36,7 @@ export const shown_media = (item: ListedMedia) => {
   return {
     id: item.id,
     title: item.title || item.filename,
-    thumb: item.family === "image" ? Publr.url(`/media/${item.key}?w=480&h=480&fit=cover`) : "",
+    thumb: item.family === "image" ? Publr.url(`${item.url}?w=480&h=480&fit=cover`) : "",
     image: item.family === "image" && !item.missing,
     kind,
     icon: (item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file") as

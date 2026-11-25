@@ -781,6 +781,8 @@ pub const TestContext = struct {
     restricted_gone: bool = false,
     /// `Publr.build.managed()`: someone else runs the site (Publr Cloud).
     is_managed: bool = false,
+    /// Where media addresses start, as a plugin gave it; empty for the site's own.
+    media_origin: []const u8 = "",
 
     pub const Entry = struct {
         id: []const u8,
@@ -940,6 +942,13 @@ pub const TestContext = struct {
         _ = ctx;
 
         try writer.writeAll("<style>/* css */</style>");
+    }
+
+    pub fn media_base(ctx: *const TestContext) ![]const u8 {
+        std.debug.assert(ctx.media_origin.len == 0 or ctx.media_origin[0] != '/');
+        std.debug.assert(ctx.base.len == 0 or ctx.base[0] == '/');
+
+        return ctx.media_origin;
     }
 
     pub fn url_base(ctx: *const TestContext) []const u8 {
@@ -1618,6 +1627,47 @@ test "base: a script's source goes under the base the project is served at, its 
     try testing.expect(contains(page, "<script>const home = \"/\";</script>"));
     try testing.expect(contains(page, "<script src=\"https://cdn.example/a.js\"></script>"));
     try testing.expect(contains(page, "href=\"/demo/shop/cart\""));
+}
+
+test "base: media addresses start where the site's media is served, the rest under the base" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\const body = '<p><img src="/media/a.png" alt="A"></p>';
+            \\const photo = '/media/b.png?w=400';
+            \\---
+            \\<img src="/media/c.png"><img src={photo}><a href="/cart">Bag</a>
+            \\<div set:html={body} />
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const index = program.find("content/index.publr").?;
+    const own: TestContext = .{
+        .arena = arena,
+        .base = "/demo/shop",
+    };
+    const page = try render_test(arena, program, index, &own);
+
+    try testing.expect(contains(page, "<img src=\"/demo/shop/media/c.png\">"));
+    try testing.expect(contains(page, "<img src=\"/demo/shop/media/b.png?w=400\">"));
+    try testing.expect(contains(page, "<img src=\"/demo/shop/media/a.png\" alt=\"A\">"));
+
+    const elsewhere: TestContext = .{
+        .arena = arena,
+        .base = "/demo/shop",
+        .media_origin = "https://cdn.test",
+    };
+    const served = try render_test(arena, program, index, &elsewhere);
+
+    try testing.expect(contains(served, "<img src=\"https://cdn.test/media/c.png\">"));
+    try testing.expect(contains(served, "<img src=\"https://cdn.test/media/b.png?w=400\">"));
+    try testing.expect(contains(served, "<img src=\"https://cdn.test/media/a.png\" alt=\"A\">"));
+    try testing.expect(contains(served, "href=\"/demo/shop/cart\""));
 }
 
 test "set:html: whatever a page prints as markup is sanitized, natively and in script" {

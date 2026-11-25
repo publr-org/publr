@@ -50,7 +50,7 @@ pub fn show(
         .filename = item.filename,
         .facts = try explorer.facts_of(arena, item),
         .uploaded = admin.time_text(arena, item.created_at),
-        .url = try std.fmt.allocPrint(arena, "/media/{s}", .{item.key}),
+        .url = item.url,
         .preview = if (image) try preview_of(arena, item) else "",
         .image = image,
         .shown = shown_of(item),
@@ -95,17 +95,17 @@ fn shown_of(item: media.Item) @FieldType(views.MediaFile.Props, "shown") {
 /// A copy wide enough for the page, the whole picture: no crop, so the focal point is
 /// placed on the image as it is.
 fn preview_of(arena: std.mem.Allocator, item: media.Item) admin.Error![]const u8 {
-    std.debug.assert(item.key.len > 0);
+    std.debug.assert(std.mem.endsWith(u8, item.url, item.key));
     std.debug.assert(std.mem.eql(u8, item.family, "image"));
 
     const resized = std.mem.eql(u8, item.mime_type, "image/jpeg") or
         std.mem.eql(u8, item.mime_type, "image/png");
 
     if (!resized) {
-        return std.fmt.allocPrint(arena, "/media/{s}", .{item.key});
+        return item.url;
     }
 
-    return std.fmt.allocPrint(arena, "/media/{s}?w=1200", .{item.key});
+    return std.fmt.allocPrint(arena, "{s}?w=1200", .{item.url});
 }
 
 pub fn save(

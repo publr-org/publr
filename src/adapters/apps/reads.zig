@@ -113,6 +113,9 @@ pub fn media(ctx: *const Context, id: []const u8) !?[]const u8 {
     }
 
     var sdk_ctx = ctx.sdk_context();
+
+    // Asked once a render, however many files the page shows.
+    sdk_ctx.media_base = try ctx.media_base();
     const viewed = registry.SDK.dispatch(&sdk_ctx, media_view.View, .{
         .id = id,
     }) catch |err| switch (err) {

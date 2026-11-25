@@ -133,6 +133,14 @@ families a field takes; the other rules a media field carries (file size, image
 dimensions) are not checked on save yet. See
 [CLI: media](cli/media.md).
 
+A file is served at `/media/<key>` on the site's own address. A plugin may serve the
+site's media from another address (a CDN, or the site a copy was made from) through the
+mod `media.base`: every media address Publr writes then starts there, resized copies too:
+`media view` and `media list` answers, `media()` and `mediaUrl()` in templates, the
+`/media/…` addresses in rich text and in a template's own attributes, and the admin's
+library, pickers and previews. Nothing else changes, and `/media/<key>` is still served
+here for whoever asks it.
+
 An app's design is records too, of three core types kept out of Content's lists the same
 way (the Design area is their admin, see [Apps](apps.md#templates-parts-and-patterns)):
 `template` (`route`, the route's file such as `content/posts/[slug].publr`, its title;

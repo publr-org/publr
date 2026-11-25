@@ -27,8 +27,11 @@ pub const Item = struct {
     size: u64,
     width: ?u32 = null,
     height: ?u32 = null,
-    /// Where the file is served: `/media/<key>`.
+    /// The file's key, as in its address.
     key: []const u8,
+    /// Where the file is served: `/media/<key>`, under the base a plugin gives through the
+    /// mod `media.base` (`sdk/media_base.zig`).
+    url: []const u8 = "",
     private: bool,
     created_at: i64,
     /// Taken in from the media folder; no one has looked at it yet.
@@ -49,6 +52,7 @@ pub const example_item: Item = .{
     .width = 2400,
     .height = 1600,
     .key = "2026/10/harbour-a1b2c3.jpg",
+    .url = "/media/2026/10/harbour-a1b2c3.jpg",
     .private = false,
     .created_at = 1791244800000,
 };
@@ -195,9 +199,10 @@ pub fn fail(err: files_module.Error) Error {
     };
 }
 
-pub fn item_of(row: anytype, title: []const u8) Item {
+/// The file as the library lists it, served at `url` (`media_base.url`).
+pub fn item_of(row: anytype, title: []const u8, url: []const u8) Item {
     std.debug.assert(row.size >= 0);
-    std.debug.assert(row.storage_key.len > 0);
+    std.debug.assert(std.mem.endsWith(u8, url, row.storage_key));
 
     const kind = media.kind_of(row.filename);
 
@@ -211,6 +216,7 @@ pub fn item_of(row: anytype, title: []const u8) Item {
         .width = if (row.width) |width| @intCast(width) else null,
         .height = if (row.height) |height| @intCast(height) else null,
         .key = row.storage_key,
+        .url = url,
         .private = row.private,
         .created_at = row.created_at,
         .unreviewed = row.unreviewed,

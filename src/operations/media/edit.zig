@@ -5,6 +5,7 @@ const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const record = @import("../record.zig");
 const library = @import("library.zig");
+const media_base = @import("../../sdk/media_base.zig");
 const trash = @import("../trash.zig");
 const tags = @import("tags.zig");
 const site_dimensions = @import("../dimensions.zig");
@@ -102,7 +103,7 @@ pub const Get = struct {
         const title = if (written.title.len > 0) written.title else row.filename;
 
         return .{
-            .media = library.item_of(row, title),
+            .media = library.item_of(row, title, try media_base.url(ctx, row.storage_key)),
             .alt = written.alt,
             .caption = written.caption,
             .credit = written.credit,

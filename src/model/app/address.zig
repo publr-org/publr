@@ -331,14 +331,36 @@ test "a root path is written under the base, once" {
     try std.testing.expect(url_attribute("HREF") and !url_attribute("data-href"));
 }
 
+/// What a root path in a URL attribute is written under: a media library address
+/// (`/media/…`) under `media` when a plugin gave one (`sdk/media_base.zig`), any other
+/// root path under `base` when it lacks it; empty for anything else.
+pub fn prefix_of(base: []const u8, media: []const u8, value: []const u8) []const u8 {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+    std.debug.assert(media.len == 0 or media[0] != '/');
+
+    if (media.len > 0 and std.mem.startsWith(u8, value, media_prefix)) {
+        return media;
+    }
+
+    return if (needs_base(base, value)) base else "";
+}
+
+const media_prefix = "/media/";
+
 /// Markup that arrives as text (a record's rich text, a design override, already sanitized)
 /// with each root path in an address attribute under `base`, as a template's own are: the
 /// block editor writes `/media/…` and `/about`, which a project served under a path needs
-/// carried. Attributes are read as the sanitizer writes them, `name="value"`.
-pub fn markup_under(arena: std.mem.Allocator, base: []const u8, markup: []const u8) ![]const u8 {
+/// carried; a media address goes under `media` when a plugin gave one (`prefix_of`).
+/// Attributes are read as the sanitizer writes them, `name="value"`.
+pub fn markup_under(
+    arena: std.mem.Allocator,
+    base: []const u8,
+    media: []const u8,
+    markup: []const u8,
+) ![]const u8 {
     std.debug.assert(base.len == 0 or base[0] == '/');
 
-    if (base.len == 0 or std.mem.indexOf(u8, markup, "=\"/") == null) {
+    if ((base.len == 0 and media.len == 0) or std.mem.indexOf(u8, markup, "=\"/") == null) {
         return markup;
     }
 
@@ -357,8 +379,8 @@ pub fn markup_under(arena: std.mem.Allocator, base: []const u8, markup: []const 
 
         try out.appendSlice(arena, rest[0..value_start]);
 
-        if (name.len > 0 and url_attribute(name) and needs_base(base, value)) {
-            try out.appendSlice(arena, base);
+        if (name.len > 0 and url_attribute(name)) {
+            try out.appendSlice(arena, prefix_of(base, media, value));
         }
 
         try out.appendSlice(arena, value);
@@ -379,12 +401,26 @@ test "markup from a record carries the base on its root paths, once" {
     const base = "/demo/site";
     const markup = "<a href=\"/about\" class=\"x\"><img src=\"/media/a.jpg\" alt=\"/x\"></a>" ++
         "<a href=\"/demo/site/work\">w</a><a href=\"https://e.com/\">e</a>";
-    const under = try markup_under(arena, base, markup);
+    const under = try markup_under(arena, base, "", markup);
 
     try std.testing.expectEqualStrings("<a href=\"/demo/site/about\" class=\"x\">" ++
         "<img src=\"/demo/site/media/a.jpg\" alt=\"/x\"></a>" ++
         "<a href=\"/demo/site/work\">w</a><a href=\"https://e.com/\">e</a>", under);
-    try std.testing.expectEqualStrings(markup, try markup_under(arena, "", markup));
+    try std.testing.expectEqualStrings(markup, try markup_under(arena, "", "", markup));
+
+    const cdn = "https://cdn.test";
+
+    try std.testing.expectEqualStrings("<a href=\"/demo/site/about\" class=\"x\">" ++
+        "<img src=\"https://cdn.test/media/a.jpg\" alt=\"/x\"></a>" ++
+        "<a href=\"/demo/site/work\">w</a><a href=\"https://e.com/\">e</a>", try markup_under(
+        arena,
+        base,
+        cdn,
+        markup,
+    ));
+    try std.testing.expectEqualStrings(cdn, prefix_of("", cdn, "/media/a.jpg?w=40"));
+    try std.testing.expectEqualStrings("", prefix_of("", cdn, "/mediaeval"));
+    try std.testing.expectEqualStrings("", prefix_of("", "", "/media/a.jpg"));
 }
 
 /// A path the browser shows, without the base the project is served under:

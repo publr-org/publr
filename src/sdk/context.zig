@@ -348,6 +348,9 @@ pub const Ctx = struct {
     /// The site's currencies as this call first read them (`site_currencies.zig`): a page
     /// that writes many amounts asks the plugin naming them once.
     site_currencies: ?[]const @import("../model/money.zig").Entry = null,
+    /// Where media addresses start as this call first read it (`media_base.zig`): a page
+    /// that shows many files asks the plugins changing it once.
+    media_base: ?[]const u8 = null,
     /// The top-level call's trail, for the activity and error logs (`sdk/trail.zig`).
     trail: ?*@import("trail.zig").Trail = null,
     /// Where on the trail the operation running now started (`Trail.mark`): what its

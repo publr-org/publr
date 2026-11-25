@@ -205,6 +205,9 @@ pub const plugin = publr.plugin.define(manifest, .{
   `.record` typed, `.title` to change); its reads are batched for the whole list by Publr. A
   value of yours others may change goes through `ctx.mod("yourplugin.name", value)`. A
   modifier cannot write or call out. `publr --as-admin mod list` lists every modifier.
+  Core's own: `money.currencies` (`{ currencies }`) and `media.base` (`{ base }`, empty for
+  the site's own address): a modifier that sets `base` to an origin serves every media
+  address from there (a CDN), and nothing else.
 - **Shared or per app.** An internal record is kept per project; a visitor's cart that
   belongs to one app says `.scope = .app`.
 - **Declare secrets.** `.secret = &.{.password}` lists the input fields that hold one (a

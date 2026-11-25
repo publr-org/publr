@@ -6,6 +6,7 @@ const Value = engine.Value;
 const api = engine.api;
 const escape = @import("../render.zig").escape;
 const printed_markup = @import("../render.zig").printed_markup;
+const media_of = @import("../render.zig").media_of;
 const json_script = @import("../json_script.zig");
 const address = @import("../../model/app/address.zig");
 
@@ -266,6 +267,7 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
             if (set_markdown or !api.JS_IsUndefined(raw)) {
                 try write_raw(vm, &buffer.writer, if (set_markdown) markdown else raw, .{
                     .base = frame.ctx.url_base(),
+                    .ctx = frame.ctx,
                     .kind = if (set_markdown) .markdown else .html,
                 });
             } else try write_node(renderer, frame, buffer, children, depth);
@@ -397,6 +399,8 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
         pub const Raw = struct {
             /// The path the project is served under.
             base: []const u8,
+            /// Where media addresses start is asked of it (`media_of`); null for the site's.
+            ctx: ?*const Ctx = null,
             /// Markup, Markdown, or a script's JSON.
             kind: @import("../ast.zig").RawKind,
         };
@@ -433,7 +437,13 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
 
             const text = try vm.text(value);
 
-            const markup = try printed_markup(vm.arena, text, raw.kind == .markdown, raw.base);
+            const markup = try printed_markup(
+                vm.arena,
+                text,
+                raw.kind == .markdown,
+                raw.base,
+                if (raw.ctx) |ctx| try media_of(ctx, text) else "",
+            );
 
             try writer.writeAll(markup);
         }
@@ -490,9 +500,9 @@ pub fn Bridge(comptime Renderer: type, comptime Ctx: type) type {
                     return writer.writeAll(address.inert ++ "\"");
                 }
 
-                if (address.needs_base(named.base, text)) {
-                    try writer.writeAll(named.base);
-                }
+                const media = if (named.ctx) |ctx| try media_of(ctx, text) else "";
+
+                try writer.writeAll(address.prefix_of(named.base, media, text));
             }
 
             try escape(writer, text);

@@ -2,6 +2,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const library = @import("library.zig");
+const media_base = @import("../../sdk/media_base.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -52,7 +53,8 @@ pub const View = struct {
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .id = "The file's id",
-        .url = "Its address on this site; add ?w=, ?h=, ?fit=cover to resize",
+        .url = "Its address (`/media/<key>`, or under the base a plugin gives through the " ++
+            "mod `media.base`); add ?w=, ?h=, ?fit=cover to resize",
         .key = "Its key, as in its address",
         .alt = "What it shows, for people who cannot see it",
         .title = "Its title, else its file name",
@@ -77,7 +79,7 @@ pub const View = struct {
 
         // One row, nothing more: a page may show dozens of files within its render's
         // memory, so what is written about the file (its alt text) is not read here.
-        const url = try std.mem.concat(ctx.arena, u8, &.{ "/media/", row.storage_key });
+        const url = try media_base.url(ctx, row.storage_key);
         const dot = std.mem.lastIndexOfScalar(u8, row.filename, '.') orelse row.filename.len;
 
         return .{

@@ -265,6 +265,7 @@ test {
     _ = @import("sandboxed_plugins/scenarios_staff.zig");
     _ = @import("sandboxed_plugins/scenarios_internal_rules.zig");
     _ = @import("sandboxed_plugins/scenarios_laid_out.zig");
+    _ = @import("sandboxed_plugins/scenarios_media_base.zig");
     _ = @import("sandboxed_plugins/scenarios_hostile.zig");
     _ = @import("sandboxed_plugins/scenarios_errors.zig");
     _ = @import("sandboxed_plugins/scenarios_reads.zig");

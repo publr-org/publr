@@ -281,6 +281,10 @@ pub const Node = union(enum) {
     /// The path the project is served under, before a root path a URL attribute was
     /// written with (`href="/posts"`); nothing at the root.
     url_base,
+    /// What a media library address a URL attribute was written with (`src="/media/…"`)
+    /// goes under: where the site's media is served when a plugin gave that (the mod
+    /// `media.base`), else the project's base path.
+    media_base,
     /// A literal `class` attribute's value, written by the names the app's sheet styles it
     /// by (the host's `write_classes`), as it is without one.
     classes: []const u8,

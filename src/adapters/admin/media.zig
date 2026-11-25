@@ -660,12 +660,12 @@ fn items_of(
             .title = item.title,
             .href = try std.fmt.allocPrint(arena, "/admin/media/{s}", .{item.id}),
             .thumb = if (image)
-                try std.fmt.allocPrint(arena, "/media/{s}?w=480&h=480&fit=cover", .{item.key})
+                try std.fmt.allocPrint(arena, "{s}?w=480&h=480&fit=cover", .{item.url})
             else
                 "",
             .image = image and !item.missing and !item.pending,
             .video = std.mem.eql(u8, item.family, "video") and !item.missing and !item.pending,
-            .src = try std.fmt.allocPrint(arena, "/media/{s}", .{item.key}),
+            .src = item.url,
             .kind = try explorer.kind_of(arena, item.filename),
             .icon = enum_of(@FieldType(Item, "icon"), explorer.icon_of(item.family)),
             .facts = if (item.pending) downloading else try facts_with(

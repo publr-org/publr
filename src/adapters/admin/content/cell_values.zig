@@ -165,7 +165,7 @@ fn media_into(page: *const Page, ids: []const []const u8, lookups: *Lookups) Err
             .label = if (file.title.len > 0) file.title else file.filename,
             .href = try std.fmt.allocPrint(arena, "/admin/media/{s}", .{id}),
             .thumb = if (image)
-                try std.fmt.allocPrint(arena, "/media/{s}?w=96&h=96&fit=cover", .{file.key})
+                try std.fmt.allocPrint(arena, "{s}?w=96&h=96&fit=cover", .{file.url})
             else
                 "",
         });
