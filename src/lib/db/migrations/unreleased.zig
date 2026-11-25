@@ -73,7 +73,7 @@ fn ledger_tables(connection: *db.Db) db.Error!void {
         \\CREATE TABLE IF NOT EXISTS ledger_transfers (
         \\    id           TEXT PRIMARY KEY,
         \\    maker        TEXT NOT NULL,
-        \\    maker_id     TEXT NOT NULL,
+        \\    maker_id     TEXT,
         \\    leg          INTEGER NOT NULL DEFAULT 0,
         \\    made_for     TEXT NOT NULL DEFAULT '',
         \\    action       TEXT NOT NULL,
@@ -82,7 +82,7 @@ fn ledger_tables(connection: *db.Db) db.Error!void {
         \\    unit         TEXT NOT NULL,
         \\    amount       INTEGER NOT NULL CHECK (amount > 0),
         \\    reason       TEXT NOT NULL,
-        \\    hold         TEXT NOT NULL DEFAULT '',
+        \\    hold         TEXT,
         \\    reverses     TEXT NOT NULL DEFAULT '',
         \\    pair         TEXT NOT NULL DEFAULT '',
         \\    rate         INTEGER NOT NULL DEFAULT 0,
@@ -95,12 +95,10 @@ fn ledger_tables(connection: *db.Db) db.Error!void {
         \\    happened_at  INTEGER NOT NULL,
         \\    posted_at    INTEGER NOT NULL,
         \\    debit_after  INTEGER NOT NULL,
-        \\    credit_after INTEGER NOT NULL
+        \\    credit_after INTEGER NOT NULL,
+        \\    UNIQUE (maker, maker_id, leg),
+        \\    UNIQUE (hold)
         \\) STRICT;
-        \\CREATE UNIQUE INDEX IF NOT EXISTS ledger_transfers_maker
-        \\    ON ledger_transfers (maker, maker_id, leg) WHERE maker_id != '';
-        \\CREATE UNIQUE INDEX IF NOT EXISTS ledger_transfers_hold
-        \\    ON ledger_transfers (hold) WHERE hold != '';
         \\CREATE INDEX IF NOT EXISTS ledger_transfers_debit ON ledger_transfers (debit, id);
         \\CREATE INDEX IF NOT EXISTS ledger_transfers_credit ON ledger_transfers (credit, id);
         \\CREATE INDEX IF NOT EXISTS ledger_transfers_about

@@ -58,13 +58,9 @@ pub fn insert(connection: *db.Db, io: std.Io, arena: std.mem.Allocator, row: Row
         "?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)");
     defer insert_row.finalize();
 
-    const texts = [_][]const u8{
-        id, row.maker, row.maker_id,
-    };
-
-    for (texts, 1..) |text, index| {
-        try insert_row.bind_text(@intCast(index), text);
-    }
+    try insert_row.bind_text(1, id);
+    try insert_row.bind_text(2, row.maker);
+    try bind_or_null(&insert_row, 3, row.maker_id);
 
     try insert_row.bind_int(4, row.leg);
 
@@ -78,11 +74,10 @@ pub fn insert(connection: *db.Db, io: std.Io, arena: std.mem.Allocator, row: Row
 
     try insert_row.bind_int(10, row.amount);
 
-    const rest = [_][]const u8{ row.reason, row.hold, row.reverses, row.pair };
-
-    for (rest, 11..) |text, index| {
-        try insert_row.bind_text(@intCast(index), text);
-    }
+    try insert_row.bind_text(11, row.reason);
+    try bind_or_null(&insert_row, 12, row.hold);
+    try insert_row.bind_text(13, row.reverses);
+    try insert_row.bind_text(14, row.pair);
 
     try insert_row.bind_int(15, row.rate);
 
@@ -600,6 +595,20 @@ fn bind_time(select: *db.Statement, index: u31, value: ?i64) db.Error!void {
         try select.bind_int(index, at);
     } else {
         try select.bind_null(index);
+    }
+}
+
+/// An empty `maker_id` or `hold` is stored as NULL: its uniqueness is a table constraint,
+/// which an older release ignores on a table it does not know (a unique index it would
+/// refuse), and NULLs never collide.
+fn bind_or_null(insert_row: *db.Statement, index: u31, text: []const u8) db.Error!void {
+    std.debug.assert(index > 0);
+    std.debug.assert(text.len <= 1024);
+
+    if (text.len > 0) {
+        try insert_row.bind_text(index, text);
+    } else {
+        try insert_row.bind_null(index);
     }
 }
 
