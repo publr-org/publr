@@ -321,27 +321,34 @@ jobs:
           git tag "$TAG"
           git push origin "$TAG"
 
+      # The notes as React writes its own: the version and its date as the title, the beta line,
+      # every change since the previous release with its commit, and the full changelog.
+      - name: Release notes
+        working-directory: publr
+        env: { BETA: "Publr is in beta: expect changes between releases." }
+        run: |
+          previous="$(git tag --list 'v*' --sort=-version:refname | grep -vx "$TAG" | head -1)"
+          changes() {
+            git log --reverse --no-merges --format='%h%x09%H%x09%s' "$previous..$TAG" |
+              while IFS="$(printf '\t')" read -r short long subject; do
+                case "$subject" in "Release v"*|"Merge "*) continue ;; esac
+                echo "- $subject ([$short]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$long))"
+              done
+          }
+          {
+            printf '%s\n\n' "$BETA"
+            if [ -z "$previous" ]; then
+              echo "First release."
+            else
+              printf '## All changes\n\n%s\n\n' "$(changes)"
+              echo "**Full changelog:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$previous...$TAG"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+          echo "$VERSION ($(date -u '+%B %-d, %Y'))" > "$RUNNER_TEMP/title.txt"
+          cat "$RUNNER_TEMP/title.txt" "$RUNNER_TEMP/notes.md"
+
       - name: Release
         run: |
-          cat > notes.md <<EOF
-          On your computer, the \`publr\` command runs this release for each site that pins it:
-          \`brew install publr-org/tap/publr\` or \`curl -fsSL https://publr.dev/install.sh | sh\`.
-          On a server, download \`publr\` for its OS and CPU below. Each binary has its SHA-256
-          next to it, and \`SHA256SUMS\` lists every file.
-
-          macOS builds are not signed yet. If macOS refuses to open \`publr\`, run
-          \`xattr -d com.apple.quarantine publr\` once.
-
-          ## Updating
-
-          A running Publr updates from Settings › Updates, or \`publr update\`. Every update
-          backs the whole site up first. Every release since 0.7.5 was updated to
-          this one before it shipped:
-
-          \`\`\`
-          $(grep -E '^(upgrade to|  |[0-9]+ passed)' upgrade/upgrade.txt || true)
-          \`\`\`
-          EOF
           # This release's upgrade site and the lived site are its assets, never repository
           # files: the next releases' upgrade tests fetch them (.github/actions/upgrade-sites).
           # A pre-release: `releases/latest`, which new sites and updates take, stays on the
@@ -349,10 +356,9 @@ jobs:
           gh release create "$TAG" dist/* $(ls upgrade/upgrade-sites/*.tar.gz 2>/dev/null) \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "$TAG" \
+            --title "$(cat "$RUNNER_TEMP/title.txt")" \
             --prerelease \
-            --notes-file notes.md \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/notes.md"
 
       # Main takes the release: a fast-forward when nothing was pushed meanwhile, else a
       # merge, so the tag stays in main's history (the next release finds it there).
