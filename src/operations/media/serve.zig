@@ -17,7 +17,8 @@ pub const File = struct {
     pub const description = "What serving a file needs: its type, size and focal point";
     pub const details =
         \\Anyone may ask about a public file, by its key; a private one answers not found to
-        \\callers who are not signed in, as one that does not exist.
+        \\callers who are not signed in, as one that does not exist. A file whose bytes have not
+        \\arrived yet (an import still downloading) answers not found to everyone.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const open = true;
@@ -70,6 +71,11 @@ pub const File = struct {
         }
 
         const row = try store.media.by_key(ctx.db, ctx.arena, in.key) orelse return error.NotFound;
+
+        if (row.pending or row.hash.len == 0) {
+            return error.NotFound;
+        }
+
         const signed_in = ctx.caller != .anonymous;
 
         if (row.private and (!signed_in or library.public_only(granted))) {

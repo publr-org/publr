@@ -222,3 +222,36 @@ test "media: upload in pieces, list and count, write, tag, move, fold a folder, 
         system.files.?.read(std.testing.allocator, .files, harbour.key, 1024),
     );
 }
+
+test "a file still downloading is not found, never served half made" {
+    const std = @import("std");
+    const registry = @import("../server/registry.zig");
+    const files_module = @import("../lib/files.zig");
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+
+    const root = try temporary.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    var disk = try files_module.Disk.open(std.testing.io, root);
+    defer disk.close();
+
+    var system = harness.ctx(.system);
+    system.files = .{
+        .disk = &disk,
+    };
+    try registry.SDK.bootstrap(&system);
+
+    const pending = try registry.SDK.dispatch(&system, import.Import, .{
+        .url = "https://example.com/images/harbour.png",
+    });
+
+    try std.testing.expect(pending.key.len > 0);
+    try std.testing.expectError(error.NotFound, registry.SDK.dispatch(&system, File, .{
+        .key = pending.key,
+    }));
+}
