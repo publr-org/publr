@@ -17,8 +17,8 @@ pub const core = [_]migration.Migration{
     .of(
         "publr",
         migration.unreleased,
-        @import("migrations/unreleased.zig"),
-        @embedFile("migrations/unreleased.zig"),
+        @import("migrations/0.8.0.zig"),
+        @embedFile("migrations/0.8.0.zig"),
     ),
 };
 
