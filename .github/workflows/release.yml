@@ -221,6 +221,19 @@ jobs:
         with:
           commits: ${{ needs.version.outputs.commits }}
 
+      # The compiler peaks above the Linux runner's 16 GB on aarch64 (17.4 GB measured for
+      # 0.8.0): swap on the runner's spare disk keeps it from being killed.
+      - name: More swap
+        if: runner.os == 'Linux'
+        run: |
+          sudo swapoff -a
+          sudo rm -f /mnt/swapfile
+          sudo fallocate -l 24G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -g
+
       - name: zig build
         working-directory: publr
         run: |
