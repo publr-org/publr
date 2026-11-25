@@ -34,7 +34,7 @@ env:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2604
     outputs:
       version: ${{ steps.next.outputs.version }}
       previous: ${{ steps.kind.outputs.previous }}
@@ -133,7 +133,7 @@ jobs:
   # builds nothing.
   upgrade:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2604
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -203,10 +203,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: ubuntu-latest, target: x86_64-linux-musl, file: publr-linux-x86_64 }
-          - { runner: ubuntu-latest, target: aarch64-linux-musl, file: publr-linux-aarch64 }
-          - { runner: macos-latest, target: native, file: publr-macos-aarch64 }
-          - { runner: macos-15-intel, target: native, file: publr-macos-x86_64 }
+          - { runner: blacksmith-4vcpu-ubuntu-2604, target: x86_64-linux-musl, file: publr-linux-x86_64 }
+          - { runner: blacksmith-4vcpu-ubuntu-2604, target: aarch64-linux-musl, file: publr-linux-aarch64 }
+          - { runner: blacksmith-6vcpu-macos-15, target: native, file: publr-macos-aarch64 }
+          - { runner: blacksmith-6vcpu-macos-15, target: native, file: publr-macos-x86_64 }
     runs-on: ${{ matrix.runner }}
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
@@ -254,7 +254,7 @@ jobs:
 
   release:
     needs: [version, upgrade, build, verify]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2604
     env:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: v${{ needs.version.outputs.version }}
