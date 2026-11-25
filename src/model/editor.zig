@@ -15,17 +15,13 @@ pub const Config = struct {
 
     pub const publr_form = .fields;
 
+    /// Written as text holding the object, as releases before 0.8 wrote and still read it.
     pub fn jsonStringify(config: Config, writer: anytype) !void {
         std.debug.assert(config.field.len <= config_bytes_max);
 
-        try writer.beginObject();
+        var buffer: [config_bytes_max * 2]u8 = undefined;
 
-        if (config.field.len > 0) {
-            try writer.objectField("field");
-            try writer.write(config.field);
-        }
-
-        try writer.endObject();
+        try writer.write(config.text(&buffer));
     }
 
     pub fn jsonParse(
@@ -71,9 +67,18 @@ pub const Config = struct {
     pub fn text(config: Config, buffer: *[config_bytes_max * 2]u8) []const u8 {
         std.debug.assert(config.field.len <= config_bytes_max);
 
-        var writer = std.Io.Writer.fixed(buffer);
+        if (config.field.len == 0) {
+            return "{}";
+        }
 
-        std.json.Stringify.value(config, .{}, &writer) catch return "{}";
+        var writer = std.Io.Writer.fixed(buffer);
+        const object: struct {
+            field: []const u8,
+        } = .{
+            .field = config.field,
+        };
+
+        std.json.Stringify.value(object, .{}, &writer) catch return "{}";
 
         std.debug.assert(writer.end >= 2);
 
@@ -270,4 +275,28 @@ test "a config reads as an object, and as the text a stored definition kept it i
 
     try std.testing.expectEqualStrings("{}", (Config{}).text(&buffer));
     try std.testing.expectEqualStrings("{\"field\":\"body\"}", named.text(&buffer));
+}
+
+test "a config is written as the text holding it, which releases before 0.8 read" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const Held = struct {
+        editor_config: Config = .{},
+    };
+    const named: Held = .{
+        .editor_config = .{
+            .field = "body",
+        },
+    };
+    const written = try std.json.Stringify.valueAlloc(arena, named, .{});
+
+    try std.testing.expectEqualStrings(
+        "{\"editor_config\":\"{\\\"field\\\":\\\"body\\\"}\"}",
+        written,
+    );
+
+    const read = try std.json.parseFromSliceLeaky(Held, arena, written, .{});
+
+    try std.testing.expectEqualStrings("body", read.editor_config.field);
 }

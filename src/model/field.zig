@@ -74,6 +74,37 @@ pub const Def = struct {
     /// Who may read its value.
     visibility: Visibility = .{},
     fields: []const Def = &.{},
+
+    /// Every member as std.json writes it, but `visibility` only when the field is hidden:
+    /// releases before 0.8 refuse a definition holding a member they do not know.
+    pub fn jsonStringify(def: Def, writer: anytype) !void {
+        var written: u32 = 0;
+
+        try writer.beginObject();
+
+        const info = @typeInfo(Def).@"struct";
+
+        inline for (info.field_names, info.field_types) |name, Member| {
+            const value = @field(def, name);
+            const kept = if (comptime std.mem.eql(u8, name, "visibility"))
+                def.visibility.hidden()
+            else if (comptime @typeInfo(Member) == .optional)
+                value != null or writer.options.emit_null_optional_fields
+            else
+                true;
+
+            if (kept) {
+                try writer.objectField(name);
+                try writer.write(value);
+                written += 1;
+            }
+        }
+
+        try writer.endObject();
+
+        // Name, label and kind always.
+        std.debug.assert(written >= 3);
+    }
 };
 
 /// Who may read a field's value: by default whoever reads its record. A restricted field is
@@ -1145,4 +1176,33 @@ pub fn contains_kind(defs: []const Def, kind: []const u8) bool {
             };
         }
     }
+}
+
+test "a field's visibility is written only when it hides the field" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const open: Def = .{
+        .name = "title",
+        .label = "Title",
+        .kind = "string",
+    };
+    const hidden: Def = .{
+        .name = "cost",
+        .label = "Cost",
+        .kind = "number",
+        .visibility = .{
+            .restricted = true,
+        },
+    };
+    const open_text = try std.json.Stringify.valueAlloc(arena, open, .{});
+    const hidden_text = try std.json.Stringify.valueAlloc(arena, hidden, .{});
+
+    try std.testing.expect(std.mem.indexOf(u8, open_text, "visibility") == null);
+    try std.testing.expect(std.mem.indexOf(u8, open_text, "\"sortable\":null") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hidden_text, "\"restricted\":true") != null);
+
+    const read = try std.json.parseFromSliceLeaky(Def, arena, hidden_text, .{});
+
+    try std.testing.expect(read.visibility.restricted);
 }
