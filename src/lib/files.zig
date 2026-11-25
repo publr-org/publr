@@ -123,6 +123,22 @@ pub const Files = union(enum) {
         return size;
     }
 
+    /// Moves the file between areas without reading it (on disk only: the browser's files
+    /// stay where they are and are named instead).
+    pub fn move(files: Files, from: Area, to: Area, key: []const u8) Error!void {
+        std.debug.assert(key.len > 0);
+        std.debug.assert(from != to);
+
+        if (!valid_key(key)) {
+            return error.InvalidKey;
+        }
+
+        switch (files) {
+            .disk => |stored| try stored.move(from, to, key),
+            .deferred => {},
+        }
+    }
+
     /// Removes the file; one already gone is fine.
     pub fn remove(files: Files, area: Area, key: []const u8) void {
         std.debug.assert(key.len > 0);

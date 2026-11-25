@@ -130,10 +130,10 @@ pub const instructions =
     \\`user delete`, `secret remove`). Uninstalling a plugin keeps its data unless you name
     \\pieces for the trash (`plugin remove --trash`).
     \\Only what is final waits for your person: removing for good (`record purge`, `term
-    \\purge`, `trash remove`, `trash empty`, `snapshot prune`, `plugin erase_data`) goes on
-    \\a removal list and your turn pauses until they have done it; you are then told what
-    \\they removed. End with a short answer: what you did, and what waits for them (drafts
-    \\to publish, permissions to approve).
+    \\purge`, `trash remove`, `trash empty`, `snapshot prune`, `plugin erase_data`, `media
+    \\destroy`) goes on a removal list and your turn pauses until they have done it; you are
+    \\then told what they removed. End with a short answer: what you did, and what waits for
+    \\them (drafts to publish, permissions to approve).
 ;
 
 /// The system prompt a turn starts with: the instructions, the guide, and every command the

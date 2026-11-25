@@ -379,10 +379,16 @@ pub const Delete = struct {
         const kept = ctx.kept;
         defer ctx.kept = kept;
 
-        // Each file into the trash first, with its record; then the record's purge is part
-        // of a removal that can be undone.
-        for (in.ids) |id| {
+        var keys: [ids_max][]const u8 = undefined;
+
+        // Each record into the trash with its file named, its purge part of a removal that can
+        // be undone; the files move only once every record has gone, so a refusal (a file in
+        // use) leaves every file where it was.
+        for (in.ids, 0..) |id, index| {
             const row = try library.row_of(ctx, id);
+
+            keys[index] = row.storage_key;
+
             const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{row.record}) catch {
                 return error.OutOfMemory;
             };
@@ -417,6 +423,10 @@ pub const Delete = struct {
                 .id = row.record,
             });
             ctx.kept = kept;
+        }
+
+        for (keys[0..in.ids.len]) |key| {
+            try trash.set_aside(ctx, key);
         }
 
         return .{

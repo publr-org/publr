@@ -42,6 +42,13 @@ pub fn of(ctx: *Ctx, operation: []const u8, input: []const u8) Error!Described {
         return media_of(ctx, fields.get("ids"));
     }
 
+    if (eql(operation, "media.destroy")) {
+        var described = try media_of(ctx, fields.get("ids"));
+        described.detail = "deleted for good, their space freed; they can never be restored";
+
+        return described;
+    }
+
     if (eql(operation, "user.delete")) {
         return user_of(ctx, text_of(fields, "user"));
     }

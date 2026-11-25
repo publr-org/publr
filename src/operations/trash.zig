@@ -49,7 +49,8 @@ pub const Kept = struct {
     roots: []const copies.Root = &.{},
     /// Tables a delete takes along that never come back (a user's sessions and devices).
     skip: []const []const u8 = &.{},
-    /// Media files to set aside, by key.
+    /// Media files the entry holds, by key; the removal sets them aside (`set_aside`) once
+    /// everything it removes has gone, so a refusal leaves every file in place.
     files: []const []const u8 = &.{},
     /// What to keep instead of rows (an app file's contents), already a copy.
     copy: ?[]const u8 = null,
@@ -72,10 +73,6 @@ pub fn keep(ctx: *Ctx, kept: Kept) Error![]const u8 {
     else
         "";
     const copy = kept.copy orelse captured;
-
-    for (kept.files) |file| {
-        try set_aside(ctx, file);
-    }
 
     const device_id = switch (ctx.caller) {
         .token => |token| token.id,
@@ -104,7 +101,7 @@ pub fn keep(ctx: *Ctx, kept: Kept) Error![]const u8 {
 
 /// A media file moved from the library into the trash's own folder. In the browser the file
 /// stays where it is (its worker keeps the library's files only): the entry names it.
-fn set_aside(ctx: *Ctx, key: []const u8) Error!void {
+pub fn set_aside(ctx: *Ctx, key: []const u8) Error!void {
     std.debug.assert(key.len > 0);
 
     const files = ctx.files orelse return;
@@ -113,12 +110,9 @@ fn set_aside(ctx: *Ctx, key: []const u8) Error!void {
         return;
     }
 
-    const bytes = files.read(ctx.arena, .files, key, store_files.bytes_max) catch |err| {
+    files.move(.files, .trash, key) catch |err| {
         return if (err == error.NotFound) {} else error.Unavailable;
     };
-
-    files.write(.trash, key, bytes) catch return error.Unavailable;
-    files.remove(.files, key);
     files.clear_copies(key);
 }
 
@@ -135,12 +129,9 @@ fn put_back(ctx: *Ctx, keys: []const u8) Error!void {
     var each = std.mem.splitScalar(u8, keys, '\n');
 
     while (each.next()) |key| {
-        const bytes = files.read(ctx.arena, .trash, key, store_files.bytes_max) catch {
-            return ctx.fail(files_gone);
+        files.move(.trash, .files, key) catch |err| {
+            return if (err == error.NotFound) ctx.fail(files_gone) else error.Unavailable;
         };
-
-        files.write(.files, key, bytes) catch return error.Unavailable;
-        files.remove(.trash, key);
     }
 }
 

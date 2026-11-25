@@ -1,6 +1,12 @@
 import { Publr } from "publr-jsx";
-import { clear_selection, delete_selected, move_selected, select_page, state, tag_ref, tagged } from "./MediaLibrary.ptsx";
+import { clear_selection, delete_selected, destroy_selected, move_selected, select_all, select_page, state, tag_ref, tagged } from "./MediaLibrary.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
+import { Dialog } from "@publr/ui/Dialog.ptsx";
+import { DialogClose } from "@publr/ui/DialogClose.ptsx";
+import { DialogContent } from "@publr/ui/DialogContent.ptsx";
+import { DialogDescription } from "@publr/ui/DialogDescription.ptsx";
+import { DialogTitle } from "@publr/ui/DialogTitle.ptsx";
+import { DialogTrigger } from "@publr/ui/DialogTrigger.ptsx";
 import { DropdownMenu } from "@publr/ui/Dropdown.ptsx";
 import { DropdownMenuContent } from "@publr/ui/DropdownMenuContent.ptsx";
 import { DropdownMenuItem } from "@publr/ui/DropdownMenuItem.ptsx";
@@ -16,8 +22,13 @@ export function MediaLibrarySelection() {
     <div class="contents">
       {state.selected_count > 0 && (
         <div class="sticky top-[var(--sheet-top,3.5rem)] z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card px-5 py-2" data-part="media-bulk">
-          <Text as="span" variant="heading-xs">{Publr.tn("{count} selected", "{count} selected", state.selected_count)}</Text>
-          <Button type="button" hierarchy="tertiary" size="sm" onClick={select_page}>{Publr.t("Select page")}</Button>
+          <Text as="span" variant="heading-xs">{state.all_selected ? Publr.tn("All {count} selected", "All {count} selected", state.selected_count) : Publr.tn("{count} selected", "{count} selected", state.selected_count)}</Text>
+          {state.more_to_select && (
+            <Button type="button" hierarchy="tertiary" size="sm" onClick={select_all}>{Publr.tn("Select all {count}", "Select all {count}", state.total)}</Button>
+          )}
+          {!state.more_to_select && !state.all_selected && (
+            <Button type="button" hierarchy="tertiary" size="sm" onClick={select_page}>{Publr.t("Select page")}</Button>
+          )}
           <Button type="button" hierarchy="tertiary" size="sm" onClick={clear_selection}>{Publr.t("Clear")}</Button>
           <div class="ml-auto flex items-center gap-2">
             {state.filed && (
@@ -45,10 +56,26 @@ export function MediaLibrarySelection() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button type="button" hierarchy="secondary" intent="destructive" size="sm" disabled={state.busy} onClick={delete_selected}>
+            <Button type="button" hierarchy="secondary" size="sm" disabled={state.busy} onClick={delete_selected}>
               <Icon name="trash" size="sm" />
-              <span>{Publr.t("Delete")}</span>
+              <span>{Publr.t("Move to trash")}</span>
             </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button type="button" hierarchy="secondary" intent="destructive" size="sm" disabled={state.busy}>
+                  <Icon name="trash" size="sm" />
+                  <span>{Publr.t("Delete permanently")}</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogTitle>{Publr.tn("Delete {count} file permanently?", "Delete {count} files permanently?", state.selected_count)}</DialogTitle>
+                <DialogDescription>{Publr.t("They are not kept in the trash and can never be restored. The space they take is freed.")}</DialogDescription>
+                <form class="mt-4 flex justify-end gap-2" onSubmit={destroy_selected}>
+                  <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
+                  <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete permanently")}</Button></DialogClose>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@ import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
 import { AssetCardGrid } from "@publr/ui/AssetCardGrid.ptsx";
 import { AssetCardMeta } from "@publr/ui/AssetCardMeta.ptsx";
 import { AssetCardPreview } from "@publr/ui/AssetCardPreview.ptsx";
+import { AssetCardProgress } from "@publr/ui/AssetCardProgress.ptsx";
 import { AssetCardSelect } from "@publr/ui/AssetCardSelect.ptsx";
 import { AssetCardTitle } from "@publr/ui/AssetCardTitle.ptsx";
 import { Checkbox } from "@publr/ui/Checkbox.ptsx";
@@ -20,15 +21,40 @@ import { Icon } from "@publr/ui/Icon.ptsx";
 export function MediaLibraryGrid() {
   return (
     <div class="flex flex-1 flex-col" data-part="media-grid">
-      {state.items.length === 0 ? (
+      {state.items.length === 0 && state.uploads.length === 0 ? (
         <Empty mark="files">
           <EmptyTitle>{Publr.t("No files here")}</EmptyTitle>
           <EmptyDescription>{Publr.t("Drop files anywhere on this page, or use Upload.")}</EmptyDescription>
         </Empty>
       ) : (
         <AssetCardGrid size={state.size}>
+          {state.uploads.map((upload) => (
+            <AssetCard look="tile" key={upload.key} classes="order-1">
+              <AssetCardPreview>
+                {upload.preview !== "" ? (
+                  <img src={upload.preview} alt="" class="size-full object-cover opacity-60" />
+                ) : (
+                  <AssetCardFile label={upload.kind}>
+                    <Icon name="file" size="lg" />
+                  </AssetCardFile>
+                )}
+              </AssetCardPreview>
+              {upload.failed !== "" && (
+                <AssetCardBadge label={Publr.t("Not uploaded")}>
+                  <Icon name="alert-triangle" size="sm" />
+                </AssetCardBadge>
+              )}
+              {upload.failed === "" && (
+                <AssetCardProgress value={upload.percent} width={upload.width} label={Publr.t("Uploading {name}…", { name: upload.name })} />
+              )}
+              <AssetCardCaption always={upload.failed !== ""}>
+                <AssetCardTitle tone="overlay">{upload.name}</AssetCardTitle>
+                {upload.failed !== "" && <AssetCardMeta tone="overlay">{upload.failed}</AssetCardMeta>}
+              </AssetCardCaption>
+            </AssetCard>
+          ))}
           {state.items.map((item) => (
-            <AssetCard look="tile" key={item.id}>
+            <AssetCard look="tile" key={item.id} classes={item.fresh ? "" : "order-2"}>
               <AssetCardSelect>
                 <Checkbox value={item.id} checked={item.selected} label={Publr.t("Select {name}", { name: item.title })} onChange={toggled} />
               </AssetCardSelect>

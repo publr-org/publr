@@ -162,6 +162,25 @@ pub const Disk = struct {
         });
     }
 
+    /// Renames the file from one area to another, its bytes never read.
+    pub fn move(disk: *Disk, from: Area, to: Area, key: []const u8) Error!void {
+        std.debug.assert(files.valid_key(key));
+        std.debug.assert(from != to);
+
+        var from_buffer: [path_len_max]u8 = undefined;
+        var to_buffer: [path_len_max]u8 = undefined;
+        const from_path = path_of(&from_buffer, from, key);
+        const to_path = path_of(&to_buffer, to, key);
+
+        disk.make_parent(to_path) catch return error.Storage;
+        disk.root.rename(from_path, disk.root, to_path, disk.io) catch |err| {
+            return switch (err) {
+                error.FileNotFound => error.NotFound,
+                else => error.Storage,
+            };
+        };
+    }
+
     pub fn remove(disk: *Disk, area: Area, key: []const u8) void {
         std.debug.assert(files.valid_key(key));
         std.debug.assert(path_len_max > key.len);
@@ -292,4 +311,41 @@ test "disk: write, read, pieces in order, copies cleared, nothing outside the fo
         error.NotFound,
         stored.read(std.testing.allocator, .files, "2026/10/cat-abc123.jpg", 64),
     );
+}
+
+test "disk: a move renames between areas and back, a missing file is NotFound" {
+    const io = std.testing.io;
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+
+    const root = try temporary.dir.realPathFileAlloc(io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    var disk = try Disk.open(io, root);
+    defer disk.close();
+
+    const stored: files.Files = .{
+        .disk = &disk,
+    };
+    const key = "2026/11/sea-abc123.jpg";
+
+    try stored.write(.files, key, "waves");
+    try stored.move(.files, .trash, key);
+    try std.testing.expectError(
+        error.NotFound,
+        stored.read(std.testing.allocator, .files, key, 64),
+    );
+
+    const trashed = try stored.read(std.testing.allocator, .trash, key, 64);
+    defer std.testing.allocator.free(trashed);
+
+    try std.testing.expectEqualStrings("waves", trashed);
+    try stored.move(.trash, .files, key);
+
+    const back = try stored.read(std.testing.allocator, .files, key, 64);
+    defer std.testing.allocator.free(back);
+
+    try std.testing.expectEqualStrings("waves", back);
+    try std.testing.expectError(error.NotFound, stored.move(.trash, .files, key));
+    try std.testing.expectError(error.InvalidKey, stored.move(.files, .trash, "../escape"));
 }

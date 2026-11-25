@@ -21,7 +21,8 @@ export type MediaFileHeaderProps = {
   saved: boolean;
 };
 
-/** The band over one file: its name and facts, Open file, and Delete behind a confirm. */
+/** The band over one file: its name and facts, Open file, Move to trash, and Delete
+ * permanently behind a confirm. */
 export function MediaFileHeader({ id, title, filename, facts, uploaded, url, saved }: MediaFileHeaderProps) {
   return (
     <div class="flex flex-wrap items-center gap-3 px-5 py-3" data-part="media-file-header">
@@ -34,20 +35,27 @@ export function MediaFileHeader({ id, title, filename, facts, uploaded, url, sav
         <Icon name="external" size="sm" />
         <span>{Publr.t("Open file")}</span>
       </Button>
+      <form method="post" action={`/admin/media/${id}/delete`}>
+        <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
+        <Button type="submit" hierarchy="secondary" size="sm">
+          <Icon name="trash" size="sm" />
+          <span>{Publr.t("Move to trash")}</span>
+        </Button>
+      </form>
       <Dialog>
         <DialogTrigger asChild>
           <Button type="button" hierarchy="secondary" intent="destructive" size="sm">
             <Icon name="trash" size="sm" />
-            <span>{Publr.t("Delete")}</span>
+            <span>{Publr.t("Delete permanently")}</span>
           </Button>
         </DialogTrigger>
         <DialogContent>
-          <DialogTitle>{Publr.t("Delete {title}?", { title })}</DialogTitle>
-          <DialogDescription>{Publr.t("The file and its resized copies are removed for good.")}</DialogDescription>
-          <form method="post" action={`/admin/media/${id}/delete`} class="mt-4 flex justify-end gap-2">
+          <DialogTitle>{Publr.t("Delete {title} permanently?", { title })}</DialogTitle>
+          <DialogDescription>{Publr.t("It is not kept in the trash and can never be restored. The space it takes is freed.")}</DialogDescription>
+          <form method="post" action={`/admin/media/${id}/destroy`} class="mt-4 flex justify-end gap-2">
             <input type="hidden" name="csrf" value={Publr.request.session.csrf} />
             <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
-            <Button type="submit" intent="destructive">{Publr.t("Delete file")}</Button>
+            <Button type="submit" intent="destructive">{Publr.t("Delete permanently")}</Button>
           </form>
         </DialogContent>
       </Dialog>

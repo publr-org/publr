@@ -171,7 +171,32 @@ fn tags_of(arena: std.mem.Allocator, text: []const u8) admin.Error![]const []con
     return names.items;
 }
 
+/// Moves the file into the trash, where it can be restored.
 pub fn remove(
+    request: *admin.Request,
+    response: *admin.Response,
+    ctx: *admin.Context,
+) admin.Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    return removed(media.Delete, request, response, ctx);
+}
+
+/// Deletes the file for good, its space freed; the page confirms it first.
+pub fn destroy(
+    request: *admin.Request,
+    response: *admin.Response,
+    ctx: *admin.Context,
+) admin.Error!void {
+    std.debug.assert(request.method() == .post);
+    std.debug.assert(ctx.user_data != null);
+
+    return removed(media.Destroy, request, response, ctx);
+}
+
+fn removed(
+    comptime Operation: type,
     request: *admin.Request,
     response: *admin.Response,
     ctx: *admin.Context,
@@ -183,7 +208,7 @@ pub fn remove(
     const session = &post.session;
     const id = try admin.param(session, "id", back) orelse return;
 
-    _ = registry.SDK.dispatch(&session.ctx, media.Delete, .{
+    _ = registry.SDK.dispatch(&session.ctx, Operation, .{
         .ids = &.{id},
     }) catch |err| {
         return admin.fail(session, err, back);

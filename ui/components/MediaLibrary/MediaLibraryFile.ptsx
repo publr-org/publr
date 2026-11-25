@@ -1,5 +1,5 @@
 import { Publr } from "publr-jsx";
-import { file_deleted, file_saved, follow, state } from "./MediaLibrary.ptsx";
+import { file_deleted, file_destroyed, file_saved, follow, state } from "./MediaLibrary.ptsx";
 import { AssetCardFile } from "@publr/ui/AssetCardFile.ptsx";
 import { Button } from "@publr/ui/Button.ptsx";
 import { Dialog } from "@publr/ui/Dialog.ptsx";
@@ -40,19 +40,23 @@ export function MediaLibraryFile({ children }: MediaLibraryFileProps) {
           <Icon name="external" size="sm" />
           <span>{Publr.t("Open file")}</span>
         </Button>
+        <Button type="button" hierarchy="secondary" size="sm" disabled={state.busy} onClick={file_deleted}>
+          <Icon name="trash" size="sm" />
+          <span>{Publr.t("Move to trash")}</span>
+        </Button>
         <Dialog>
           <DialogTrigger asChild>
-            <Button type="button" hierarchy="secondary" intent="destructive" size="sm">
+            <Button type="button" hierarchy="secondary" intent="destructive" size="sm" disabled={state.busy}>
               <Icon name="trash" size="sm" />
-              <span>{Publr.t("Delete")}</span>
+              <span>{Publr.t("Delete permanently")}</span>
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogTitle>{Publr.t("Delete {title}?", { title: state.file_title })}</DialogTitle>
-            <DialogDescription>{Publr.t("The file goes to the trash, where it can be restored.")}</DialogDescription>
-            <form class="mt-4 flex justify-end gap-2" onSubmit={file_deleted}>
+            <DialogTitle>{Publr.t("Delete {title} permanently?", { title: state.file_title })}</DialogTitle>
+            <DialogDescription>{Publr.t("It is not kept in the trash and can never be restored. The space it takes is freed.")}</DialogDescription>
+            <form class="mt-4 flex justify-end gap-2" onSubmit={file_destroyed}>
               <DialogClose asChild><Button type="button" hierarchy="secondary">{Publr.t("Cancel")}</Button></DialogClose>
-              <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete file")}</Button></DialogClose>
+              <DialogClose asChild><Button type="submit" intent="destructive">{Publr.t("Delete permanently")}</Button></DialogClose>
             </form>
           </DialogContent>
         </Dialog>

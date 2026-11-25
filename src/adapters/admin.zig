@@ -199,7 +199,7 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 174 + @import("admin/ledger.zig").routes_count +
+pub const routes_count: u32 = 175 + @import("admin/ledger.zig").routes_count +
     preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
@@ -314,9 +314,10 @@ fn register_media(router: *http.Router) void {
     router.get("/admin/media/:id", &media_pages.file.show);
     router.post("/admin/media/:id", &media_pages.file.save);
     router.post("/admin/media/:id/delete", &media_pages.file.remove);
+    router.post("/admin/media/:id/destroy", &media_pages.file.destroy);
     preview_pages.register(router);
 
-    std.debug.assert(router.routes_len == before + 4 + preview_pages.routes_count);
+    std.debug.assert(router.routes_len == before + 5 + preview_pages.routes_count);
 }
 
 /// The Overview, and its agents step for a tool that opens the agent's terminal itself.

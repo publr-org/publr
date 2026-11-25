@@ -11,7 +11,7 @@ export function MediaLibraryUpload() {
       <input type="file" multiple class="hidden" ref={file_ref} onChange={chosen} />
       <Button type="button" size="sm" onClick={choose} disabled={state.busy}>
         <Icon name="upload" size="sm" />
-        <span>{Publr.t("Upload")}</span>
+        <span>{state.uploads_total > 0 ? Publr.t("{done} of {total} uploaded", { done: state.uploads_done, total: state.uploads_total }) : Publr.t("Upload")}</span>
       </Button>
     </div>
   );

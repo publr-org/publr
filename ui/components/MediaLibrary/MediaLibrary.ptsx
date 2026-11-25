@@ -36,6 +36,8 @@ export type MediaItem = {
   /** Its bytes are gone from the media folder. */
   missing: boolean;
   selected: boolean;
+  /** Uploaded just now: drawn before the files still going up. */
+  fresh: boolean;
 };
 export type MediaFolder = {
   id: string;
@@ -71,6 +73,19 @@ export type MediaPill = {
   /** Dropping it; empty while it is at Any. */
   remove_href: string;
 };
+/** A file on its way up, drawn as a tile before the files until the server has it. */
+export type MediaUpload = {
+  key: string;
+  name: string;
+  /** The picture itself from this computer while it goes; empty for any other file. */
+  preview: string;
+  kind: string;
+  percent: number;
+  /** Its bar's fill, as CSS (`24%`). */
+  width: string;
+  /** Why it was not uploaded; empty while it goes. */
+  failed: string;
+};
 export type MediaPeriod = { year: number; month: number; count: number };
 export type MediaOption = { value: string; label: string; selected: boolean };
 export type MediaAddFilter = { label: string; href: string; added: boolean };
@@ -92,6 +107,11 @@ export const state = Publr.reactive({
   page: 1,
   page_size: 25,
   items: [] as MediaItem[],
+  /** Files dropped or picked that are going up, or did not make it. */
+  uploads: [] as MediaUpload[],
+  /** How many of the files going up are in the library, of how many. */
+  uploads_done: 0,
+  uploads_total: 0,
   total: 0,
   all: 0,
   unsorted: 0,
@@ -130,6 +150,10 @@ export const state = Publr.reactive({
   next_href: "",
   page_text: "",
   selected_count: 0,
+  /** Every file the filter finds is selected, on every page, not only the ones ticked. */
+  all_selected: false,
+  /** The whole page is ticked and more files are on other pages: offer them all. */
+  more_to_select: false,
   details: false,
   size: "md" as "sm" | "md" | "lg",
   busy: false,
@@ -251,6 +275,8 @@ const restamp_pills = () => {
 const restamp_selection = (selected: string[]) => {
   state.items = state.items.map((item) => ({ ...item, selected: selected.includes(item.id) }));
   state.selected_count = selected.length;
+  state.all_selected = false;
+  state.more_to_select = selected.length > 0 && selected.length === state.items.length && state.total > selected.length;
 };
 
 const selection = (): string[] => state.items.filter((item) => item.selected).map((item) => item.id);
@@ -328,24 +354,25 @@ const added_of = (listed: Listed, id: string): string =>
     .map((column) => ` · ${column.label} ${String(listed.extended?.[id]?.[column.field])}`)
     .join("");
 
+/** A file as its tile draws it; `added` is what the plugins' columns say after its facts. */
+const item_of = (item: Listed_item, added: string): MediaItem => ({
+  id: item.id,
+  title: item.title,
+  href: file_href(item.id),
+  thumb: item.family === "image" ? `${item.url}?w=480&h=480&fit=cover` : "",
+  image: item.family === "image" && !item.missing && !item.pending,
+  video: item.family === "video" && !item.missing && !item.pending,
+  src: item.url,
+  kind: extension_of(item),
+  icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
+  facts: item.pending ? Publr.t("Downloading…") : facts_of(item) + added,
+  missing: item.missing,
+  selected: false,
+  fresh: false,
+});
+
 const shaped = (listed: Listed) => {
-  state.items = listed.items.map((item) => {
-    const extension = extension_of(item);
-    return {
-      id: item.id,
-      title: item.title,
-      href: file_href(item.id),
-      thumb: item.family === "image" ? `${item.url}?w=480&h=480&fit=cover` : "",
-      image: item.family === "image" && !item.missing && !item.pending,
-      video: item.family === "video" && !item.missing && !item.pending,
-      src: item.url,
-      kind: extension,
-      icon: item.family === "video" ? "video" : item.family === "audio" ? "audio" : "file",
-      facts: item.pending ? Publr.t("Downloading…") : facts_of(item) + added_of(listed, item.id),
-      missing: item.missing,
-      selected: false,
-    };
-  });
+  state.items = listed.items.map((item) => item_of(item, added_of(listed, item.id)));
   state.total = listed.total;
   state.all = listed.all;
   state.unsorted = listed.unsorted;
@@ -374,13 +401,10 @@ const write = (operation: string, input: unknown) => send(operation, input);
 let latest = 0;
 
 /** Asks the server for the files and counts of the current filter and shows them. */
-export const load = async () => {
+/** What `media.list` is asked for the current filter, `limit` files from `offset`. */
+const list_input = (limit: number, offset: number): Record<string, unknown> => {
   const chosen = (value: string) => (value === "any" ? "" : value);
-  const input: Record<string, unknown> = {
-    type: state.type,
-    limit: state.page_size,
-    offset: (state.page - 1) * state.page_size,
-  };
+  const input: Record<string, unknown> = { type: state.type, limit, offset };
   if (state.folder !== "") input.folder = state.folder;
   if (state.tags.length > 0) input.tags = state.tags;
   if (state.search !== "") input.search = state.search;
@@ -389,6 +413,11 @@ export const load = async () => {
   if (chosen(state.kind) !== "") input.kind = chosen(state.kind);
   if (chosen(state.size_filter) !== "") input.size = chosen(state.size_filter);
   if (chosen(state.visibility) !== "") input.visibility = chosen(state.visibility);
+  return input;
+};
+
+export const load = async () => {
+  const input = list_input(state.page_size, (state.page - 1) * state.page_size);
   const asked = ++latest;
   const kept = selection();
   if (state.file !== "") open_file();
@@ -440,7 +469,16 @@ export const file_deleted = async (event: Event) => {
   event.preventDefault();
   const ids = [state.file];
   const back = state.file_back;
-  await done(() => write("media.delete", { ids }), Publr.tn("{count} deleted", "{count} deleted", 1));
+  await done(() => write("media.delete", { ids }), Publr.tn("{count} moved to the trash", "{count} moved to the trash", 1));
+  go(back, true);
+};
+
+/** Deletes the file open in the panel for good, after its dialog was confirmed. */
+export const file_destroyed = async (event: Event) => {
+  event.preventDefault();
+  const ids = [state.file];
+  const back = state.file_back;
+  await done(() => write("media.destroy", { ids }), Publr.tn("{count} deleted permanently", "{count} deleted permanently", 1));
   go(back, true);
 };
 
@@ -508,7 +546,38 @@ export const toggled = (event: Event) => {
 
 export const select_page = () => restamp_selection(state.items.map((item) => item.id));
 
+/** Every file the filter finds, on every page, as Gmail's "Select all" does. */
+export const select_all = () => {
+  restamp_selection(state.items.map((item) => item.id));
+  state.all_selected = true;
+  state.more_to_select = false;
+  state.selected_count = state.total;
+};
+
 export const clear_selection = () => restamp_selection([]);
+
+/** The most files one bulk call takes (`media.delete`, `move`, `tag`), and one page of
+ * `media.list` at most. */
+const ids_per_call = 200;
+
+/** The files a bulk action is for: the ticked ones, or with all selected every file the
+ * filter finds, gathered before anything changes so a delete cannot shift the pages. */
+const targets = async (): Promise<string[]> => {
+  if (!state.all_selected) return selection();
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += ids_per_call) {
+    const listed = (await write("media.list", list_input(ids_per_call, offset))) as Listed;
+    ids.push(...listed.items.map((item) => item.id));
+    if (listed.items.length < ids_per_call || offset + ids_per_call >= listed.total) return ids;
+  }
+};
+
+/** Runs a bulk action over the files in calls of `ids_per_call`. */
+const in_batches = async (ids: string[], each: (batch: string[]) => Promise<unknown>) => {
+  for (let start = 0; start < ids.length; start += ids_per_call) {
+    await each(ids.slice(start, start + ids_per_call));
+  }
+};
 
 const done = async (work: () => Promise<unknown>, note: string) => {
   state.busy = true;
@@ -525,15 +594,27 @@ const done = async (work: () => Promise<unknown>, note: string) => {
 };
 
 export const delete_selected = async () => {
-  const ids = selection();
-  await done(() => write("media.delete", { ids }), Publr.tn("{count} deleted", "{count} deleted", ids.length));
+  const count = state.selected_count;
+  await done(async () => in_batches(await targets(), (ids) => write("media.delete", { ids })),
+    Publr.tn("{count} moved to the trash", "{count} moved to the trash", count));
+  restamp_selection([]);
+};
+
+/** Deletes the files selected for good, after the dialog was confirmed: nothing is kept in
+ * the trash, so their space is freed. */
+export const destroy_selected = async (event: Event) => {
+  event.preventDefault();
+  const count = state.selected_count;
+  await done(async () => in_batches(await targets(), (ids) => write("media.destroy", { ids })),
+    Publr.tn("{count} deleted permanently", "{count} deleted permanently", count));
   restamp_selection([]);
 };
 
 export const move_selected = (event: Event) => {
   const folder = (event.currentTarget as HTMLElement).dataset.folder ?? "";
-  const ids = selection();
-  return done(() => write("media.move", { ids, folder }), Publr.tn("{count} moved", "{count} moved", ids.length));
+  const count = state.selected_count;
+  return done(async () => in_batches(await targets(), (ids) => write("media.move", { ids, folder })),
+    Publr.tn("{count} moved", "{count} moved", count));
 };
 
 export const tag_ref = Publr.ref<HTMLInputElement>();
@@ -541,10 +622,10 @@ export const tag_ref = Publr.ref<HTMLInputElement>();
 export const tagged = (event: Event) => {
   event.preventDefault();
   const name = (tag_ref.current?.value ?? "").trim();
-  const ids = selection();
-  if (name === "" || ids.length === 0) return;
+  if (name === "" || state.selected_count === 0) return;
   if (tag_ref.current) tag_ref.current.value = "";
-  return done(() => write("media.tag", { ids, tag: name }), Publr.t("Tagged {name}", { name }));
+  return done(async () => in_batches(await targets(), (ids) => write("media.tag", { ids, tag: name })),
+    Publr.t("Tagged {name}", { name }));
 };
 
 const named_field = (form: HTMLFormElement, field: string): string =>
@@ -646,7 +727,7 @@ export const tag_made = (event: Event) => {
 
 /** Sends one file as it is, the request's body, into the open folder; the server takes it
  * as it arrives. */
-const sent = (file: File, position: number, total: number) => new Promise<void>((resolve, reject) => {
+const sent = (file: File, progressed: (percent: number) => void) => new Promise<Listed_item>((resolve, reject) => {
   const query = new URLSearchParams({ filename: file.name, type: state.type });
   if (state.filed && state.folder !== "" && state.folder !== "unsorted" && state.folder !== "unreviewed") query.set("folder", state.folder);
   const csrf = document.querySelector<HTMLMetaElement>('meta[name="publr-csrf"]')?.content ?? "";
@@ -655,11 +736,10 @@ const sent = (file: File, position: number, total: number) => new Promise<void>(
   request.setRequestHeader("X-Csrf-Token", csrf);
   request.upload.onprogress = (event) => {
     if (!event.lengthComputable) return;
-    const percent = Math.round((event.loaded / Math.max(event.total, 1)) * 100);
-    state.note = total <= 1 ? Publr.t("Uploading {name}… {percent}%", { name: file.name, percent }) : Publr.t("Uploading {position} of {total}: {name}… {percent}%", { position, total, name: file.name, percent });
+    progressed(Math.round((event.loaded / Math.max(event.total, 1)) * 100));
   };
   request.onload = () => {
-    if (request.status >= 200 && request.status < 300) return resolve();
+    if (request.status >= 200 && request.status < 300) return resolve(JSON.parse(request.responseText) as Listed_item);
     const failed = (() => { try { return JSON.parse(request.responseText); } catch { return {}; } })();
     reject(new Error(failed.message ?? failed.error ?? `${request.status}`));
   };
@@ -667,19 +747,98 @@ const sent = (file: File, position: number, total: number) => new Promise<void>(
   request.send(file);
 });
 
+/** How many files go up side by side; the rest wait as tiles. */
+const uploads_at_once = 3;
+let upload_serial = 0;
+
+const upload_changed = (key: string, change: Partial<MediaUpload>) => {
+  state.uploads = state.uploads.map((upload) => (upload.key === key ? { ...upload, ...change } : upload));
+};
+
+const upload_gone = (key: string) => {
+  const gone = state.uploads.find((upload) => upload.key === key);
+  if (gone && gone.preview !== "") URL.revokeObjectURL(gone.preview);
+  state.uploads = state.uploads.filter((upload) => upload.key !== key);
+};
+
+/** Waits until the browser holds a picture, so a tile never shows an empty square while the
+ * server makes its thumbnail; a picture that cannot load does not hold the tile back. */
+const pictured = async (src: string) => {
+  const image = new Image();
+  image.src = src;
+  try {
+    await image.decode();
+  } catch {
+    // The tile shows the file anyway, as the list would.
+  }
+};
+
+/** Moves a file the server has from its tile to the front of the files, once its thumbnail
+ * is there to show. */
+const swapped = async (added: Listed_item, key: string) => {
+  const item = { ...item_of(added, ""), fresh: true };
+  if (item.image) await pictured(item.thumb);
+  upload_gone(key);
+  state.items = [item, ...state.items.filter((listed) => listed.id !== item.id)];
+  state.total += 1;
+  state.all += 1;
+  state.uploads_done += 1;
+};
+
+/** Sends one file, its tile following along. Answers the swap to wait for, or null when the
+ * file did not go. */
+const upload_one = async (file: File, key: string): Promise<Promise<void> | null> => {
+  try {
+    const added = await sent(file, (percent) => {
+      if (state.uploads.find((upload) => upload.key === key)?.percent === percent) return;
+      upload_changed(key, { percent, width: `${percent}%` });
+    });
+    return swapped(added, key);
+  } catch (error) {
+    upload_changed(key, { failed: Publr.t("Not uploaded: {reason}", { reason: (error as Error).message }) });
+    state.uploads_total -= 1;
+    return null;
+  }
+};
+
+/** Every file shows as a tile at once and goes up a few at a time; the page is asked for
+ * again when all are done, for the counts and the order the server keeps. */
 const upload = async (files: File[]) => {
   if (files.length === 0) return;
+  for (const upload of state.uploads.filter((upload) => upload.failed !== "")) upload_gone(upload.key);
+  const queued = files.map((file) => ({ file, key: `upload-${++upload_serial}` }));
+  state.uploads = [...queued.map(({ file, key }) => ({
+    key,
+    name: file.name,
+    preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+    kind: (file.name.split(".").pop() ?? "").toUpperCase(),
+    percent: 0,
+    width: "0%",
+    failed: "",
+  })), ...state.uploads];
+  state.uploads_total += files.length;
   state.busy = true;
-  let failed = "";
-  for (const [index, file] of files.entries()) {
-    try {
-      await sent(file, index + 1, files.length);
-    } catch (error) {
-      failed = Publr.t("{name} was not uploaded: {reason}", { name: file.name, reason: (error as Error).message });
+  state.note = "";
+  let next = 0;
+  let failed = 0;
+  const swaps: Array<Promise<void>> = [];
+  const worker = async () => {
+    while (next < queued.length) {
+      const { file, key } = queued[next++];
+      const swap = await upload_one(file, key);
+      if (swap === null) failed += 1;
+      else swaps.push(swap);
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(uploads_at_once, queued.length) }, worker));
+  await Promise.all(swaps);
+  if (state.uploads.some((upload) => upload.failed === "")) return;
   state.busy = false;
-  state.note = failed !== "" ? failed : files.length === 1 ? Publr.t("Uploaded") : Publr.tn("{count} uploaded", "{count} uploaded", files.length);
+  state.uploads_done = 0;
+  state.uploads_total = 0;
+  const uploaded = files.length - failed;
+  state.note = failed > 0 ? Publr.tn("{count} file was not uploaded", "{count} files were not uploaded", failed) :
+    uploaded === 1 ? Publr.t("Uploaded") : Publr.tn("{count} uploaded", "{count} uploaded", uploaded);
   await load();
 };
 

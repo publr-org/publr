@@ -24,6 +24,7 @@ tags. Signed-in callers only, except `media file` and `media view`. Back to the 
 | `media move --ids <id> ... [--folder <id>]` | File several files in a folder, or none |
 | `media tag --ids <id> ... --tag <name> [--remove true]` | Add a tag to several files, or take it off |
 | `media delete --ids <id> ...` | Remove files into the trash, each with its record and bytes (`trash restore` brings it back); resized copies go |
+| `media destroy --ids <id> ...` | Delete files for good, up to 200: each record, its bytes and its resized copies go and nothing is kept in the trash, so the space is freed. A person only, in the admin; a device lists it for its person |
 | `media folder_delete --folder <id>` | Remove a folder; its folders and files move up a level (admins: it purges the term) |
 | `media import_many --urls <a>,<b>,… [--folder <id or name>]` | Several files from the web in one call, up to 20, as `media import` takes one; each that cannot be added is listed in `failed` with why, the rest are added. `--folder` takes a folder's id or its name (made when there is none of that name; also for `media import`) |
 | `media read --key <key> [--width <n>] [--height <n>] [--fit crop\|cover] [--format webp\|jpeg\|png] [--quality <1-100>]` | A file's bytes, base64, as uploaded or resized as `/media/<key>` resizes: of any media type, private ones included, for whoever may read the type. Up to 8 MiB; read a larger image smaller. How the agent looks at chat pictures |
