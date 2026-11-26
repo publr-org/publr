@@ -135,13 +135,18 @@ pub fn expression_end(compiler: *Compiler, text: []const u8, start: u32) Error!u
 /// How many `{name}` values one message fills.
 pub const words_values_max: u32 = 32;
 
+/// The page's words a template calls, `Publr.<name>(…)`: the template features list them.
+pub const words_functions = [_][]const u8{ "t", "tn", "tx" };
+
 /// `Publr.t(`, `Publr.tn(`, `Publr.tx(` after the word `Publr`: the page's words, which the
 /// script engine says in the page's language.
 pub fn words_call(rest: []const u8) bool {
     std.debug.assert(rest.len < 1 << 24);
 
-    for ([_][]const u8{ ".t(", ".tn(", ".tx(" }) |call| {
-        if (std.mem.startsWith(u8, rest, call)) {
+    for (words_functions) |function| {
+        if (rest.len > function.len + 1 and rest[0] == '.' and
+            std.mem.startsWith(u8, rest[1..], function) and rest[function.len + 1] == '(')
+        {
             return true;
         }
     }

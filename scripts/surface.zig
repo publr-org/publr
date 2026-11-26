@@ -189,6 +189,8 @@ fn list(init: std.process.Init, surface: Surface, src: []const u8, before: []con
         // An operation declares `pub const name`; an event or a mod `.name = ` in a literal.
         const declaration = if (std.mem.eql(u8, item.kind, "call"))
             try std.fmt.allocPrint(arena, "pub const name = \"{s}\";", .{item.name})
+        else if (std.mem.eql(u8, item.kind, "template"))
+            try std.fmt.allocPrint(arena, ".name = \"{s}\",", .{bare_feature(item.name)})
         else
             try std.fmt.allocPrint(arena, ".name = \"{s}\",", .{item.name});
         const place = try declared_at(init, src, declaration);
@@ -511,4 +513,13 @@ fn write_broke(out: *std.Io.Writer, broke: []const u8) !u32 {
     std.debug.assert(written <= broke.len);
 
     return written;
+}
+
+/// A template feature's name as `features.zig` lists it: `getEntry` for `Publr.*.getEntry`.
+fn bare_feature(name: []const u8) []const u8 {
+    std.debug.assert(name.len > 0);
+
+    const scope = "Publr.*.";
+
+    return if (std.mem.startsWith(u8, name, scope)) name[scope.len..] else name;
 }

@@ -7,6 +7,7 @@ const model = @import("../../model.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const registry = @import("../../server/registry.zig");
 const offered = @import("offered.zig");
+const template_features = @import("../../template/features.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -139,7 +140,7 @@ const mod_names = names: {
 /// operation is an event too, under its own name), every mod core applies by name.
 const offered_all = names: {
     const total = operation_names.len + host_names.len + offered.event_names.len +
-        mod_names.len;
+        mod_names.len + template_features.offered.len;
 
     @setEvalBranchQuota(1000 + total * 64);
 
@@ -166,6 +167,11 @@ const offered_all = names: {
         index += 1;
     }
 
+    for (template_features.offered) |feature| {
+        names[index] = feature;
+        index += 1;
+    }
+
     const final = names;
 
     break :names final;
@@ -189,7 +195,7 @@ const deprecated_all = listed: {
 
     @setEvalBranchQuota(1000 + operations.len * 16);
 
-    var count: usize = offered.deprecated.len;
+    var count: usize = offered.deprecated.len + template_features.deprecated.len;
 
     for (operations) |Operation| {
         if (sdk.operation.deprecation(Operation) != null) {
@@ -225,6 +231,18 @@ const deprecated_all = listed: {
         index += 1;
     }
 
+    for (template_features.deprecated) |item| {
+        list[index] = .{
+            .kind = "template",
+            .name = item.name,
+            .since = item.deprecated.since,
+            .removed_on = item.deprecated.removed_on,
+            .instead = item.deprecated.instead,
+            .migration = item.deprecated.migration,
+        };
+        index += 1;
+    }
+
     const final = list;
 
     break :listed final;
@@ -237,7 +255,9 @@ pub const Surface = struct {
         \\Anyone signed in. What a plugin built for this Publr may use, by name: the operations
         \\of core and of the built-in plugins (`call:`; each is an event too), the functions
         \\the sandbox gives a module (`host:`), core's events (`event:`, which a plugin emits
-        \\or hooks: `emit:`, `hook:` in its `uses`) and the mods core applies by name (`mod:`).
+        \\or hooks: `emit:`, `hook:` in its `uses`), the mods core applies by name (`mod:`)
+        \\and what an app's templates use (`template:`: functions, directives, attributes,
+        \\settings).
         \\A plugin's manifest lists what it uses and the Publr it was built with
         \\(`minimum_publr`); one using what this list lacks in a namespace of core's, or built
         \\with a later Publr, is refused as it is installed and as it is loaded. `deprecated`
@@ -262,8 +282,8 @@ pub const Surface = struct {
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .publr = "This Publr's release",
-        .offered = "What a plugin may use: `call:<operation>`, `host:<function>`, " ++
-            "`event:<event>`, `mod:<mod>`",
+        .offered = "What a plugin or app may use: `call:<operation>`, `host:<function>`, " ++
+            "`event:<event>`, `mod:<mod>`, `template:<feature>`",
         .deprecated = "Each item on its way out, on every page: `kind`, `since`, `removed_on`, " ++
             "`instead`, `migration`",
         .more = "Whether more follow past this page",

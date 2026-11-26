@@ -31,6 +31,13 @@ what to do instead, with a before and after. The Release workflow fails when an 
 host function, event or mod is gone with no entry, names the section after the release, and
 puts it in the release notes.
 
+**Every template feature is in one list** (`src/template/features.zig`): `Publr.build.*` and
+`Publr.request.*` functions are listed there, and the compiler refuses one the list lacks; the
+page's words, directives and a component tag's attributes are read from where they are handled
+(`expression.zig`, `markup.zig`, `json_script.zig`, `components.zig`); `app.zon` and
+`addresses.zon` settings from their structs. A new function goes in the list; a new directive or
+attribute goes in its file's list, which both the matching and the features read.
+
 **From 1.0, removing something takes a deprecation first.** An operation declares
 `pub const deprecated: publr.Deprecated = .{ .since = "1.2.0", .removed_on = "2028-03-01",
 .instead = "...", .migration = "..." }`: it keeps working until `removed_on`, at least twelve

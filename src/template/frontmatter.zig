@@ -4,6 +4,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const compile = @import("compile.zig");
+const features = @import("features.zig");
 const expression = @import("expression.zig");
 const imports = @import("imports.zig");
 
@@ -395,6 +396,8 @@ fn publr_call(compiler: *Compiler, name: []const u8, rhs: []const u8) Error!void
     std.debug.assert(request or std.mem.startsWith(u8, rhs, "Publr.build."));
     std.debug.assert(call.len < rhs.len);
 
+    try publr_function(compiler, request, call);
+
     if (request and !compiler.context.forced_dynamic(template.rel)) {
         return compiler.fail(
             "{s} reads the dynamic API (Publr.request), so it is dynamic and its name " ++
@@ -459,6 +462,26 @@ fn publr_call(compiler: *Compiler, name: []const u8, rhs: []const u8) Error!void
     }
 
     return visitor_call(compiler, name, rhs, request, call);
+}
+
+/// The function `call` begins with (`getCollection("post")`) is one templates have
+/// (`features.zig`): recorded as one the template uses, or refused, naming it.
+fn publr_function(compiler: *Compiler, request: bool, call: []const u8) Error!void {
+    std.debug.assert(call.len > 0);
+
+    const end = std.mem.indexOfAny(u8, call, "( ;") orelse call.len;
+    const method = call[0..end];
+    const scope = if (request) "request" else "build";
+    const found = if (method.len > 0) features.function_named(method) else null;
+    const feature = found orelse return compiler.fail(
+        "{s}: Publr.{s}.{s} is not a function templates have in Publr {s}",
+        .{ compiler.template.rel, scope, method, @import("../publr.zig").version },
+    );
+    const name = std.fmt.allocPrint(compiler.arena, "Publr.{s}.{s}", .{ scope, method }) catch
+        return error.OutOfMemory;
+
+    std.debug.assert(name.len > method.len);
+    try compile.use_feature(compiler, name, feature.deprecated);
 }
 
 /// `Publr.request.redirect(…);` and `Publr.request.call(…);` on their own: an action the

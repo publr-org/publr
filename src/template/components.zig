@@ -15,6 +15,14 @@ const Template = ast.Template;
 const Attr = markup.Attr;
 
 const island_attributes = [_][]const u8{ "island", "dynamic", "prerender", "eager", "follow" };
+pub const condition_attribute = "dynamic-if";
+pub const cache_attribute = "cache";
+/// Every attribute a component tag takes from Publr, beside its own props: the template
+/// features list them.
+pub const publr_attributes = island_attributes ++ [_][]const u8{
+    condition_attribute,
+    cache_attribute,
+};
 
 /// What a component tag's attributes say: the island markers, the cache policy, and
 /// the props with their literal spellings (empty for an expression).
@@ -112,7 +120,12 @@ fn read_attribute(
 ) Error!void {
     std.debug.assert(callee.compiled);
 
-    if (std.mem.eql(u8, attr.name, "dynamic-if")) {
+    // A component's own props are its; Publr's attributes (`island`, `cache`) are recorded.
+    if (attr.name.len > 0) {
+        try compile.use_named(compiler, attr.name);
+    }
+
+    if (std.mem.eql(u8, attr.name, condition_attribute)) {
         return read_condition(compiler, name, site, attr);
     }
 
@@ -131,7 +144,7 @@ fn read_attribute(
         return;
     }
 
-    if (std.mem.eql(u8, attr.name, "cache")) {
+    if (std.mem.eql(u8, attr.name, cache_attribute)) {
         const text = attr.literal orelse {
             return compiler.fail("<{s} cache> takes a number of seconds: cache=\"60\"", .{name});
         };
@@ -287,7 +300,7 @@ fn check_entry_props(
 /// that name holds. A name, not an expression: the condition is decided in the browser on
 /// each view, and braces always mean the build or the server.
 fn read_condition(compiler: *Compiler, name: []const u8, site: *CallSite, attr: Attr) Error!void {
-    std.debug.assert(std.mem.eql(u8, attr.name, "dynamic-if"));
+    std.debug.assert(std.mem.eql(u8, attr.name, condition_attribute));
 
     if (attr.expression != null) {
         return compiler.fail(
@@ -721,7 +734,7 @@ fn pjsx_attribute(
 ) Error!void {
     std.debug.assert(name.len > 0);
 
-    if (is_island_attribute(attr.name) or std.mem.eql(u8, attr.name, "cache")) {
+    if (is_island_attribute(attr.name) or std.mem.eql(u8, attr.name, cache_attribute)) {
         return compiler.fail(
             "<{s} {s}> — {s} is a PJSX component, which is always embedded. Wrap it in a " ++
                 ".publr component and mark that as the island",

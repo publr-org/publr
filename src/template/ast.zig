@@ -408,6 +408,9 @@ pub const Template = struct {
     /// The dynamic islands, by the tier the loader resolves them in.
     dynamic_eager_keys: []const []const u8 = &.{},
     dynamic_idle_keys: []const []const u8 = &.{},
+    /// What the template uses of Publr, as `plugin surface` names it
+    /// (`template:Publr.build.getCollection`, `template:set:markdown`): an app's `uses`.
+    features: []const []const u8 = &.{},
     /// Every utility class the template's markup names.
     classes: []const []const u8 = &.{},
     compiled: bool = false,

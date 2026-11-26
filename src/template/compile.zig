@@ -294,6 +294,7 @@ pub const Compiler = struct {
     static_idle_keys: std.ArrayList([]const u8),
     dynamic_eager_keys: std.ArrayList([]const u8),
     dynamic_idle_keys: std.ArrayList([]const u8),
+    features: std.ArrayList([]const u8),
     classes: std.ArrayList([]const u8),
     decls: std.ArrayList(ast.Decl),
     failure: []const u8 = "",
@@ -326,6 +327,7 @@ pub const Compiler = struct {
             .static_idle_keys = .empty,
             .dynamic_eager_keys = .empty,
             .dynamic_idle_keys = .empty,
+            .features = .empty,
             .classes = .empty,
             .decls = .empty,
         };
@@ -409,6 +411,7 @@ pub const Compiler = struct {
         template.static_idle_keys = compiler.static_idle_keys.items;
         template.dynamic_eager_keys = compiler.dynamic_eager_keys.items;
         template.dynamic_idle_keys = compiler.dynamic_idle_keys.items;
+        template.features = compiler.features.items;
         template.classes = compiler.classes.items;
         template.compiling = false;
         template.compiled = true;
@@ -644,4 +647,68 @@ test "note keeps a sorted set of keys, once each" {
     try std.testing.expectEqualStrings("alpha", set.items[0]);
     try std.testing.expectEqualStrings("middle", set.items[1]);
     try std.testing.expectEqualStrings("zulu", set.items[2]);
+}
+
+/// Records that the template uses the Publr feature `name` (`Publr.build.getCollection`,
+/// `set:markdown`; `template:` in front, as `plugin surface` names it), and says so on stderr
+/// when it is on its way out, with what to change.
+pub fn use_feature(
+    compiler: *Compiler,
+    name: []const u8,
+    deprecated: ?@import("../sdk/operation.zig").Deprecated,
+) Error!void {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(compiler.features.items.len <= features_max);
+
+    const key = std.fmt.allocPrint(compiler.arena, "template:{s}", .{name}) catch
+        return error.OutOfMemory;
+
+    if (!contains_key(compiler.features.items, key)) {
+        if (compiler.features.items.len == features_max) {
+            return compiler.fail("{s} uses more than {d} Publr features", .{
+                compiler.template.rel,
+                features_max,
+            });
+        }
+
+        compiler.features.append(compiler.arena, key) catch return error.OutOfMemory;
+    }
+
+    if (deprecated) |found| {
+        std.log.warn("{s} uses {s}, removed on {s}: {s}", .{
+            compiler.template.rel,
+            name,
+            found.removed_on,
+            found.migration,
+        });
+    }
+}
+
+const features_max: u32 = 256;
+
+fn contains_key(keys: []const []const u8, key: []const u8) bool {
+    std.debug.assert(key.len > 0);
+
+    for (keys) |one| {
+        if (std.mem.eql(u8, one, key)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Records a feature that is not a function (`set:markdown`, `island`) by its name, when it
+/// is one templates have (`features.zig`).
+pub fn use_named(compiler: *Compiler, name: []const u8) Error!void {
+    std.debug.assert(name.len > 0);
+
+    const feature = @import("features.zig").other_named(name) orelse return;
+
+    std.debug.assert(feature.kind != .function);
+    try use_feature(compiler, feature.name, feature.deprecated);
+}
+
+test {
+    _ = @import("features.zig");
 }

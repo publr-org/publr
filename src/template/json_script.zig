@@ -12,7 +12,9 @@ const markup = @import("markup.zig");
 const Compiler = compile.Compiler;
 const Error = compile.Error;
 
-const attribute = " set:json=";
+/// The directive, as the template features list it.
+pub const directive = "set:json";
+const attribute = " " ++ directive ++ "=";
 const closing = "</script>";
 
 /// Takes the `<script>` element `rest` starts with when it sets its content with
@@ -28,6 +30,8 @@ pub fn take(compiler: *Compiler, rest: []const u8) Error!bool {
     if (at > first_close) {
         return false;
     }
+
+    try compile.use_named(compiler, directive);
 
     const value_at: u32 = @intCast(at + attribute.len);
 

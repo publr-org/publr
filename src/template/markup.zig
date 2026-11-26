@@ -524,6 +524,12 @@ fn is_attribute_char(byte: u8) bool {
     return !std.ascii.isWhitespace(byte) and byte != '=' and byte != '>' and byte != '/';
 }
 
+pub const set_html = "set:html";
+pub const set_markdown = "set:markdown";
+/// The directives an element takes, as the template features list them (`set:json` is a
+/// script's: `json_script.zig`).
+pub const directives = [_][]const u8{ set_html, set_markdown };
+
 /// The markup an element's content is set to: `set:html={…}` or `set:markdown={…}`; a
 /// script's JSON (`set:json`) is `json_script.zig`'s.
 pub const SetContent = struct {
@@ -544,9 +550,11 @@ fn write_attributes(
     var set_content: ?SetContent = null;
 
     for (attributes) |attr| {
-        const markdown = std.mem.eql(u8, attr.name, "set:markdown");
+        const markdown = std.mem.eql(u8, attr.name, set_markdown);
 
-        if (markdown or std.mem.eql(u8, attr.name, "set:html")) {
+        if (markdown or std.mem.eql(u8, attr.name, set_html)) {
+            try compile.use_named(compiler, attr.name);
+
             if (set_content != null) {
                 return compiler.fail("<{s}> sets its content twice", .{name});
             }
