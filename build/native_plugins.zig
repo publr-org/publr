@@ -2,6 +2,7 @@ const std = @import("std");
 const repository = @import("repository.zig");
 const diagnostic = @import("diagnostic.zig");
 const plugin_docs = @import("plugin_docs.zig");
+const core = @import("core.zig");
 
 pub const dir_default = "plugins";
 pub const plugins_max: u32 = 64;
@@ -151,11 +152,11 @@ fn add_published(
     for (compiled.names, compiled.modules, compiled.docs) |name, owner, owner_docs| {
         const source = builder.fmt(
             \\//! {s}'s published interface, made from its declarations.
-            \\const publr = @import("publr");
-            \\const Owner = publr.plugin.Bind(@import("owner"), @import("owner_docs"));
+            \\const core = @import("p");
+            \\const Owner = core.plugin.Bind(@import("owner"), @import("owner_docs"));
             \\
-            \\pub const interface: publr.published.Interface = publr.published.of(Owner);
-            \\pub const contracts = publr.published.contracts(interface){{}};
+            \\pub const interface: core.published.Interface = core.published.of(Owner);
+            \\pub const contracts = core.published.contracts(interface){{}};
             \\
         , .{name});
         const published = builder.createModule(.{
@@ -164,7 +165,7 @@ fn add_published(
             .optimize = library.optimize,
         });
 
-        published.addImport("publr", library);
+        published.addImport("p", core.private_of(library));
         published.addImport("owner", owner);
         published.addImport("owner_docs", owner_docs);
 
@@ -395,10 +396,10 @@ fn examples_test(
 
     const files = builder.addWriteFiles();
     const root = files.add("examples.zig", builder.fmt(
-        \\const publr = @import("publr");
+        \\const core = @import("p");
         \\
         \\test "every example of {s} runs against an empty site with it" {{
-        \\    try publr.sdk.testing.examples(publr.registry, "{s}");
+        \\    try core.sdk.testing.examples(core.registry, "{s}");
         \\}}
         \\
     , .{ name, name }));
@@ -408,7 +409,7 @@ fn examples_test(
         .optimize = library.optimize,
     });
 
-    module.addImport("publr", library);
+    module.addImport("p", core.private_of(library));
 
     return builder.addTest(.{
         .name = builder.fmt("examples-{s}", .{name}),

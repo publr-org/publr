@@ -1,11 +1,11 @@
 const std = @import("std");
-const publr = @import("publr");
+const core = @import("p");
 const command = @import("parity/command.zig");
-const shape = publr.sdk.testing.shape;
+const shape = core.sdk.testing.shape;
 const world = @import("parity/world.zig");
 
-const SDK = publr.registry.SDK;
-const operation = publr.sdk.operation;
+const SDK = core.registry.SDK;
+const operation = core.sdk.operation;
 
 const output_bytes_max: u32 = 256 << 10;
 const argv_max: u32 = command.args_max + 1;
@@ -45,7 +45,7 @@ pub fn main(init: std.process.Init) !u8 {
         const plugins_only = comptime @hasDecl(Operation, "plugins_only") and
             Operation.plugins_only;
 
-        if ((builds and !publr.toolchain.carried) or asks or plugins_only) {
+        if ((builds and !core.toolchain.carried) or asks or plugins_only) {
             continue;
         }
 
@@ -226,7 +226,7 @@ fn run_example(
     const redeems = comptime std.mem.eql(u8, Operation.name, "sign_on.redeem") or
         std.mem.eql(u8, Operation.name, "device.redeem");
     const arguments = if (redeems)
-        try world.fresh_sign_on(arena, printed, publr.sdk.context.wall_clock_ms(init.io))
+        try world.fresh_sign_on(arena, printed, core.sdk.context.wall_clock_ms(init.io))
     else
         printed;
 
@@ -239,21 +239,21 @@ fn seed(init: std.process.Init, dir: []const u8) !void {
     std.debug.assert(std.fs.path.isAbsolute(db_path));
     std.debug.assert(db_path.len > dir.len);
 
-    var application: publr.server.Server = undefined;
+    var application: core.server.Server = undefined;
     try application.init(init, db_path);
     defer application.deinit();
 
     var arena_state = std.heap.ArenaAllocator.init(init.gpa);
     defer arena_state.deinit();
 
-    var ctx = publr.sdk.Ctx.init(
+    var ctx = core.sdk.Ctx.init(
         &application.connection,
         init.io,
         arena_state.allocator(),
         &application.auth,
         .system,
         .{
-            .now_ms = publr.sdk.context.wall_clock_ms(init.io),
+            .now_ms = core.sdk.context.wall_clock_ms(init.io),
         },
     );
 

@@ -2,12 +2,12 @@
 //! A part added to the manifest fails the build here until it is placed: exercised by a
 //! fixture and a step, or named as the sandbox's own with why.
 const std = @import("std");
-const publr = @import("publr");
+const core = @import("p");
 
-const Manifest = publr.model.sandboxed_plugin.Manifest;
-const Operation = publr.model.sandboxed_plugin.Operation;
-const Hook = publr.model.sandboxed_plugin.Hook;
-const Field = publr.model.sandboxed_plugin.Field;
+const Manifest = core.model.sandboxed_plugin.Manifest;
+const Operation = core.model.sandboxed_plugin.Operation;
+const Hook = core.model.sandboxed_plugin.Hook;
+const Field = core.model.sandboxed_plugin.Field;
 
 const Part = struct {
     name: []const u8,

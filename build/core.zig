@@ -221,6 +221,7 @@ pub fn add_module(
     vendors.add_image_api(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
     @import("javascript.zig").add(builder, module);
+    add_private(builder, module);
     native_plugins.add(builder, module, from.plugins_dir, from.native);
 
     const plugin_ui = native_plugins.ui_dirs(builder, from.plugins_dir, from.native);
@@ -474,7 +475,33 @@ pub fn add_entry(
         .link_libc = true,
     });
 
-    module.addImport("publr", library);
+    module.addImport("p", private_of(library));
 
     return module;
+}
+
+/// `p`, the private root Publr's own code imports: its entries and the generated roots of
+/// its apps and published interfaces. One per library, as a file belongs to one module.
+fn add_private(builder: *std.Build, library: *std.Build.Module) void {
+    std.debug.assert(library.root_source_file != null);
+    std.debug.assert(library.import_table.get("p") == null);
+
+    const private = builder.createModule(.{
+        .root_source_file = builder.path("src/p.zig"),
+        .target = library.resolved_target,
+        .optimize = library.optimize,
+    });
+
+    private.addImport("publr", library);
+    library.addImport("p", private);
+}
+
+pub fn private_of(library: *std.Build.Module) *std.Build.Module {
+    std.debug.assert(library.root_source_file != null);
+
+    const private = library.import_table.get("p") orelse @panic("p not added");
+
+    std.debug.assert(private != library);
+
+    return private;
 }

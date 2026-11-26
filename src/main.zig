@@ -1,13 +1,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const publr = @import("publr");
+const core = @import("p");
 
-const server = publr.server;
-const cli = publr.cli;
-const registry = publr.registry;
-const report = publr.report;
-const sdk = publr.sdk;
-const version = publr.version;
+const server = core.server;
+const cli = core.cli;
+const registry = core.registry;
+const report = core.report;
+const sdk = core.sdk;
+const version = core.version;
 
 const db_path_default = "data/publr.db";
 const args_max: u32 = 128;
@@ -92,17 +92,17 @@ fn before_command(
     init: std.process.Init,
     args: []const []const u8,
     db_path: [:0]const u8,
-) !publr.plugin_hooks.Command {
+) !core.plugin_hooks.Command {
     std.debug.assert(db_path.len > 0);
 
-    var command: publr.plugin_hooks.Command = .{
+    var command: core.plugin_hooks.Command = .{
         .io = init.io,
         .arena = init.arena.allocator(),
         .args = args,
         .db_path = db_path,
     };
 
-    try publr.plugin_hooks.before_command(&command);
+    try core.plugin_hooks.before_command(&command);
 
     std.debug.assert(command.args.len <= args.len);
 
@@ -147,7 +147,7 @@ fn run_command(
         );
     }
 
-    var commands: publr.operator.Commands = .{
+    var commands: core.operator.Commands = .{
         .init = init,
         .db_path = db_path,
     };
@@ -215,11 +215,11 @@ fn tool(
         }
     } else {
         if (agents) {
-            return try publr.agents.run(init, out, db_path);
+            return try core.agents.run(init, out, db_path);
         }
 
         if (agent) {
-            return try publr.agent.run(init, db_path, rest[1..]);
+            return try core.agent.run(init, db_path, rest[1..]);
         }
 
         if (seed_at(rest)) |at| {
@@ -228,58 +228,58 @@ fn tool(
                 .db_path = db_path,
             };
 
-            return try publr.seed.run(init, out, rest[at + 1 ..], .{
+            return try core.seed.run(init, out, rest[at + 1 ..], .{
                 .runner = here.runner(),
                 .caller = rest[0..at],
             });
         }
 
         if (apps_load) {
-            return try publr.apps_load.run(init, db_path, rest[2..]);
+            return try core.apps_load.run(init, db_path, rest[2..]);
         }
 
         if (plugin_check and has_flag(rest, "--file")) {
-            return try publr.plugin_build.check_file(init, db_path, rest[2..]);
+            return try core.plugin_build.check_file(init, db_path, rest[2..]);
         }
 
         if (plugin_check) {
-            return try publr.plugin_check.run(init, rest[2..]);
+            return try core.plugin_check.run(init, rest[2..]);
         }
 
         if (plugin_sdk) {
-            return try publr.plugin_sdk.write_sdk(init, out, rest[2..]);
+            return try core.plugin_sdk.write_sdk(init, out, rest[2..]);
         }
 
         if (plugin_prepare) {
-            return try publr.plugin_build.prepare(init, out, db_path, rest[2..]);
+            return try core.plugin_build.prepare(init, out, db_path, rest[2..]);
         }
 
         if (serve) {
-            return try publr.serve.run(init, db_path, rest[1..]);
+            return try core.serve.run(init, db_path, rest[1..]);
         }
 
-        if (std.mem.eql(u8, rest[0], publr.clone_pack.command)) {
-            return try publr.clone_pack.run(init, out, db_path, rest[1..]);
+        if (std.mem.eql(u8, rest[0], core.clone_pack.command)) {
+            return try core.clone_pack.run(init, out, db_path, rest[1..]);
         }
 
         if (std.mem.eql(u8, rest[0], "queue-run")) {
-            return try publr.queue_worker.run(init, db_path, rest[1..]);
+            return try core.queue_worker.run(init, db_path, rest[1..]);
         }
 
         if (std.mem.eql(u8, rest[0], "update-run")) {
-            return try publr.update.run(init, db_path, rest[1..]);
+            return try core.update.run(init, db_path, rest[1..]);
         }
 
-        if (publr.bundle.handles(rest) and !has_flag(rest, "--help")) {
-            return try publr.bundle.run(init, out, db_path, rest);
+        if (core.bundle.handles(rest) and !has_flag(rest, "--help")) {
+            return try core.bundle.run(init, out, db_path, rest);
         }
 
-        if (publr.database.handles(rest) and !has_flag(rest, "--help")) {
-            return try publr.database.run(init, out, db_path, rest);
+        if (core.database.handles(rest) and !has_flag(rest, "--help")) {
+            return try core.database.run(init, out, db_path, rest);
         }
 
         if (build) {
-            return try publr.build.run(init, db_path, rest[1..]);
+            return try core.build.run(init, db_path, rest[1..]);
         }
     }
 
@@ -297,7 +297,7 @@ fn tool(
 /// `publr check-plugins`: a note for each compiled-in plugin's remote another compiled-in
 /// plugin switches off, and why; always 0, as the build it runs after passes.
 fn check_plugins() u8 {
-    const off = publr.registry.remotes_off;
+    const off = core.registry.remotes_off;
 
     std.debug.assert(off.len <= 64 * 64);
 
@@ -317,14 +317,14 @@ fn check_plugins() u8 {
 fn check_apps(init: std.process.Init, out: *std.Io.Writer) !u8 {
     std.debug.assert(args_max > 0);
 
-    const problem = try publr.apps.check_apps(init.gpa, init.arena.allocator(), init.io);
+    const problem = try core.apps.check_apps(init.gpa, init.arena.allocator(), init.io);
 
     if (problem) |reason| {
         report.err("{s}", .{reason});
         return 1;
     }
 
-    try out.print("{d} apps: compile\n", .{publr.apps.spec.all.len});
+    try out.print("{d} apps: compile\n", .{core.apps.spec.all.len});
     return 0;
 }
 
@@ -333,7 +333,7 @@ const Here = struct {
     init: std.process.Init,
     db_path: [:0]const u8,
 
-    fn runner(here: *const Here) publr.seed.Runner {
+    fn runner(here: *const Here) core.seed.Runner {
         return .{
             .context = here,
             .run = &run_here,

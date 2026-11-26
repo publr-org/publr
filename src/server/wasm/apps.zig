@@ -2,9 +2,9 @@
 //! the worker keeps in OPFS, or the module's own when the folder holds none; read again when
 //! the `apps` operations ask, as `serve` does.
 const std = @import("std");
-const publr = @import("publr");
+const core = @import("p");
 
-const apps = publr.apps;
+const apps = core.apps;
 
 /// The project's own folder, beside where it runs, whatever the build's apps came from.
 pub const dir = "apps";
@@ -14,11 +14,11 @@ const base_url_default = base_options.base_url;
 pub const Host = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
-    project: *publr.routes.Project,
-    index: *publr.lib.deps.Index,
+    project: *core.routes.Project,
+    index: *core.lib.deps.Index,
     source: ?apps.folder.Apps = null,
     loaded: []apps.App = &.{},
-    reason: publr.report.Reason = .{},
+    reason: core.report.Reason = .{},
     /// The project's address as the apps' pages write it: the worker's scope.
     base_url: []const u8 = base_url_default,
 
@@ -41,7 +41,7 @@ pub const Host = struct {
         const loaded = try host.gpa.alloc(apps.App, source.specs.len);
         errdefer host.gpa.free(loaded);
 
-        const now_ms = publr.sdk.context.wall_clock_ms(host.io);
+        const now_ms = core.sdk.context.wall_clock_ms(host.io);
 
         try apps.load.open(host.project, source.specs, loaded, host.gpa, host.index, now_ms, .{
             .base_url = host.base_url,
@@ -83,7 +83,7 @@ pub const Host = struct {
     }
 
     /// What the `apps` operations reach: the folder, and `reload` with its reason.
-    pub fn folder(host: *Host) publr.sdk.context.AppsFolder {
+    pub fn folder(host: *Host) core.sdk.context.AppsFolder {
         std.debug.assert(dir.len > 0);
         std.debug.assert(host.reason.len <= host.reason.buffer.len);
 

@@ -2,6 +2,7 @@ const std = @import("std");
 const repository = @import("repository.zig");
 const diagnostic = @import("diagnostic.zig");
 const embed = @import("apps/embed.zig");
+const core = @import("core.zig");
 
 pub const dir_default = "apps";
 pub const apps_max_default: u32 = 32;
@@ -55,10 +56,10 @@ pub fn add(
 }
 
 const root_format =
-    \\const publr = @import("publr");
+    \\const core = @import("p");
     \\
     \\pub const folder = "{f}";
-    \\pub const config: publr.model.app.Config = @import("app_zon");
+    \\pub const config: core.model.app.Config = @import("app_zon");
     \\pub const templates = @import("app_templates").files;
     \\pub const assets = @import("app_assets").files;
     \\pub const translations = @import("app_translations").files;
@@ -70,8 +71,8 @@ const root_format =
     \\
 ;
 
-/// One app as a module: its declarations over the generated parts, and `publr` for the
-/// type `app.zon` is read as.
+/// One app as a module: its declarations over the generated parts, and `p` for the type
+/// `app.zon` is read as.
 fn app_module(
     builder: *std.Build,
     library: *std.Build.Module,
@@ -107,7 +108,7 @@ fn app_module(
         .optimize = library.optimize,
     });
 
-    module.addImport("publr", library);
+    module.addImport("p", core.private_of(library));
     module.addAnonymousImport("app_zon", .{
         .root_source_file = builder.path(builder.pathJoin(&.{ app_dir, "app.zon" })),
     });

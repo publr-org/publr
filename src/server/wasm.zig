@@ -1,20 +1,20 @@
 const std = @import("std");
-const publr = @import("publr");
+const core = @import("p");
 
-const db = publr.db;
-const files = publr.lib.files;
-const routes = publr.routes;
-const auth = publr.lib.auth;
-const http = publr.http;
+const db = core.db;
+const files = core.lib.files;
+const routes = core.routes;
+const auth = core.lib.auth;
+const http = core.http;
 const browser_apps = @import("wasm/apps.zig");
-const SandboxHost = publr.server.sandboxed_plugins.Host;
+const SandboxHost = core.server.sandboxed_plugins.Host;
 
 /// Where installed plugins' modules live: `plugins/` in the project's files, in OPFS.
 const plugins_dir = "plugins";
 
 const heap_bytes: u32 = 16 << 20;
 const response_bytes_max: u32 = 8 << 20;
-const arena_bytes: u32 = publr.model.limits.request_arena_bytes;
+const arena_bytes: u32 = core.model.limits.request_arena_bytes;
 /// What one allocation from the worker may hold: a request, or a file it hands over.
 const allocation_bytes_max: u32 = files.bytes_max;
 /// How many runs a request gets to name the files it needs, one at a time.
@@ -61,8 +61,8 @@ const State = struct {
     arena_buffer: []u8,
     /// The working memory every request's loops share, as `serve`'s server has it.
     scratch_buffer: []u8,
-    scratch: publr.sdk.Scratch,
-    definitions: publr.sdk.DefinitionCache,
+    scratch: core.sdk.Scratch,
+    definitions: core.sdk.DefinitionCache,
     response: []u8,
     /// The last response's body, which the worker reads by pointer: it may be bytes.
     body: []const u8,
@@ -70,14 +70,14 @@ const State = struct {
     /// The media library's files, which the worker keeps in OPFS.
     deferred: files.Deferred,
     /// What the apps' pages read; it follows `connection` when a database is imported.
-    index: publr.lib.deps.Index,
+    index: core.lib.deps.Index,
     /// The project's apps, from its folder in OPFS or built into the module, rendered on
     /// request.
     apps: browser_apps.Host,
     /// The installed plugins, each run on the browser's own WebAssembly by the worker.
     plugins: SandboxHost,
     /// When the browser next looks at the jobs queued.
-    jobs_clock: publr.queued_jobs.Clock = .{},
+    jobs_clock: core.queued_jobs.Clock = .{},
     /// The address the worker serves Publr at; `project.base` and the router read its path.
     address_buffer: [address_bytes_max]u8,
 };
@@ -159,7 +159,7 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     instance.connection = db.open(&instance.runtime, ":memory:") catch return error.Database;
     errdefer instance.connection.close();
     db.schema.apply(&instance.connection) catch return error.Database;
-    publr.registry.SDK.apply_schemas(&instance.connection) catch return error.Database;
+    core.registry.SDK.apply_schemas(&instance.connection) catch return error.Database;
     instance.index = open_index(&instance.connection) catch return error.Database;
     instance.io_backend = std.Io.Threaded.init(gpa, .{});
     errdefer instance.io_backend.deinit();
@@ -181,7 +181,7 @@ fn initialize(instance: *State, gpa: std.mem.Allocator) InitError!void {
     });
     instance.app.user_data = &instance.project;
     instance.arena_buffer = grown(arena_bytes) catch return error.Arena;
-    instance.scratch_buffer = grown(publr.sdk.scratch.bytes_default) catch return error.Arena;
+    instance.scratch_buffer = grown(core.sdk.scratch.bytes_default) catch return error.Arena;
     instance.scratch = .{
         .fixed = .init(instance.scratch_buffer),
     };
@@ -234,7 +234,7 @@ export fn publr_address(ptr: [*]const u8, len: u32) i32 {
 
     @memcpy(address, ptr[0..len]);
 
-    const base = publr.model.app.path_of(address);
+    const base = core.model.app.path_of(address);
 
     instance.project.base = base;
     instance.app.path_base = base;
@@ -328,7 +328,7 @@ export fn publr_request(ptr: [*]const u8, len: u32, body_ptr: [*]const u8, body_
     const arena = arena_state.allocator();
 
     const json_in = ptr[0..len];
-    const parsed = publr.lib.json.parse(RequestJson, arena, json_in, .{}) catch return 3;
+    const parsed = core.lib.json.parse(RequestJson, arena, json_in, .{}) catch return 3;
     var head = build_request(parsed) catch return 4;
 
     const body = if (body_len > 0) body_ptr[0..body_len] else parsed.body;
@@ -456,9 +456,9 @@ export fn publr_settle() void {
 
     // The browser has no worker process: queued work runs once an answer is handed over,
     // never while a page waits for it.
-    const now_ms = publr.sdk.context.wall_clock_ms(instance.project.io);
+    const now_ms = core.sdk.context.wall_clock_ms(instance.project.io);
 
-    publr.queued_jobs.tick(&instance.project, instance.gpa, &instance.jobs_clock, now_ms);
+    core.queued_jobs.tick(&instance.project, instance.gpa, &instance.jobs_clock, now_ms);
 }
 
 /// An allocation the worker made, out of the table: its owner is whoever takes it.
@@ -522,7 +522,7 @@ export fn publr_import(ptr: [*]const u8, len: u32) i32 {
     defer if (!accepted) candidate.close();
     candidate.deserialize(ptr[0..len]) catch return 3;
     db.schema.apply(&candidate) catch return 4;
-    publr.registry.SDK.apply_schemas(&candidate) catch return 4;
+    core.registry.SDK.apply_schemas(&candidate) catch return 4;
     _ = open_index(&candidate) catch return 4;
     apply_types(instance, &candidate) catch return 7;
     instance.connection.close();
@@ -541,10 +541,10 @@ export fn publr_import(ptr: [*]const u8, len: u32) i32 {
 
 /// The dependency index's tables, which every record write records into, as the native
 /// server opens them.
-fn open_index(connection: *db.Db) !publr.lib.deps.Index {
+fn open_index(connection: *db.Db) !core.lib.deps.Index {
     std.debug.assert(connection.transaction_depth == 0);
 
-    const deps = publr.lib.deps;
+    const deps = core.lib.deps;
     const index = try deps.Index.open(connection, .{
         .quiet_ms = deps.quiet_ms,
     });
@@ -580,21 +580,21 @@ fn apply_types(instance: *State, connection: *db.Db) !void {
     std.debug.assert(instance.arena_buffer.len == arena_bytes);
 
     var arena_state = std.heap.FixedBufferAllocator.init(instance.arena_buffer);
-    var ctx = publr.sdk.Ctx.init(
+    var ctx = core.sdk.Ctx.init(
         connection,
         instance.io_backend.io(),
         arena_state.allocator(),
         &instance.auth,
         .system,
         .{
-            .now_ms = publr.sdk.context.wall_clock_ms(instance.io_backend.io()),
+            .now_ms = core.sdk.context.wall_clock_ms(instance.io_backend.io()),
         },
     );
 
-    try publr.operations.media.bootstrap(&ctx);
-    try publr.operations.design.bootstrap(&ctx);
-    try publr.plugin.types.apply_all(&ctx);
-    try publr.registry.apply_declared_roles(&ctx);
+    try core.operations.media.bootstrap(&ctx);
+    try core.operations.design.bootstrap(&ctx);
+    try core.plugin.types.apply_all(&ctx);
+    try core.registry.apply_declared_roles(&ctx);
 }
 
 fn build_request(parsed: RequestJson) !http.Head {

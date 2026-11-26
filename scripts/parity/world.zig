@@ -1,20 +1,20 @@
 const std = @import("std");
-const publr = @import("publr");
+const core = @import("p");
 
-const sdk = publr.sdk;
-const store = publr.store;
-const content_types = publr.operations.content_type;
-const records = publr.operations.record;
-const taxonomies = publr.operations.taxonomy;
-const terms = publr.operations.term;
-const projects = publr.operations.project;
-const users = publr.operations.user;
-const saved_views = publr.operations.view;
-const conversation = publr.operations.ai;
-const sign_on = publr.operations.sign_on;
-const identities = publr.operations.identity;
-const sign_on_token = publr.model.sign_on_token;
-const SDK = publr.registry.SDK;
+const sdk = core.sdk;
+const store = core.store;
+const content_types = core.operations.content_type;
+const records = core.operations.record;
+const taxonomies = core.operations.taxonomy;
+const terms = core.operations.term;
+const projects = core.operations.project;
+const users = core.operations.user;
+const saved_views = core.operations.view;
+const conversation = core.operations.ai;
+const sign_on = core.operations.sign_on;
+const identities = core.operations.identity;
+const sign_on_token = core.model.sign_on_token;
+const SDK = core.registry.SDK;
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -70,14 +70,14 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     try fill_internal(ctx);
     try fill_devices(ctx, admin_id);
     try fill_conversations(ctx, admin_id);
-    _ = try SDK.dispatch(ctx, publr.operations.secret.Set, publr.operations.secret.Set.example);
+    _ = try SDK.dispatch(ctx, core.operations.secret.Set, core.operations.secret.Set.example);
     try fill_apps(ctx, dir);
 
-    const custom = publr.operations.custom_fields;
+    const custom = core.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
         .group = "user",
         .definition = .{
-            .text = try publr.model.content_type.encode(
+            .text = try core.model.content_type.encode(
                 ctx.arena,
                 custom.Destination.user.definition(),
             ),
@@ -140,7 +140,7 @@ fn fill_plugins(ctx: *Ctx, dir: []const u8) Error!void {
     std.debug.assert(ctx.caller == .user);
     std.debug.assert(ctx.sandboxed_plugins != null);
 
-    const plugin_operations = publr.operations.plugin;
+    const plugin_operations = core.operations.plugin;
     const admin = ctx.caller;
     const greeter = try path_in(ctx, dir, "world-greeter.wasm");
     const next = try path_in(ctx, dir, "world-greeter-next.wasm");
@@ -267,7 +267,7 @@ fn term_with_id(ctx: *Ctx, id: []const u8, name: []const u8, parent: ?[]const u8
 fn fill_media(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .user);
 
-    const media = publr.operations.media;
+    const media = core.operations.media;
     const item = media.library.example_item;
 
     std.debug.assert(item.id.len == store.records.id_len);
@@ -355,8 +355,8 @@ fn fill_conversations(ctx: *Ctx, admin_id: []const u8) Error!void {
 fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
     std.debug.assert(admin_id.len > 0);
 
-    const people = publr.operations.device.people;
-    const expires_at = ctx.now_ms + publr.model.device.request_lifetime_ms;
+    const people = core.operations.device.people;
+    const expires_at = ctx.now_ms + core.model.device.request_lifetime_ms;
     const approved_code = "BCDF-GHJK";
 
     _ = try store.device_requests.insert(ctx.db, .{
@@ -367,7 +367,7 @@ fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
         .expires_at = expires_at,
     }, ctx.now_ms);
     _ = try store.device_requests.insert(ctx.db, .{
-        .code_hash = publr.operations.device.hash_of(publr.operations.device.example_device_code),
+        .code_hash = core.operations.device.hash_of(core.operations.device.example_device_code),
         .user_code = approved_code,
         .name = "An agent on Ada's laptop",
         .scope = "production",
@@ -399,15 +399,15 @@ fn fill_devices(ctx: *Ctx, admin_id: []const u8) Error!void {
 fn fill_client(ctx: *Ctx, admin_id: []const u8) Error!void {
     std.debug.assert(admin_id.len > 0);
 
-    const oauth = publr.operations.device.oauth;
+    const oauth = core.operations.device.oauth;
     const user_code = "CDFG-HJKL";
 
     _ = try store.device_requests.insert(ctx.db, .{
-        .code_hash = publr.operations.device.hash_of(oauth.example_code),
+        .code_hash = core.operations.device.hash_of(oauth.example_code),
         .user_code = user_code,
         .name = "Cursor",
         .scope = "production",
-        .expires_at = ctx.now_ms + publr.model.device.request_lifetime_ms,
+        .expires_at = ctx.now_ms + core.model.device.request_lifetime_ms,
         .client_id = oauth.example_client_id,
         .redirect_uri = oauth.example_redirect,
         .code_challenge = oauth.example_challenge,
@@ -464,7 +464,7 @@ fn fill_apps(ctx: *Ctx, dir: []const u8) Error!void {
 
 /// Greeter's visit the internal examples name.
 fn fill_internal(ctx: *Ctx) Error!void {
-    const internal = publr.operations.internal;
+    const internal = core.operations.internal;
     const scope: store.internal_records.Scope = .{
         .plugin = "greeter",
         .app = "",
@@ -543,7 +543,7 @@ fn fill_types(ctx: *Ctx) Error!void {
     });
 
     // The page's own status and transition the `flow` examples remove.
-    const flow = publr.operations.flow;
+    const flow = core.operations.flow;
 
     _ = try SDK.dispatch(ctx, flow.AddStatus, .{
         .type = "page",
