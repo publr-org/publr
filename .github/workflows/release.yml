@@ -207,7 +207,9 @@ jobs:
             upgrade.txt
 
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
-  # kind of CPU (for any CPU of that kind: baseline). Linux is cross-compiled against musl.
+  # kind of CPU (for any CPU of that kind: baseline), for a stated macOS: a native build would
+  # require the build machine's own version. Blacksmith's Macs are Apple silicon. Linux is
+  # cross-compiled against musl.
   build:
     needs: [version, upgrade]
     strategy:
@@ -215,8 +217,8 @@ jobs:
         include:
           - { runner: blacksmith-4vcpu-ubuntu-2604, target: x86_64-linux-musl, file: publr-linux-x86_64 }
           - { runner: blacksmith-4vcpu-ubuntu-2604, target: aarch64-linux-musl, file: publr-linux-aarch64 }
-          - { runner: blacksmith-6vcpu-macos-15, target: native, file: publr-macos-aarch64 }
-          - { runner: blacksmith-6vcpu-macos-15, target: native, file: publr-macos-x86_64 }
+          - { runner: blacksmith-6vcpu-macos-15, target: aarch64-macos.15.0, file: publr-macos-aarch64 }
+          - { runner: macos-15-intel, target: x86_64-macos.15.0, file: publr-macos-x86_64 }
     runs-on: ${{ matrix.runner }}
     env: { VERSION: "${{ needs.version.outputs.version }}" }
     steps:
