@@ -1,5 +1,5 @@
 //! A struct to and from a value whose shape comes with the data (`free_value.zig`), with no
-//! text in between: `publr.Value.of(arena, line)` and `value.as(Line, arena)`. A struct is a
+//! text in between: `publr.value.of(arena, line)` and `value.as(Line, arena)`. A struct is a
 //! map of its fields, an enum its tag's name, a union `{ alternative: payload }`; a type
 //! that says how it lies (`publr_form`, `plugin/shape_wire.zig`) is written the same way
 //! JSON writes it: money as `{ PLN: 12300 }`, a reference as its id, a decimal as its text.

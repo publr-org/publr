@@ -15,7 +15,7 @@ pub const cli = publr.cli;
 pub const server = publr.server;
 pub const registry = publr.registry;
 pub const plugin = publr.plugin;
-pub const published = publr.published;
+pub const published = publr.sdk.published;
 
 pub const routes = publr.routes;
 pub const plugin_routes = publr.plugin_routes;

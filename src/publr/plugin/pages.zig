@@ -3,7 +3,7 @@
 //! before, and what the plugin allocated while it looked at it, are given back when the next
 //! is asked for.
 //!
-//!     var roles = publr.pages(ctx, publr.sdk.operations.role.List, .{});
+//!     var roles = publr.pages(ctx, publr.operations.role.List, .{});
 //!
 //!     while (try roles.next()) |page| {
 //!         for (page.roles) |role| { ... }

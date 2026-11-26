@@ -7,7 +7,7 @@ const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const environment = @import("../../lib/environment.zig");
 const lib_ai = @import("../../lib/ai.zig");
-const sdk_ai = @import("../../sdk/ai.zig");
+const sdk_ai = @import("../../publr/ai.zig");
 const secret = @import("../secret.zig");
 const contract = @import("../../sdk/contract.zig");
 

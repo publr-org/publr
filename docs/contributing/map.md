@@ -431,7 +431,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `adapters/apps/artifacts.zig` | 127 | Built files: their names in the index (`<app>:<url>`), their paths, reading and writing them |
 | `adapters/apps/rebuild.zig` | 314 | The project's rebuild: `refresh` at startup, `flush` between ticks, each batch's artifacts sent to their app |
 | `adapters/apps/rerender.zig` | 233 | One artifact rendered again, removed or forgotten; a changed record's own pages |
-| `adapters/apps/middleware.zig` | 278 | An app's `middleware.zig`: the request it sees (the path inside the app) and the answer it gives |
+| `adapters/apps/middleware.zig` | 160 | An app's `middleware.zig` asked before core answers, its answer written as given |
+| `publr/app_middleware.zig` | 240 | What an app's `middleware.zig` sees (the path inside the app) and the answer it gives: `publr.Request`, `publr.Response` |
 | `adapters/apps/islands.js` | | The island loader: `<publr-island>` fetches its fragment and replaces itself |
 | `operations/project/changes.zig` | 91 | The `on` middleware: every `record.*` event raises the record's keys in the index |
 | `lib/deps.zig` | 16 | The face on `publr_deps` |

@@ -26,7 +26,7 @@ pub fn changed(ctx: *const Ctx, id: []const u8) void {
 }
 
 /// `ai.progress`, which provider plugins call: declared beside the rest of what they use.
-pub const Progress = @import("../../sdk/ai.zig").Progress;
+pub const Progress = @import("../../publr/ai.zig").Progress;
 
 pub const Draft = struct {
     pub const name = "ai.draft";

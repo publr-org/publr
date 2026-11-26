@@ -92,8 +92,8 @@ pub const hook = struct {
     /// the hook hears only calls that name that content type.
     pub const about = @import("publr/plugin/hook_define.zig").about;
 };
-pub const PageRequest = @import("sdk/page_request.zig").PageRequest;
-pub const Answered = @import("sdk/page_request.zig").Answered;
+pub const PageRequest = @import("publr/page_request.zig").PageRequest;
+pub const Answered = @import("publr/page_request.zig").Answered;
 
 pub const taxonomy = struct {
     pub const define = @import("publr/plugin/taxonomy_define.zig").define;
@@ -171,13 +171,13 @@ pub const Marker = struct {
 /// What a plugin calls when the data its modifier of a name answers from changed:
 /// `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` builds again the pages
 /// made with those values.
-pub const mod_changed = @import("sdk/mods.zig").Changed;
+pub const mod_changed = @import("publr/mods.zig").Changed;
 /// People signing in, up and out, hooked by type: `publr.after(publr.auth.SignedIn, run)`;
 /// sign-ins refused (`SignInFailed`, `SignOnFailed` …), heard with `publr.on` only.
-pub const auth = @import("sdk/auth_events.zig");
+pub const auth = @import("publr/auth_events.zig");
 /// Everything that lands in the Error log as an error: `publr.on(publr.errors.Failed, run)`.
 pub const errors = struct {
-    pub const Failed = @import("sdk/error_events.zig").Failed;
+    pub const Failed = @import("publr/error_events.zig").Failed;
 };
 /// Something that happens that is not a call: `publr.event.define(.{ .name, .payload })`,
 /// emitted with `ctx.emit(Event, payload)`.
@@ -257,14 +257,14 @@ pub const views = @import("publr/plugin/views.zig");
 /// A named set of operations providers implement: `publr.contract.define(.{ .name,
 /// .operations, .optional, .component })`.
 pub const contract = struct {
-    pub const define = @import("sdk/contract.zig").define;
+    pub const define = @import("publr/contract.zig").define;
 };
 /// Published interfaces: another plugin's contracts and dimension wrappers as data, what
 /// `@import("<plugin>")` gives a plugin naming it in `depends_on` or `compatible_with`.
-pub const published = @import("sdk/published.zig");
+pub const published = @import("publr/published.zig");
 /// The enabled providers of a contract, in the administrator's order:
 /// `publr.providers(ctx, Contract, .{ .can = &.{.refund} })`.
-pub const providers = @import("sdk/contract.zig").providers;
+pub const providers = @import("publr/contract.zig").providers;
 /// A record's field naming one provider of a contract: `method: publr.ProviderRef(Method)`.
 /// `ref.provider(ctx)` is the provider while it is registered and on.
 pub const ProviderRef = @import("publr/provider_ref.zig").ProviderRef;
@@ -277,7 +277,7 @@ pub const json = @import("publr/plugin/json_api.zig");
 pub const Money = @import("publr/money.zig").Money;
 /// A value whose shape comes with the data, read where it lies: `value.get("title")`,
 /// `value.at(0)`, `value.text()`; written with `publr.value.Builder`, or from a struct with
-/// `publr.sdk.operation.Json.of(arena, value)`.
+/// `publr.value.of(arena, value)`.
 pub const Value = @import("publr/free_value.zig").Value;
 /// A plugin's own collections, made with `init(ctx)` and growing in the memory they were made
 /// in whatever is open when they grow: `publr.List(T)`, `publr.IdMap(V)` (keyed by text that
@@ -355,9 +355,9 @@ pub const ledger = struct {
 };
 /// Messages Publr hands to providers: `ctx.emit(publr.messaging.Email, .{ .to, .subject,
 /// .text })`, and the `messaging` contract providers register into.
-pub const messaging = @import("sdk/messaging.zig");
+pub const messaging = @import("publr/messaging.zig");
 /// Model providers: the contract, and the two operations a provider plugin registers with.
-pub const ai = @import("sdk/ai.zig");
+pub const ai = @import("publr/ai.zig");
 pub const routes = @import("server/routes.zig");
 pub const plugin_routes = @import("server/plugin_routes.zig");
 pub const plugin_states = @import("server/plugin_states.zig");
@@ -368,8 +368,8 @@ pub const project = @import("server/project.zig");
 pub const split = @import("server/split.zig");
 pub const apps = @import("adapters/apps.zig");
 /// What an app's `middleware.zig` is given, and what it answers with.
-pub const Request = apps.middleware.Request;
-pub const Response = apps.middleware.Response;
+pub const Request = @import("publr/app_middleware.zig").Request;
+pub const Response = @import("publr/app_middleware.zig").Response;
 pub const template = @import("template.zig");
 pub const operations = struct {
     pub const device = @import("operations/device.zig");

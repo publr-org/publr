@@ -32,6 +32,7 @@ pub const page_request = @import("sdk/page_request.zig");
 pub const provider = @import("sdk/provider.zig");
 pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
 pub const plugin_access = @import("sdk/plugin_access.zig");
+pub const published = @import("sdk/published.zig");
 pub const call_json = @import("sdk/call_json.zig");
 pub const help = @import("sdk/help.zig");
 pub const changed_units = @import("sdk/changed_units.zig");

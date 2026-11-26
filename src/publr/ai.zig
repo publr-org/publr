@@ -22,21 +22,21 @@
 //! ```
 
 const std = @import("std");
-const lib_ai = @import("../lib/ai.zig");
-const operation = @import("operation.zig");
-const Grant = @import("grant.zig").Grant;
-const PluginCtx = @import("plugin/context.zig").PluginCtx;
-const ProgressCtx = @import("context.zig").Ctx;
+const publr_ai = @import("publr_ai");
+const operation = @import("../sdk/operation.zig");
+const Grant = @import("../sdk/grant.zig").Grant;
+const PluginCtx = @import("../sdk/plugin/context.zig").PluginCtx;
+const ProgressCtx = @import("../sdk/context.zig").Ctx;
 const speech = @import("ai/speech.zig");
 
-pub const Part = lib_ai.Part;
-pub const Message = lib_ai.Message;
-pub const Request = lib_ai.Request;
-pub const Response = lib_ai.Response;
-pub const Stop = lib_ai.Stop;
-pub const Description = lib_ai.Description;
-pub const request_of = lib_ai.request_of;
-pub const response_json = lib_ai.response_json;
+pub const Part = publr_ai.Part;
+pub const Message = publr_ai.Message;
+pub const Request = publr_ai.Request;
+pub const Response = publr_ai.Response;
+pub const Stop = publr_ai.Stop;
+pub const Description = publr_ai.Description;
+pub const request_of = publr_ai.request_of;
+pub const response_json = publr_ai.response_json;
 
 /// What a provider's API said went wrong, from its error answer: the `message` of its
 /// `error` (`{"error":{"message":"API key is invalid."}}`, the shape most share), else the

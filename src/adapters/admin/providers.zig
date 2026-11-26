@@ -34,7 +34,7 @@ const core = [_]Core{
         .empty = "No provider: Publr sends no message, and nothing fails.",
     },
     .{
-        .name = @import("../../sdk/ai.zig").contract.contract_name,
+        .name = @import("../../publr/ai.zig").contract.contract_name,
         .label = "AI models",
         .description = "The models the AI workspace and agents can use.",
         .empty = "No provider: install one to build with a model on your own key.",

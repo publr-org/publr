@@ -136,7 +136,7 @@ const record_computed = @import("record_computed.zig");
 /// `(ctx: *publr.Ctx, request: *publr.PageRequest)` and answers `publr.Answered`.
 pub fn request(comptime run: anytype) type {
     comptime {
-        const PageRequest = @import("../../sdk/page_request.zig");
+        const PageRequest = @import("../page_request.zig");
 
         if (@typeInfo(@TypeOf(run)) != .@"fn") {
             @compileError("a request hook takes a named function: `publr.hook.request(run)`");

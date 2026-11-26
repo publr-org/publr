@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const sdk_ai = @import("../../sdk/ai.zig");
+const sdk_ai = @import("../../publr/ai.zig");
 const environment = @import("../../lib/environment.zig");
 const providers = @import("providers.zig");
 const model = @import("../../model.zig");
@@ -13,7 +13,7 @@ const files_module = @import("../../lib/files.zig");
 const upload = @import("../media/upload.zig");
 const library = @import("../media/library.zig");
 const jobs = @import("../job.zig");
-const audio_bytes_max = @import("../../sdk/ai/speech.zig").audio_bytes_max;
+const audio_bytes_max = @import("../../publr/ai/speech.zig").audio_bytes_max;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;

@@ -18,7 +18,7 @@ pub const guest_root_source =
     \\
     \\comptime {
     \\    @import("publr").plugin.guest.export_all(Plugin);
-    \\    @import("publr").published.check(Plugin, &@import("plugin_published").all);
+    \\    @import("publr").sdk.published.check(Plugin, &@import("plugin_published").all);
     \\}
     \\
 ;

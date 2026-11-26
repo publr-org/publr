@@ -3,7 +3,7 @@
 //! a write is refused when it names no provider registered into the contract, unless the
 //! record held that name already: a provider removed later stays named, shown as removed.
 const std = @import("std");
-const contract = @import("../sdk/contract.zig");
+const contract = @import("contract.zig");
 const identity = @import("../model/identity.zig");
 
 const Error = @import("../sdk.zig").Error;

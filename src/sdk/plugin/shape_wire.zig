@@ -112,7 +112,7 @@ pub fn form_of(comptime Shape: type) Form {
         for (.{ "jsonParse", "jsonParseFromValue" }) |name| {
             if (std.meta.hasFn(Shape, name)) {
                 @compileError(@typeName(Shape) ++ " reads its own JSON: it says how it " ++
-                    "lies with `pub const publr_form` (`publr.sdk.shape.Form`)");
+                    "lies with `pub const publr_form = .lone;` or another form");
             }
         }
 

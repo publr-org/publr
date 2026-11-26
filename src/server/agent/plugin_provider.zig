@@ -7,7 +7,7 @@ const server = @import("../../server.zig");
 const registry = @import("../registry.zig");
 const sdk = @import("../../sdk.zig");
 const ai = @import("../../lib/ai.zig");
-const sdk_ai = @import("../../sdk/ai.zig");
+const sdk_ai = @import("../../publr/ai.zig");
 const http_stream = @import("../../operations/http_stream.zig");
 
 /// What a turn runs as: core's queued work (`ai.ask` starts it, answering at once), in the
