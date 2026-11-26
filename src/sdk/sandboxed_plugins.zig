@@ -118,6 +118,9 @@ pub const Staged = struct {
     manifest: []const u8,
     /// The plugin's source the module carries, JSON (`publr.source`); empty for none.
     source: []const u8 = "",
+    /// Why the sandbox will not load the module, such as an import it does not give; empty
+    /// when it loads.
+    refused: []const u8 = "",
 };
 
 /// A site component a plugin brings (`components/<Name>.publr`): apps import it as

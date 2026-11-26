@@ -44,6 +44,19 @@ pub fn stage(ctx: *Ctx, file: []const u8, anywhere: bool) Error!Checked {
     }
 
     const staged = try (try sandboxed(ctx)).stage(ctx.arena, file, anywhere);
+
+    if (staged.refused.len > 0) {
+        return ctx.fail(.{
+            .name = "ModuleDoesNotLoad",
+            .status = 422,
+            .message = try std.fmt.allocPrint(
+                ctx.arena,
+                "The module does not load: {s}. Build it again for this Publr.",
+                .{staged.refused},
+            ),
+        });
+    }
+
     const manifest = try state.parse_manifest(ctx.arena, staged.manifest);
 
     try check(ctx, &manifest);

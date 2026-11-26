@@ -82,7 +82,15 @@ pub fn stage(
         return error.Invalid;
     }) orelse "";
 
-    try check_loads(host, bytes);
+    const refused = try refusal(host, arena, bytes);
+
+    if (refused.len > 0) {
+        return .{
+            .hash = "",
+            .manifest = "",
+            .refused = refused,
+        };
+    }
 
     var hash: [hash_len]u8 = undefined;
 
@@ -95,8 +103,9 @@ pub fn stage(
     };
 }
 
-/// Whether the sandbox loads the module: valid, and importing only what the host gives.
-fn check_loads(host: *Host, bytes: []const u8) sdk.Error!void {
+/// Why the sandbox will not load the module (not valid, or importing what the host does not
+/// give), in `arena`; empty when it loads.
+fn refusal(host: *Host, arena: std.mem.Allocator, bytes: []const u8) sdk.Error![]const u8 {
     std.debug.assert(bytes.len > 0);
 
     const copy = host.gpa.dupe(u8, bytes) catch return error.OutOfMemory;
@@ -104,9 +113,12 @@ fn check_loads(host: *Host, bytes: []const u8) sdk.Error!void {
 
     var problem: wasm.Problem = .{};
     var module = wasm.Module.load(&host.runtime, copy, &problem) catch {
-        std.log.warn("plugins: the module does not load: {s}", .{problem.text()});
-        return error.Invalid;
+        const text = if (problem.len > 0) problem.text() else "it is not a module Publr runs";
+
+        std.debug.assert(text.len > 0);
+        return arena.dupe(u8, text) catch error.OutOfMemory;
     };
 
     module.unload();
+    return "";
 }
