@@ -235,13 +235,14 @@ fn declared_at(init: std.process.Init, src: []const u8, text: []const u8) ![]con
     return "not found under src";
 }
 
-/// Fails when an item is past its day and still here, or gone without having been deprecated
-/// for at least that long.
+/// Fails when an item is past its day and still here, or, from 1.0, gone without having been
+/// deprecated until its day. Before 1.0 an item may go without notice (versioning.md).
 fn check(current: Surface, previous: ?Surface, today: []const u8) u8 {
     std.debug.assert(today.len == 10);
     std.debug.assert(current.offered.len > 0);
 
     var failures: u32 = 0;
+    const stable = !std.mem.startsWith(u8, current.publr, "0.");
 
     for (current.deprecated) |item| {
         if (std.mem.order(u8, item.removed_on, today) != .gt) {
@@ -252,6 +253,10 @@ fn check(current: Surface, previous: ?Surface, today: []const u8) u8 {
     }
 
     const before = previous orelse return if (failures == 0) 0 else 1;
+
+    if (!stable) {
+        return if (failures == 0) 0 else 1;
+    }
 
     for (before.offered) |item| {
         if (contains(current.offered, "", item)) {
