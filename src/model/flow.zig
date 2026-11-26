@@ -185,14 +185,7 @@ pub const core_transitions = [_]Transition{
 
 pub const trashed = "trashed";
 
-/// What a hook on every transition of a type hears (`Posts.any_transition`): the record,
-/// the transition's name, and the statuses it left and reached.
-pub const Transitioned = struct {
-    record: []const u8,
-    transition: []const u8,
-    from: []const u8,
-    to: []const u8,
-};
+pub const Transitioned = @import("../publr/model/flow.zig").Transitioned;
 
 /// The hook point for every transition on records of a type is named for it, as a event
 /// is: `<plugin>.<type>_transitioned`, or `<type>.transitioned` for a type no plugin

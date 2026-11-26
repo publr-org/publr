@@ -15,7 +15,7 @@ pub const rows_max: u32 = 1000;
 
 /// In an installed plugin's module the rows are handed over as they lie
 /// (`extended_laid.zig`); Publr itself keeps them as the JSON it answers.
-pub const Extended = if (@import("operation/json.zig").sandboxed)
+pub const Extended = if (@import("../publr/operation/json.zig").sandboxed)
     @import("extended_laid.zig").Extended
 else
     Kept;

@@ -26,7 +26,23 @@ pub const Database = @import("sdk/plugin/host.zig").Database;
 /// `publr.operation.define(In, Out, .{ .name, .kind, .authorize, ... })`.
 pub const operation = struct {
     pub const define = @import("sdk/plugin/operation_define.zig").define;
-    pub const Kind = @import("sdk/plugin/operation_define.zig").Kind;
+    pub const Kind = @import("publr/operation.zig").Kind;
+    /// A way an operation fails beyond core's errors, listed in its `failures`.
+    pub const Failure = @import("publr/operation.zig").Failure;
+    /// One thing wrong with a call's input, as `ctx.refuse` and `Problems` hold it.
+    pub const Problem = @import("publr/operation.zig").Problem;
+    /// A text for each field of a shape: `field_docs: publr.operation.Docs(In)`.
+    pub const Docs = @import("publr/operation.zig").Docs;
+    /// A value whose shape comes with the data: `try publr.operation.Json.of(arena, value)`.
+    pub const Json = @import("publr/operation.zig").Json;
+    /// `record` of `record.create`, and `create`.
+    pub const namespace = @import("publr/operation.zig").namespace;
+    pub const verb = @import("publr/operation.zig").verb;
+    pub const name_len_max = @import("publr/operation.zig").name_len_max;
+    pub const fields_max = @import("publr/operation.zig").fields_max;
+    pub const operations_max = @import("publr/operation.zig").operations_max;
+    /// The largest page a list answers at once.
+    pub const page_limit_max = @import("publr/operation.zig").page_limit_max;
 };
 /// `publr.record.define(Document, .{ .name, .internal, ... })` and a reference to any record.
 pub const record = struct {
@@ -40,7 +56,7 @@ pub const record = struct {
     /// Every status but the transition's target and the trash: `.from = publr.record.any`.
     pub const any = @import("sdk/plugin/record_flow.zig").any;
     /// What a hook on `X.any_transition` hears: `.{ .record, .transition, .from, .to }`.
-    pub const Transitioned = @import("model/flow.zig").Transitioned;
+    pub const Transitioned = @import("publr/model/flow.zig").Transitioned;
 };
 /// `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single, .internal, .fields })`,
 /// and what `.register_taxonomies` takes: `.{ .taxonomy, .to }`.
@@ -52,7 +68,17 @@ pub const dimension = struct {
     pub const define = @import("sdk/plugin/dimensions.zig").define;
     pub const field_option = @import("sdk/plugin/dimensions.zig").field_option;
     pub const read_option = @import("sdk/plugin/dimensions.zig").read_option;
-    pub const Holds = @import("sdk/plugin/dimensions.zig").Holds;
+    pub const Holds = @import("publr/model/dimension.zig").Holds;
+    /// One dimension at one code, `language` at `pl`, and a value's key read:
+    /// `publr.dimension.split("title@language=pl")`, `publr.dimension.parse(key.combination)`.
+    pub const Pair = @import("publr/model/dimension.zig").Pair;
+    pub const Combination = @import("publr/model/dimension.zig").Combination;
+    pub const Key = @import("publr/model/dimension.zig").Key;
+    pub const split = @import("publr/model/dimension.zig").split;
+    pub const parse = @import("publr/model/dimension.zig").parse;
+    pub const varies_by = @import("publr/model/dimension.zig").varies_by;
+    pub const valid_code = @import("publr/model/dimension.zig").valid_code;
+    pub const family_of = @import("publr/model/dimension.zig").family_of;
     pub const Dimension = @import("sdk/plugin/dimensions.zig").Dimension;
     pub const Value = @import("sdk/plugin/dimensions.zig").Value;
     pub const Member = @import("sdk/plugin/dimensions.zig").Member;
@@ -71,7 +97,7 @@ pub const Answered = @import("sdk/page_request.zig").Answered;
 
 pub const taxonomy = struct {
     pub const define = @import("sdk/plugin/taxonomy_define.zig").define;
-    pub const Registration = @import("sdk/plugin/taxonomy_define.zig").Registration;
+    pub const Registration = @import("publr/model/taxonomy.zig").Registration;
 };
 /// GROQ queries with `$names` bound from a struct: `publr.query.prepare(text, .{})`.
 pub const query = struct {
@@ -170,7 +196,8 @@ pub const fields = @import("sdk/plugin/fields_api.zig");
 /// What a `.register_location_rules` entry's `matches` is given: the account or file being
 /// edited, and the rule, compared with `rule.compare(value)`.
 pub const location = struct {
-    pub const Target = @import("sdk/plugin/location_rule_define.zig").Target;
+    pub const Target = @import("publr/model/field_group.zig").Target;
+    pub const Operator = @import("publr/model/conditions.zig").Operator;
     pub const Rule = @import("sdk/plugin/location_rule_define.zig").Rule;
 };
 pub const field = struct {
@@ -186,8 +213,8 @@ pub const job = struct {
 /// .run })` at `/_webhooks/<plugin>.<name>`, listed in `.webhooks`.
 pub const webhook = struct {
     pub const define = @import("sdk/plugin/webhook_define.zig").define;
-    pub const Signature = @import("sdk/plugin/webhook_define.zig").Signature;
-    pub const DeliveryId = @import("sdk/plugin/webhook_define.zig").DeliveryId;
+    pub const Signature = @import("publr/model/sandboxed_plugin.zig").Signature;
+    pub const DeliveryId = @import("publr/model/sandboxed_plugin.zig").DeliveryId;
     pub const Delivery = @import("sdk/plugin/webhook_define.zig").Delivery;
 };
 /// What queued work (a job) runs with: every call `Ctx` has, and `fetch`, queued work's
@@ -199,19 +226,19 @@ pub const ExchangeCtx = @import("sdk/provider.zig").ExchangeCtx;
 /// A moment, as a `datetime` field holds it.
 pub const Time = @import("sdk/plugin/words.zig").Time;
 /// A day on the calendar (`time.local_date(zone)`).
-pub const Date = @import("sdk/plugin/words.zig").Date;
+pub const Date = @import("publr/model/calendar.zig").Date;
 /// The site's time zone, as `ctx.time_zone()` answers it.
 pub const TimeZone = @import("sdk/plugin/words.zig").TimeZone;
 /// An exact number with `places` decimal places, as a `decimal` field holds it:
 /// `publr.Decimal(3)` keeps `1.25` kg as 1250 units, never a binary fraction.
 pub const Decimal = @import("sdk/plugin/decimal.zig").Decimal;
 /// An operation on its way out: `.deprecated = .{ .since = "0.4.0", .instead = "x.y" }`.
-pub const Deprecated = @import("sdk/operation.zig").Deprecated;
+pub const Deprecated = @import("publr/operation.zig").Deprecated;
 /// What `.validate` fills: `problems.add(.page, "Must start with /")`.
 pub const Problems = @import("sdk/plugin/operation_define.zig").Problems;
 /// Ready answers to who may call an operation.
 pub const authorize = struct {
-    const Answer = @import("sdk/plugin/operation_define.zig").Answer;
+    const Answer = @import("publr/authorize.zig").Answer;
 
     pub const user_is_signed_in: Answer = .signed_in;
     pub const plugin_calls: Answer = .plugin_calls;
@@ -277,6 +304,16 @@ pub const value = struct {
 /// A field naming a person's account, kept as its id (a `user` field): `owner: publr.Account`.
 /// `ctx.caller().account()` is the signed-in person's.
 pub const Account = @import("sdk/account_ref.zig").Account;
+/// Roles as plugins read them: `publr.role.permits(&role, "record.save")`, `grants_max`,
+/// `settings_grant`, `owner_core`, and the `Declared` shape `.roles` takes.
+pub const role = @import("publr/model/role.zig");
+/// A site currency as people see it (`publr.money.Entry`) and an amount written with it:
+/// `publr.money.format(&buffer, 123456, entry)` is `£1,234.56`.
+pub const money = @import("publr/model/money.zig");
+/// ISO 4217: `publr.currency.find("GBP").?.digits` is 2.
+pub const currency = @import("publr/model/currency.zig");
+/// The process environment, for plugins compiled into Publr: `publr.environment.get(name)`.
+pub const environment = @import("publr/environment.zig");
 /// The double-entry ledger: `pub const Ledger = publr.ledger.define(struct { ... }, .{
 /// .reasons = Reason })`, listed in `define` as `.ledger`, used as `Ledger.transfer(ctx, ...)`;
 /// reads as `publr.ledger.balance(ctx, account)` and the rest.
@@ -284,7 +321,7 @@ pub const ledger = struct {
     const ledger_define = @import("sdk/plugin/ledger_define.zig");
 
     pub const define = ledger_define.define;
-    pub const Kind = ledger_define.Kind;
+    pub const Kind = @import("publr/model/ledger.zig").Kind;
     pub const Asset = ledger_define.Asset;
     pub const Liability = ledger_define.Liability;
     pub const Equity = ledger_define.Equity;

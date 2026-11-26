@@ -4,16 +4,12 @@ pub const groups_max: u32 = 8;
 pub const rules_max: u32 = 8;
 pub const name_max: u32 = 64;
 pub const value_max: u32 = 255;
-pub const Operator = enum { equal, not_equal, empty, not_empty, contains };
-pub const Rule = struct {
-    field: []const u8,
-    operator: Operator = .equal,
-    value: []const u8 = "",
-};
-pub const Group = struct {
-    rules: []const Rule,
-};
-pub const Set = []const Group;
+const public = @import("../publr/model/conditions.zig");
+
+pub const Operator = public.Operator;
+pub const Rule = public.Rule;
+pub const Group = public.Group;
+pub const Set = public.Set;
 
 pub fn valid(groups: Set) bool {
     std.debug.assert(groups_max > 0);

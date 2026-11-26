@@ -319,7 +319,7 @@ test "every form a description says lays out from JSON and is written back the s
     const arena = arena_state.allocator();
     const given_module = @import("given.zig");
     const Money = @import("../../sdk/money.zig").Money;
-    const Free = @import("../../sdk/operation/json.zig").Laid;
+    const Free = @import("../../publr/operation/json.zig").Laid;
     const Decimal = @import("../../sdk/plugin/decimal.zig").Decimal(3);
     const Ref = struct {
         id: []const u8,

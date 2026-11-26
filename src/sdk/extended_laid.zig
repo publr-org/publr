@@ -6,7 +6,7 @@ const std = @import("std");
 const free_value = @import("free_value.zig");
 const free_builder = @import("free_builder.zig");
 const free_typed = @import("free_typed.zig");
-const Json = @import("operation/json.zig").Laid;
+const Json = @import("../publr/operation/json.zig").Laid;
 
 pub const Error = error{ Denied, Invalid, OutOfMemory };
 

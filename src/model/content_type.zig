@@ -20,13 +20,7 @@ pub const shared_apps_max: u32 = 64;
 /// project's own, in every app's reach, as a type without an owner is.
 pub const core_owner = "publr";
 
-/// What a type is for: `record` types hold any number of records (posts, hotels), a
-/// `settings` type holds exactly one (the homepage, the header, general options), a
-/// `component` holds none: it is a set of fields other types will reuse. A `media` type's
-/// records are files: the library's own (`media`) or another set core or a plugin keeps
-/// apart from it (pictures pasted into a chat). A media type shows only where its owner
-/// draws it, never in Content.
-pub const Kind = enum { record, settings, component, media };
+pub const Kind = @import("../publr/model/content_type.zig").Kind;
 
 /// The apps that reach a type besides the one it lives in: every app (apps added later
 /// too), or the ones listed. A Global type is shared with every app unless it says

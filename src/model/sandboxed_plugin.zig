@@ -10,6 +10,7 @@ const contract = @import("contract.zig");
 const plugin_contracts = @import("plugin_contracts.zig");
 const flow = @import("flow.zig");
 const status = @import("status.zig");
+const public = @import("../publr/model/sandboxed_plugin.zig");
 
 pub const name_len_max: u32 = 32;
 pub const version_len_max: u32 = 32;
@@ -73,16 +74,7 @@ pub const Secret = @import("secrets.zig").Declared;
 /// How many content types or taxonomies one request may name.
 pub const names_max: u32 = 64;
 
-/// More than the defaults, asked for with a reason; each raised limit waits for approval.
-pub const Limits = struct {
-    cpu_ms: ?u32 = null,
-    memory_mib: ?u32 = null,
-    calls: ?u32 = null,
-    output_kib: ?u32 = null,
-    /// The largest file it makes (`ctx.make_file`), in MiB.
-    file_mib: ?u32 = null,
-    reason: []const u8 = "",
-};
+pub const Limits = public.Limits;
 
 pub const Manifest = struct {
     format: u32 = format,
@@ -426,12 +418,7 @@ pub const Column = struct {
 /// How a column's cells are drawn.
 pub const ColumnKind = enum { number, money, date, text, status, link };
 
-/// An icon a plugin brings, named `<plugin>.<name>`: a 24×24 drawing, sanitized as any SVG
-/// before a page shows it.
-pub const PluginIcon = struct {
-    name: []const u8,
-    svg: []const u8,
-};
+pub const PluginIcon = public.PluginIcon;
 
 pub const plugin_icons_max: u32 = 16;
 pub const plugin_icon_bytes_max: u32 = 4096;
@@ -506,41 +493,13 @@ pub const Webhook = struct {
     delivery_id: ?DeliveryId = null,
 };
 
-/// How a webhook's sender signs.
-pub const Signature = union(enum) {
-    /// An HMAC-SHA256 of the body in a header (`X-Hub-Signature-256: sha256=<hex>`).
-    hmac: struct {
-        header: []const u8,
-        prefix: []const u8 = "",
-        encoding: Encoding = .hex,
-    },
-    /// The timestamped HMAC payment providers send: `t=<seconds>,v1=<hex>` over
-    /// `<seconds>.<body>`, refused when the time is over five minutes off.
-    timestamped: struct {
-        header: []const u8,
-    },
-    /// The secret itself, in a header.
-    token: struct {
-        header: []const u8,
-    },
-    /// Signed in a way only the plugin reads (a digest of fields in the body, the gateway
-    /// asked back): core takes the delivery as it comes, and the run confirms it with
-    /// `secret.digest` (any of the plugin's secrets) or the gateway's own answer before
-    /// anything acts. Never dropped
-    /// as a repeat: a forged copy must not stand in for the real one.
-    verify: struct {},
-};
-
-pub const Encoding = enum { hex, base64 };
+pub const Signature = public.Signature;
+pub const Encoding = public.Encoding;
 
 /// How a webhook's body is read: JSON, a form, or the bytes as they came.
 pub const Body = enum { json, form, raw };
 
-/// Where a delivery's own id is, so a repeat is dropped: a header, or a top-level field.
-pub const DeliveryId = union(enum) {
-    header: []const u8,
-    field: []const u8,
-};
+pub const DeliveryId = public.DeliveryId;
 
 /// What a plugin reads of the requests visitors make (`.request`): query parameters and
 /// cookies by name, recorded by core per visitor as they land (`request.read`); and the
@@ -563,20 +522,7 @@ pub const Redirect = struct {
     operation: []const u8,
 };
 
-/// A record's datetime field a job follows: it runs once per value, `offset_ms` from it.
-pub const Due = struct {
-    /// The record's type, by its full name.
-    type: []const u8,
-    field: []const u8,
-    /// Negative for `.before`.
-    offset_ms: i64,
-    /// The record is a plugin's internal record (`subscriptions.subscription`): its moment
-    /// is read from its document.
-    internal: bool = false,
-    /// It comes back every year (a birthday, a card's expiry): the run follows its next
-    /// return, and once run, the one after.
-    yearly: bool = false,
-};
+pub const Due = public.Due;
 
 /// A hook a plugin asks for; its entry is the number of operations plus its position here.
 pub const Hook = struct {

@@ -1,7 +1,7 @@
 const std = @import("std");
 pub const conditions = @import("conditions.zig");
 
-pub const Destination = enum { content, taxonomy, settings, component, user, media };
+pub const Destination = @import("../publr/model/field_group.zig").Destination;
 pub const Position = enum { main, sidebar };
 pub const Labels = enum { above, beside };
 pub const Instructions = enum { below_label, below_input };
@@ -54,11 +54,7 @@ pub const Context = struct {
     rules: []const PluginRule = &.{},
 };
 
-/// What a plugin's rule decides for: the account or file being edited.
-pub const Target = struct {
-    destination: Destination,
-    id: []const u8,
-};
+pub const Target = @import("../publr/model/field_group.zig").Target;
 
 /// A location rule a plugin brings (`loyalty.tier`): the values the admin's dropdown offers
 /// and whether a target matches. `ctx` is the caller's `*sdk.Ctx`; a rule that fails offers

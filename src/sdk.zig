@@ -81,7 +81,7 @@ pub const AppsLoaded = @import("sdk/plugin/hook_define.zig").event(.{
 pub const Scratch = scratch.Scratch;
 pub const DefinitionCache = definition_cache.DefinitionCache;
 
-pub const operations_max: u32 = 1024;
+pub const operations_max = @import("publr/operation.zig").operations_max;
 pub const in_bytes_max: u32 = @import("model/limits.zig").input_bytes_max;
 
 const AuthState = @import("lib/auth.zig").State;

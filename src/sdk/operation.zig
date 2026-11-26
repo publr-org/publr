@@ -1,32 +1,17 @@
 const std = @import("std");
 const db = @import("../lib/db.zig");
+const public = @import("../publr/operation.zig");
 
 pub const values = @import("operation/values.zig");
 pub const lists = @import("operation/lists.zig");
 
-pub const name_len_max: u32 = 64;
+pub const name_len_max = public.name_len_max;
 pub const type_depth_max: u32 = 8;
-pub const fields_max: u32 = 64;
+pub const fields_max = public.fields_max;
 
-pub const Error = db.Error || error{
-    Denied,
-    Invalid,
-    NotFound,
-    Conflict,
-    Throttled,
-    /// The operation's own failure, one the core does not name: `ctx.failure` says which
-    /// (a `Failure` its plugin declares), and the adapters answer with its status and name.
-    Failed,
-    /// A service the operation depends on could not be reached; nothing was changed.
-    Unavailable,
-    BadCredentials,
-    InvalidationFailed,
-    /// A modifier's read, noted for its batch: the modifier runs again once the batch's reads
-    /// are in. Only a modifier's first pass sees it.
-    NotYet,
-};
+pub const Error = db.Error || public.Error;
 
-pub const Kind = enum { read, write };
+pub const Kind = public.Kind;
 
 /// Whether the operation destroys what cannot be had back (`pub const destroys = true`):
 /// a device never may; a person does it in the admin.
@@ -48,25 +33,8 @@ pub const drafts_only: Failure = .{
     .message = "This device saves drafts only; a person publishes them in the admin",
 };
 
-/// A way an operation fails that the core's errors do not name, raised with `ctx.fail`:
-/// "your email is not verified", "the plan's limit is reached". A plugin's operation lists
-/// the ones it can end with on its `Fails:` lines.
-pub const Failure = struct {
-    /// What REST answers (`{ "error": "Unverified" }`): letters only, starting upper-case.
-    name: []const u8,
-    /// An HTTP status from 400 to 599.
-    status: u16,
-    /// For people: the CLI prints it, REST sends it as `message`.
-    message: []const u8,
-};
-
-/// One thing wrong with a call's input, beside its field: `.validate`'s `problems.add`.
-pub const Problem = struct {
-    /// A field of the input, as named in it.
-    field: []const u8,
-    /// For people, shown beside the field.
-    message: []const u8,
-};
+pub const Failure = public.Failure;
+pub const Problem = public.Problem;
 
 pub const problems_max: u32 = 64;
 pub const failure_name_len_max: u32 = 64;
@@ -117,32 +85,14 @@ pub const Namespace = struct {
     };
 };
 
-pub fn Docs(comptime Shape: type) type {
-    comptime {
-        const source = @typeInfo(Shape).@"struct".field_names;
-        const empty: []const u8 = "";
-        const default_ptr: ?*const anyopaque = @ptrCast(&empty);
-
-        std.debug.assert(source.len <= fields_max);
-
-        return @Struct(
-            .auto,
-            null,
-            std.meta.fieldNames(Shape),
-            &@splat([]const u8),
-            &@splat(.{
-                .default_value_ptr = default_ptr,
-            }),
-        );
-    }
-}
+pub const Docs = public.Docs;
 
 /// The one way a list is paged: `limit` (1 to 200) and `offset`, and what a page answers.
 pub const Page = struct {
     limit: u32 = 50,
     offset: u32 = 0,
 };
-pub const page_limit_max: u32 = 200;
+pub const page_limit_max = public.page_limit_max;
 
 pub fn field_doc(
     comptime Operation: type,
@@ -161,20 +111,7 @@ pub fn field_doc(
     }
 }
 
-/// An operation on its way out: it keeps working until `removed_on`, every caller is told,
-/// and its `migration` is what a release's migration prompt says of it.
-/// `.deprecated = .{ .since = "0.9.0", .removed_on = "2027-03-01", .instead = "money.format",
-/// .migration = "Pass amount and currency instead of value." }`
-pub const Deprecated = struct {
-    /// The release that deprecated it.
-    since: []const u8,
-    /// The day it goes (`2027-03-01`): the first release made on or after it removes it.
-    removed_on: []const u8,
-    /// The operation to call instead; empty when nothing replaces it.
-    instead: []const u8 = "",
-    /// What to change, often with a before and after.
-    migration: []const u8,
-};
+pub const Deprecated = public.Deprecated;
 
 pub fn deprecation(comptime Operation: type) ?Deprecated {
     comptime {
@@ -365,9 +302,7 @@ pub fn assert_name(comptime name: []const u8) void {
     }
 }
 
-/// A value whose shape comes with the data, as an operation's `In` or `Out` holds it: JSON
-/// text in Publr, bytes read where they lie in an installed plugin's module.
-pub const Json = @import("operation/json.zig").Json;
+pub const Json = public.Json;
 
 pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
     comptime {
@@ -420,18 +355,8 @@ fn assert_decl(comptime Operation: type, comptime decl: []const u8, comptime Typ
 /// operation's name raises its quota by this for each.
 pub const split_branches: u32 = name_len_max + 8;
 
-/// Everything before the verb: `record` of `record.create`.
-pub fn namespace(name: []const u8) []const u8 {
-    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse unreachable;
-    std.debug.assert(dot > 0);
-    return name[0..dot];
-}
-
-pub fn verb(name: []const u8) []const u8 {
-    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse unreachable;
-    std.debug.assert(dot + 1 < name.len);
-    return name[dot + 1 ..];
-}
+pub const namespace = public.namespace;
+pub const verb = public.verb;
 
 test "namespace and verb split" {
     try std.testing.expectEqualStrings("record", namespace("record.create"));
