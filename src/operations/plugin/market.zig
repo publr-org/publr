@@ -46,8 +46,9 @@ pub const Find = struct {
         \\`{ plugins }` once it lands, the plugins that give the request something it needs,
         \\best first, leaving out those installed here. Install each with `plugin install`;
         \\build only what none of them gives. With `PUBLR_PLUGIN_CATALOG` naming a folder,
-        \\every plugin there is listed. Fails `CatalogUnreachable` when the marketplace
-        \\cannot be asked.
+        \\or when the marketplace cannot be asked or does not answer in time, every catalog
+        \\plugin that builds something is listed instead, for the caller to choose from.
+        \\Fails `CatalogUnreachable` only when the catalog itself cannot be read.
     ;
     pub const kind: sdk.operation.Kind = .write;
     pub const In = struct {
@@ -122,7 +123,7 @@ pub fn find_job(ctx: *Ctx, in: Finding) Error!void {
                 return error.OutOfMemory;
             }
 
-            return jobs.fail(ctx, in.asked, jobs.problem_of(ctx, err));
+            return answer_listed(ctx, in.asked);
         };
 
         return jobs.enqueue_at(ctx, "find_wait", Waiting{
@@ -131,15 +132,26 @@ pub fn find_job(ctx: *Ctx, in: Finding) Error!void {
         }, ctx.now_ms + look_ms);
     }
 
+    return answer_listed(ctx, in.asked);
+}
+
+/// Every catalog plugin that builds something and is not installed: a folder's answer, and
+/// the web's when the marketplace cannot be asked, so the caller still has a list to choose
+/// from.
+fn answer_listed(ctx: *Ctx, asked: []const u8) Error!void {
+    std.debug.assert(ctx.job.len > 0);
+    std.debug.assert(asked.len > 0);
+
+    const installed = try installed_names(ctx);
     const found = listed(ctx, installed) catch |err| {
         if (err == error.OutOfMemory) {
             return error.OutOfMemory;
         }
 
-        return jobs.fail(ctx, in.asked, jobs.problem_of(ctx, err));
+        return jobs.fail(ctx, asked, jobs.problem_of(ctx, err));
     };
 
-    return jobs.answer(ctx, in.asked, Find.Found{
+    return jobs.answer(ctx, asked, Find.Found{
         .plugins = found,
     });
 }
@@ -341,7 +353,7 @@ fn web(source: []const u8) bool {
     return std.mem.startsWith(u8, source, "https://") or std.mem.startsWith(u8, source, "http://");
 }
 
-/// A folder's plugins that build something, without asking anyone: for developing.
+/// The catalog's plugins that build something, without asking anyone.
 fn listed(ctx: *Ctx, installed: []const []const u8) Error![]const Pick {
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -484,16 +496,16 @@ pub fn wait_job(ctx: *Ctx, in: Waiting) Error!void {
             return error.OutOfMemory;
         }
 
-        return jobs.fail(ctx, in.asked, jobs.problem_of(ctx, err));
+        return answer_listed(ctx, in.asked);
     };
     const found = std.json.parseFromSliceLeaky(Selected, ctx.arena, text, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
-    }) catch return jobs.fail(ctx, in.asked, catalog.unreachable_failure.message);
+    }) catch return answer_listed(ctx, in.asked);
 
     if (!found.answered) {
         if (in.looks + 1 >= looks_max) {
-            return jobs.fail(ctx, in.asked, "The marketplace did not answer in time");
+            return answer_listed(ctx, in.asked);
         }
 
         var again = in;
