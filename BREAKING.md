@@ -13,3 +13,5 @@ behaviour under the same name is an entry too. New entries go under `## Unreleas
 release renames it to its version and day.
 
 ## Unreleased
+
+## 0.8.4 (2026-11-26)

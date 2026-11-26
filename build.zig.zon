@@ -1,6 +1,6 @@
 .{
     .name = .publr,
-    .version = "0.8.3",
+    .version = "0.8.4",
     .fingerprint = 0x5f016c89bf65ce5c,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
