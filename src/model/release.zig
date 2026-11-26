@@ -39,6 +39,20 @@ pub fn kind_between(from: []const u8, to: []const u8) !Kind {
     return if (after.minor != before.minor) .minor else .patch;
 }
 
+/// Whether a plugin built for `built_for` runs on `running`: the same major and minor. A
+/// module names no more than the release it was built for, so nothing finer can be checked.
+pub fn same_line(built_for: []const u8, running: []const u8) bool {
+    std.debug.assert(running.len > 0);
+
+    if (built_for.len == 0) {
+        return false;
+    }
+
+    const between = kind_between(built_for, running) catch return false;
+
+    return between == .patch;
+}
+
 pub fn newer(from: []const u8, to: []const u8) bool {
     std.debug.assert(from.len > 0);
 
@@ -162,6 +176,15 @@ test "the kind of an update is the part of the version that moved" {
     try std.testing.expect(newer("0.3.9", "0.10.0"));
     try std.testing.expect(!newer("0.3.0", "0.3.0"));
     try std.testing.expect(!newer("0.3.0", "nope"));
+}
+
+test "a plugin runs on the release line it was built for, in either direction" {
+    try std.testing.expect(same_line("0.8.2", "0.8.3"));
+    try std.testing.expect(same_line("0.8.3", "0.8.1"));
+    try std.testing.expect(!same_line("0.7.2", "0.8.1"));
+    try std.testing.expect(!same_line("1.8.1", "0.8.1"));
+    try std.testing.expect(!same_line("", "0.8.1"));
+    try std.testing.expect(!same_line("nope", "0.8.1"));
 }
 
 test "a checksum is found by its file's name" {
