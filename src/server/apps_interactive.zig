@@ -15,8 +15,8 @@ const built_dir = own.built_dir;
 const apps_max: u32 = 1024;
 
 /// Builds the interactive components of every app under `apps_dir` that changed since they
-/// were built. The SDK is written once per release beside the database (`<data>/sdk/<version>`).
-/// False, having said why, when one does not build.
+/// were built. The SDK is written once per build beside the database
+/// (`<data>/sdk/<version>-<fingerprint>`). False, having said why, when one does not build.
 pub fn build(init: std.process.Init, db_path: []const u8, apps_dir: []const u8) !bool {
     return build_in(.{
         .io = init.io,
@@ -76,13 +76,18 @@ pub fn build_in(place: Place, db_path: []const u8, apps_dir: []const u8) !bool {
     return true;
 }
 
-/// This release's SDK, written once beside the database.
+/// This build's SDK, written once beside the database in a folder named by the release and
+/// what the SDK holds (`<data>/sdk/0.8.1-<fingerprint>`); the copies of other builds are
+/// removed as it is written.
 fn sdk_of(place: Place, db_path: []const u8) ![]const u8 {
     std.debug.assert(db_path.len > 0);
 
     const arena = place.arena;
     const data = std.fs.path.dirname(db_path) orelse ".";
-    const dir = try std.fs.path.join(arena, &.{ data, "sdk", version });
+    const printed = plugin_sdk.fingerprint();
+    const name = try std.fmt.allocPrint(arena, "{s}-{s}", .{ version, &printed });
+    const parent = try std.fs.path.join(arena, &.{ data, "sdk" });
+    const dir = try std.fs.path.join(arena, &.{ parent, name });
     const tool = try std.fs.path.join(arena, &.{ dir, "tools", "pjsx_gen" });
     const cwd = std.Io.Dir.cwd();
 
@@ -90,6 +95,7 @@ fn sdk_of(place: Place, db_path: []const u8) ![]const u8 {
         return dir;
     } else |_| {}
 
+    try remove_others(place, parent, name);
     try cwd.deleteTree(place.io, dir);
 
     var folder = try cwd.createDirPathOpen(place.io, dir, .{});
@@ -98,6 +104,33 @@ fn sdk_of(place: Place, db_path: []const u8) ![]const u8 {
     try plugin_sdk.extract_sdk(place.io, folder);
 
     return dir;
+}
+
+/// Every other copy under `parent`: other builds' and releases', never wanted again.
+fn remove_others(place: Place, parent: []const u8, kept: []const u8) !void {
+    std.debug.assert(kept.len > 0);
+
+    const cwd = std.Io.Dir.cwd();
+    var folder = cwd.openDir(place.io, parent, .{
+        .iterate = true,
+    }) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    defer folder.close(place.io);
+
+    var names: std.ArrayList([]const u8) = .empty;
+    var iterator = folder.iterate();
+
+    while (try iterator.next(place.io)) |entry| {
+        if (entry.kind != .directory or std.mem.eql(u8, entry.name, kept)) continue;
+
+        try names.append(place.arena, try place.arena.dupe(u8, entry.name));
+    }
+
+    for (names.items) |old| {
+        try folder.deleteTree(place.io, old);
+    }
 }
 
 fn lower(place: Place, sdk: []const u8, app_dir: []const u8) !bool {

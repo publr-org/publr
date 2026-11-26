@@ -60,3 +60,12 @@ pub fn extract_sdk(io: std.Io, dir: std.Io.Dir) !void {
 
     try std.tar.extract(io, dir, &gzip.reader, .{});
 }
+
+/// The SDK this binary carries, as 16 hex digits: two builds of one release that carry
+/// different SDKs (a development build after a change to the design system) get different
+/// copies beside the database, never the other's.
+pub fn fingerprint() [16]u8 {
+    std.debug.assert(!options.sdk or sdk_archive.len > 0);
+
+    return std.fmt.hex(std.hash.Wyhash.hash(0, sdk_archive));
+}
