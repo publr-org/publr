@@ -6,6 +6,7 @@ const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const registry = @import("../../server/registry.zig");
+const offered = @import("offered.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -69,12 +70,14 @@ pub fn refusal(arena: std.mem.Allocator, needs: Needs) error{OutOfMemory}!?Refus
     }
 
     const uses = needs.uses[0..@min(needs.uses.len, model.plugin_fit.uses_max)];
-    const missing = try model.plugin_fit.missing_calls(
-        arena,
-        uses,
-        &namespace_names,
-        &operation_names,
-    );
+    const missing = try model.plugin_fit.missing(arena, uses, .{
+        .namespaces = &namespace_names,
+        .operations = &operation_names,
+        .item_namespaces = &offered.namespaces,
+        .events = &offered.event_names,
+        .mods = &mod_names,
+        .mod_endings = &offered.mod_endings,
+    });
 
     if (missing.len == 0) {
         return null;
@@ -84,7 +87,7 @@ pub fn refusal(arena: std.mem.Allocator, needs: Needs) error{OutOfMemory}!?Refus
         .name = "UsesWhatPublrLacks",
         .message = try std.fmt.allocPrint(
             arena,
-            "{s} {s} calls {s}, which Publr {s} does not have. Update the plugin for this Publr.",
+            "{s} {s} uses {s}, which Publr {s} does not have. Update the plugin for this Publr.",
             .{ needs.name, needs.version, try std.mem.join(arena, ", ", missing), running },
         ),
     };
@@ -120,26 +123,58 @@ const host_names = names: {
     break :names names;
 };
 
-/// What a plugin may use, as its manifest's `uses` names it: every operation, then every
-/// host function.
-const offered_all = names: {
-    @setEvalBranchQuota(1000 + (operation_names.len + host_names.len) * 64);
+/// The mods core applies, by name.
+const mod_names = names: {
+    var names: [offered.mods.len][]const u8 = undefined;
 
-    var names: [operation_names.len + host_names.len][]const u8 = undefined;
-
-    for (operation_names, names[0..operation_names.len]) |operation, *name| {
-        name.* = "call:" ++ operation;
-    }
-
-    for (host_names, names[operation_names.len..]) |host, *name| {
-        name.* = "host:" ++ host;
+    for (offered.mods, &names) |mod, *name| {
+        name.* = mod.name;
     }
 
     break :names names;
 };
 
-/// An operation on its way out, as a release's migration prompt and roadmap say it.
+/// What a plugin may use, as its manifest's `uses` names it: every operation, every host
+/// function, every event core has (`event:`, which a plugin's `emit:` and `hook:` name; an
+/// operation is an event too, under its own name), every mod core applies by name.
+const offered_all = names: {
+    const total = operation_names.len + host_names.len + offered.event_names.len +
+        mod_names.len;
+
+    @setEvalBranchQuota(1000 + total * 64);
+
+    var names: [total][]const u8 = undefined;
+    var index: usize = 0;
+
+    for (operation_names) |operation| {
+        names[index] = "call:" ++ operation;
+        index += 1;
+    }
+
+    for (host_names) |host| {
+        names[index] = "host:" ++ host;
+        index += 1;
+    }
+
+    for (offered.event_names) |event| {
+        names[index] = "event:" ++ event;
+        index += 1;
+    }
+
+    for (mod_names) |mod| {
+        names[index] = "mod:" ++ mod;
+        index += 1;
+    }
+
+    const final = names;
+
+    break :names final;
+};
+
+/// An item on its way out (`call`, `event`, `mod`), as a release's migration prompt and
+/// roadmap say it.
 pub const Deprecation = struct {
+    kind: []const u8 = "call",
     name: []const u8,
     since: []const u8,
     removed_on: []const u8,
@@ -147,13 +182,14 @@ pub const Deprecation = struct {
     migration: []const u8,
 };
 
-/// Every deprecated operation this Publr runs, core's and the built-in plugins'.
+/// Every deprecated operation this Publr runs, core's and the built-in plugins', then every
+/// deprecated event and mod of core's.
 const deprecated_all = listed: {
     const operations = registry.SDK.operations;
 
     @setEvalBranchQuota(1000 + operations.len * 16);
 
-    var count: usize = 0;
+    var count: usize = offered.deprecated.len;
 
     for (operations) |Operation| {
         if (sdk.operation.deprecation(Operation) != null) {
@@ -177,6 +213,18 @@ const deprecated_all = listed: {
         index += 1;
     }
 
+    for (offered.deprecated) |item| {
+        list[index] = .{
+            .kind = item.kind,
+            .name = item.name,
+            .since = item.deprecated.since,
+            .removed_on = item.deprecated.removed_on,
+            .instead = item.deprecated.instead,
+            .migration = item.deprecated.migration,
+        };
+        index += 1;
+    }
+
     const final = list;
 
     break :listed final;
@@ -184,16 +232,19 @@ const deprecated_all = listed: {
 
 pub const Surface = struct {
     pub const name = "plugin.surface";
-    pub const description = "List what this Publr offers plugins: operations, host functions";
+    pub const description = "List what this Publr offers plugins: operations, events, mods";
     pub const details =
         \\Anyone signed in. What a plugin built for this Publr may use, by name: the operations
-        \\of core and of the built-in plugins, and the functions the sandbox gives a module. A
-        \\plugin's manifest lists what it uses (`uses`: `call:<operation>`, `host:<function>`,
-        \\`emit:`, `mod:`) and the Publr it was built with (`minimum_publr`); one calling an
-        \\operation this list lacks, or built with a later Publr, is refused as it is installed
-        \\and as it is loaded. `deprecated` names each operation on its way out, the day it
-        \\goes and what to change. Changes nothing.
+        \\of core and of the built-in plugins (`call:`; each is an event too), the functions
+        \\the sandbox gives a module (`host:`), core's events (`event:`, which a plugin emits
+        \\or hooks: `emit:`, `hook:` in its `uses`) and the mods core applies by name (`mod:`).
+        \\A plugin's manifest lists what it uses and the Publr it was built with
+        \\(`minimum_publr`); one using what this list lacks in a namespace of core's, or built
+        \\with a later Publr, is refused as it is installed and as it is loaded. `deprecated`
+        \\names each item on its way out, its kind, the day it goes and what to change.
+        \\Changes nothing.
     ;
+
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
         limit: u32 = 200,
@@ -207,13 +258,13 @@ pub const Surface = struct {
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
         .limit = "How many to list; 200 when omitted, up to 200",
-        .offset = "How many to pass over first: the operations, then the host functions",
+        .offset = "How many to pass over first: operations, host functions, events, mods",
     };
     pub const output_docs: sdk.operation.Docs(Out) = .{
         .publr = "This Publr's release",
-        .offered = "What a plugin may use, as its `uses` names it: `call:<operation>`, " ++
-            "`host:<function>`",
-        .deprecated = "Each operation on its way out, on every page: `since`, `removed_on`, " ++
+        .offered = "What a plugin may use: `call:<operation>`, `host:<function>`, " ++
+            "`event:<event>`, `mod:<mod>`",
+        .deprecated = "Each item on its way out, on every page: `kind`, `since`, `removed_on`, " ++
             "`instead`, `migration`",
         .more = "Whether more follow past this page",
     };
@@ -244,3 +295,43 @@ pub const Surface = struct {
         };
     }
 };
+
+test {
+    _ = offered;
+}
+
+comptime {
+    // An event's or a mod's `instead` names an operation, event or mod this Publr has, as an
+    // operation's does (registry.zig).
+    @setEvalBranchQuota(1000 + offered_all.len * 64);
+
+    for (offered.deprecated) |item| {
+        const instead = item.deprecated.instead;
+
+        if (instead.len == 0) {
+            continue;
+        }
+
+        const named = listed(&operation_names, instead) or
+            listed(&offered.event_names, instead) or listed(&mod_names, instead);
+
+        if (!named) {
+            @compileError(item.name ++ ": `deprecated.instead` names " ++ instead ++
+                ", which Publr lacks");
+        }
+    }
+}
+
+fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        for (names) |one| {
+            if (std.mem.eql(u8, one, name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

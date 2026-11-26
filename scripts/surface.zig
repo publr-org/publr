@@ -13,6 +13,8 @@ const output_bytes_max: u32 = 8 << 20;
 const files_max: u32 = 20_000;
 
 const Deprecation = struct {
+    /// `call`, `event`, `mod`: the key is `<kind>:<name>`, as `offered` writes it.
+    kind: []const u8 = "call",
     name: []const u8,
     since: []const u8,
     removed_on: []const u8,
@@ -184,12 +186,15 @@ fn list(init: std.process.Init, surface: Surface, src: []const u8, before: []con
             continue;
         }
 
-        const declaration = try std.fmt.allocPrint(arena, "pub const name = \"{s}\";", .{
-            item.name,
-        });
+        // An operation declares `pub const name`; an event or a mod `.name = ` in a literal.
+        const declaration = if (std.mem.eql(u8, item.kind, "call"))
+            try std.fmt.allocPrint(arena, "pub const name = \"{s}\";", .{item.name})
+        else
+            try std.fmt.allocPrint(arena, ".name = \"{s}\",", .{item.name});
         const place = try declared_at(init, src, declaration);
 
-        std.debug.print("{s}  removed on {s}  (deprecated since {s})\n  declared at {s}\n", .{
+        std.debug.print("{s}:{s}  removed on {s}  (deprecated since {s})\n  declared at {s}\n", .{
+            item.kind,
             item.name,
             item.removed_on,
             item.since,
@@ -288,7 +293,7 @@ fn gone_unexplained(before: Surface, current: Surface, broke: []const u8) u32 {
     var failures: u32 = 0;
 
     for (before.offered) |item| {
-        if (contains(current.offered, "", item) or entered(broke, item)) {
+        if (contains(current.offered, item) or entered(broke, item)) {
             continue;
         }
 
@@ -311,7 +316,7 @@ fn gone_early(before: Surface, current: Surface, today: []const u8) u32 {
     var failures: u32 = 0;
 
     for (before.offered) |item| {
-        if (contains(current.offered, "", item)) {
+        if (contains(current.offered, item)) {
             continue;
         }
 
@@ -388,7 +393,7 @@ fn prompt(init: std.process.Init, current: Surface, previous: ?Surface, broke: [
 
     if (previous) |before| {
         for (before.deprecated) |item| {
-            if (!contains(current.offered, "call:", item.name)) {
+            if (!keyed_any(current.offered, item)) {
                 try write_entry(out, "Removed", item);
                 written += 1;
             }
@@ -396,7 +401,7 @@ fn prompt(init: std.process.Init, current: Surface, previous: ?Surface, broke: [
     }
 
     for (current.deprecated) |item| {
-        const fresh = if (previous) |before| deprecation_of(before, item.name) == null else true;
+        const fresh = if (previous) |before| !keyed_in(before.deprecated, item) else true;
 
         try write_entry(out, if (fresh) "Deprecated in this release" else "On its way out", item);
         written += 1;
@@ -413,7 +418,7 @@ fn write_entry(out: *std.Io.Writer, heading: []const u8, item: Deprecation) !voi
     std.debug.assert(heading.len > 0);
     std.debug.assert(item.name.len > 0);
 
-    try out.print("## `call:{s}`: {s}\n\n", .{ item.name, heading });
+    try out.print("## `{s}:{s}`: {s}\n\n", .{ item.kind, item.name, heading });
     try out.print("Deprecated since {s}, removed on {s}.", .{ item.since, item.removed_on });
 
     if (item.instead.len > 0) {
@@ -423,13 +428,12 @@ fn write_entry(out: *std.Io.Writer, heading: []const u8, item: Deprecation) !voi
     try out.print("\n\n{s}\n\n", .{item.migration});
 }
 
-fn deprecation_of(surface: Surface, name: []const u8) ?Deprecation {
-    std.debug.assert(name.len > 0);
-
-    const bare = if (std.mem.startsWith(u8, name, "call:")) name["call:".len..] else name;
+/// The deprecation whose key (`<kind>:<name>`) is `key`.
+fn deprecation_of(surface: Surface, key: []const u8) ?Deprecation {
+    std.debug.assert(key.len > 0);
 
     for (surface.deprecated) |item| {
-        if (std.mem.eql(u8, item.name, bare)) {
+        if (keyed(item, key)) {
             return item;
         }
     }
@@ -437,13 +441,46 @@ fn deprecation_of(surface: Surface, name: []const u8) ?Deprecation {
     return null;
 }
 
-fn contains(names: []const []const u8, comptime prefix: []const u8, name: []const u8) bool {
+fn contains(names: []const []const u8, name: []const u8) bool {
     std.debug.assert(name.len > 0);
 
     for (names) |one| {
-        if (one.len == prefix.len + name.len and std.mem.startsWith(u8, one, prefix) and
-            std.mem.eql(u8, one[prefix.len..], name))
-        {
+        if (std.mem.eql(u8, one, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether `key` is `item`'s `<kind>:<name>`.
+fn keyed(item: Deprecation, key: []const u8) bool {
+    std.debug.assert(item.kind.len > 0);
+
+    return key.len == item.kind.len + 1 + item.name.len and
+        std.mem.startsWith(u8, key, item.kind) and key[item.kind.len] == ':' and
+        std.mem.eql(u8, key[item.kind.len + 1 ..], item.name);
+}
+
+/// Whether one of `keys` is `item`'s.
+fn keyed_any(keys: []const []const u8, item: Deprecation) bool {
+    std.debug.assert(item.name.len > 0);
+
+    for (keys) |key| {
+        if (keyed(item, key)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Whether `items` holds a deprecation of the same item as `item`.
+fn keyed_in(items: []const Deprecation, item: Deprecation) bool {
+    std.debug.assert(item.name.len > 0);
+
+    for (items) |other| {
+        if (std.mem.eql(u8, other.kind, item.kind) and std.mem.eql(u8, other.name, item.name)) {
             return true;
         }
     }

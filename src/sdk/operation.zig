@@ -227,19 +227,29 @@ fn validate_deprecated(comptime Operation: type) void {
 
         const found = deprecation(Operation) orelse return;
 
+        check_deprecated(Operation.name, found);
+    }
+}
+
+/// What every deprecation must say, whatever it is on (an operation, an event, a mod): the
+/// release, the day, what to change, and an `instead` other than itself.
+pub fn check_deprecated(comptime name: []const u8, comptime found: Deprecated) void {
+    comptime {
+        std.debug.assert(name.len > 0);
+
         _ = std.SemanticVersion.parse(found.since) catch
-            @compileError(Operation.name ++ ": `deprecated.since` is the release, `0.4.0`");
+            @compileError(name ++ ": `deprecated.since` is the release, `0.4.0`");
 
         if (!valid_day(found.removed_on)) {
-            @compileError(Operation.name ++ ": `deprecated.removed_on` is a day, `2027-03-01`");
+            @compileError(name ++ ": `deprecated.removed_on` is a day, `2027-03-01`");
         }
 
         if (found.migration.len == 0) {
-            @compileError(Operation.name ++ ": `deprecated.migration` says what to change");
+            @compileError(name ++ ": `deprecated.migration` says what to change");
         }
 
-        if (std.mem.eql(u8, found.instead, Operation.name)) {
-            @compileError(Operation.name ++ ": `deprecated.instead` names another operation");
+        if (std.mem.eql(u8, found.instead, name)) {
+            @compileError(name ++ ": `deprecated.instead` names something else");
         }
     }
 }

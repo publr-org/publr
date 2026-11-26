@@ -1,4 +1,4 @@
-| `plugin surface [--limit <n>] [--offset <n>]` | What this Publr offers plugins, as a plugin's `uses` names it: every operation (`call:<operation>`, core's and built-in plugins') then every host function (`host:<function>`), 200 a page, with `publr` (this release) and `more`. A plugin calling an operation this list lacks, or built with a later Publr, is refused as it is installed and as it is loaded |
+| `plugin surface [--limit <n>] [--offset <n>]` | What this Publr offers plugins: every operation (`call:<operation>`, core's and built-in plugins'), host function (`host:<function>`), core event (`event:<event>`, which a plugin's `emit:` and `hook:` name) and mod core applies (`mod:<mod>`), 200 a page, with `publr` (this release), `deprecated` (each item on its way out, its kind and day) and `more`. A plugin using what this list lacks in one of core's namespaces, or built with a later Publr, is refused as it is installed and as it is loaded |
 # CLI: `plugin`
 
 Every plugin is either **built-in** (compiled into the binary: always enabled, full access,

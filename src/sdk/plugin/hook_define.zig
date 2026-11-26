@@ -384,13 +384,42 @@ pub fn event(comptime options: anytype) type {
             @compileError("only core names an event a `before` hook may refuse: " ++ name);
         }
 
+        const deprecated_: ?sdk.operation.Deprecated = if (@hasField(Options, "deprecated"))
+            deprecation_of(name, options.deprecated)
+        else
+            null;
+
         return struct {
             pub const publr_event_definition = true;
             pub const Payload = Payload_;
             pub const verb = name;
             pub const full_name = if (core) name else "";
             pub const refusable = refusable_;
+            /// On its way out, as an operation is (`sdk.operation.Deprecated`).
+            pub const deprecated = deprecated_;
         };
+    }
+}
+
+/// An event's `.deprecated` as written, checked as an operation's is.
+fn deprecation_of(comptime name: []const u8, comptime given: anytype) sdk.operation.Deprecated {
+    comptime {
+        std.debug.assert(name.len > 0);
+
+        var found: sdk.operation.Deprecated = .{
+            .since = given.since,
+            .removed_on = given.removed_on,
+            .migration = given.migration,
+        };
+
+        if (@hasField(@TypeOf(given), "instead")) {
+            found.instead = given.instead;
+        }
+
+        const kept = found;
+
+        sdk.operation.check_deprecated(name, kept);
+        return kept;
     }
 }
 

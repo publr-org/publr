@@ -1034,7 +1034,8 @@ sees and may change the input, `after` sees the answer or the payload inside the
 may refuse, `on` hears it from the queue once the write committed: an operation's answer as
 it was, or the event's payload. Every operation emits its own event on success; a plugin's
 event is for something that happens that is not a call; its payload is typed, and it is
-named `<plugin>.<name>`. An `on` hook can't refuse: one that fails runs again on its own, as
+named `<plugin>.<name>`. An event takes `.deprecated` as an operation does. An `on` hook
+can't refuse: one that fails runs again on its own, as
 a failed job does (a minute later, doubling, eight runs in all), and after the last it shows
 failed on the plugin's Log and in `publr job list`; the record and the person's values stay.
 
@@ -1351,10 +1352,11 @@ its owner's choice, never its author's. `zig build` compiles in the ones listed 
 for the sandbox with the compiler the command carries, against the site's release (`plugin
 prepare`, then `plugin check --file`), so no Zig is needed: its manifest is read from the
 module itself and written into it, with what it uses (`uses`: the host functions it
-imports, and each operation it calls, event it emits and mod it reads of core's or another
-plugin's: `call:`, `emit:`, `mod:`) and the Publr it was built with (`minimum_publr`, and
-`tested_up_to`, the same until someone tests it on a later one). Below its `minimum_publr`, or
-on a Publr without an operation it calls (`plugin surface` lists them), it is refused as it is
+imports, each operation it calls, event it emits and mod it reads of core's or another
+plugin's, and what its hooks run on and its modifiers answer: `call:`, `emit:`, `hook:`,
+`mod:`) and the Publr it was built with (`minimum_publr`, and `tested_up_to`, the same until
+someone tests it on a later one). Below its `minimum_publr`, or on a Publr without an
+operation, event or mod it uses (`plugin surface` lists them), it is refused as it is
 installed and as it is loaded, saying why. Then it is added
 and enabled (a new plugin) or applied as its next version (one already there, the previous
 kept to roll back to). What it asks for is granted by tier; high requests wait for an

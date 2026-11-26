@@ -25,10 +25,11 @@ next one added to.
 
 **Before 1.0, a break is written down in the commit that makes it.** Removing, renaming or
 changing the behaviour of anything plugins, apps or scripts build on adds an entry to
-`BREAKING.md` under `## Unreleased`: a `###` heading with the item in backticks, as a
-plugin's `uses` names it (`call:money.texts`), then what changed and what to do instead,
-with a before and after. The Release workflow fails when an operation or host function is
-gone with no entry, names the section after the release, and puts it in the release notes.
+`BREAKING.md` under `## Unreleased`: a `###` heading with the item in backticks, as
+`plugin surface` names it (`call:money.texts`, `event:role.created`), then what changed and
+what to do instead, with a before and after. The Release workflow fails when an operation,
+host function, event or mod is gone with no entry, names the section after the release, and
+puts it in the release notes.
 
 **From 1.0, removing something takes a deprecation first.** An operation declares
 `pub const deprecated: publr.Deprecated = .{ .since = "1.2.0", .removed_on = "2028-03-01",
