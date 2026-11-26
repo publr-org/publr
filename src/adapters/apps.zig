@@ -95,6 +95,12 @@ pub fn dispatch(request: *Request, response: *Response, ctx: *http.Context) anye
 
     const host = request.header("host") orelse "";
     const resolved = project.resolve(host, request.path()) orelse {
+        if (try project.moved(ctx.arena, host, request.path())) |location| {
+            const reading = request.method() == .get or request.method() == .head;
+
+            return response.redirect(if (reading) .moved_permanently else .found, location);
+        }
+
         if (std.mem.eql(u8, request.path(), "/")) {
             return response.redirect(.see_other, "/admin");
         }
@@ -1345,4 +1351,41 @@ test "visitors and `_actions`: dynamic answers set the visitor, static ones neve
         "../record/save", "http://h",
     }), "{}");
     try std.testing.expectEqual(@as(u16, 404), odd.status.code());
+}
+
+test "an app given an address answers there at its root, and its old path moves there" {
+    var harness: Harness = undefined;
+    try harness.init(.{
+        .base_url = "https://example.test",
+        .dev = true,
+        .addresses = &.{.{
+            .site = "https://example.test",
+            .app = "docs",
+            .url = "https://docs.example.test",
+        }},
+    });
+    defer harness.deinit();
+
+    const docs = harness.app_named("docs");
+
+    try std.testing.expect(docs.own_host());
+    try std.testing.expectEqualStrings("https://docs.example.test", docs.url);
+    try std.testing.expectEqualStrings("", docs.base());
+
+    const own_host = "GET {s} HTTP/1.1\r\nHost: docs.example.test\r\n\r\n";
+    const index = try harness.flow.call(try harness.flow.head(own_host, .{"/"}), "");
+
+    try std.testing.expectEqual(@as(u16, 200), index.status.code());
+    try std.testing.expect(contains(index.body, "href=\"/guide\""));
+
+    const moved = try harness.get("/docs/guide");
+
+    try std.testing.expectEqual(@as(u16, 301), moved.status.code());
+    const location = moved.header("Location").?;
+
+    try std.testing.expectEqualStrings("https://docs.example.test/guide", location);
+
+    const home = try harness.get("/");
+
+    try std.testing.expectEqual(@as(u16, 200), home.status.code());
 }

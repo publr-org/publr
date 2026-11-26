@@ -154,8 +154,66 @@ pub const Project = struct {
         place: @import("../model/dimension.zig").Place = .{},
     };
 
-    /// Which app answers `path` on `host`: the subdomain's app, else the longest path mount.
+    /// Which app answers `path` on `host`: one given that host as its address, else the
+    /// subdomain's app, else the longest path mount. Null where nothing answers, and where
+    /// the app that would has moved to an address of its own (`moved` says where).
     pub fn resolve(project: *const Project, host: []const u8, path: []const u8) ?Target {
+        std.debug.assert(path.len > 0);
+        std.debug.assert(project.apps.len <= apps_limit);
+
+        for (project.apps) |*app| {
+            if (!app.given) {
+                continue;
+            }
+
+            if (model_app.addresses.inside(app.url, host, path)) |inner| {
+                return .{
+                    .app = app,
+                    .path = inner,
+                };
+            }
+        }
+
+        const resolved = project.mounted(host, path) orelse return null;
+        const app = &project.apps[resolved.index];
+
+        if (app.given) {
+            return null;
+        }
+
+        return .{
+            .app = app,
+            .path = resolved.path,
+        };
+    }
+
+    /// Where a request for an app that moved to an address of its own goes now: that
+    /// address, then the path inside the app. Null when no such app would answer it.
+    pub fn moved(
+        project: *const Project,
+        arena: std.mem.Allocator,
+        host: []const u8,
+        path: []const u8,
+    ) !?[]const u8 {
+        std.debug.assert(path.len > 0);
+        std.debug.assert(project.apps.len <= apps_limit);
+
+        const resolved = project.mounted(host, path) orelse return null;
+        const app = &project.apps[resolved.index];
+
+        if (!app.given) {
+            return null;
+        }
+
+        return try std.mem.concat(arena, u8, &.{ app.url, resolved.path });
+    }
+
+    /// The app whose mount answers `path` on `host`, given an address or not.
+    fn mounted(
+        project: *const Project,
+        host: []const u8,
+        path: []const u8,
+    ) ?model_app.Resolved {
         std.debug.assert(path.len > 0);
         std.debug.assert(project.apps.len <= apps_limit);
 
@@ -167,14 +225,12 @@ pub const Project = struct {
 
         const mounts_len = project.apps.len;
         const found = model_app.resolve(mounts[0..mounts_len], project.domain, host, path);
-        const resolved = found orelse return null;
 
-        std.debug.assert(resolved.index < project.apps.len);
+        if (found) |resolved| {
+            std.debug.assert(resolved.index < project.apps.len);
+        }
 
-        return .{
-            .app = &project.apps[resolved.index],
-            .path = resolved.path,
-        };
+        return found;
     }
 
     /// The domain the session cookie is set for, so one sign-in holds on every app: the
@@ -197,7 +253,7 @@ pub const Project = struct {
         }
 
         for (project.apps) |*app| {
-            if (app.spec.mount == .subdomain) {
+            if (app.spec.mount == .subdomain and !app.given) {
                 return domain;
             }
         }

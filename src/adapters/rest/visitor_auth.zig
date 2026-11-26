@@ -115,7 +115,10 @@ fn place(
         sdk_ctx.app = each.spec.name;
         sdk_ctx.app_plugins = each.spec.plugins;
         sdk_ctx.app_reach = each.spec.name;
-        sdk_ctx.app_address = try address.app_address(sdk_ctx.arena, origin, each.spec.mount);
+        sdk_ctx.app_address = if (each.given)
+            each.url
+        else
+            try address.app_address(sdk_ctx.arena, origin, each.spec.mount);
 
         return true;
     }

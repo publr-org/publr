@@ -167,6 +167,13 @@ pub const Decl = struct {
         /// `Publr.build.managed()`: whether someone else runs this site and keeps its Publr up
         /// to date (Publr Cloud).
         managed,
+        /// `Publr.build.base()`: where the app's own links start (`/pos`); empty for an app at
+        /// the root or on its own host. What sits before it, the project's path and the page's
+        /// language, core adds to every root path a URL attribute holds.
+        base,
+        /// `Publr.build.baseUrl()`: the app's full address (`https://mysite.com/pos`), for what
+        /// leaves the page's own host: canonical links, sharing, sitemaps, emails.
+        base_url,
         /// `Publr.request.now()`: the same shape, per request.
         request_now,
         /// `Publr.request.session`

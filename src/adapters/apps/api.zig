@@ -400,10 +400,9 @@ fn back_of(form: *const Form, request: *Request, target: Target) []const u8 {
 fn home_of(target: Target) []const u8 {
     std.debug.assert(target.path.len > 0);
 
-    return switch (target.app.spec.mount) {
-        .path => |path| if (path.len > 0) path else "/",
-        .subdomain => "/",
-    };
+    const path = target.app.mount_path();
+
+    return if (path.len > 0) path else "/";
 }
 
 fn local(path: []const u8) bool {

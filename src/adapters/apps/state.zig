@@ -34,6 +34,9 @@ pub const Options = struct {
     edge_max_age: u32 = 0,
     /// `[DEPS]` lines on stderr for every rebuild.
     log: bool = false,
+    /// The apps whoever runs the site gave an address of their own (`addresses.zon`, this
+    /// site's entries): each answers on its host alone, at its root.
+    addresses: []const model_app.addresses.Entry = &.{},
     /// Caller-owned storage for the cause, including across failed startup cleanup.
     diagnostic: ?*report.Reason = null,
 };
@@ -90,6 +93,8 @@ pub const App = struct {
     /// What the app's own URLs start with on its host: the path the project is served under,
     /// then the app's mount (`/environments/dev/newsletter`); empty at the root.
     public_base: []const u8 = "",
+    /// Given an address of its own (`Options.addresses`): `url` is that address.
+    given: bool = false,
     output: ?std.Io.Dir = null,
     options: Options,
     /// What a build depends on besides the records: the templates, `version` (the
@@ -155,13 +160,21 @@ pub const App = struct {
         app.stores_imports = try fingerprint.imports_of(gpa, app.assets, "stores.js");
         errdefer gpa.free(app.stores_imports);
 
-        app.url = try url_of(gpa, options.base_url, spec.mount);
+        const given = model_app.addresses.url_of(options.addresses, spec.name);
+
+        app.given = given != null;
+        app.url = if (given) |own|
+            try gpa.dupe(u8, own)
+        else
+            try url_of(gpa, options.base_url, spec.mount);
         errdefer gpa.free(app.url);
 
         app.public_base = try std.fmt.allocPrint(gpa, "{s}{s}", .{
-            model_app.path_of(options.base_url),
-            model_app.base_path(spec.mount),
+            app.link_root(),
+            app.mount_path(),
         });
+        // The entries live only as long as the load that read them.
+        app.options.addresses = &.{};
         app.build_stamp = fingerprint.build_stamp(spec, &app.version, app.url);
 
         std.debug.assert(app.css.len > 0);
@@ -276,6 +289,31 @@ pub const App = struct {
         std.debug.assert(app.public_base.len == 0 or app.public_base[0] == '/');
 
         return app.public_base;
+    }
+
+    /// Whether the app answers on a host of its own: a subdomain, or an address it was given.
+    pub fn own_host(app: *const App) bool {
+        std.debug.assert(app.url.len > 0);
+        std.debug.assert(!app.given or app.spec.name.len > 0);
+
+        return app.given or app.spec.mount == .subdomain;
+    }
+
+    /// What the app's own links start with after `link_root`: its mount's path, or nothing
+    /// at the root, on a subdomain, or at an address it was given.
+    pub fn mount_path(app: *const App) []const u8 {
+        std.debug.assert(model_app.valid_mount(app.spec.mount));
+
+        return if (app.given) "" else model_app.base_path(app.spec.mount);
+    }
+
+    /// The path before every root path the app's pages hold: the given address's, else the
+    /// path the project is served under (`/environments/dev`).
+    pub fn link_root(app: *const App) []const u8 {
+        std.debug.assert(app.url.len > 0);
+        std.debug.assert(app.options.base_url.len > 0);
+
+        return model_app.path_of(if (app.given) app.url else app.options.base_url);
     }
 
     /// Opens (creating) `<output>/<app>/`: the build writes there and `serve` reads.

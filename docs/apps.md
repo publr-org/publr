@@ -118,13 +118,33 @@ project's address (`--url`, `http://127.0.0.1:8080` by default); in development
 `app.localhost:8080` reaches a subdomain app when the address is
 `http://localhost:8080`.
 
+Whoever runs the site can give an app an address of its own, away from its mount:
+`addresses.zon` at the top of the apps folder lists them.
+
+```zig
+.{
+    .{ .site = "https://kiosk.publr.app", .app = "pos", .url = "https://pos.mykiosk.com" },
+}
+```
+
+`.site` is the site's own address (`--url`): a copy of the site elsewhere (an
+environment, a clone) has another, so it never claims the entry. The app then answers on
+that host alone, at the root (a path in `.url` is allowed), its links start there, and a
+request its mount would have answered is sent to the address for good. Editing the file
+rebuilds only the apps whose address changed; nothing in the database holds an address.
+An app given two addresses, or two apps one host, refuses the file, and the apps loaded
+before keep serving.
+
 Inside an app everything is seen from its mount. Its routes, `content/` and its
 middleware's `request.path()` start at `/` whether the app answers at the root, under
 `/newsletter` or on `app.example.com`. What the engine writes follows the mount: an
 island is fetched from `<mount>/_islands/<key>` and a generated asset from
-`<mount>/_app/<file>`. Links a template writes by hand are its own, public files
-included: an app under `/newsletter` writes `/newsletter/issues` and
-`/newsletter/logo.svg`. `/_app/` holds only what Publr generates; a template naming
+`<mount>/_app/<file>`. A template never writes its mount: its own links start with
+`Publr.build.base()` (`/newsletter`, empty at the root or on a subdomain), so
+`${base}/issues` and `${base}/logo.svg` follow the app wherever it moves. Where a link
+leaves the page's host (a canonical link, sharing, a sitemap, an email),
+`Publr.build.baseUrl()` gives the app's full address. Both are build inputs: a new mount
+or address rebuilds the app. `/_app/` holds only what Publr generates; a template naming
 anything else there fails the build.
 
 `.tokens` are the app's design tokens, layered over the stylesheet's defaults: every

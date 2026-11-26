@@ -712,7 +712,11 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
 - **Interactive components** (`interactive/*.ptsx`, PJSX that keeps state in the browser)
   are built when the app loads. `middleware.zig` still needs a build of Publr: an app
   loaded from a folder has none. For code on the server, a plugin.
-- **Links** are the app's own: an app at `/learn` writes `/learn/...`.
+- **Links** never write the app's mount: start them with `Publr.build.base()` (`/learn`,
+  empty at the root or on its own host), so `${base}/lessons` follows the app wherever it
+  moves. `Publr.build.baseUrl()` is the app's full address, for canonical links, sharing
+  and emails. Whoever runs the site can give an app a host of its own in
+  `apps/addresses.zon`; never edit that file by hand on a hosted site.
 
 A running `publr serve` watches the apps folder: save a file and the change is live within
 half a second, a stylesheet included. A change that does not compile is refused, the

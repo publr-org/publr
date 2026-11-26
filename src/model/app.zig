@@ -1,5 +1,6 @@
 const std = @import("std");
 const address = @import("app/address.zig");
+pub const addresses = @import("app/addresses.zig");
 
 pub const Resolved = address.Resolved;
 pub const resolve = address.resolve;
@@ -391,4 +392,5 @@ test "an app's own URLs start with its path, never with a subdomain's" {
 
 test {
     std.testing.refAllDecls(address);
+    std.testing.refAllDecls(addresses);
 }

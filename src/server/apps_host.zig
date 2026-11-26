@@ -12,6 +12,7 @@ const identity = @import("../adapters/rest/identity.zig");
 const registry = @import("registry.zig");
 const apps_watch = @import("apps_watch.zig");
 const apps_interactive = @import("apps_interactive.zig");
+const addresses = @import("../model/app.zig").addresses;
 
 /// How the apps are served: their options, and `--static` (with `--full`).
 pub const Mode = struct {
@@ -127,6 +128,51 @@ pub const AppsHost = struct {
             host.stamp = apps_watch.stamp_of(io, dir) orelse 0;
             return error.AppsRefused;
         }
+
+        var options = host.mode.options;
+        var kept: [addresses.entries_max]addresses.Entry = undefined;
+
+        options.apps_dir = dir;
+        _ = host.addresses_of(arena, &kept, options) catch |err| {
+            host.stamp = apps_watch.stamp_of(io, dir) orelse 0;
+            return err;
+        };
+    }
+
+    /// This site's entries of `addresses.zon` at the top of the apps folder: the apps given
+    /// an address of their own. None without the file; a broken one refuses the apps.
+    fn addresses_of(
+        host: *AppsHost,
+        arena: std.mem.Allocator,
+        kept: *[addresses.entries_max]addresses.Entry,
+        options: apps_adapter.Options,
+    ) ![]const addresses.Entry {
+        std.debug.assert(options.apps_dir.len > 0);
+        std.debug.assert(options.base_url.len > 0);
+
+        const path = try std.fs.path.join(arena, &.{ options.apps_dir, "addresses.zon" });
+        const limit: std.Io.Limit = .limited(64 << 10);
+        const cwd = std.Io.Dir.cwd();
+        const read = cwd.readFileAllocOptions(host.project.io, path, arena, limit, .of(u8), 0);
+        const text = read catch |err| switch (err) {
+            error.FileNotFound => return &.{},
+            else => return err,
+        };
+        const entries = addresses.parse(arena, text) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.InvalidAddresses => {
+                host.reason.set("addresses.zon: an entry is not .site, .app and .url", .{});
+                return error.AppsRefused;
+            },
+        };
+        const own = addresses.of_site(entries, options.base_url, kept);
+
+        if (addresses.problem(own)) |problem| {
+            host.reason.set("addresses.zon: {s}", .{problem});
+            return error.AppsRefused;
+        }
+
+        return own;
     }
 
     /// Every app loaded and validated, then: `--static` brings each app's build up to date
@@ -144,6 +190,10 @@ pub const AppsHost = struct {
 
         var arena_state = std.heap.ArenaAllocator.init(host.gpa);
         defer arena_state.deinit();
+
+        var kept: [addresses.entries_max]addresses.Entry = undefined;
+
+        options.addresses = try host.addresses_of(arena_state.allocator(), &kept, options);
 
         host.source = try apps_adapter.folder.project_apps(
             host.gpa,

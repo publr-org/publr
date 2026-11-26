@@ -338,6 +338,12 @@ pub fn Renderer(comptime Ctx: type) type {
                 .managed => .{
                     .boolean = ctx.managed(),
                 },
+                .base => .{
+                    .string = ctx.app_base(),
+                },
+                .base_url => .{
+                    .string = ctx.app_url(),
+                },
                 .session => .{
                     .session = try ctx.session(),
                 },

@@ -434,6 +434,14 @@ fn publr_call(compiler: *Compiler, name: []const u8, rhs: []const u8) Error!void
         return declare(compiler, name, .boolean, .managed);
     }
 
+    if (std.mem.eql(u8, call, "base()")) {
+        return declare(compiler, name, .string, .base);
+    }
+
+    if (std.mem.eql(u8, call, "baseUrl()")) {
+        return declare(compiler, name, .string, .base_url);
+    }
+
     if (std.mem.eql(u8, call, "session")) {
         return session_call(compiler, name, request);
     }

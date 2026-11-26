@@ -72,10 +72,7 @@ fn stylesheet_base(app: *const App) []const u8 {
     std.debug.assert(app.url.len > 0);
     std.debug.assert(app.spec.name.len > 0);
 
-    return switch (app.spec.mount) {
-        .subdomain => app.url,
-        .path => app.base(),
-    };
+    return if (app.own_host()) app.url else app.base();
 }
 
 /// The app's tokens the editor scales its style controls by (font sizes, colors,

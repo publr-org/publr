@@ -1,9 +1,10 @@
 ---
 import Page from '../layouts/page.publr';
 import Count from '../components/count.publr';
+const base = Publr.build.base();
 ---
 <Page title="Docs">
   <h1 class="text-3xl">The docs</h1>
-  <a href="/docs/guide">The guide</a>
+  <a href={`${base}/guide`}>The guide</a>
   <Count island />
 </Page>

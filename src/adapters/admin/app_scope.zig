@@ -197,10 +197,11 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
 fn site_of(app: *const App) []const u8 {
     std.debug.assert(app.url.len > 0);
 
-    return switch (app.spec.mount) {
-        .subdomain => app.url,
-        .path => if (app.base().len > 0) app.base() else "/",
-    };
+    if (app.own_host()) {
+        return app.url;
+    }
+
+    return if (app.base().len > 0) app.base() else "/";
 }
 
 /// Where the switcher brings the viewer back: this page, when it is one a link reaches.

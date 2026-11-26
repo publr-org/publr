@@ -88,7 +88,7 @@ fn url_of(session: *const Session, app: *const apps_state.App) Error![]const u8 
     std.debug.assert(session.signed_in());
     std.debug.assert(app.url.len > 0);
 
-    if (app.spec.mount == .subdomain) {
+    if (app.own_host()) {
         return app.url;
     }
 

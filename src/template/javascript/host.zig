@@ -76,12 +76,8 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
                 return @import("translate.zig").translated(vm, frame.ctx, args);
             }
 
-            if (std.mem.eql(u8, method, "locale")) {
-                return vm.string(frame.ctx.locale());
-            }
-
-            if (std.mem.eql(u8, method, "managed")) {
-                return api.publr_js_boolean(vm.context, @intFromBool(frame.ctx.managed()));
+            if (try site_value(vm, frame, method)) |value| {
+                return value;
             }
 
             if (std.mem.eql(u8, method, "languages")) {
@@ -108,6 +104,31 @@ pub fn Host(comptime Renderer: type, comptime Ctx: type) type {
             }
 
             return request_call(vm, frame, method, args);
+        }
+
+        /// What the page knows of where it runs: its language, who runs the site, and where
+        /// the app's links start. Null for any other method.
+        fn site_value(vm: *VM, frame: *Frame, method: []const u8) !?Value {
+            std.debug.assert(method.len > 0);
+            std.debug.assert(std.mem.indexOfScalar(u8, method, '.') == null);
+
+            if (std.mem.eql(u8, method, "locale")) {
+                return try vm.string(frame.ctx.locale());
+            }
+
+            if (std.mem.eql(u8, method, "managed")) {
+                return api.publr_js_boolean(vm.context, @intFromBool(frame.ctx.managed()));
+            }
+
+            if (std.mem.eql(u8, method, "base")) {
+                return try vm.string(frame.ctx.app_base());
+            }
+
+            if (std.mem.eql(u8, method, "baseUrl")) {
+                return try vm.string(frame.ctx.app_url());
+            }
+
+            return null;
         }
 
         fn request_call(vm: *VM, frame: *Frame, method: []const u8, args: Value) !Value {

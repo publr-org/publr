@@ -617,7 +617,7 @@ pub const Context = struct {
     pub fn url_base(ctx: *const Context) []const u8 {
         std.debug.assert(ctx.app.options.base_url.len > 0);
 
-        const base = ctx.preview_base orelse model_app.path_of(ctx.app.options.base_url);
+        const base = ctx.preview_base orelse ctx.app.link_root();
 
         if (ctx.place.address.len == 0) {
             return base;
@@ -1086,6 +1086,24 @@ pub const Context = struct {
         const updater = ctx.project.updater orelse return false;
 
         return updater.managed;
+    }
+
+    /// `Publr.build.base()`: where the app's own links start, from its mount as it stands
+    /// (`/pos`; empty at the root or on its own host). A changed mount rebuilds the app, so a
+    /// page never holds an old one.
+    pub fn app_base(ctx: *const Context) []const u8 {
+        std.debug.assert(ctx.app.spec.name.len > 0);
+
+        return ctx.app.mount_path();
+    }
+
+    /// `Publr.build.baseUrl()`: the app's full address as it stands, a build input like the
+    /// mount: a new address rebuilds the app.
+    pub fn app_url(ctx: *const Context) []const u8 {
+        std.debug.assert(ctx.app.url.len > 0);
+        std.debug.assert(std.mem.indexOf(u8, ctx.app.url, "://") != null);
+
+        return ctx.app.url;
     }
 
     pub fn build_time(ctx: *const Context) i64 {

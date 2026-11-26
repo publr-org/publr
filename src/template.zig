@@ -781,6 +781,10 @@ pub const TestContext = struct {
     restricted_gone: bool = false,
     /// `Publr.build.managed()`: someone else runs the site (Publr Cloud).
     is_managed: bool = false,
+    /// `Publr.build.base()`: the app's mount path.
+    mount_base: []const u8 = "",
+    /// `Publr.build.baseUrl()`: the app's full address.
+    address: []const u8 = "http://localhost:8080",
     /// Where media addresses start, as a plugin gave it; empty for the site's own.
     media_origin: []const u8 = "",
 
@@ -1090,6 +1094,14 @@ pub const TestContext = struct {
 
     pub fn managed(ctx: *const TestContext) bool {
         return ctx.is_managed;
+    }
+
+    pub fn app_base(ctx: *const TestContext) []const u8 {
+        return ctx.mount_base;
+    }
+
+    pub fn app_url(ctx: *const TestContext) []const u8 {
+        return ctx.address;
     }
 
     pub fn languages_json(ctx: *const TestContext) ![]const u8 {
@@ -2991,6 +3003,44 @@ test "Publr.build.managed() picks what a page shows where it runs, and keeps it 
     try testing.expect(std.mem.indexOf(u8, on_own, "Dashboard") == null);
     try testing.expect(std.mem.indexOf(u8, on_cloud, "Dashboard") != null);
     try testing.expect(std.mem.indexOf(u8, on_cloud, "Deploy now") == null);
+}
+
+test "Publr.build.base() starts an app's own links from its mount, whatever it is" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const program = try load_test(&.{
+        source("content/index.publr",
+            \\---
+            \\const base = Publr.build.base();
+            \\const address = Publr.build.baseUrl();
+            \\---
+            \\<a href={`${base}/menu`}>Menu</a>
+            \\<link rel="canonical" href={`${address}/menu`} />
+        ),
+    }, .{});
+    defer destroy(program);
+
+    const page = program.routes[0].template;
+
+    try testing.expect(!program.templates[page].dynamic);
+
+    const under: TestContext = .{
+        .arena = arena,
+        .mount_base = "/pos",
+        .address = "https://mysite.com/pos",
+    };
+    const root: TestContext = .{
+        .arena = arena,
+    };
+
+    const at_pos = try render_test(arena, program, page, &under);
+    const at_root = try render_test(arena, program, page, &root);
+
+    try testing.expect(std.mem.indexOf(u8, at_pos, "\"/pos/menu\"") != null);
+    try testing.expect(std.mem.indexOf(u8, at_pos, "https://mysite.com/pos/menu") != null);
+    try testing.expect(std.mem.indexOf(u8, at_root, "\"/menu\"") != null);
 }
 
 /// `text` written `count` times over.
