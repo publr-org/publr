@@ -284,7 +284,7 @@ jobs:
       - name: Its CPU and oldest macOS
         if: runner.os == 'macOS'
         run: |
-          arch=$(case "${{ matrix.file }}" in *aarch64) echo arm64 ;; *) echo x86_64 ;; esac)
+          if [[ "${{ matrix.file }}" == *aarch64 ]]; then arch=arm64; else arch=x86_64; fi
           file -b "./${{ matrix.file }}" | grep -q "$arch" || { echo "::error::not $arch"; exit 1; }
           minos=$(vtool -show-build "./${{ matrix.file }}" | awk '/minos/ { print $2 }')
           [ "$minos" = 15.0 ] || { echo "::error::needs macOS $minos, not 15.0"; exit 1; }
