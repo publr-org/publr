@@ -9,6 +9,7 @@ const sdk = @import("../sdk.zig");
 const http = @import("http.zig");
 const guards = @import("http_guard.zig");
 const request_log = @import("http_log.zig");
+const public = @import("../publr/operations/http/stream.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -68,29 +69,17 @@ const no_streams: sdk.operation.Failure = .{
 };
 
 pub const Stream = struct {
-    pub const name = "http.stream";
-    pub const plugins_only = true;
-    pub const description = "Send a request out and read its answer as it arrives";
-    pub const details =
-        \\As `http.fetch`, under the same grant and domains, but answers once the response's
-        \\head is in: its status and a `handle` that `http.read` reads the body through, a
-        \\piece at a time, as it comes (a model's reply as it is written). A status other
-        \\than 200 answers with the body at once and no handle. Queued work only, as
-        \\`http.fetch` is: an agent's turn, or a job that holds open responses.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = http.Fetch.In;
-    pub const Out = struct {
-        status: u16,
-        handle: u32 = 0,
-        body: []const u8 = "",
-    };
-    pub const example: In = http.Fetch.example;
-    pub const example_out: Out = .{
-        .status = 200,
-        .handle = 1,
-    };
-    pub const field_docs = http.Fetch.field_docs;
+    pub const shape = public.Stream;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -157,32 +146,17 @@ pub const Stream = struct {
 };
 
 pub const Read = struct {
-    pub const name = "http.read";
-    pub const plugins_only = true;
-    pub const description = "Read what has arrived of a streamed response";
-    pub const details =
-        \\The next piece of the body `http.stream` opened, as much as has arrived (at least a
-        \\byte, up to 16 KiB), waiting until some has; `done` once it has all come, and the
-        \\handle is closed.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        handle: u32,
-    };
-    pub const Out = struct {
-        data: []const u8,
-        done: bool,
-    };
-    pub const example: In = .{
-        .handle = 1,
-    };
-    pub const example_out: Out = .{
-        .data = "event: ping\ndata: {}\n\n",
-        .done = false,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .handle = "What `http.stream` answered",
-    };
+    pub const shape = public.Read;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

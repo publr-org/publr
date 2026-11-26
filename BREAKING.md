@@ -41,4 +41,14 @@ const id = try publr.sdk.messaging.deliver(&ctx, message);
 `Contract`, `Part` and `contracts`. `of`, `check`, `declared_count` and
 `branches_per_declared`, the build's, are no longer in it; a plugin never called them.
 
+### `sdk:operations.money`
+
+`publr.operations.money` is the public file of the money operations' shapes, no longer
+core's whole `operations/money.zig`. `Text`, `Texts` (with `Texts.amounts_max`), `Main` and
+`Read` keep their names, inputs and answers, and calls are unchanged. Gone from it: the
+namespace's `namespace` and `operations` list and each operation's `run`, which are core's.
+
+Before: `publr.operations.money.operations`, `publr.operations.money.Text.run(...)`.
+After: call the operation, `ctx.call(publr.operations.money.Text, .{ .amount = price })`.
+
 ## 0.8.4 (2026-11-26)

@@ -1,11 +1,9 @@
-//! Amounts written as the site writes them: its currencies' symbols, formats and separators
-//! (`money.currencies`), for code that shows money outside a template, such as a plugin's
-//! admin page. Templates have `Publr.request.money` for the same.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const site_currencies = @import("../sdk/site_currencies.zig");
 const model_money = @import("../model/money.zig");
 const currency = @import("../model/currency.zig");
+const public = @import("../publr/operations/money.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -23,44 +21,18 @@ pub const namespace: sdk.operation.Namespace = .{
 };
 
 pub const Text = struct {
-    pub const name = "money.text";
-    /// Changes nothing, and every page may show prices: a plugin's code acting for a
-    /// visitor nobody knows (a cart) writes them too.
-    pub const open = true;
-    pub const description = "Write an amount as the site writes it";
-    pub const details =
-        \\An amount by currency, in each currency's minor units (`{ "GBP": 1745 }` is
-        \\£17.45), written in the site's main currency with its entry: `£1,234.56`,
-        \\`1 234,56 zł`, as pages write money. Without the main currency the amount's first
-        \\one is written, with the site's entry or its code. Changes nothing;
-        \\anyone may call it, visitors included.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        amount: Amounts,
-        plain: bool = false,
-    };
-    pub const Out = struct {
-        text: []const u8,
-    };
-    pub const example: In = .{
-        .amount = .{
-            .amounts = &.{.{
-                .currency = "GBP",
-                .minor = 123456,
-            }},
-        },
-    };
-    pub const example_out: Out = .{
-        .text = "GBP1,234.56",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .amount = "By ISO 4217 code, in minor units: `{ \"GBP\": 1745, \"EUR\": 2000 }`",
-        .plain = "As typed into a field: `1234.56`, no symbol or grouping",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .text = "The amount as the site writes it; empty for no amount",
-    };
+    pub const shape = public.Text;
+    pub const name = shape.name;
+    pub const open = shape.open;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(model_money.format_len_max > 0);
@@ -69,69 +41,44 @@ pub const Text = struct {
             .text = try written(ctx, try site_currencies.of(ctx), in.amount, in.plain),
         };
     }
-
-    /// `amounts` as the site's currencies `listed` write it; empty for no amount.
-    fn written(
-        ctx: *Ctx,
-        listed: []const model_money.Entry,
-        amounts: Amounts,
-        plain: bool,
-    ) Error![]const u8 {
-        std.debug.assert(listed.len <= site_currencies.currencies_max);
-
-        const shown = chosen(amounts, listed) orelse return "";
-        var buffer: [128]u8 = undefined;
-        const digits: u8 = if (currency.find(shown.entry.code)) |found| found.digits else 2;
-        const text = if (plain)
-            model_money.format_minor(&buffer, shown.amount, digits)
-        else
-            model_money.format(&buffer, shown.amount, shown.entry);
-
-        std.debug.assert(text.len > 0);
-
-        return ctx.arena.dupe(u8, text);
-    }
 };
 
-/// Many amounts at once, as `money.text` writes each: a page of an order's lines and charges
-/// in one call.
-pub const Texts = struct {
-    pub const name = "money.texts";
-    pub const open = true;
-    pub const description = "Write many amounts as the site writes them";
-    pub const details =
-        \\Each amount written as `money.text` writes it, in the same order: up to 200 a
-        \\call. Changes nothing; anyone may call it, visitors included.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        amounts: []const Amounts,
-        plain: bool = false,
-    };
-    pub const Out = struct {
-        texts: []const []const u8,
-    };
-    pub const example: In = .{
-        .amounts = &.{.{
-            .amounts = &.{.{
-                .currency = "GBP",
-                .minor = 123456,
-            }},
-        }},
-    };
-    pub const example_out: Out = .{
-        .texts = &.{"GBP1,234.56"},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .amounts = "Each by ISO 4217 code, in minor units: `{ \"GBP\": 1745 }`; at most 200",
-        .plain = "As typed into a field: `1234.56`, no symbol or grouping",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .texts = "Each amount as the site writes it, in order; empty for no amount",
-    };
+/// `amounts` as the site's currencies `listed` write it; empty for no amount.
+fn written(
+    ctx: *Ctx,
+    listed: []const model_money.Entry,
+    amounts: Amounts,
+    plain: bool,
+) Error![]const u8 {
+    std.debug.assert(listed.len <= site_currencies.currencies_max);
 
-    /// The most amounts one call writes.
-    pub const amounts_max: u32 = 200;
+    const shown = chosen(amounts, listed) orelse return "";
+    var buffer: [128]u8 = undefined;
+    const digits: u8 = if (currency.find(shown.entry.code)) |found| found.digits else 2;
+    const text = if (plain)
+        model_money.format_minor(&buffer, shown.amount, digits)
+    else
+        model_money.format(&buffer, shown.amount, shown.entry);
+
+    std.debug.assert(text.len > 0);
+
+    return ctx.arena.dupe(u8, text);
+}
+
+pub const Texts = struct {
+    pub const shape = public.Texts;
+    pub const name = shape.name;
+    pub const open = shape.open;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
+    pub const amounts_max = shape.amounts_max;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(model_money.format_len_max > 0);
@@ -145,7 +92,7 @@ pub const Texts = struct {
         const listed = try site_currencies.of(ctx);
 
         for (in.amounts, texts) |amount, *text| {
-            text.* = try Text.written(ctx, listed, amount, in.plain);
+            text.* = try written(ctx, listed, amount, in.plain);
         }
 
         std.debug.assert(texts.len == in.amounts.len);
@@ -197,32 +144,18 @@ fn chosen(amounts: Amounts, listed: []const model_money.Entry) ?Shown {
 }
 
 pub const Main = struct {
-    pub const name = "money.main";
-    /// Changes nothing; prices are shown to every visitor in it.
-    pub const open = true;
-    pub const description = "The store's main currency";
-    pub const details =
-        \\The site's main currency, the first it lists: prices are entered in it and orders
-        \\keep it; other currencies are conversions from it. Empty when the site lists none.
-        \\Changes nothing; anyone may call it, visitors included.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        currency: []const u8,
-        /// 1234.56 in it, as the site writes it
-        example: []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .currency = "",
-        .example = "",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .currency = "An ISO 4217 code; empty when the site lists none",
-        .example = "1234.56 written as the site writes it",
-    };
+    pub const shape = public.Main;
+    pub const name = shape.name;
+    pub const open = shape.open;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
         const listed = try site_currencies.of(ctx);
@@ -240,47 +173,27 @@ pub const Main = struct {
         const digits: u8 = if (currency.find(listed[0].code)) |found| found.digits else 2;
         const amount = std.math.powi(i64, 10, digits) catch 1;
 
-        const written = model_money.format(&buffer, 1234 * amount, listed[0]);
+        const example_text = model_money.format(&buffer, 1234 * amount, listed[0]);
 
         return .{
             .currency = listed[0].code,
-            .example = try ctx.arena.dupe(u8, written),
+            .example = try ctx.arena.dupe(u8, example_text),
         };
     }
 };
 
 pub const Read = struct {
-    pub const name = "money.read";
-    pub const description = "Read an amount as people type it, in the main currency";
-    pub const details =
-        \\An amount as typed in the admin (`3.95`, `3,95`, `4`) in the site's main currency,
-        \\answered by currency in minor units: `{ "GBP": 395 }`. Refused when it is not a
-        \\number, has more decimals than the currency, or the site lists no currency.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        text: []const u8,
-    };
-    pub const Out = struct {
-        amount: Amounts,
-    };
-    pub const example: In = .{
-        .text = "3.95",
-    };
-    pub const example_out: Out = .{
-        .amount = .{
-            .amounts = &.{.{
-                .currency = "GBP",
-                .minor = 395,
-            }},
-        },
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .text = "The amount as typed: `3.95`, `3,95`",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .amount = "By the main currency's code, in minor units",
-    };
+    pub const shape = public.Read;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(in.text.len <= 1 << 20);
@@ -359,4 +272,13 @@ test "money.text and money.main answer a visitor nobody knows" {
     try std.testing.expectError(error.Denied, TestSDK.dispatch(&ctx, Read, .{
         .text = "9.95",
     }));
+}
+
+test "a plugin names the money operations by their public shapes" {
+    const registry = @import("../server/registry.zig");
+
+    inline for (operations) |Operation| {
+        try std.testing.expect(registry.SDK.bound(Operation.shape) == Operation);
+        try std.testing.expect(registry.SDK.bound(Operation) == Operation);
+    }
 }

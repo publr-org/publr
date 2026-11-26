@@ -183,9 +183,6 @@ pub fn SDK(comptime registry: Registry) type {
             return null;
         }
 
-        /// The operation the core runs for `Given`: itself, or, for one a plugin made with
-        /// `publr.operation.define`, the bound operation it became, so a plugin's own code
-        /// names its operations by their definitions.
         /// Whether `Operation` is core's own and its work is core's: not a plugin's
         /// operation, and not the apply of modifiers, which runs plugins' code over the
         /// values. What such an operation works with is core's alone and can be given back
@@ -202,10 +199,14 @@ pub fn SDK(comptime registry: Registry) type {
             }
         }
 
+        /// The operation the core runs for `Given`: itself; for a core operation's public
+        /// shape (`publr.operations.money.Text`), the operation that takes it; for one a
+        /// plugin made with `publr.operation.define`, the bound operation it became, so a
+        /// plugin's own code names its operations by their definitions.
         pub fn bound(comptime Given: type) type {
             comptime {
                 if (!@hasDecl(Given, "publr_operation_definition")) {
-                    return Given;
+                    return shaped_by(Given) orelse Given;
                 }
 
                 // Each registered operation looked at once.
@@ -219,6 +220,18 @@ pub fn SDK(comptime registry: Registry) type {
 
                 @compileError("operation " ++ Given.verb ++ " is not listed in its plugin's " ++
                     "`.operations`");
+            }
+        }
+
+        /// The registered operation whose public shape `Given` is; null when it is none's.
+        fn shaped_by(comptime Given: type) ?type {
+            comptime {
+                std.debug.assert(Given.name.len > 0);
+
+                const Operation = find(Given.name) orelse return null;
+                const takes = Operation != Given and @hasDecl(Operation, "shape");
+
+                return if (takes and Operation.shape == Given) Operation else null;
             }
         }
 

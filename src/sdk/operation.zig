@@ -4,6 +4,7 @@ const public = @import("../publr/operation.zig");
 
 pub const values = @import("operation/values.zig");
 pub const lists = @import("operation/lists.zig");
+pub const shaped = @import("operation/shaped.zig");
 
 pub const name_len_max = public.name_len_max;
 pub const type_depth_max: u32 = 8;
@@ -247,6 +248,10 @@ pub fn validate(comptime Operation: type) void {
         }
 
         if (lists.problem(Operation)) |message| {
+            @compileError(message);
+        }
+
+        if (shaped.problem(Operation)) |message| {
             @compileError(message);
         }
 

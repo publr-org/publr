@@ -3,20 +3,12 @@
 //! bytes. A plugin never encodes files itself.
 
 const std = @import("std");
+const public = @import("../publr/operations/http.zig");
 
-/// Parts in one form, at most.
-pub const parts_max: u32 = 16;
+pub const parts_max = public.form_parts_max;
 const boundary_len: u32 = 32;
 
-pub const Part = struct {
-    name: []const u8,
-    /// The text, or a file's bytes as base64 when `file_name` is set.
-    value: []const u8 = "",
-    /// Set for a file: the name it is uploaded under.
-    file_name: []const u8 = "",
-    /// A file's media type; `application/octet-stream` when empty.
-    content_type: []const u8 = "",
-};
+pub const Part = public.FormPart;
 
 pub const Written = struct {
     body: []const u8,

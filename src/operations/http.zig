@@ -39,79 +39,30 @@ const downloads = @import("http_download.zig");
 const request_log = @import("http_log.zig");
 const plugin_access = @import("../sdk/plugin_access.zig");
 const registry = @import("../server/registry.zig");
+const public = @import("../publr/operations/http.zig");
 
-pub const headers_max: u32 = 16;
-pub const FormPart = form_parts.Part;
-/// What a plugin may send: a conversation with its pictures fits.
-pub const body_bytes_max: u32 = 8 << 20;
-/// What an answer may be.
-pub const answer_bytes_max: u32 = 1 << 20;
+pub const headers_max = public.headers_max;
+pub const FormPart = public.FormPart;
+pub const body_bytes_max = public.body_bytes_max;
+pub const answer_bytes_max = public.answer_bytes_max;
 const secrets_max: u32 = 8;
 
-pub const Header = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-/// HTTP Basic credentials: `Authorization: Basic base64(user:password)`, made after their
-/// secrets are filled in.
-pub const Basic = struct {
-    user: []const u8,
-    password: []const u8,
-};
+pub const Header = public.Header;
+pub const Basic = public.Basic;
 
 pub const Fetch = struct {
-    pub const name = "http.fetch";
-    /// A plugin's alone: not listed among the commands people and agents run.
-    pub const plugins_only = true;
-    pub const description = "Send a request out, as the calling plugin";
-    pub const details =
-        \\Answers the status and the body (up to 1 MiB). Refused outside queued work (a job, an
-        \\`on` hook), and unless the caller is a plugin granted `http.fetch`, every hop's
-        \\host is among the grant's domains (and, in production, resolves to no local or
-        \\private address), and every `{secret:NAME}` it names is declared in the plugin's
-        \\`.secrets` and has a value (else "<label> isn't set"). Logged under the call or
-        \\run: method, host, path, status, time; never the query, headers or bodies.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        method: []const u8 = "GET",
-        url: []const u8,
-        headers: []const Header = &.{},
-        body: []const u8 = "",
-        /// A form upload (multipart/form-data) in place of `body`, files as base64; the
-        /// `Content-Type` is set for it. No secret is filled in a form.
-        form: []const form_parts.Part = &.{},
-        /// HTTP Basic credentials, encoded by core once their secrets are filled in.
-        basic: ?Basic = null,
-    };
-    pub const Out = struct {
-        status: u16,
-        body: []const u8,
-    };
-    /// Another server's bytes, sent and answered as they are: never read here.
-    pub const verbatim = .{"body"};
-    pub const example: In = .{
-        .url = "https://api.example.com/quote",
-        .headers = &.{.{
-            .name = "Authorization",
-            .value = "Bearer {secret:STOCKS_API_KEY}",
-        }},
-    };
-    pub const example_out: Out = .{
-        .status = 200,
-        .body = "{\"price\":12.5}",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .method = "GET, POST, PUT, PATCH or DELETE",
-        .url = "https, or http to this machine in development; may hold {secret:NAME}",
-        .headers = "Up to 16, as name and value; values may hold {secret:NAME}",
-        .body = "Up to 8 MiB; may hold {secret:NAME}",
-        .form = "Up to 16 parts in place of the body: name, value, and for a file " ++
-            "file_name and content_type, its value base64",
-        .basic = "HTTP Basic `user` and `password`, each may hold {secret:NAME}: sent as " ++
-            "`Authorization: Basic`, encoded after the secrets are filled in",
-    };
+    pub const shape = public.Fetch;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const verbatim = shape.verbatim;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
