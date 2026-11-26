@@ -1,3 +1,4 @@
+| `plugin surface [--limit <n>] [--offset <n>]` | What this Publr offers plugins, as a plugin's `uses` names it: every operation (`call:<operation>`, core's and built-in plugins') then every host function (`host:<function>`), 200 a page, with `publr` (this release) and `more`. A plugin calling an operation this list lacks, or built with a later Publr, is refused as it is installed and as it is loaded |
 # CLI: `plugin`
 
 Every plugin is either **built-in** (compiled into the binary: always enabled, full access,

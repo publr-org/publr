@@ -318,6 +318,34 @@ test "entries number operations first, then hooks, and read a hook's shapes from
     try std.testing.expectEqual(0, comptime permissions_of(Plugin).len);
 }
 
+/// Marks the module as reaching `name`, an item of Publr or of another plugin, as `kind`
+/// (`call`, `emit`, `mod`): an export `publr_uses:<kind>:<name>`, there only when the code
+/// reaching it is compiled in, so the list is what the plugin really uses (`plugin check`
+/// reads it into the manifest's `uses`).
+pub fn uses(comptime kind: []const u8, comptime name: []const u8) void {
+    comptime std.debug.assert(name.len > 0);
+    comptime std.debug.assert(kind.len > 0);
+
+    if (comptime !@hasDecl(@import("root"), "Plugin")) {
+        return;
+    }
+
+    _ = Uses(kind ++ ":" ++ name).marker;
+}
+
+// A function, not a constant: the compiler's own wasm linker exports functions only.
+fn Uses(comptime name: []const u8) type {
+    return struct {
+        fn marker() callconv(.c) void {}
+
+        comptime {
+            @export(&marker, .{
+                .name = @import("manifest.zig").uses_prefix ++ name,
+            });
+        }
+    };
+}
+
 /// Checked where a sandboxed plugin calls `operation_name`, as that call compiles: a call no
 /// declared permission covers fails the build, naming the permission to ask for. Its own
 /// namespace, the harmless operations and record operations (they may reach its own types,

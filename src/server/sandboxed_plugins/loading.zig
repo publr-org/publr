@@ -60,7 +60,10 @@ pub fn load_all(host: *Host, connection: *@import("../../lib/db.zig").Db) !void 
         }
 
         load_one(host, row) catch |err| {
-            std.log.err("plugin {s} did not load: {t}", .{ row.name, err });
+            // One that does not fit said why already.
+            if (err != error.DoesNotFit) {
+                std.log.err("plugin {s} did not load: {t}", .{ row.name, err });
+            }
         };
     }
 
@@ -170,7 +173,28 @@ fn load_one(host: *Host, row: store.sandboxed_plugins.Row) !void {
     std.debug.assert(row.name.len > 0);
     std.debug.assert(files_module.valid_hash(row.hash));
 
+    try fits_here(host, row);
     try load_bytes(host, row, try host.files.read(host.gpa, row.hash));
+}
+
+/// Refuses to load a plugin this Publr cannot run (Publr was stepped back, or the item it
+/// calls is gone), saying why; it stays installed, and loads again once it fits.
+fn fits_here(host: *Host, row: store.sandboxed_plugins.Row) !void {
+    std.debug.assert(row.manifest.len > 0);
+
+    var arena_state = std.heap.ArenaAllocator.init(host.gpa);
+    defer arena_state.deinit();
+
+    const fit = @import("../../operations/plugin/fit.zig");
+    const needs = std.json.parseFromSliceLeaky(fit.Needs, arena_state.allocator(), row.manifest, .{
+        .ignore_unknown_fields = true,
+    }) catch return error.Invalid;
+    const refused = try fit.refusal(arena_state.allocator(), needs) orelse return;
+
+    std.debug.assert(refused.message.len > 0);
+    std.log.err("plugin {s} did not load: {s}", .{ row.name, refused.message });
+
+    return error.DoesNotFit;
 }
 
 fn load_bytes(host: *Host, row: store.sandboxed_plugins.Row, bytes: []u8) !void {

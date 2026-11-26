@@ -341,6 +341,18 @@ const sandbox_only = [_]Part{
         .where = "checked when an installed plugin starts",
     },
     .{
+        .name = "minimum_publr",
+        .where = "the Publr the module was built with: checked as it is installed and loaded",
+    },
+    .{
+        .name = "tested_up_to",
+        .where = "the newest Publr the module was tested with: words, not behaviour",
+    },
+    .{
+        .name = "uses",
+        .where = "what the module calls of core: checked as it is installed and loaded",
+    },
+    .{
         .name = "contracts",
         .where = "the contracts it owns as data, built against and checked at install and update",
     },

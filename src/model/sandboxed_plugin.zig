@@ -89,6 +89,14 @@ pub const Manifest = struct {
     name: []const u8,
     version: []const u8,
     summary: []const u8,
+    /// The Publr it was built with: below it, it is refused. Empty in a module built before
+    /// `plugin check` wrote it.
+    minimum_publr: []const u8 = "",
+    /// The newest Publr it was tested with: above it, a note, never a refusal.
+    tested_up_to: []const u8 = "",
+    /// What it uses of Publr and of other plugins, by name: host functions, operations it
+    /// calls, events it emits, mods it reads. A release that removed one refuses it.
+    uses: []const []const u8 = &.{},
     namespaces: []const Namespace = &.{},
     operations: []const Operation = &.{},
     /// What it reads of visitors' requests (`.request`).

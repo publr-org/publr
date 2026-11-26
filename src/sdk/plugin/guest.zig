@@ -537,6 +537,8 @@ pub const SandboxApi = struct {
             }
         }
 
+        runtime.uses("mod", name);
+
         const memory = self.arena();
         const changed = memory.alloc(Value, values.len) catch return error.OutOfMemory;
         var start: usize = 0;
@@ -574,6 +576,7 @@ pub const SandboxApi = struct {
 
         if (comptime !own) {
             comptime runtime.check_call(Operation.name);
+            runtime.uses("call", Operation.name);
         }
 
         std.debug.assert(self.name.len > 0);
@@ -756,6 +759,10 @@ pub const SandboxApi = struct {
     pub fn emit(self: *SandboxApi, comptime Event: type, payload: Event.Payload) void {
         std.debug.assert(self.name.len > 0);
         comptime std.debug.assert(@hasDecl(Event, "publr_event_definition"));
+
+        if (comptime Event.full_name.len > 0) {
+            runtime.uses("emit", Event.full_name);
+        }
 
         const name = if (comptime Event.full_name.len > 0)
             Event.full_name

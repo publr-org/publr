@@ -943,7 +943,13 @@ fn write_manifest(
     const module = try cwd.readFileAlloc(init.io, path, arena, .limited(module_bytes_max));
     // WAMR rewrites the bytes it loads, so it gets a copy of its own.
     const read = try manifest_of(init.gpa, arena, try arena.dupe(u8, module));
-    const manifest = read.manifest;
+    // What it uses and the Publr it was built with, read from the module itself.
+    const manifest = try @import("plugin_build/uses.zig").stamped(
+        arena,
+        module,
+        read.manifest,
+        @import("../publr.zig").version,
+    );
     var output: std.Io.Writer.Allocating = .init(arena);
 
     std.debug.assert(manifest.len > 0);
@@ -1093,4 +1099,8 @@ fn write_docs(init: std.process.Init, path: []const u8, source: []const u8) !voi
         .sub_path = path,
         .data = source,
     });
+}
+
+test {
+    _ = @import("plugin_build/uses.zig");
 }

@@ -60,6 +60,7 @@ pub fn stage(ctx: *Ctx, file: []const u8, anywhere: bool) Error!Checked {
     const manifest = try state.parse_manifest(ctx.arena, staged.manifest);
 
     try check(ctx, &manifest);
+    try @import("fit.zig").check(ctx, &manifest);
     try check_source(ctx, staged.source);
 
     return .{

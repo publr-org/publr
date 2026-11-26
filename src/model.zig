@@ -66,6 +66,7 @@ pub const query = @import("model/query.zig");
 pub const outside = @import("model/outside.zig");
 pub const permission = @import("model/permission.zig");
 pub const sandboxed_plugin = @import("model/sandboxed_plugin.zig");
+pub const plugin_fit = @import("model/plugin_fit.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

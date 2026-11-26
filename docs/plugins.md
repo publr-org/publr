@@ -1344,7 +1344,12 @@ its owner's choice, never its author's. `zig build` compiles in the ones listed 
 `publr plugin build --name <name>`, the `publr` command's, builds `plugins/<name>/main.zig`
 for the sandbox with the compiler the command carries, against the site's release (`plugin
 prepare`, then `plugin check --file`), so no Zig is needed: its manifest is read from the
-module itself and written into it, then it is added
+module itself and written into it, with what it uses (`uses`: the host functions it
+imports, and each operation it calls, event it emits and mod it reads of core's or another
+plugin's: `call:`, `emit:`, `mod:`) and the Publr it was built with (`minimum_publr`, and
+`tested_up_to`, the same until someone tests it on a later one). Below its `minimum_publr`, or
+on a Publr without an operation it calls (`plugin surface` lists them), it is refused as it is
+installed and as it is loaded, saying why. Then it is added
 and enabled (a new plugin) or applied as its next version (one already there, the previous
 kept to roll back to). What it asks for is granted by tier; high requests wait for an
 administrator. Built again unchanged, it is up to date. `zig build sandboxed-plugins` builds

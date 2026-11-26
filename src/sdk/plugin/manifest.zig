@@ -28,6 +28,9 @@ pub const components_section_name = "publr.components";
 /// place with no compiler: `{ "components", "render", "browser", "classes" }`, the render as
 /// JavaScript (`sdk.sandboxed_plugins.Interactive`).
 pub const interactive_section_name = "publr.interactive";
+/// What a module exports for each item of Publr or of another plugin its code reaches
+/// (`publr_uses:call:money.texts`): `plugin check` lists them in the manifest's `uses`.
+pub const uses_prefix = "publr_uses:";
 pub const format = sandboxed_plugin.format;
 
 pub const Manifest = sandboxed_plugin.Manifest;

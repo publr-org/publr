@@ -240,8 +240,6 @@ pub fn stage(ctx: *Ctx, entry: Entry) Error!lifecycle.Checked {
         return ctx.fail(not_signed);
     }
 
-    try built_for_here(ctx, entry, manifest);
-
     const file = std.fmt.allocPrint(ctx.arena, "catalog-{s}.wasm", .{entry.name}) catch {
         return error.OutOfMemory;
     };
@@ -250,7 +248,15 @@ pub fn stage(ctx: *Ctx, entry: Entry) Error!lifecycle.Checked {
     _ = try sandboxed.receive(file, 0, downloaded.bytes, true);
     defer sandboxed.consume(file);
 
-    return lifecycle.stage(ctx, file, false);
+    const checked = try lifecycle.stage(ctx, file, false);
+
+    // A module naming the Publr it was built with was judged by it as it was staged
+    // (`plugin/fit.zig`); an older one only by the line it was built for.
+    if (checked.manifest.minimum_publr.len == 0) {
+        try built_for_here(ctx, entry, manifest);
+    }
+
+    return checked;
 }
 
 /// Refuses a module built for another Publr line: installed, it would call what this Publr

@@ -251,7 +251,7 @@ fn changed_plugins(happened: sdk.Event) bool {
     const unchanged = [_][]const u8{
         "plugin.list", "plugin.get",      "plugin.upload",     "plugin.add",
         "plugin.find", "plugin.labels",   "plugin.data",       "plugin.left_behind",
-        "plugin.log",  "plugin.scaffold", "plugin.interfaces",
+        "plugin.log",  "plugin.scaffold", "plugin.interfaces", "plugin.surface",
     };
 
     for (unchanged) |other| {
