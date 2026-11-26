@@ -42,6 +42,7 @@ pub const Detail = views.Detail;
 pub const contracts = @import("plugin/contracts.zig");
 pub const Interfaces = @import("plugin/published.zig").Interfaces;
 pub const Surface = @import("plugin/fit.zig").Surface;
+pub const Fits = @import("plugin/fits.zig").Fits;
 pub const Added = lifecycle.Added;
 pub const Labels = @import("plugin/labels.zig").Labels;
 
@@ -736,7 +737,7 @@ pub const Remove = struct {
 pub const operations = [_]type{
     List,         Get,          Upload,     Add,    Enable,   Disable, Update, Rollback,
     CancelUpdate, GrantRequest, Revoke,     Deny,   SetGrant, Remove,  Data,   EraseData,
-    LeftBehind,   RestoreData,  Interfaces, Labels, Surface,
+    LeftBehind,   RestoreData,  Interfaces, Labels, Surface,  Fits,
 } ++ scaffold.operations ++ @import("plugin/market.zig").operations ++
     @import("plugin/log.zig").operations;
 

@@ -355,3 +355,34 @@ fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
         return false;
     }
 }
+
+/// The deprecation of what a plugin's `uses` entry names (`call:money.texts`; `emit:` and
+/// `hook:` name an event or an operation, `mod:` a mod), when it is on its way out.
+pub fn deprecation_of_use(used: []const u8) ?Deprecation {
+    std.debug.assert(used.len > 0);
+
+    const colon = std.mem.indexOfScalar(u8, used, ':') orelse return null;
+    const kind = used[0..colon];
+    const name = used[colon + 1 ..];
+    const as_event = std.mem.eql(u8, kind, "emit") or std.mem.eql(u8, kind, "hook");
+
+    for (deprecated_all) |item| {
+        if (!std.mem.eql(u8, item.name, name)) {
+            continue;
+        }
+
+        const call = std.mem.eql(u8, item.kind, "call");
+        const matched = if (std.mem.eql(u8, kind, "call"))
+            call
+        else if (as_event)
+            call or std.mem.eql(u8, item.kind, "event")
+        else
+            std.mem.eql(u8, kind, item.kind);
+
+        if (matched) {
+            return item;
+        }
+    }
+
+    return null;
+}

@@ -252,6 +252,7 @@ fn changed_plugins(happened: sdk.Event) bool {
         "plugin.list", "plugin.get",      "plugin.upload",     "plugin.add",
         "plugin.find", "plugin.labels",   "plugin.data",       "plugin.left_behind",
         "plugin.log",  "plugin.scaffold", "plugin.interfaces", "plugin.surface",
+        "plugin.fits",
     };
 
     for (unchanged) |other| {
