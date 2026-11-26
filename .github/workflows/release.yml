@@ -257,6 +257,16 @@ jobs:
         if: matrix.target != 'aarch64-linux-musl'
         run: test "$(./${{ matrix.file }} --version)" = "publr $VERSION"
 
+      # Built for its own CPU, opening on macOS 15 and later: the version check above runs an
+      # arm64 build happily on an Apple silicon runner, whatever its name says.
+      - name: Its CPU and oldest macOS
+        if: runner.os == 'macOS'
+        run: |
+          arch=$(case "${{ matrix.file }}" in *aarch64) echo arm64 ;; *) echo x86_64 ;; esac)
+          file -b "./${{ matrix.file }}" | grep -q "$arch" || { echo "::error::not $arch"; exit 1; }
+          minos=$(vtool -show-build "./${{ matrix.file }}" | awk '/minos/ { print $2 }')
+          [ "$minos" = 15.0 ] || { echo "::error::needs macOS $minos, not 15.0"; exit 1; }
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: "${{ matrix.file }}", path: "${{ matrix.file }}" }
 
