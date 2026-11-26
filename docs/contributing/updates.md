@@ -23,11 +23,18 @@ A compiled-in plugin keeps its own in its folder and lists them as
 not know and fills in what is missing with its default, so a release runs on a database the
 next one added to.
 
-**Removing something people build on takes a deprecation first.** An operation declares
-`pub const deprecated: publr.sdk.operation.Deprecated = .{ .since = "0.4.0", .instead = "..." }`:
-it keeps working; `--help` says so; the CLI prints it on every call; REST answers with a
-`Deprecation` header; the server logs who called it. A major removes it six months later at
-the earliest.
+**Before 1.0, a break is written down in the commit that makes it.** Removing, renaming or
+changing the behaviour of anything plugins, apps or scripts build on adds an entry to
+`BREAKING.md` under `## Unreleased`: a `###` heading with the item in backticks, as a
+plugin's `uses` names it (`call:money.texts`), then what changed and what to do instead,
+with a before and after. The Release workflow fails when an operation or host function is
+gone with no entry, names the section after the release, and puts it in the release notes.
+
+**From 1.0, removing something takes a deprecation first.** An operation declares
+`pub const deprecated: publr.Deprecated = .{ .since = "1.2.0", .removed_on = "2028-03-01",
+.instead = "...", .migration = "..." }`: it keeps working until `removed_on`, at least twelve
+months after the release that deprecates it; `--help`, the CLI and REST say so; the release
+that removes it is a major. `zig build deprecations` lists them by day.
 
 **The Release button checks the kind.** A patch with a migration, or a minor whose
 migration is one-way, is refused; a schema change with no migration is refused; a minor

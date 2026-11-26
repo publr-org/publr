@@ -214,8 +214,9 @@ jobs:
             --dir ../surface-previous --pattern surface.json 2>/dev/null; then
             previous=../surface-previous/surface.json
           fi
-          zig build surface -- check ../surface/surface.json "$previous" "$(date -u +%F)"
-          zig build surface -- prompt ../surface/surface.json "$previous" > ../surface/migration.md
+          zig build surface -- check ../surface/surface.json "$previous" "$(date -u +%F)" BREAKING.md
+          zig build surface -- prompt ../surface/surface.json "$previous" BREAKING.md \
+            > ../surface/migration.md
           cat ../surface/migration.md
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -348,6 +349,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Before 1.0, what this release broke becomes its own section of BREAKING.md, under
+          # a new, empty Unreleased.
+          if [ -f BREAKING.md ]; then
+            grep -qx '## Unreleased' BREAKING.md || { echo "::error::BREAKING.md has no ## Unreleased"; exit 1; }
+            DAY="$(date -u +%F)" perl -0pi -e \
+              's/^## Unreleased$/## Unreleased\n\n## $ENV{VERSION} ($ENV{DAY})/m' BREAKING.md
+          fi
           # The folder, not src/lib/db/migrations: it is not there until the first migration.
           git add -A src/lib/db
           git commit -qam "Release $TAG"
@@ -375,6 +383,14 @@ jobs:
             else
               printf '## All changes\n\n%s\n\n' "$(changes)"
               echo "**Full changelog:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$previous...$TAG"
+            fi
+            # What this release broke (its section of BREAKING.md), when anything.
+            if [ -f BREAKING.md ]; then
+              broke="$(awk -v head="## $VERSION " 'index($0, head) == 1 { on = 1; next }
+                /^## / { on = 0 } on' BREAKING.md)"
+              if printf '%s\n' "$broke" | grep -q '^### '; then
+                printf '\n## Breaking changes\n%s\n' "$broke"
+              fi
             fi
             # What plugins and apps must change, when anything (surface.zig prompt); the same
             # text is the migration.md asset agents read.
