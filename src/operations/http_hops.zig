@@ -123,7 +123,12 @@ fn one(job: *timed.Job, client: *Client, guard: Guard, leg: Leg) ?[]const u8 {
 fn sent(request: *Client.Request, payload: ?[]const u8) !Client.Response {
     std.debug.assert(request.redirect_behavior == .unhandled);
 
-    if (payload) |body| {
+    // A method that carries a body (POST, PUT, PATCH) sends an empty one when given none.
+    const empty: []const u8 = "";
+    const carries_body = request.method.requestHasBody();
+    const sending: ?[]const u8 = payload orelse if (carries_body) empty else null;
+
+    if (sending) |body| {
         request.transfer_encoding = .{
             .content_length = body.len,
         };
