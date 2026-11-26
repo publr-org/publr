@@ -495,6 +495,41 @@ pub const registry: sdk.Registry = .{
 
 pub const SDK = sdk.SDK(registry);
 
+comptime {
+    // A deprecated operation's `instead` names one this Publr runs that is not on its way
+    // out too: a caller told to move must have somewhere to go.
+    @setEvalBranchQuota(1000 + registry.operations.len * 64);
+
+    for (registry.operations) |Operation| {
+        const found = sdk.operation.deprecation(Operation) orelse continue;
+
+        if (found.instead.len > 0) {
+            check_instead(Operation.name, found.instead);
+        }
+    }
+}
+
+fn check_instead(comptime name: []const u8, comptime instead: []const u8) void {
+    comptime {
+        @setEvalBranchQuota(1000 + registry.operations.len * (instead.len + 16));
+
+        for (registry.operations) |Other| {
+            if (!std.mem.eql(u8, Other.name, instead)) {
+                continue;
+            }
+
+            if (sdk.operation.deprecation(Other) != null) {
+                @compileError(name ++ ": `deprecated.instead` names " ++ instead ++
+                    ", which is deprecated too");
+            }
+
+            return;
+        }
+
+        @compileError(name ++ ": `deprecated.instead` names " ++ instead ++ ", which Publr lacks");
+    }
+}
+
 pub const Kinds = kind_registry.Registry(&kind_registry.core ++ native_plugins.merged_field_kinds);
 
 /// The kinds the project knows: the build's, then its installed plugins' (`with_kinds`),

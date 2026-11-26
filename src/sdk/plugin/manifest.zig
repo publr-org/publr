@@ -756,6 +756,8 @@ test "a plugin's manifest names its operation, fields, hook and record" {
         .kind = .write,
         .deprecated = .{
             .since = "0.1.0",
+            .removed_on = "2027-03-01",
+            .migration = "Greet through greeter.hello.",
         },
         .run = struct {
             fn run(_: *PluginCtx, in: In) sdk.Error!Out {
@@ -805,7 +807,8 @@ test "a plugin's manifest names its operation, fields, hook and record" {
     try std.testing.expect(std.mem.indexOf(u8, text, "Usage: publr greeter") != null);
     // An installed plugin's callers are told it is on its way out, as a compiled-in one's.
     try std.testing.expectEqualStrings(
-        "greeter.greet is deprecated since 0.1.0",
+        "greeter.greet is deprecated since 0.1.0 and removed on 2027-03-01. " ++
+            "Greet through greeter.hello.",
         manifest.operations[0].deprecated,
     );
 }

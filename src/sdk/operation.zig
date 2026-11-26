@@ -161,16 +161,19 @@ pub fn field_doc(
     }
 }
 
-/// An operation on its way out (`.agents/specs/updates.md`, "Deprecation before removal"):
-/// it keeps working for at least six months, every caller is told, and only a major removes
-/// it. `pub const deprecated: Deprecated = .{ .since = "0.4.0", .instead = "record.save" };`
+/// An operation on its way out: it keeps working until `removed_on`, every caller is told,
+/// and its `migration` is what a release's migration prompt says of it.
+/// `.deprecated = .{ .since = "0.9.0", .removed_on = "2027-03-01", .instead = "money.format",
+/// .migration = "Pass amount and currency instead of value." }`
 pub const Deprecated = struct {
-    /// The minor release that deprecated it.
+    /// The release that deprecated it.
     since: []const u8,
+    /// The day it goes (`2027-03-01`): the first release made on or after it removes it.
+    removed_on: []const u8,
     /// The operation to call instead; empty when nothing replaces it.
     instead: []const u8 = "",
-    /// Why, in a sentence, when the name of the replacement does not say.
-    why: []const u8 = "",
+    /// What to change, often with a before and after.
+    migration: []const u8,
 };
 
 pub fn deprecation(comptime Operation: type) ?Deprecated {
@@ -187,17 +190,35 @@ pub fn deprecation(comptime Operation: type) ?Deprecated {
     }
 }
 
-/// `deprecated since 0.4.0; call record.save instead`: what every caller is told.
+/// `record.old is deprecated since 0.9.0 and removed on 2027-03-01; call record.save instead.
+/// <migration>`: what every caller is told.
 pub fn deprecation_text(comptime Operation: type) []const u8 {
     comptime {
         std.debug.assert(Operation.name.len > 0);
 
         const found = deprecation(Operation) orelse return "";
         const instead = if (found.instead.len > 0) "; call " ++ found.instead ++ " instead" else "";
-        const why = if (found.why.len > 0) ". " ++ found.why else "";
 
-        return Operation.name ++ " is deprecated since " ++ found.since ++ instead ++ why;
+        return Operation.name ++ " is deprecated since " ++ found.since ++ " and removed on " ++
+            found.removed_on ++ instead ++ ". " ++ found.migration;
     }
+}
+
+/// Whether `text` is a day as `YYYY-MM-DD` writes it, with a month and a day that exist in
+/// some year.
+pub fn valid_day(text: []const u8) bool {
+    std.debug.assert(text.len <= 1 << 16);
+
+    if (text.len != 10 or text[4] != '-' or text[7] != '-') {
+        return false;
+    }
+
+    _ = std.fmt.parseInt(u16, text[0..4], 10) catch return false;
+
+    const month = std.fmt.parseInt(u8, text[5..7], 10) catch return false;
+    const day = std.fmt.parseInt(u8, text[8..10], 10) catch return false;
+
+    return month >= 1 and month <= 12 and day >= 1 and day <= 31;
 }
 
 fn validate_deprecated(comptime Operation: type) void {
@@ -208,6 +229,18 @@ fn validate_deprecated(comptime Operation: type) void {
 
         _ = std.SemanticVersion.parse(found.since) catch
             @compileError(Operation.name ++ ": `deprecated.since` is the release, `0.4.0`");
+
+        if (!valid_day(found.removed_on)) {
+            @compileError(Operation.name ++ ": `deprecated.removed_on` is a day, `2027-03-01`");
+        }
+
+        if (found.migration.len == 0) {
+            @compileError(Operation.name ++ ": `deprecated.migration` says what to change");
+        }
+
+        if (std.mem.eql(u8, found.instead, Operation.name)) {
+            @compileError(Operation.name ++ ": `deprecated.instead` names another operation");
+        }
     }
 }
 
@@ -436,7 +469,9 @@ test "a deprecated operation says since when and what to call instead" {
         pub const name = "note.old_save";
         pub const deprecated: Deprecated = .{
             .since = "0.4.0",
+            .removed_on = "2027-03-01",
             .instead = "note.save",
+            .migration = "Same input, under the new name.",
         };
     };
     const Plain = struct {
@@ -444,9 +479,18 @@ test "a deprecated operation says since when and what to call instead" {
     };
 
     try std.testing.expectEqualStrings(
-        "note.old_save is deprecated since 0.4.0; call note.save instead",
+        "note.old_save is deprecated since 0.4.0 and removed on 2027-03-01; " ++
+            "call note.save instead. Same input, under the new name.",
         comptime deprecation_text(Old),
     );
     try std.testing.expect(comptime deprecation(Plain) == null);
     try std.testing.expectEqualStrings("", comptime deprecation_text(Plain));
+}
+
+test "a removal day is written YYYY-MM-DD" {
+    try std.testing.expect(valid_day("2027-03-01"));
+    try std.testing.expect(!valid_day("2027-3-1"));
+    try std.testing.expect(!valid_day("2027-13-01"));
+    try std.testing.expect(!valid_day("2027-03-00"));
+    try std.testing.expect(!valid_day("next march"));
 }

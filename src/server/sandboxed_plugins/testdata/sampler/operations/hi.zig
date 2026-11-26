@@ -33,7 +33,9 @@ pub const operation = publr.operation.define(In, Out, .{
     .untrusted_callers = true,
     .deprecated = .{
         .since = "0.1.0",
+        .removed_on = "2027-03-01",
         .instead = "sampler.hello",
+        .migration = "Call sampler.hello with the same input.",
     },
     .run = run,
 });

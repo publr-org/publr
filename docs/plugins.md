@@ -791,6 +791,12 @@ fn add(ctx: *publr.Ctx, in: AddIn) publr.Error!AddOut {
   is refused as `Invalid` (422) with a `problems` list, each beside its field. Records check their own data; `.validate` is only for
   what belongs to the call.
 - `.destructive = true` says it erases for good.
+- `.deprecated = .{ .since = "0.4.0", .removed_on = "2027-03-01", .instead = "notes.save",
+  .migration = "Send `text` as `body`." }` marks it on its way out: it keeps working until
+  `removed_on` (a day, `YYYY-MM-DD`), every caller is told, `--help` and the REST headers
+  say so, and `migration` is what a release's migration prompt says of it. `instead` names
+  an operation that is not deprecated itself; `migration` is required. `plugin surface`
+  lists core's deprecations; `zig build deprecations -- --before <day>` lists Publr's own.
 
 A site's pages call an operation at `<mount>/_actions/app.<plugin>.<verb>`: forms, islands
 (JSON with `Publr-Request: 1`), and `Publr.request.call('app.<plugin>.<verb>')` in a page's

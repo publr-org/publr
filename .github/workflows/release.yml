@@ -199,12 +199,33 @@ jobs:
             2>&1 | tee ../upgrade.txt
           test "${PIPESTATUS[0]}" -eq 0
 
+      # What this release offers plugins and apps (`scripts/surface.zig`), against the previous
+      # release's: nothing past its removal day still here, nothing gone that was not
+      # deprecated until its day. The surface and the migration prompt become assets; the
+      # first release with no previous surface compares nothing.
+      - name: Surface and migration prompt
+        working-directory: publr
+        env: { PREVIOUS: "${{ needs.version.outputs.previous }}" }
+        run: |
+          mkdir -p ../surface ../surface-previous
+          zig build surface -- write ../out/bin/publr ../surface/surface.json
+          previous=-
+          if [ -n "$PREVIOUS" ] && gh release download "$PREVIOUS" --repo "$GITHUB_REPOSITORY" \
+            --dir ../surface-previous --pattern surface.json 2>/dev/null; then
+            previous=../surface-previous/surface.json
+          fi
+          zig build surface -- check ../surface/surface.json "$previous" "$(date -u +%F)"
+          zig build surface -- prompt ../surface/surface.json "$previous" > ../surface/migration.md
+          cat ../surface/migration.md
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: upgrade
           path: |
             upgrade-sites/*.tar.gz
             upgrade.txt
+            surface/surface.json
+            surface/migration.md
 
   # WAMR's macOS headers come from the system SDK, so each macOS binary is built on its own
   # kind of CPU (for any CPU of that kind: baseline), for a stated macOS: a native build would
@@ -355,6 +376,11 @@ jobs:
               printf '## All changes\n\n%s\n\n' "$(changes)"
               echo "**Full changelog:** $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$previous...$TAG"
             fi
+            # What plugins and apps must change, when anything (surface.zig prompt); the same
+            # text is the migration.md asset agents read.
+            if [ -f ../upgrade/surface/migration.md ] && grep -q '^## ' ../upgrade/surface/migration.md; then
+              printf '\n## For plugins and apps\n%s\n' "$(sed -e 1d -e 's/^## /### /' ../upgrade/surface/migration.md)"
+            fi
           } > "$RUNNER_TEMP/notes.md"
           echo "$VERSION ($(date -u '+%B %-d, %Y'))" > "$RUNNER_TEMP/title.txt"
           cat "$RUNNER_TEMP/title.txt" "$RUNNER_TEMP/notes.md"
@@ -364,6 +390,7 @@ jobs:
           # This release's upgrade site and the lived site are its assets, never repository
           # files: the next releases' upgrade tests fetch them (.github/actions/upgrade-sites).
           gh release create "$TAG" dist/* $(ls upgrade/upgrade-sites/*.tar.gz 2>/dev/null) \
+            $(ls upgrade/surface/surface.json upgrade/surface/migration.md 2>/dev/null) \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$(cat "$RUNNER_TEMP/title.txt")" \

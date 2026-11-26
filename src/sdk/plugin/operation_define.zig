@@ -439,7 +439,7 @@ fn who_of(
     }
 }
 
-/// `.deprecated` as written, `.since` with `.instead` and `.why` when given.
+/// `.deprecated` as written: `.since`, `.removed_on`, `.migration`, and `.instead` when given.
 fn deprecated_of(comptime options: anytype) ?sdk.operation.Deprecated {
     comptime {
         if (!@hasField(@TypeOf(options), "deprecated")) {
@@ -449,6 +449,8 @@ fn deprecated_of(comptime options: anytype) ?sdk.operation.Deprecated {
         const given = options.deprecated;
         var found: sdk.operation.Deprecated = .{
             .since = given.since,
+            .removed_on = given.removed_on,
+            .migration = given.migration,
         };
 
         for (std.meta.fieldNames(@TypeOf(given))) |field| {
@@ -505,7 +507,9 @@ test "an operation described from its words" {
         .secret = &.{.page},
         .deprecated = .{
             .since = "0.4.0",
+            .removed_on = "2027-03-01",
             .instead = "helpful.rate",
+            .migration = "Send the rating as `stars`.",
         },
         .run = struct {
             fn run(_: *PluginCtx, _: In) sdk.Error!Out {
@@ -529,7 +533,8 @@ test "an operation described from its words" {
     try std.testing.expectEqual(Answer.visitor, Operation.answer.?);
     try std.testing.expectEqualStrings("page", Operation.secret[0]);
     try std.testing.expectEqualStrings(
-        "helpful.answer is deprecated since 0.4.0; call helpful.rate instead",
+        "helpful.answer is deprecated since 0.4.0 and removed on 2027-03-01; " ++
+            "call helpful.rate instead. Send the rating as `stars`.",
         comptime sdk.operation.deprecation_text(Operation),
     );
     try std.testing.expectEqualStrings("anyone", Operation.who_may_call);

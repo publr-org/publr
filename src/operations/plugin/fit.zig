@@ -138,6 +138,50 @@ const offered_all = names: {
     break :names names;
 };
 
+/// An operation on its way out, as a release's migration prompt and roadmap say it.
+pub const Deprecation = struct {
+    name: []const u8,
+    since: []const u8,
+    removed_on: []const u8,
+    instead: []const u8 = "",
+    migration: []const u8,
+};
+
+/// Every deprecated operation this Publr runs, core's and the built-in plugins'.
+const deprecated_all = listed: {
+    const operations = registry.SDK.operations;
+
+    @setEvalBranchQuota(1000 + operations.len * 16);
+
+    var count: usize = 0;
+
+    for (operations) |Operation| {
+        if (sdk.operation.deprecation(Operation) != null) {
+            count += 1;
+        }
+    }
+
+    var list: [count]Deprecation = undefined;
+    var index: usize = 0;
+
+    for (operations) |Operation| {
+        const found = sdk.operation.deprecation(Operation) orelse continue;
+
+        list[index] = .{
+            .name = Operation.name,
+            .since = found.since,
+            .removed_on = found.removed_on,
+            .instead = found.instead,
+            .migration = found.migration,
+        };
+        index += 1;
+    }
+
+    const final = list;
+
+    break :listed final;
+};
+
 pub const Surface = struct {
     pub const name = "plugin.surface";
     pub const description = "List what this Publr offers plugins: operations, host functions";
@@ -147,7 +191,8 @@ pub const Surface = struct {
         \\plugin's manifest lists what it uses (`uses`: `call:<operation>`, `host:<function>`,
         \\`emit:`, `mod:`) and the Publr it was built with (`minimum_publr`); one calling an
         \\operation this list lacks, or built with a later Publr, is refused as it is installed
-        \\and as it is loaded. Changes nothing.
+        \\and as it is loaded. `deprecated` names each operation on its way out, the day it
+        \\goes and what to change. Changes nothing.
     ;
     pub const kind: sdk.operation.Kind = .read;
     pub const In = struct {
@@ -157,6 +202,7 @@ pub const Surface = struct {
     pub const Out = struct {
         publr: []const u8,
         offered: []const []const u8,
+        deprecated: []const Deprecation = &.{},
         more: bool = false,
     };
     pub const field_docs: sdk.operation.Docs(In) = .{
@@ -167,6 +213,8 @@ pub const Surface = struct {
         .publr = "This Publr's release",
         .offered = "What a plugin may use, as its `uses` names it: `call:<operation>`, " ++
             "`host:<function>`",
+        .deprecated = "Each operation on its way out, on every page: `since`, `removed_on`, " ++
+            "`instead`, `migration`",
         .more = "Whether more follow past this page",
     };
     pub const example: In = .{};
@@ -191,6 +239,7 @@ pub const Surface = struct {
         return .{
             .publr = running,
             .offered = offered_all[start..end],
+            .deprecated = &deprecated_all,
             .more = end < offered_all.len,
         };
     }
