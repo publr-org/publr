@@ -1070,7 +1070,7 @@ pub const Deleted = event_define(.{
     .payload = Changed,
 });
 
-const event_define = @import("../sdk/plugin/hook_define.zig").event;
+const event_define = @import("../publr/plugin/hook_define.zig").event;
 
 pub fn scope_of(
     ctx: *Ctx,

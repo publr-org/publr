@@ -5,7 +5,7 @@
 //! no calls, no records, no session. Core runs it (`run`) and decides whose account it is.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const words = @import("words.zig");
+const words = @import("../../publr/plugin/words.zig");
 const http_operations = @import("../../operations/http.zig");
 const plugin_access = @import("../plugin_access.zig");
 const provider = @import("../provider.zig");

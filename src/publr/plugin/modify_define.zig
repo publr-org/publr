@@ -6,8 +6,8 @@
 //! modifier that runs out of memory, calls or time refuses the whole apply.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const mods = @import("../mods.zig");
-const mod_reads = @import("mod_reads.zig");
+const mods = @import("../../sdk/mods.zig");
+const mod_reads = @import("../../sdk/plugin/mod_reads.zig");
 
 /// A record's title as core applies it, `<type>.title`: the record's id, its fields typed, and
 /// the title a modifier changes.

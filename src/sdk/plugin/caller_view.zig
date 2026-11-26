@@ -3,7 +3,7 @@
 //! operation, and the visitor's stable id, signed in or not.
 const std = @import("std");
 const Caller = @import("../caller.zig").Caller;
-const Account = @import("../account_ref.zig").Account;
+const Account = @import("../../publr/account_ref.zig").Account;
 
 pub const From = union(enum) {
     /// The admin, signed in.

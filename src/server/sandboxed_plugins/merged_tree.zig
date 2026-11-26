@@ -3,7 +3,7 @@
 //! merged as the trees they stand for. Values whose layout is described are merged where
 //! they lie (`merged.zig`), by the same rules.
 const std = @import("std");
-const id_map = @import("../../sdk/plugin/id_map.zig");
+const id_map = @import("../../publr/plugin/id_map.zig");
 
 /// Lays what a modifier wrote over the value it was given: a modifier reads the value in its
 /// own words, with only the fields it uses, and the fields it left out stay as they were.

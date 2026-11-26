@@ -6,7 +6,7 @@
 //! `jsonStringify`, a union, a tuple or an array goes through `std.json` for that value alone.
 const std = @import("std");
 const operation = @import("../operation.zig");
-const words = @import("words.zig");
+const words = @import("../../publr/plugin/words.zig");
 
 /// How deep objects and arrays may nest, as `lib/json.zig` bounds them.
 pub const depth_max: u32 = 64;

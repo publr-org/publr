@@ -2,7 +2,7 @@
 //! actions, Settings pages): the `publr.operation.define` named there is given its words and
 //! its plugin's name, as in `.operations`.
 const std = @import("std");
-const operation_define = @import("operation_define.zig");
+const operation_define = @import("../../publr/plugin/operation_define.zig");
 
 /// `Operation` as the core runs it: the definition with its words.
 pub fn described(comptime Plugin: type, comptime Operation: type) type {
@@ -40,7 +40,7 @@ pub fn each(comptime Plugin: type, comptime Item: type, comptime list: []const I
 }
 
 test "a definition named by an admin part is described" {
-    const Words = @import("define.zig").Words(.{
+    const Words = @import("../../publr/plugin/define.zig").Words(.{
         .{ "operation:tick", "Does nothing\n\nExample:\n  in: {}\n  out: {}" },
     });
     const Empty = struct {};

@@ -2,7 +2,7 @@
 //! in between: `value.as(Line, arena)`. The other way is `free_typed.zig`.
 const std = @import("std");
 const free_value = @import("free_value.zig");
-const shape_wire = @import("plugin/shape_wire.zig");
+const shape_wire = @import("../sdk/plugin/shape_wire.zig");
 
 const Value = free_value.Value;
 
@@ -17,7 +17,7 @@ pub fn as(comptime Shape: type, arena: std.mem.Allocator, value: Value) Error!Sh
     }
 
     if (Shape == std.json.Value) {
-        return @import("free_json.zig").tree_of(arena, value);
+        return @import("../sdk/free_json.zig").tree_of(arena, value);
     }
 
     switch (@typeInfo(Shape)) {
@@ -115,7 +115,7 @@ fn struct_as(comptime Shape: type, arena: std.mem.Allocator, value: Value) Error
             value,
         )),
         .free => return only(Shape, value.bytes),
-        .json => return only(Shape, try @import("free_json.zig").text_of(arena, value)),
+        .json => return only(Shape, try @import("../sdk/free_json.zig").text_of(arena, value)),
         .decimal => {
             if (value.int()) |whole| {
                 return Shape.of(whole);

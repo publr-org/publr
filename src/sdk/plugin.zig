@@ -1,11 +1,11 @@
 const std = @import("std");
-const plugin_define = @import("plugin/define.zig");
-const taxonomy_define = @import("plugin/taxonomy_define.zig");
+const plugin_define = @import("../publr/plugin/define.zig");
+const taxonomy_define = @import("../publr/plugin/taxonomy_define.zig");
 const permission_model = @import("../model/permission.zig");
-const job_define = @import("plugin/job_define.zig");
-const webhook_define = @import("plugin/webhook_define.zig");
-const hook_define = @import("plugin/hook_define.zig");
-const operation_define = @import("plugin/operation_define.zig");
+const job_define = @import("../publr/plugin/job_define.zig");
+const webhook_define = @import("../publr/plugin/webhook_define.zig");
+const hook_define = @import("../publr/plugin/hook_define.zig");
+const operation_define = @import("../publr/plugin/operation_define.zig");
 const remote_contract = @import("plugin/remote_contract.zig");
 const sdk = @import("../sdk.zig");
 const plugin_context = @import("plugin/context.zig");
@@ -21,7 +21,7 @@ const db = @import("../lib/db.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 const field_group_model = @import("../model/field_group.zig");
-const location_rule_define = @import("plugin/location_rule_define.zig");
+const location_rule_define = @import("../publr/plugin/location_rule_define.zig");
 const column_define = @import("plugin/column_define.zig");
 pub const types = plugin_types;
 /// One registration: `pub const plugin = publr.plugin.define(manifest, options)`.
@@ -49,7 +49,7 @@ pub const route = @import("plugin/route.zig");
 pub const Route = route.Route;
 pub const OperatorCommand = route.OperatorCommand;
 pub const admin_slots = @import("plugin/admin_slots.zig");
-pub const dimensions = @import("plugin/dimensions.zig");
+pub const dimensions = @import("../publr/plugin/dimensions.zig");
 /// A PO file a plugin brings: the admin's words in one language. A language pack is a
 /// plugin of these alone; a plugin may bring its own words too.
 pub const Translation = struct {
@@ -763,11 +763,11 @@ pub fn Merged(comptime plugins: anytype) type {
                 }};
             }
 
-            menu = menu ++ @import("plugin/menu_define.zig").entries_of(Plugin);
+            menu = menu ++ @import("../publr/plugin/menu_define.zig").entries_of(Plugin);
 
             registered_statuses = registered_statuses ++
-                @import("plugin/record_flow.zig").registered_of(Plugin);
-            icons = icons ++ @import("plugin/menu_define.zig").icons_of(Plugin);
+                @import("../publr/plugin/record_flow.zig").registered_of(Plugin);
+            icons = icons ++ @import("../publr/plugin/menu_define.zig").icons_of(Plugin);
 
             if (plugin_define.has(Plugin, "sign_in_at")) {
                 sign_in_at = sign_in_at ++ &[_]type{Plugin};
@@ -792,7 +792,7 @@ pub fn Merged(comptime plugins: anytype) type {
 
             if (@hasField(@TypeOf(Plugin.options), "hooks")) {
                 for (Plugin.options.hooks) |Hook| {
-                    if (@import("plugin/hook_define.zig").is_request_hook(Hook)) {
+                    if (@import("../publr/plugin/hook_define.zig").is_request_hook(Hook)) {
                         request_hooks = request_hooks ++ &[_]@import("page_request.zig").Hook{.{
                             .plugin = Plugin.manifest.name,
                             .run = Hook.wrapped,
@@ -1070,8 +1070,8 @@ pub const testing = struct {
     }));
 
     const hello = struct {
-        const record_define = @import("plugin/record_define.zig");
-        const field_kind_define = @import("plugin/field_kind_define.zig");
+        const record_define = @import("../publr/plugin/record_define.zig");
+        const field_kind_define = @import("../publr/plugin/field_kind_define.zig");
         const host_module = @import("plugin/host.zig");
 
         pub const plugin = plugin_define.define(.{
@@ -1546,7 +1546,7 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
             .compatible_with = .{"provider@^1.0"},
             .remotes = .{Adjust},
         });
-        pub const Adjust = @import("plugin/hook_define.zig").remote.operation(
+        pub const Adjust = @import("../publr/plugin/hook_define.zig").remote.operation(
             "provider.adjust",
             struct {
                 sku: []const u8,

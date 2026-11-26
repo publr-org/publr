@@ -19,7 +19,7 @@ const identity_manage = @import("../operations/identity/manage.zig");
 const project_put = @import("../operations/project/put.zig");
 const records = @import("../operations/record.zig");
 const terms = @import("../operations/term.zig");
-const hook_define = @import("plugin/hook_define.zig");
+const hook_define = @import("../publr/plugin/hook_define.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;

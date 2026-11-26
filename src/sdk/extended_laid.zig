@@ -3,9 +3,9 @@
 //! own `after` hook adds is kept beside them and written into one value when the hook is
 //! done (`seal`), which Publr merges under the plugin's name.
 const std = @import("std");
-const free_value = @import("free_value.zig");
-const free_builder = @import("free_builder.zig");
-const free_typed = @import("free_typed.zig");
+const free_value = @import("../publr/free_value.zig");
+const free_builder = @import("../publr/free_builder.zig");
+const free_typed = @import("../publr/free_typed.zig");
 const Json = @import("../publr/operation/json.zig").Laid;
 
 pub const Error = error{ Denied, Invalid, OutOfMemory };

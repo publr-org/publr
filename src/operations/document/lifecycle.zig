@@ -5,7 +5,7 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
-const operation_define = @import("../../sdk/plugin/operation_define.zig");
+const operation_define = @import("../../publr/plugin/operation_define.zig");
 const flow_model = model.flow;
 
 const Ctx = sdk.Ctx;

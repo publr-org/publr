@@ -6,7 +6,7 @@
 //! through.
 
 const std = @import("std");
-const event = @import("plugin/hook_define.zig").event;
+const event = @import("../publr/plugin/hook_define.zig").event;
 
 const Signed = struct {
     /// The account that signed in

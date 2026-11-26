@@ -4,7 +4,7 @@
 //! fails the build. Filters and order are where the list starts; people change them. Whether a
 //! field filters or orders at all is the field's (`.fields.x = .{ .sortable = true }`).
 const std = @import("std");
-const listed_in = @import("define.zig").listed_in;
+const listed_in = @import("../../publr/plugin/define.zig").listed_in;
 const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const field_filter = @import("../../model/field_filter.zig");

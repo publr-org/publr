@@ -11,9 +11,9 @@
 //! ```
 const std = @import("std");
 const builtin = @import("builtin");
-const free_value = @import("../../sdk/free_value.zig");
+const free_value = @import("../free_value.zig");
 const free_json = @import("../../sdk/free_json.zig");
-const free_typed = @import("../../sdk/free_typed.zig");
+const free_typed = @import("../free_typed.zig");
 
 pub const Error = error{ Invalid, OutOfMemory };
 

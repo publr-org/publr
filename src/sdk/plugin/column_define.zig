@@ -4,7 +4,7 @@
 //! with the list and sortable, or one an `after` hook on the list's read adds to each row
 //! (`out.extend`). The admin draws it in the host's cell style by `.kind`.
 const std = @import("std");
-const record_define = @import("record_define.zig");
+const record_define = @import("../../publr/plugin/record_define.zig");
 
 pub const Kind = @import("../../model/sandboxed_plugin.zig").ColumnKind;
 

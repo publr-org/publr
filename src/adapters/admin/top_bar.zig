@@ -2,7 +2,7 @@
 //! app the admin shows where the project has apps, with what plugins join to it
 //! (`app_picker_segment`); where it has none, those segments stand on their own.
 const std = @import("std");
-const plugin_define = @import("../../sdk/plugin/define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const items = @import("items.zig");

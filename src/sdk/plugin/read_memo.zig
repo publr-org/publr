@@ -2,7 +2,7 @@
 //! so the same read asked again answers the same until the plugin writes, and is answered
 //! from here instead of crossing the wire again. A call that may write forgets all of it.
 const std = @import("std");
-const id_map = @import("id_map.zig");
+const id_map = @import("../../publr/plugin/id_map.zig");
 
 /// How many answers one call keeps; past it, reads go to the host as before.
 pub const entries_max: u32 = 512;

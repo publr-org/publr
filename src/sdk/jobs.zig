@@ -4,8 +4,8 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const job_queue = @import("../store/job_queue.zig");
-const job_define = @import("plugin/job_define.zig");
-const webhook_define = @import("plugin/webhook_define.zig");
+const job_define = @import("../publr/plugin/job_define.zig");
+const webhook_define = @import("../publr/plugin/webhook_define.zig");
 const hook_runs = @import("hook_runs.zig");
 const plugin_context = @import("plugin/context.zig");
 const store_settings = @import("../store/settings.zig");
@@ -1042,15 +1042,15 @@ test "queued work applies a mod and calls an operation by name, as a request's c
 test "a .due job runs once per moment of its record's field, moved by edits, given the record" {
     const registry = @import("../server/registry.zig");
     const model = @import("../model.zig");
-    const record_define = @import("plugin/record_define.zig");
-    const words = @import("plugin/words.zig");
+    const record_define = @import("../publr/plugin/record_define.zig");
+    const words = @import("../publr/plugin/words.zig");
     const records = @import("../operations/record.zig");
     const types = @import("../operations/content_type.zig");
     const Event = struct {
         title: []const u8,
         starts_at: ?words.Time = null,
     };
-    const Docs = @import("plugin/define.zig").Words(.{
+    const Docs = @import("../publr/plugin/define.zig").Words(.{
         .{ @typeName(Event), "Event" },
         .{ @typeName(Event) ++ ".title", "Title" },
         .{ @typeName(Event) ++ ".starts_at", "Starts" },
@@ -1150,15 +1150,15 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
 test "a yearly .due job runs on each return of its date, then follows the next one" {
     const registry = @import("../server/registry.zig");
     const model = @import("../model.zig");
-    const record_define = @import("plugin/record_define.zig");
-    const words = @import("plugin/words.zig");
+    const record_define = @import("../publr/plugin/record_define.zig");
+    const words = @import("../publr/plugin/words.zig");
     const records = @import("../operations/record.zig");
     const types = @import("../operations/content_type.zig");
     const Person = struct {
         name: []const u8,
         born_at: ?words.Time = null,
     };
-    const Docs = @import("plugin/define.zig").Words(.{
+    const Docs = @import("../publr/plugin/define.zig").Words(.{
         .{ @typeName(Person), "Person" },
         .{ @typeName(Person) ++ ".name", "Name" },
         .{ @typeName(Person) ++ ".born_at", "Born" },

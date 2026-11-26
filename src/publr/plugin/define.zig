@@ -2,7 +2,7 @@
 //! come from the plugin's doc comments, which the build hands over beside it; `Bind` pairs
 //! the two into the type every reader takes, and `has`/`get` read its options.
 const std = @import("std");
-const doc_reader = @import("doc_reader.zig");
+const doc_reader = @import("../../sdk/plugin/doc_reader.zig");
 
 pub const Manifest = struct {
     name: []const u8,
@@ -87,7 +87,7 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
             // Null without `.extend`, and in the sandbox, which has none of the host's seams:
             // its build names `extend` as left out.
             pub const host = if (@hasField(@TypeOf(plugin.options), "extend") and
-                @import("guest.zig").mode == .native)
+                @import("../../sdk/plugin/guest.zig").mode == .native)
                 host_define.extended(plugin.manifest.name, plugin.options.extend)
             else
                 null;
@@ -96,7 +96,7 @@ pub fn Bind(comptime Module: type, comptime Docs: type) type {
             pub const settings_text = Docs.rest("main").?;
         };
 
-        @import("secret_define.zig").check(Bound);
+        @import("../../sdk/plugin/secret_define.zig").check(Bound);
 
         return Bound;
     }
@@ -283,7 +283,7 @@ fn described_row_actions(comptime Plugin: type) []const RowAction {
 fn asks_of(comptime Plugin: type) []const @import("../../model/sandboxed_plugin.zig").Ask {
     std.debug.assert(Plugin.manifest.name.len > 0);
 
-    return @import("permission_define.zig").asks_of(Plugin);
+    return @import("../../sdk/plugin/permission_define.zig").asks_of(Plugin);
 }
 
 /// A bound plugin's operations: each `publr.operation.define` given its words and its
@@ -475,7 +475,7 @@ fn declared_hooks(comptime Plugin: type) []const type {
         }
 
         if (@hasField(Options, "records")) {
-            const record_validate = @import("record_validate.zig");
+            const record_validate = @import("../../sdk/plugin/record_validate.zig");
             const record_computed = @import("record_computed.zig");
 
             for (Plugin.options.records) |Record| {
@@ -581,12 +581,12 @@ fn declared_namespaces(comptime Plugin: type) []const Namespace {
     }
 }
 
-const Namespace = @import("../operation.zig").Namespace;
-const Page = @import("admin_slots.zig").Page;
-const Panel = @import("admin_slots.zig").Panel;
-const RowAction = @import("admin_slots.zig").RowAction;
-const admin_described = @import("admin_described.zig");
-const host_define = @import("host.zig");
+const Namespace = @import("../../sdk/operation.zig").Namespace;
+const Page = @import("../../sdk/plugin/admin_slots.zig").Page;
+const Panel = @import("../../sdk/plugin/admin_slots.zig").Panel;
+const RowAction = @import("../../sdk/plugin/admin_slots.zig").RowAction;
+const admin_described = @import("../../sdk/plugin/admin_described.zig");
+const host_define = @import("../../sdk/plugin/host.zig");
 
 /// Whether a bound plugin has `.extend`.
 fn extends(comptime Plugin: type) bool {

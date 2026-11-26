@@ -3,8 +3,9 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const plugin_module = @import("../../sdk/plugin.zig");
-const plugin_define = @import("../../sdk/plugin/define.zig");
-const hook_define = @import("../../sdk/plugin/hook_define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
+const hook_define = @import("../../publr/plugin/hook_define.zig");
+const operation_define = @import("../../publr/plugin/operation_define.zig");
 const error_events = @import("../../sdk/error_events.zig");
 const activity = @import("../activity.zig");
 const store = @import("../../store.zig");
@@ -28,7 +29,7 @@ const Tracker = struct {
     pub const BreakOut = struct {
         how: []const u8,
     };
-    pub const Break = @import("../../sdk/plugin/operation_define.zig").define(BreakIn, BreakOut, .{
+    pub const Break = operation_define.define(BreakIn, BreakOut, .{
         .name = "break",
         .kind = .write,
         .run = break_as_asked,

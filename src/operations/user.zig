@@ -1023,4 +1023,4 @@ pub const UserCreated = event_define(.{
     },
 });
 
-const event_define = @import("../sdk/plugin/hook_define.zig").event;
+const event_define = @import("../publr/plugin/hook_define.zig").event;

@@ -632,7 +632,7 @@ fn declared_native(comptime Operation: type, comptime index: u32) Declared {
         Operation.limit.?.per_minute
     else
         0;
-    const failures = comptime @import("../sdk/plugin/words.zig").failures_of(Operation);
+    const failures = comptime @import("../publr/plugin/words.zig").failures_of(Operation);
 
     return .{
         .described = .{

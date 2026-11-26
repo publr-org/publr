@@ -20,7 +20,7 @@ pub const Kind = enum {
     float,
     bool,
     text,
-    /// A value whose shape comes with the data (`sdk/free_value.zig`): its bytes' address
+    /// A value whose shape comes with the data (`publr/free_value.zig`): its bytes' address
     /// and length, as a text's.
     free,
     enumeration,

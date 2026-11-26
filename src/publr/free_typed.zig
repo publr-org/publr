@@ -6,7 +6,7 @@
 const std = @import("std");
 const free_value = @import("free_value.zig");
 const free_builder = @import("free_builder.zig");
-const shape_wire = @import("plugin/shape_wire.zig");
+const shape_wire = @import("../sdk/plugin/shape_wire.zig");
 const model_decimal = @import("../model/decimal.zig");
 
 const Value = free_value.Value;
@@ -48,7 +48,7 @@ pub fn put(builder: *Builder, value: anytype) Error!void {
 
     // A tree a plugin built for its own use (an outside API's body): written part by part.
     if (Shape == std.json.Value) {
-        return @import("free_json.zig").put_tree(builder, value);
+        return @import("../sdk/free_json.zig").put_tree(builder, value);
     }
 
     switch (@typeInfo(Shape)) {
@@ -120,7 +120,7 @@ fn put_struct(builder: *Builder, value: anytype) Error!void {
         .free => return builder.put(.{
             .bytes = @field(value, first),
         }),
-        .json => return builder.put(try @import("free_json.zig").from_text(
+        .json => return builder.put(try @import("../sdk/free_json.zig").from_text(
             builder.arena,
             @field(value, first),
         )),
@@ -179,7 +179,7 @@ test "a struct becomes a value and reads back; money is keyed, a union names its
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const free_json = @import("free_json.zig");
+    const free_json = @import("../sdk/free_json.zig");
     const Amount = struct {
         currency: []const u8,
         minor: i64,

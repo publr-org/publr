@@ -7,7 +7,7 @@ const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
 const contract = @import("../../sdk/contract.zig");
-const operation_define = @import("../../sdk/plugin/operation_define.zig");
+const operation_define = @import("../../publr/plugin/operation_define.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;

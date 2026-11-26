@@ -12,10 +12,10 @@
 //! A page is good until the next `next`; what must outlive it is copied out of it first.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const lists = @import("../operation/lists.zig");
-const queue = @import("queue.zig");
-const walks = @import("walks.zig");
-const PluginCtx = @import("context.zig").PluginCtx;
+const lists = @import("../../sdk/operation/lists.zig");
+const queue = @import("../../sdk/plugin/queue.zig");
+const walks = @import("../../sdk/plugin/walks.zig");
+const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 
 /// What the build calls `Operation`: core's by name, a plugin's own by its verb.
 fn named(comptime Operation: type) []const u8 {

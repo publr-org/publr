@@ -14,8 +14,8 @@
 //! Text put in one is not copied: a key or an item read from a walk's row is kept first.
 const std = @import("std");
 const id_map = @import("id_map.zig");
-const queue = @import("queue.zig");
-const Note = @import("held_note.zig").Note;
+const queue = @import("../../sdk/plugin/queue.zig");
+const Note = @import("../../sdk/plugin/held_note.zig").Note;
 
 pub const Error = error{OutOfMemory};
 

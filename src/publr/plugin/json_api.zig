@@ -3,7 +3,7 @@
 //! installed plugin's budget counts every instruction, and `std.json`'s scanner spends
 //! hundreds on each byte there.
 const std = @import("std");
-const wire_json = @import("wire_json.zig");
+const wire_json = @import("../../sdk/plugin/wire_json.zig");
 
 /// `text` read as a `Shape`, as `std.json.parseFromSliceLeaky` reads it with unknown fields
 /// ignored. Text without escapes is not copied: `text` must live as long as the value.

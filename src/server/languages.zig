@@ -537,7 +537,7 @@ test "a language's files merged into one catalogue, the first file winning" {
 
 test "queued work speaks the language it was queued in: a job about a Polish record, in Polish" {
     const sdk = @import("../sdk.zig");
-    const job_define = @import("../sdk/plugin/job_define.zig");
+    const job_define = @import("../publr/plugin/job_define.zig");
     const HostApi = @import("../sdk/plugin/context.zig").HostApi;
     const QueueCtx = @import("../sdk/plugin/queue.zig").Queue(HostApi);
     const Probe = struct {
@@ -627,7 +627,7 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
 
 test "queued work tells each in their own words: the admin in English, the visitor in Polish" {
     const sdk = @import("../sdk.zig");
-    const job_define = @import("../sdk/plugin/job_define.zig");
+    const job_define = @import("../publr/plugin/job_define.zig");
     const HostApi = @import("../sdk/plugin/context.zig").HostApi;
     const QueueCtx = @import("../sdk/plugin/queue.zig").Queue(HostApi);
     const Probe = struct {

@@ -221,8 +221,8 @@ test "a value read as a tree is the tree its JSON text reads as" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const Money = @import("../../sdk/money.zig").Money;
-    const Decimal = @import("../../sdk/plugin/decimal.zig").Decimal;
+    const Money = @import("../../publr/money.zig").Money;
+    const Decimal = @import("../../publr/plugin/decimal.zig").Decimal;
     const Shape = struct {
         title: []const u8,
         count: u64,

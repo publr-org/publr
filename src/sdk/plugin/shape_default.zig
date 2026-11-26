@@ -3,7 +3,7 @@
 //! runs in a plugin's module.
 const std = @import("std");
 const shape_wire = @import("shape_wire.zig");
-const free_value = @import("../free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const model_decimal = @import("../../model/decimal.zig");
 
 /// `value` as JSON, the way Publr writes a value of its type.

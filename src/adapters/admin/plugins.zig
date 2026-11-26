@@ -3,7 +3,7 @@
 //! where each permission and each of its flags is switched on or off and a version rolled
 //! back. A built-in plugin has the same page, read only.
 const std = @import("std");
-const plugin_define = @import("../../sdk/plugin/define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const plugin_operations = @import("../../operations/plugin.zig");

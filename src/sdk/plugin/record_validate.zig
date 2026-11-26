@@ -8,7 +8,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const record_operations = @import("../../operations/record.zig");
 const internal_operations = @import("../../operations/internal.zig");
-const operation_define = @import("operation_define.zig");
+const operation_define = @import("../../publr/plugin/operation_define.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
 
 /// The hooks a record's `.validate` brings: none without one.

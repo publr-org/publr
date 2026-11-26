@@ -8,7 +8,7 @@
 //!
 //! A description, byte by byte (numbers little-endian u32 unless said):
 //! `i` size:u8 signed:u8 · `d` places:u8 (a decimal's i64 units) · `f` size:u8 · `b` ·
-//! `s` (text) · `v` (a value whose shape comes with the data, `sdk/free_value.zig`) ·
+//! `s` (text) · `v` (a value whose shape comes with the data, `publr/free_value.zig`) ·
 //! `e` size:u8 count, then name_len:u8 name value:i64 each ·
 //! `l` keyed:u8 item_size item_align item · `p` size align target ·
 //! `n` payload_size niche:u8 payload ·

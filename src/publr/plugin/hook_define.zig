@@ -4,16 +4,17 @@
 //! `publr.remote.operation("inventory.reserve", In, Out)`. A hook names what it hooks by
 //! type: an operation (its own, core's or a remote) or an event. A plugin's own things get its
 //! name in front when it is bound.
-const queue = @import("queue.zig");
+const queue = @import("../../sdk/plugin/queue.zig");
+const remote_fields = @import("../../sdk/plugin/remote_fields.zig");
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const hooks = @import("../hooks.zig");
-const PluginCtx = @import("context.zig").PluginCtx;
+const hooks = @import("../../sdk/hooks.zig");
+const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const record_typed = @import("../../operations/record/typed.zig");
 const record_define = @import("record_define.zig");
 const modify_define = @import("modify_define.zig");
-const mods = @import("../mods.zig");
-const error_events = @import("../error_events.zig");
+const mods = @import("../../sdk/mods.zig");
+const error_events = @import("../../sdk/error_events.zig");
 
 const Stage = hooks.Stage;
 
@@ -135,7 +136,7 @@ const record_computed = @import("record_computed.zig");
 /// `(ctx: *publr.Ctx, request: *publr.PageRequest)` and answers `publr.Answered`.
 pub fn request(comptime run: anytype) type {
     comptime {
-        const PageRequest = @import("../page_request.zig");
+        const PageRequest = @import("../../sdk/page_request.zig");
 
         if (@typeInfo(@TypeOf(run)) != .@"fn") {
             @compileError("a request hook takes a named function: `publr.hook.request(run)`");
@@ -456,7 +457,7 @@ pub const remote = struct {
 
             return struct {
                 pub const remote_record = name;
-                pub const fields_used = @import("remote_fields.zig").of(name, Fields);
+                pub const fields_used = remote_fields.of(name, Fields);
                 pub const Doc = Fields;
                 pub const Held = Typed.Item;
                 pub const Ref = record_typed.Ref(Fields, name);

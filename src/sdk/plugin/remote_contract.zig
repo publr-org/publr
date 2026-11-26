@@ -3,11 +3,12 @@
 //! plugins the server checks installed ones against, and for the build's own check when both
 //! sides are compiled in.
 const std = @import("std");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 const plugin_contracts = @import("../../model/plugin_contracts.zig");
 const shapes = @import("../../model/contract.zig");
 const versions = @import("depends_on.zig");
-const hook_define = @import("hook_define.zig");
+const hook_define = @import("../../publr/plugin/hook_define.zig");
+const operation_define = @import("../../publr/plugin/operation_define.zig");
 
 const Used = plugin_contracts.Used;
 const ProvidedEvent = plugin_contracts.ProvidedEvent;
@@ -254,7 +255,7 @@ test "a plugin's remotes and its events, as its manifest carries them and the bu
             .name = "provider",
             .version = "1.0.0",
         }, .{
-            .records = .{@import("record_define.zig").define(Stocked, .{
+            .records = .{@import("../../publr/plugin/record_define.zig").define(Stocked, .{
                 .name = "provider.variant",
             })},
             .events = .{Restocked},
@@ -302,7 +303,7 @@ test "a plugin's remotes and its events, as its manifest carries them and the bu
 
 /// A compiled-in pair for the test below: `keeper` counts, `watcher` only works with it.
 const Keeper = test_plugin(struct {
-    pub const Count = @import("operation_define.zig").define(CountIn, CountOut, .{
+    pub const Count = operation_define.define(CountIn, CountOut, .{
         .name = "count",
         .kind = .write,
         .run = count,

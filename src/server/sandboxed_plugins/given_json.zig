@@ -3,7 +3,7 @@
 //! its fields, a keyed list as an object of its pairs, a union as `{ "alternative": payload }`,
 //! a decimal as its exact text.
 const std = @import("std");
-const free_value = @import("../../sdk/free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const free_json = @import("../../sdk/free_json.zig");
 const model_decimal = @import("../../model/decimal.zig");
 const given_module = @import("given.zig");

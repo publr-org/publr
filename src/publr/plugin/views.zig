@@ -5,11 +5,11 @@
 //! design system it reaches, with its props. The host draws them all in one call
 //! (`publr_draw`, `view_wire.zig`), so no plugin carries the design system.
 const std = @import("std");
-const guest = @import("guest.zig");
-const wire = @import("wire.zig");
-const view_wire = @import("view_wire.zig");
-const shape_wire = @import("shape_wire.zig");
-const shape_parts = @import("shape_parts.zig");
+const guest = @import("../../sdk/plugin/guest.zig");
+const wire = @import("../../sdk/plugin/wire.zig");
+const view_wire = @import("../../sdk/plugin/view_wire.zig");
+const shape_wire = @import("../../sdk/plugin/shape_wire.zig");
+const shape_parts = @import("../../sdk/plugin/shape_parts.zig");
 
 const Error = @import("../../sdk.zig").Error;
 
@@ -48,7 +48,7 @@ pub fn render(
     }
 
     // Who is looking and at what, laid out by the host as this build's own struct.
-    const described = comptime @import("shape_wire.zig").describe(Looked);
+    const described = comptime @import("../../sdk/plugin/shape_wire.zig").describe(Looked);
     const wanted: wire.Result = .{
         .ptr = @intCast(@intFromPtr(described.ptr)),
         .len = described.len,
@@ -81,8 +81,8 @@ pub fn render(
     return sketch.drawn(out.written());
 }
 
-const Looking = @import("../context.zig").View;
-const Laid = @import("../operation/json.zig").Laid;
+const Looking = @import("../../sdk/context.zig").View;
+const Laid = @import("../../sdk/operation/json.zig").Laid;
 
 /// `Looking` as an installed plugin's module is handed it: an editor's value read where it
 /// lies, with what it reads as when it is kept as text holding JSON.
@@ -166,7 +166,7 @@ fn looked_up(
     }
 
     const told = guest.take(result);
-    defer @import("guest_memory.zig").heap.free(told);
+    defer @import("../../sdk/plugin/guest_memory.zig").heap.free(told);
 
     if (told.len == 0) {
         return null;

@@ -12,8 +12,8 @@ const model_app = @import("../../model/app.zig");
 const sdk = @import("../../sdk.zig");
 const site_dimensions = @import("../../operations/dimensions.zig");
 const plugin_context = @import("../../sdk/plugin/context.zig");
-const views = @import("../../sdk/plugin/views.zig");
-const field_kinds = @import("../../sdk/plugin/field_kind_define.zig");
+const views = @import("../../publr/plugin/views.zig");
+const field_kinds = @import("../../publr/plugin/field_kind_define.zig");
 
 const Request = admin.Request;
 const Response = admin.Response;

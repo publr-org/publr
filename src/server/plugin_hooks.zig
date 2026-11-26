@@ -2,7 +2,7 @@
 //! it runs (`before_command`), act once `serve` listens (`serving`), and answer commands the
 //! CLI next to a running server sends it (`operator_commands`, behind the operator key).
 const std = @import("std");
-const plugin_define = @import("../sdk/plugin/define.zig");
+const plugin_define = @import("../publr/plugin/define.zig");
 const http = @import("../lib/http.zig");
 const registry = @import("registry.zig");
 const operator = @import("operator.zig");

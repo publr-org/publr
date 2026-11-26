@@ -5,7 +5,7 @@
 //! document) and for the outer edge; `laid_typed.zig` builds from core's own structs.
 const std = @import("std");
 const shape_wire = @import("../../sdk/plugin/shape_wire.zig");
-const free_value = @import("../../sdk/free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const described_module = @import("described.zig");
 const laid_json = @import("laid_json.zig");
 

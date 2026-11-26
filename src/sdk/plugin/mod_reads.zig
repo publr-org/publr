@@ -11,7 +11,7 @@
 //! core's own JSON.
 const std = @import("std");
 const json_form = @import("../operation/json.zig");
-const id_map = @import("id_map.zig");
+const id_map = @import("../../publr/plugin/id_map.zig");
 const sdk = @import("../../sdk.zig");
 const record = @import("../../operations/record.zig");
 

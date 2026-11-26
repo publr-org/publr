@@ -3,7 +3,7 @@
 //! alerts. Kept outside the write that rolled back, like the Error log entry, and heard by
 //! `on` hooks only. Refusals a caller is told about raise nothing.
 const std = @import("std");
-const event = @import("plugin/hook_define.zig").event;
+const event = @import("../publr/plugin/hook_define.zig").event;
 const auth_events = @import("auth_events.zig");
 
 pub const Failed = event(.{

@@ -15,7 +15,7 @@ pub const server = @import("server.zig");
 pub const registry = @import("server/registry.zig");
 pub const plugin = @import("sdk/plugin.zig");
 /// What a plugin is called and which version it is: `publr.plugin.define(manifest, options)`.
-pub const Manifest = @import("sdk/plugin/define.zig").Manifest;
+pub const Manifest = @import("publr/plugin/define.zig").Manifest;
 /// What a plugin's code runs with, and how it fails.
 pub const Ctx = plugin.PluginCtx;
 pub const Error = sdk.Error;
@@ -25,7 +25,7 @@ pub const Host = @import("sdk/plugin/host.zig").Host;
 pub const Database = @import("sdk/plugin/host.zig").Database;
 /// `publr.operation.define(In, Out, .{ .name, .kind, .authorize, ... })`.
 pub const operation = struct {
-    pub const define = @import("sdk/plugin/operation_define.zig").define;
+    pub const define = @import("publr/plugin/operation_define.zig").define;
     pub const Kind = @import("publr/operation.zig").Kind;
     /// A way an operation fails beyond core's errors, listed in its `failures`.
     pub const Failure = @import("publr/operation.zig").Failure;
@@ -46,15 +46,15 @@ pub const operation = struct {
 };
 /// `publr.record.define(Document, .{ .name, .internal, ... })` and a reference to any record.
 pub const record = struct {
-    pub const define = @import("sdk/plugin/record_define.zig").define;
-    pub const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
+    pub const define = @import("publr/plugin/record_define.zig").define;
+    pub const AnyRef = @import("publr/plugin/record_define.zig").AnyRef;
     /// A collection's reads by its stored name, for code that names it rather than its handle:
     /// `publr.record.Store(Line, "line", true).find(ctx, "order", id, 200, 0)`.
-    pub const Store = @import("sdk/plugin/record_define.zig").Store;
+    pub const Store = @import("publr/plugin/record_define.zig").Store;
     /// One transition of a record's flow: `[_]publr.record.Transition(Status){ ... }`.
-    pub const Transition = @import("sdk/plugin/record_flow.zig").Transition;
+    pub const Transition = @import("publr/plugin/record_flow.zig").Transition;
     /// Every status but the transition's target and the trash: `.from = publr.record.any`.
-    pub const any = @import("sdk/plugin/record_flow.zig").any;
+    pub const any = @import("publr/plugin/record_flow.zig").any;
     /// What a hook on `X.any_transition` hears: `.{ .record, .transition, .from, .to }`.
     pub const Transitioned = @import("publr/model/flow.zig").Transitioned;
 };
@@ -65,9 +65,9 @@ pub const record = struct {
 /// `publr.dimension.Value` is one value its list answers; a family's list answers `Member`s,
 /// its `.shown` `Shown`s.
 pub const dimension = struct {
-    pub const define = @import("sdk/plugin/dimensions.zig").define;
-    pub const field_option = @import("sdk/plugin/dimensions.zig").field_option;
-    pub const read_option = @import("sdk/plugin/dimensions.zig").read_option;
+    pub const define = @import("publr/plugin/dimensions.zig").define;
+    pub const field_option = @import("publr/plugin/dimensions.zig").field_option;
+    pub const read_option = @import("publr/plugin/dimensions.zig").read_option;
     pub const Holds = @import("publr/model/dimension.zig").Holds;
     /// One dimension at one code, `language` at `pl`, and a value's key read:
     /// `publr.dimension.split("title@language=pl")`, `publr.dimension.parse(key.combination)`.
@@ -79,61 +79,61 @@ pub const dimension = struct {
     pub const varies_by = @import("publr/model/dimension.zig").varies_by;
     pub const valid_code = @import("publr/model/dimension.zig").valid_code;
     pub const family_of = @import("publr/model/dimension.zig").family_of;
-    pub const Dimension = @import("sdk/plugin/dimensions.zig").Dimension;
-    pub const Value = @import("sdk/plugin/dimensions.zig").Value;
-    pub const Member = @import("sdk/plugin/dimensions.zig").Member;
-    pub const Shown = @import("sdk/plugin/dimensions.zig").Shown;
+    pub const Dimension = @import("publr/plugin/dimensions.zig").Dimension;
+    pub const Value = @import("publr/plugin/dimensions.zig").Value;
+    pub const Member = @import("publr/plugin/dimensions.zig").Member;
+    pub const Shown = @import("publr/plugin/dimensions.zig").Shown;
 };
 
 /// `publr.hook.request(run)` in `.hooks`: a page request before it is drawn.
 pub const hook = struct {
-    pub const request = @import("sdk/plugin/hook_define.zig").request;
+    pub const request = @import("publr/plugin/hook_define.zig").request;
     /// `publr.hook.about("shop.product", publr.after(publr.operations.record.List, run))`:
     /// the hook hears only calls that name that content type.
-    pub const about = @import("sdk/plugin/hook_define.zig").about;
+    pub const about = @import("publr/plugin/hook_define.zig").about;
 };
 pub const PageRequest = @import("sdk/page_request.zig").PageRequest;
 pub const Answered = @import("sdk/page_request.zig").Answered;
 
 pub const taxonomy = struct {
-    pub const define = @import("sdk/plugin/taxonomy_define.zig").define;
+    pub const define = @import("publr/plugin/taxonomy_define.zig").define;
     pub const Registration = @import("publr/model/taxonomy.zig").Registration;
 };
 /// GROQ queries with `$names` bound from a struct: `publr.query.prepare(text, .{})`.
 pub const query = struct {
-    pub const prepare = @import("sdk/plugin/query_define.zig").prepare;
+    pub const prepare = @import("publr/plugin/query_define.zig").prepare;
 };
 /// Changes or refuses an operation's input inside its write: `publr.before(Sign, refuse_links)`.
-pub const before = @import("sdk/plugin/hook_define.zig").before;
+pub const before = @import("publr/plugin/hook_define.zig").before;
 /// Runs inside the write after an operation or an event; may refuse, rolling it back.
-pub const after = @import("sdk/plugin/hook_define.zig").after;
+pub const after = @import("publr/plugin/hook_define.zig").after;
 /// Runs from the queue once the write committed, with the operation's answer or the event's
 /// payload: `publr.on(Orders.place, send_confirmation)`.
-pub const on = @import("sdk/plugin/hook_define.zig").on;
+pub const on = @import("publr/plugin/hook_define.zig").on;
 /// A menu item in the admin: `.{ .name, .label = publr.t("Orders"), .icon, .record, .parent }`.
-pub const MenuItem = @import("sdk/plugin/menu_define.zig").MenuItem;
+pub const MenuItem = @import("publr/plugin/menu_define.zig").MenuItem;
 /// An icon of a plugin's own: `.{ .name = "bag", .svg = @embedFile("icons/bag.svg") }`.
-pub const Icon = @import("sdk/plugin/menu_define.zig").Icon;
+pub const Icon = @import("publr/plugin/menu_define.zig").Icon;
 /// JS's `String` for plugins: `publr.text.starts_with(name, "admin")`,
-/// `publr.text.upper(ctx, name)`. See `sdk/plugin/text.zig`.
-pub const text = @import("sdk/plugin/text.zig");
+/// `publr.text.upper(ctx, name)`. See `publr/plugin/text.zig`.
+pub const text = @import("publr/plugin/text.zig");
 /// Text a person reads, written where it is declared and translated where it is shown.
-pub const t = @import("sdk/plugin/menu_define.zig").t;
+pub const t = @import("publr/plugin/menu_define.zig").t;
 /// Changes the value applied under a name, wherever its owner applies it (`ctx.mod`):
 /// `publr.modify("variant.title", title)`, `*` for one part (`*.title`).
-pub const modify = @import("sdk/plugin/hook_define.zig").modify;
+pub const modify = @import("publr/plugin/hook_define.zig").modify;
 /// A batch modifier: `publr.modify_all("orders.charge", price_all)`, `fn (ctx: *publr.Ctx,
 /// charges: []Charge) publr.Error!void`, called once with every value applied.
-pub const modify_all = @import("sdk/plugin/hook_define.zig").modify_all;
+pub const modify_all = @import("publr/plugin/hook_define.zig").modify_all;
 /// A record's title as core applies it, `<type>.title`: `.id`, the record's fields typed
 /// (`.record`), and the `.title` to change.
-pub const Title = @import("sdk/plugin/modify_define.zig").Title;
+pub const Title = @import("publr/plugin/modify_define.zig").Title;
 /// A computed field as its modifiers take it: `publr.modify("<record>.<field>", run)` with
 /// `fn (ctx: *publr.Ctx, value: *publr.Computed(Doc, Field)) publr.Error!void`.
-pub const Computed = @import("sdk/plugin/record_computed.zig").Computed;
+pub const Computed = @import("publr/plugin/record_computed.zig").Computed;
 /// What a `<type>.<field>.help` modifier takes: the help under one field of a record in the
 /// editor, asked again as its values change; change `help`.
-pub const FieldHelp = @import("sdk/plugin/modify_define.zig").FieldHelp;
+pub const FieldHelp = @import("publr/plugin/modify_define.zig").FieldHelp;
 /// What a `<type>.markers` modifier takes: one field of a record in the editor, with the
 /// markers beside its label so far; add yours to `markers`.
 pub const FieldMarkers = struct {
@@ -182,40 +182,40 @@ pub const errors = struct {
 /// Something that happens that is not a call: `publr.event.define(.{ .name, .payload })`,
 /// emitted with `ctx.emit(Event, payload)`.
 pub const event = struct {
-    pub const define = @import("sdk/plugin/hook_define.zig").event;
+    pub const define = @import("publr/plugin/hook_define.zig").event;
 };
 /// Another plugin's operations, records and events, with only what this plugin uses.
-pub const remote = @import("sdk/plugin/hook_define.zig").remote;
+pub const remote = @import("publr/plugin/hook_define.zig").remote;
 /// A secret a plugin declares in its `.secrets` struct: it never holds the value.
 pub const Secret = struct {};
 /// A field kind a plugin brings: `publr.field.kind(Value, .{ .name, .validate })`.
 /// A plugin's own `.register_fields` group on an account, as its struct:
 /// `publr.fields.get(ctx, Profile.Fields, user)`, `publr.fields.save(ctx, Profile.Fields,
 /// user, values)`, compiled in or installed.
-pub const fields = @import("sdk/plugin/fields_api.zig");
+pub const fields = @import("publr/plugin/fields_api.zig");
 /// What a `.register_location_rules` entry's `matches` is given: the account or file being
 /// edited, and the rule, compared with `rule.compare(value)`.
 pub const location = struct {
     pub const Target = @import("publr/model/field_group.zig").Target;
     pub const Operator = @import("publr/model/conditions.zig").Operator;
-    pub const Rule = @import("sdk/plugin/location_rule_define.zig").Rule;
+    pub const Rule = @import("publr/plugin/location_rule_define.zig").Rule;
 };
 pub const field = struct {
-    pub const kind = @import("sdk/plugin/field_kind_define.zig").kind;
+    pub const kind = @import("publr/plugin/field_kind_define.zig").kind;
 };
 /// Queued work: `publr.job.define(In, .{ .name, .run })` for `ctx.enqueue`,
 /// `publr.job.define_recurring(.{ .name, .run, .every, .at })` for what repeats.
 pub const job = struct {
-    pub const define = @import("sdk/plugin/job_define.zig").define;
-    pub const define_recurring = @import("sdk/plugin/job_define.zig").define_recurring;
+    pub const define = @import("publr/plugin/job_define.zig").define;
+    pub const define_recurring = @import("publr/plugin/job_define.zig").define_recurring;
 };
 /// What another server sends: `publr.webhook.define(Event, .{ .name, .secret, .signature,
 /// .run })` at `/_webhooks/<plugin>.<name>`, listed in `.webhooks`.
 pub const webhook = struct {
-    pub const define = @import("sdk/plugin/webhook_define.zig").define;
+    pub const define = @import("publr/plugin/webhook_define.zig").define;
     pub const Signature = @import("publr/model/sandboxed_plugin.zig").Signature;
     pub const DeliveryId = @import("publr/model/sandboxed_plugin.zig").DeliveryId;
-    pub const Delivery = @import("sdk/plugin/webhook_define.zig").Delivery;
+    pub const Delivery = @import("publr/plugin/webhook_define.zig").Delivery;
 };
 /// What queued work (a job) runs with: every call `Ctx` has, and `fetch`, queued work's
 /// alone. Record handles and queries take either.
@@ -224,18 +224,18 @@ pub const QueueCtx = @import("sdk/plugin/queue.zig").Queue(Ctx);
 /// short time, and `log`; nothing else.
 pub const ExchangeCtx = @import("sdk/provider.zig").ExchangeCtx;
 /// A moment, as a `datetime` field holds it.
-pub const Time = @import("sdk/plugin/words.zig").Time;
+pub const Time = @import("publr/plugin/words.zig").Time;
 /// A day on the calendar (`time.local_date(zone)`).
 pub const Date = @import("publr/model/calendar.zig").Date;
 /// The site's time zone, as `ctx.time_zone()` answers it.
-pub const TimeZone = @import("sdk/plugin/words.zig").TimeZone;
+pub const TimeZone = @import("publr/plugin/words.zig").TimeZone;
 /// An exact number with `places` decimal places, as a `decimal` field holds it:
 /// `publr.Decimal(3)` keeps `1.25` kg as 1250 units, never a binary fraction.
-pub const Decimal = @import("sdk/plugin/decimal.zig").Decimal;
+pub const Decimal = @import("publr/plugin/decimal.zig").Decimal;
 /// An operation on its way out: `.deprecated = .{ .since = "0.4.0", .instead = "x.y" }`.
 pub const Deprecated = @import("publr/operation.zig").Deprecated;
 /// What `.validate` fills: `problems.add(.page, "Must start with /")`.
-pub const Problems = @import("sdk/plugin/operation_define.zig").Problems;
+pub const Problems = @import("publr/plugin/operation_define.zig").Problems;
 /// Ready answers to who may call an operation.
 pub const authorize = struct {
     const Answer = @import("publr/authorize.zig").Answer;
@@ -253,7 +253,7 @@ pub const authorize = struct {
 };
 /// A plugin's page from its own PTSX view, the same HTML either way it runs:
 /// `publr.views.render(ctx, in.base, publr.views.all.SamplerLog, props)`.
-pub const views = @import("sdk/plugin/views.zig");
+pub const views = @import("publr/plugin/views.zig");
 /// A named set of operations providers implement: `publr.contract.define(.{ .name,
 /// .operations, .optional, .component })`.
 pub const contract = struct {
@@ -267,26 +267,26 @@ pub const published = @import("sdk/published.zig");
 pub const providers = @import("sdk/contract.zig").providers;
 /// A record's field naming one provider of a contract: `method: publr.ProviderRef(Method)`.
 /// `ref.provider(ctx)` is the provider while it is registered and on.
-pub const ProviderRef = @import("sdk/provider_ref.zig").ProviderRef;
+pub const ProviderRef = @import("publr/provider_ref.zig").ProviderRef;
 /// JSON as Publr's wire reads and writes it: `publr.json.parse(Line, ctx.arena(), text)` and
 /// `publr.json.stringify(ctx.arena(), value)`, as `std.json` does, at a cost close to the bytes.
-pub const json = @import("sdk/plugin/json_api.zig");
+pub const json = @import("publr/plugin/json_api.zig");
 /// Money: whole minor units by currency, as a `money` field holds it and as operations pass
 /// it: `try publr.Money.of(ctx.arena(), "PLN", 12300)`, `price.get("PLN")`. A plain list of
 /// amounts, handed over as it lies; JSON, where Publr keeps or sends it, is `{ "PLN": 12300 }`.
-pub const Money = @import("sdk/money.zig").Money;
+pub const Money = @import("publr/money.zig").Money;
 /// A value whose shape comes with the data, read where it lies: `value.get("title")`,
 /// `value.at(0)`, `value.text()`; written with `publr.value.Builder`, or from a struct with
 /// `publr.sdk.operation.Json.of(arena, value)`.
-pub const Value = @import("sdk/free_value.zig").Value;
+pub const Value = @import("publr/free_value.zig").Value;
 /// A plugin's own collections, made with `init(ctx)` and growing in the memory they were made
 /// in whatever is open when they grow: `publr.List(T)`, `publr.IdMap(V)` (keyed by text that
 /// is mostly ids, hashed in 64-bit steps) and `publr.IdList(V)` (one that keeps its keys in
 /// the order they were put).
-pub const List = @import("sdk/plugin/collections.zig").List;
-pub const IdMap = @import("sdk/plugin/collections.zig").IdMap;
-pub const IdList = @import("sdk/plugin/collections.zig").IdList;
-pub const id_map = @import("sdk/plugin/id_map.zig");
+pub const List = @import("publr/plugin/collections.zig").List;
+pub const IdMap = @import("publr/plugin/collections.zig").IdMap;
+pub const IdList = @import("publr/plugin/collections.zig").IdList;
+pub const id_map = @import("publr/plugin/id_map.zig");
 /// Publr's REST API as its clients read it, for code calling another Publr:
 /// `publr.api_client.path(arena, "device.redeem")`,
 /// `publr.api_client.result(Out, arena, body)`, `publr.api_client.refusal(arena, body)`. One
@@ -294,16 +294,16 @@ pub const id_map = @import("sdk/plugin/id_map.zig");
 pub const api_client = @import("publr_api");
 /// Every page of an operation that answers a page at a time (`after` in, `next` out), one
 /// held at a time: `var roles = publr.pages(ctx, Operation, .{});`, `while (try roles.next())`.
-pub const pages = @import("sdk/plugin/pages.zig").pages;
-pub const Pages = @import("sdk/plugin/pages.zig").Pages;
+pub const pages = @import("publr/plugin/pages.zig").pages;
+pub const Pages = @import("publr/plugin/pages.zig").Pages;
 pub const value = struct {
-    pub const Builder = @import("sdk/free_builder.zig").Builder;
-    pub const of = @import("sdk/free_typed.zig").of;
-    pub const as = @import("sdk/free_typed.zig").as;
+    pub const Builder = @import("publr/free_builder.zig").Builder;
+    pub const of = @import("publr/free_typed.zig").of;
+    pub const as = @import("publr/free_typed.zig").as;
 };
 /// A field naming a person's account, kept as its id (a `user` field): `owner: publr.Account`.
 /// `ctx.caller().account()` is the signed-in person's.
-pub const Account = @import("sdk/account_ref.zig").Account;
+pub const Account = @import("publr/account_ref.zig").Account;
 /// Roles as plugins read them: `publr.role.permits(&role, "record.save")`, `grants_max`,
 /// `settings_grant`, `owner_core`, and the `Declared` shape `.roles` takes.
 pub const role = @import("publr/model/role.zig");
@@ -318,7 +318,7 @@ pub const environment = @import("publr/environment.zig");
 /// .reasons = Reason })`, listed in `define` as `.ledger`, used as `Ledger.transfer(ctx, ...)`;
 /// reads as `publr.ledger.balance(ctx, account)` and the rest.
 pub const ledger = struct {
-    const ledger_define = @import("sdk/plugin/ledger_define.zig");
+    const ledger_define = @import("publr/plugin/ledger_define.zig");
 
     pub const define = ledger_define.define;
     pub const Kind = @import("publr/model/ledger.zig").Kind;

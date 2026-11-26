@@ -3,7 +3,7 @@
 //! waits on. It holds the plugin's context, compiled in or installed, and hands each call on.
 const std = @import("std");
 const http_operations = @import("../../operations/http.zig");
-const words = @import("words.zig");
+const words = @import("../../publr/plugin/words.zig");
 
 pub fn Queue(comptime Base: type) type {
     return struct {

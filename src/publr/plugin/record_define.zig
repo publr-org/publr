@@ -3,8 +3,8 @@
 //! internal records are one list (`.records`); the type says which it is. Its words are its
 //! doc comments: the struct's `///` is the type's name and description, each field's its
 //! label and help.
-const queue = @import("queue.zig");
-const guest = @import("guest.zig");
+const queue = @import("../../sdk/plugin/queue.zig");
+const guest = @import("../../sdk/plugin/guest.zig");
 const std = @import("std");
 const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
@@ -14,9 +14,9 @@ const internal_operations = @import("../../operations/internal.zig");
 const plugin_define = @import("define.zig");
 const words = @import("words.zig");
 const conditions = @import("../../model/conditions.zig");
-const record_menu = @import("record_menu.zig");
-const remote_fields = @import("remote_fields.zig");
-const rows_module = @import("rows.zig");
+const record_menu = @import("../../sdk/plugin/record_menu.zig");
+const remote_fields = @import("../../sdk/plugin/remote_fields.zig");
+const rows_module = @import("../../sdk/plugin/rows.zig");
 
 pub const Scope = enum { project, app };
 
@@ -190,8 +190,8 @@ const record_flow = @import("record_flow.zig");
 const flow_model = @import("../../model/flow.zig");
 const status_module = @import("../../model/status.zig");
 const record_operations = @import("../../operations/record.zig");
-const mod_reads = @import("mod_reads.zig");
-const PluginCtx = @import("context.zig").PluginCtx;
+const mod_reads = @import("../../sdk/plugin/mod_reads.zig");
+const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const sdk = @import("../../sdk.zig");
 
 /// What one field's declaration may take to evaluate: its overrides, the parts of its options

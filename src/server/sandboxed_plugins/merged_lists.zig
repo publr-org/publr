@@ -1,7 +1,7 @@
 //! The lists of a merge (`merged.zig`): the written list laid over the kept one item by
 //! item, by each item's `id`, or, for a keyed list, by each pair's key.
 const std = @import("std");
-const id_map = @import("../../sdk/plugin/id_map.zig");
+const id_map = @import("../../publr/plugin/id_map.zig");
 const given_module = @import("given.zig");
 const laid_module = @import("laid.zig");
 const merged = @import("merged.zig");

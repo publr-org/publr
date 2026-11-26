@@ -8,13 +8,13 @@
 //! `.code_only = true` keeps it out of the type builder: only the plugin's code puts it on a
 //! type, in a group it places on another plugin's records (a product's weight).
 const std = @import("std");
-const Json = @import("../operation.zig").Json;
+const Json = @import("../../sdk/operation.zig").Json;
 const kinds = @import("../../model/kinds.zig");
 const field_model = @import("../../model/field.zig");
 const plugin_define = @import("define.zig");
 const operation_define = @import("operation_define.zig");
 const sdk = @import("../../sdk.zig");
-const plugin_context = @import("context.zig");
+const plugin_context = @import("../../sdk/plugin/context.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 
 const option_names = [_][]const u8{ "name", "validate", "text", "editor", "icon", "code_only" };
@@ -55,7 +55,7 @@ pub fn described(
             "kind " ++ id ++ ": " ++ @typeName(Value) ++ " needs a `///` comment: its name, " ++
             "then what it holds");
         const options = Definition.given;
-        const native = plugin_context.Mode.native == @import("guest.zig").mode;
+        const native = plugin_context.Mode.native == @import("../../sdk/plugin/guest.zig").mode;
         const texted = @hasField(@TypeOf(options), "text") and native;
         const edited = @hasField(@TypeOf(options), "editor") and native;
 

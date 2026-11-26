@@ -2,7 +2,7 @@
 //! generated at build time from the plugin's declarations, read by the host before anything
 //! runs. One shape for both, so they cannot drift.
 const std = @import("std");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
@@ -74,9 +74,9 @@ pub fn of(comptime Plugin: type) Manifest {
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
             .user_types = contract.user_types_of(Plugin),
-            .statuses = @import("record_flow.zig").registered_of(Plugin),
+            .statuses = @import("../../publr/plugin/record_flow.zig").registered_of(Plugin),
             .internal_records = plugin_define.get(Plugin, "internal_records"),
-            .ledger = @import("ledger_define.zig").declared_of(Plugin),
+            .ledger = @import("../../publr/plugin/ledger_define.zig").declared_of(Plugin),
             .remotes = @import("remote_contract.zig").uses_of(Plugin),
             .events = @import("remote_contract.zig").events_of(Plugin),
             .compatible_with = plugin_define.get(Plugin, "compatible_with"),
@@ -84,8 +84,8 @@ pub fn of(comptime Plugin: type) Manifest {
             .providers = @import("../contract.zig").registered_of(Plugin),
             .contracts = @import("../contract.zig").owned_of(Plugin),
             .pages = pages_of(Plugin),
-            .menu = @import("menu_define.zig").entries_of(Plugin),
-            .icons = @import("menu_define.zig").icons_of(Plugin),
+            .menu = @import("../../publr/plugin/menu_define.zig").entries_of(Plugin),
+            .icons = @import("../../publr/plugin/menu_define.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
             .columns = columns_of(Plugin),
             .row_actions = row_actions_of(Plugin),
@@ -93,7 +93,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .about = Plugin.settings_text,
             .left_out = runtime.left_out(Plugin),
             .queries = @import("prepared_queries.zig").of(docs_of(Plugin)),
-            .dimensions = @import("dimensions.zig").declared_of(Plugin),
+            .dimensions = @import("../../publr/plugin/dimensions.zig").declared_of(Plugin),
             .warnings = if (@hasDecl(docs_of(Plugin), "warnings"))
                 &docs_of(Plugin).warnings
             else
@@ -174,7 +174,7 @@ fn names_of(comptime given: anytype) []const []const u8 {
 /// Its field kinds made with `publr.field.kind`: the host runs their `validate` and `text`.
 fn field_kinds_of(comptime Plugin: type) []const sandboxed_plugin.FieldKind {
     comptime {
-        const field_kind_define = @import("field_kind_define.zig");
+        const field_kind_define = @import("../../publr/plugin/field_kind_define.zig");
         var list: []const sandboxed_plugin.FieldKind = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
@@ -198,7 +198,7 @@ fn location_rules_of(comptime Plugin: type) []const sandboxed_plugin.LocationRul
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (@import("location_rule_define.zig").given_of(Plugin)) |given| {
+        for (@import("../../publr/plugin/location_rule_define.zig").given_of(Plugin)) |given| {
             list = list ++ &[_]sandboxed_plugin.LocationRule{.{
                 .name = given.name,
                 .label = given.label,
@@ -729,7 +729,7 @@ fn operation_types(comptime Plugin: type) []const type {
 test "a plugin's manifest names its operation, fields, hook and record" {
     const sdk = @import("../../sdk.zig");
     const PluginCtx = @import("context.zig").PluginCtx;
-    const hook_define = @import("hook_define.zig");
+    const hook_define = @import("../../publr/plugin/hook_define.zig");
     const Greeting = struct {
         note: []const u8,
     };
@@ -751,7 +751,7 @@ test "a plugin's manifest names its operation, fields, hook and record" {
         .{ @typeName(Greeting) ++ ".note", "Note" },
         .{ "hook:0", "Says when someone was greeted" },
     });
-    const Greet = @import("operation_define.zig").define(In, Out, .{
+    const Greet = @import("../../publr/plugin/operation_define.zig").define(In, Out, .{
         .name = "greet",
         .kind = .write,
         .deprecated = .{
@@ -772,7 +772,7 @@ test "a plugin's manifest names its operation, fields, hook and record" {
             .name = "greeter",
             .version = "0.1.0",
         }, .{
-            .records = &.{@import("record_define.zig").define(Greeting, .{
+            .records = &.{@import("../../publr/plugin/record_define.zig").define(Greeting, .{
                 .name = "greeter.greeting",
             })},
             .permissions = &.{.{

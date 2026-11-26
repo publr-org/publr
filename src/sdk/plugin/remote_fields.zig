@@ -3,9 +3,9 @@
 //! against the other plugin's declared fields (`plugin_contracts.holds_kind`); an internal
 //! record's own fields get their kinds here too.
 const std = @import("std");
-const Money = @import("../money.zig").Money;
+const Money = @import("../../publr/money.zig").Money;
 const plugin_contracts = @import("../../model/plugin_contracts.zig");
-const words = @import("words.zig");
+const words = @import("../../publr/plugin/words.zig");
 
 const Holds = plugin_contracts.Holds;
 const UsedField = plugin_contracts.UsedField;
@@ -178,15 +178,15 @@ pub fn kind_of(comptime Type: type) ?[]const u8 {
             return "decimal";
         }
 
-        if (@import("../provider_ref.zig").is_provider_ref(Type)) {
-            return @import("../provider_ref.zig").kind_id;
+        if (@import("../../publr/provider_ref.zig").is_provider_ref(Type)) {
+            return @import("../../publr/provider_ref.zig").kind_id;
         }
 
-        if (@import("../account_ref.zig").is_account(Type)) {
-            return @import("../account_ref.zig").kind_id;
+        if (@import("../../publr/account_ref.zig").is_account(Type)) {
+            return @import("../../publr/account_ref.zig").kind_id;
         }
 
-        if (@import("ledger_define.zig").ref_kind(Type)) |kind| {
+        if (@import("../../publr/plugin/ledger_define.zig").ref_kind(Type)) |kind| {
             return kind;
         }
 

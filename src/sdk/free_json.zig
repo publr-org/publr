@@ -2,8 +2,8 @@
 //! Publr keeps or sends JSON: storage, the log, the outer edge. A plugin's module never needs
 //! this file to talk to Publr.
 const std = @import("std");
-const free_value = @import("free_value.zig");
-const free_builder = @import("free_builder.zig");
+const free_value = @import("../publr/free_value.zig");
+const free_builder = @import("../publr/free_builder.zig");
 
 const Value = free_value.Value;
 const Builder = free_builder.Builder;

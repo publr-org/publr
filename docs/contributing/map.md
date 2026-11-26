@@ -245,6 +245,7 @@ The directory tells you what a file is, what it may import, and how it is tested
 | operation | `operations/` | orchestration: grant, store, model, events; never SQL | `sdk/`, `store/`, `model/` | scenarios through `dispatch` |
 | adapter | `adapters/{cli,rest,admin,apps}/` | outside format in, operation call, outside format out; never the store | `sdk/`, operations | request in, response out |
 | engine | `template/` | the `.publr` template language: read into a tree, typed, rendered against a context the apps adapter supplies. No database, no HTTP | `std` | unit tests against a stand-in context |
+| public SDK | `publr/` (+ `publr/plugin/`) | what plugins and app middleware build on: the definers, money and values, events, contracts; core aliases it | `sdk/`, `model/`, `lib/` | unit tests |
 | pipeline | `sdk/` (+ `sdk/plugin/`) | dispatch, callers, grants, hooks, the plugin contract | `lib/`, `model/` | unit tests |
 | wiring | `server/` | starting up: open the database, the registry of everything, the route table, the project handle, `serve`, `build`, wasm | everything | the http flow tests |
 | library | `lib/{db,http,auth}/` | mechanisms that know nothing about content: SQLite, an HTTP server, password hashing | each other, `std` | unit tests |
@@ -561,25 +562,25 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/shape_said.zig` | 233 | How each kind of type is said in a description |
 | `sdk/plugin/shape_default.zig` | 212 | A field's default as JSON, said in the description at build time |
 | `sdk/plugin/shape_parts.zig` | 205 | A value's unions beside its block: listed by the guest for what it hands over, built from what the host laid out |
-| `sdk/free_value.zig` | 396 | A value whose shape comes with the data, in bytes read where they lie: its getters, and the check that it is well made |
-| `sdk/free_builder.zig` | 252 | Writes such a value part by part |
+| `publr/free_value.zig` | 396 | A value whose shape comes with the data, in bytes read where they lie: its getters, and the check that it is well made |
+| `publr/free_builder.zig` | 252 | Writes such a value part by part |
 | `sdk/free_json.zig` | 233 | Such a value to and from JSON, where Publr keeps or sends JSON |
-| `sdk/free_typed.zig` | 254 | A struct written as such a value, with no text in between |
-| `sdk/free_read.zig` | 225 | Such a value read as a struct |
+| `publr/free_typed.zig` | 254 | A struct written as such a value, with no text in between |
+| `publr/free_read.zig` | 225 | Such a value read as a struct |
 | `sdk/free_comptime.zig` | 244 | An example's JSON read into such a value at build time |
 | `sdk/operation/json.zig` | 301 | `operation.Json`: JSON text in Publr, bytes read where they lie in an installed plugin's module, one way to work with it in both |
 | `sdk/operation/lists.zig` | 330 | The rule that every list of an operation's input or answer holds a page (200) unless its struct's `limits` says fewer, checked as the operation runs; what answering a page at a time (`after` in, `next` out) is |
-| `sdk/money.zig` | 201 | `publr.Money`: a list of amounts by currency, handed over as it lies, `{ "PLN": 12300 }` in JSON |
+| `publr/money.zig` | 201 | `publr.Money`: a list of amounts by currency, handed over as it lies, `{ "PLN": 12300 }` in JSON |
 | `sdk/extended_laid.zig` | 179 | The fields plugins add to a list read's rows, as an installed plugin's module holds them |
 | `sdk/plugin/wire_json.zig` | 1479 | JSON at a cost close to its bytes, for what still crosses as JSON (`publr.json`) |
 | `sdk/plugin/read_memo.zig` | 177 | Reads one call made already, answered again until the plugin writes; a scope drops the ones it made |
-| `sdk/plugin/collections.zig` | 277 | `publr.List(T)`, `publr.IdMap(V)`, `publr.IdList(V)`: a plugin's own collections, made with `init(ctx)`, growing in the memory they were made in and telling what they hold |
-| `sdk/plugin/pages.zig` | 130 | `publr.pages`: every page of an operation that answers a page at a time, walked with one page held at once |
+| `publr/plugin/collections.zig` | 277 | `publr.List(T)`, `publr.IdMap(V)`, `publr.IdList(V)`: a plugin's own collections, made with `init(ctx)`, growing in the memory they were made in and telling what they hold |
+| `publr/plugin/pages.zig` | 130 | `publr.pages`: every page of an operation that answers a page at a time, walked with one page held at once |
 | `sdk/plugin/held_note.zig` | 49 | Where a collection tells what it holds: the plugins' memory compiled in, the host (`publr_held`) installed |
 | `sdk/plugin/rows.zig` | 328 | `Records.where`, `Records.all`: walks over internal records, a page held at a time, each row's memory given back at the next |
-| `sdk/plugin/record_computed.zig` | 196 | A record's computed fields: which fields, the batch modifier each brings under `computed.<record>.<field>`, `publr.Computed` |
+| `publr/plugin/record_computed.zig` | 196 | A record's computed fields: which fields, the batch modifier each brings under `computed.<record>.<field>`, `publr.Computed` |
 | `sdk/plugin/walks.zig` | 95 | The walks a plugin has open, given back with the work or scope they were opened in; `walks/native.zig` (145) and `walks/guest.zig` (180) for each mode |
-| `sdk/plugin/id_map.zig` | 141 | Maps keyed by text that is mostly ids, hashed in 64-bit steps (an installed plugin does 128-bit ones in software) |
+| `publr/plugin/id_map.zig` | 141 | Maps keyed by text that is mostly ids, hashed in 64-bit steps (an installed plugin does 128-bit ones in software) |
 | `sdk/plugin/mod_reads.zig` | 478 | What a modifier reads while it runs over a batch: a `get` noted per record type and read once for the batch, laid out as the record's struct (`Typed`); any other read noted and asked once per distinct input |
 | `sdk/plugin/mod_reads_laid.zig` | 147 | How an installed plugin keeps those reads: asked and answered as its own structs, told apart by the input's bytes |
 | `sdk/plugin/laid_key.zig` | 127 | A value's bytes as what a read is remembered by: read where it lies, nothing built |

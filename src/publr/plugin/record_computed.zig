@@ -8,7 +8,7 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const hook_define = @import("hook_define.zig");
-const PluginCtx = @import("context.zig").PluginCtx;
+const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 
 /// The first part of every name core works a computed field out under.
 pub const prefix = "computed";

@@ -109,7 +109,7 @@ const Post = struct {
     body: []const u8 = "",
     views: i64 = 0,
 };
-const posts = @import("../../sdk/plugin/record_define.zig").Store(Post, "post", false);
+const posts = @import("../../publr/plugin/record_define.zig").Store(Post, "post", false);
 
 test "a record's reads and writes: create, get, save a field, find one" {
     var harness: sdk.testing.Harness = undefined;
@@ -154,7 +154,7 @@ test "a record's reads and writes: create, get, save a field, find one" {
     });
     try std.testing.expectError(error.Conflict, posts.find_one(&ctx, "title", "Two"));
 
-    const pages = @import("../../sdk/plugin/record_define.zig").Store(Post, "page", false);
+    const pages = @import("../../publr/plugin/record_define.zig").Store(Post, "page", false);
     try std.testing.expectError(error.NotFound, pages.get(&ctx, first));
 }
 

@@ -18,7 +18,7 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const contract_module = @import("contract.zig");
-const event = @import("plugin/hook_define.zig").event;
+const event = @import("../publr/plugin/hook_define.zig").event;
 const delivery = @import("messaging/delivery.zig");
 
 pub const channel_len_max: u32 = 32;

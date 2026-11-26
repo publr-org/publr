@@ -5,14 +5,14 @@ const error_events = @import("sdk/error_events.zig");
 const store_settings = @import("store/settings.zig");
 /// Rate limits: the general one and an operation's own `.limit`.
 pub const limits = limits_module;
-const plugin_operations = @import("sdk/plugin/operation_define.zig");
+const plugin_operations = @import("publr/plugin/operation_define.zig");
 const registry_tables = @import("sdk/registry_tables.zig");
 const builtin = @import("builtin");
 const contract = @import("model/contract.zig");
-const AnyRef = @import("sdk/plugin/record_define.zig").AnyRef;
+const AnyRef = @import("publr/plugin/record_define.zig").AnyRef;
 const HostApi = @import("sdk/plugin/context.zig").HostApi;
 const applied = @import("server/sandboxed_plugins/applied.zig");
-const record_computed = @import("sdk/plugin/record_computed.zig");
+const record_computed = @import("publr/plugin/record_computed.zig");
 pub const trail = @import("sdk/trail.zig");
 pub const db = @import("lib/db.zig");
 
@@ -71,7 +71,7 @@ pub const Policy = authorize.Policy;
 pub const Event = hooks.Event;
 /// An app loaded from the folder, as the server started or the folder changed: core's own
 /// event, emitted outside any operation.
-pub const AppsLoaded = @import("sdk/plugin/hook_define.zig").event(.{
+pub const AppsLoaded = @import("publr/plugin/hook_define.zig").event(.{
     .name = "apps.loaded",
     .payload = struct {
         /// The app's name
@@ -3378,8 +3378,8 @@ test {
     _ = @import("sdk/hook_memory.zig");
     _ = @import("sdk/plugin_memory.zig");
     _ = @import("sdk/plugin_memory/work.zig");
-    _ = @import("sdk/plugin/decimal.zig");
-    _ = @import("sdk/provider_ref.zig");
+    _ = @import("publr/plugin/decimal.zig");
+    _ = @import("publr/provider_ref.zig");
     _ = @import("sdk/hook_runs.zig");
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
@@ -3392,9 +3392,9 @@ test {
     _ = @import("sdk/plugin/guest_memory/arena.zig");
     _ = @import("sdk/plugin/guest_memory/large.zig");
     _ = @import("sdk/plugin/guest_memory/heap.zig");
-    _ = @import("sdk/plugin/modify_define.zig");
+    _ = @import("publr/plugin/modify_define.zig");
     _ = @import("sdk/mods.zig");
-    _ = @import("sdk/plugin/json_api.zig");
+    _ = @import("publr/plugin/json_api.zig");
     _ = @import("sdk/plugin/shape_wire.zig");
     _ = @import("server/sandboxed_plugins/described.zig");
     _ = @import("server/sandboxed_plugins/given.zig");

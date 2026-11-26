@@ -6,7 +6,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const field_group = @import("../../model/field_group.zig");
 const conditions = @import("../../model/conditions.zig");
-const plugin_context = @import("context.zig");
+const plugin_context = @import("../../sdk/plugin/context.zig");
 
 pub const Target = field_group.Target;
 

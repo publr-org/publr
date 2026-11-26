@@ -318,9 +318,9 @@ test "every form a description says lays out from JSON and is written back the s
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const given_module = @import("given.zig");
-    const Money = @import("../../sdk/money.zig").Money;
+    const Money = @import("../../publr/money.zig").Money;
     const Free = @import("../../publr/operation/json.zig").Laid;
-    const Decimal = @import("../../sdk/plugin/decimal.zig").Decimal(3);
+    const Decimal = @import("../../publr/plugin/decimal.zig").Decimal(3);
     const Ref = struct {
         id: []const u8,
         missing: bool = false,

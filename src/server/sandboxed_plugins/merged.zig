@@ -17,7 +17,7 @@
 //! no text is written for them either.
 const std = @import("std");
 const free_json = @import("../../sdk/free_json.zig");
-const free_value = @import("../../sdk/free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const described_module = @import("described.zig");
 const given_module = @import("given.zig");
 const given_tree = @import("given_tree.zig");

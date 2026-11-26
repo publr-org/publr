@@ -82,7 +82,7 @@ test "a kept hook run's name goes there and back" {
 }
 
 const sdk = @import("../sdk.zig");
-const job_define = @import("plugin/job_define.zig");
+const job_define = @import("../publr/plugin/job_define.zig");
 
 /// The hooks the test below runs: probe's first fails twice then runs, its second always
 /// runs, other's always fails. Each counts its runs in a table, as the worker's State would

@@ -9,9 +9,9 @@
 //! gateway asked back). Listed in `.webhooks`, by built-in and installed plugins.
 const std = @import("std");
 const job_define = @import("job_define.zig");
-const queue = @import("queue.zig");
+const queue = @import("../../sdk/plugin/queue.zig");
 const deliveries = @import("../../store/webhook_deliveries.zig");
-const Error = @import("../operation.zig").Error;
+const Error = @import("../../sdk/operation.zig").Error;
 
 const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
 

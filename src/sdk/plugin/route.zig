@@ -2,7 +2,7 @@
 //! `/admin/<own>`, `/api/<own>` or `/auth/<own>`, where `<own>` is its name or one of its
 //! namespaces, so no two plugins, and no plugin and the core, answer the same path.
 const std = @import("std");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 pub const http = @import("../../lib/http.zig");
 
 pub const routes_max: u32 = 16;

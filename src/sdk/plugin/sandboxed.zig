@@ -2,7 +2,8 @@
 //! permissions it asks for and why (`http.fetch` with its domains), the limits it needs, the
 //! plugins it cannot work without. `manifest.zig` turns all of it into the manifest.
 const std = @import("std");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
+const field_kind_define = @import("../../publr/plugin/field_kind_define.zig");
 const sdk_operation = @import("../operation.zig");
 const hooks = @import("../hooks.zig");
 
@@ -75,7 +76,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             }};
         }
 
-        for (@import("location_rule_define.zig").given_of(Plugin)) |given| {
+        for (@import("../../publr/plugin/location_rule_define.zig").given_of(Plugin)) |given| {
             const Rule = struct {
                 pub const rule = given;
             };
@@ -92,7 +93,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             };
         }
 
-        for (@import("field_kind_define.zig").definitions_of(Plugin)) |Definition| {
+        for (field_kind_define.definitions_of(Plugin)) |Definition| {
             entries = entries ++ &[_]Entry{
                 .{
                     .stage = .kind_validate,
@@ -110,7 +111,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
         }
 
         // Each dimension's `.options` view, drawn for the field panel's frame.
-        for (@import("dimensions.zig").of(Plugin)) |declared| {
+        for (@import("../../publr/plugin/dimensions.zig").of(Plugin)) |declared| {
             const Dimension = struct {
                 pub const dimension = declared;
             };

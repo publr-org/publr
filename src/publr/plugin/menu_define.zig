@@ -8,7 +8,7 @@ const plugin_define = @import("define.zig");
 const record_define = @import("record_define.zig");
 const content_type = @import("../../model/content_type.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
-const Page = @import("admin_slots.zig").Page;
+const Page = @import("../../sdk/plugin/admin_slots.zig").Page;
 
 pub const MenuItem = struct {
     /// `[a-z][a-z0-9_]*`; others name it `<plugin>.<name>`.

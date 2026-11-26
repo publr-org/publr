@@ -35,7 +35,7 @@ pub const Units = struct {
 
         if (model.currency_scale(base) != null) {
             const written = registry.SDK.dispatch(&units.session.ctx, money.Text, .{
-                .amount = try @import("../../../sdk/money.zig").Money.of(arena, base, amount),
+                .amount = try @import("../../../publr/money.zig").Money.of(arena, base, amount),
             }) catch null;
 
             if (written) |found| {

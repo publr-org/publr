@@ -9,7 +9,7 @@ const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
-const taxonomy_define = @import("../../sdk/plugin/taxonomy_define.zig");
+const taxonomy_define = @import("../../publr/plugin/taxonomy_define.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;

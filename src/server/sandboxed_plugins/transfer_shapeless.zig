@@ -2,7 +2,7 @@
 //! to say: a value whose shape comes with the data, and a union.
 const std = @import("std");
 const free_json = @import("../../sdk/free_json.zig");
-const free_value = @import("../../sdk/free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const given_module = @import("given.zig");
 const laid_module = @import("laid.zig");
 const transfer = @import("transfer.zig");

@@ -285,7 +285,7 @@ pub fn set_closed(ctx: *Ctx, account: []const u8, closed: bool) Error!void {
 }
 
 /// A hold voided by its expiry, as its owner hears it.
-pub const Expired = @import("../../sdk/plugin/hook_define.zig").event(.{
+pub const Expired = @import("../../publr/plugin/hook_define.zig").event(.{
     .name = "ledger.expired",
     .payload = ExpiredPayload,
 });

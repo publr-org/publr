@@ -5,7 +5,7 @@ const role = @import("../model/role.zig");
 const trash = @import("trash.zig");
 const rows = @import("role/rows.zig");
 
-const event_define = @import("../sdk/plugin/hook_define.zig").event;
+const event_define = @import("../publr/plugin/hook_define.zig").event;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;

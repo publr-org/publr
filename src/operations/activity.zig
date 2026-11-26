@@ -620,7 +620,7 @@ fn core_hooks(comptime defined: []const type) [defined.len]type {
     }
 }
 
-const hook_define = @import("../sdk/plugin/hook_define.zig");
+const hook_define = @import("../publr/plugin/hook_define.zig");
 const changed_units = sdk.changed_units;
 
 fn keep_unit(ctx: *Ctx, operation: []const u8, unit: changed_units.Unit) void {

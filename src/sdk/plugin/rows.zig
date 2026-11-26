@@ -20,7 +20,7 @@ const sdk = @import("../../sdk.zig");
 const moved = @import("../moved.zig");
 const internal_operations = @import("../../operations/internal.zig");
 const internal_records = @import("../../store/internal_records.zig");
-const record_define = @import("record_define.zig");
+const record_define = @import("../../publr/plugin/record_define.zig");
 const walks = @import("walks.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
 

@@ -156,7 +156,7 @@ pub const Texts = struct {
     }
 };
 
-const Amounts = @import("../sdk/money.zig").Money;
+const Amounts = @import("../publr/money.zig").Money;
 
 const Shown = struct {
     amount: i64,

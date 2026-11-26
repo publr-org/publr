@@ -2,7 +2,7 @@
 //! values (`"Only {left} left"`), refusals whose status comes from the operation's `Fails:`,
 //! log lines with a level, and the call's time as `publr.Time`.
 const std = @import("std");
-const operation = @import("../operation.zig");
+const operation = @import("../../sdk/operation.zig");
 
 pub const Level = enum { info, warn, err };
 

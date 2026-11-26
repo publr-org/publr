@@ -245,7 +245,7 @@ test "a list lies over a list by each item's id, or item by item; money key by k
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const Money = @import("../../sdk/money.zig").Money;
+    const Money = @import("../../publr/money.zig").Money;
     const Owned = struct {
         methods: []const Method,
         tags: []const []const u8 = &.{},

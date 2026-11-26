@@ -264,7 +264,7 @@ test "an answer that is not the values of an apply is never read as them" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const Money = @import("../../sdk/money.zig").Money;
+    const Money = @import("../../publr/money.zig").Money;
     const Other = struct {
         other: u32,
     };

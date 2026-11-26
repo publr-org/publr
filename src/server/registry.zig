@@ -1,5 +1,5 @@
 const std = @import("std");
-const plugin_define = @import("../sdk/plugin/define.zig");
+const plugin_define = @import("../publr/plugin/define.zig");
 const sdk = @import("../sdk.zig");
 const db = @import("../lib/db.zig");
 const contract = @import("../sdk/plugin.zig");
@@ -285,7 +285,7 @@ pub const OwnedLedger = struct {
 
 /// Every compiled-in plugin's ledger.
 pub const native_ledgers: []const OwnedLedger = ledgers: {
-    const ledger_define = @import("../sdk/plugin/ledger_define.zig");
+    const ledger_define = @import("../publr/plugin/ledger_define.zig");
     var list: []const OwnedLedger = &.{};
 
     for (bound_plugins) |Plugin| {
@@ -583,7 +583,7 @@ pub fn with_kinds(
 }
 
 const model_sandboxed_plugin = @import("../model/sandboxed_plugin.zig");
-const field_kind_define = @import("../sdk/plugin/field_kind_define.zig");
+const field_kind_define = @import("../publr/plugin/field_kind_define.zig");
 /// The location rules compiled-in plugins bring (`loyalty.tier`).
 pub const location_rules = native_plugins.merged_location_rules;
 
@@ -609,7 +609,7 @@ pub fn all_location_rules(ctx: *const sdk.Ctx) error{OutOfMemory}![]const Plugin
 }
 
 const PluginRule = @import("../model/field_group.zig").PluginRule;
-const location_rule_define = @import("../sdk/plugin/location_rule_define.zig");
+const location_rule_define = @import("../publr/plugin/location_rule_define.zig");
 /// The columns compiled-in plugins add to lists they don't own.
 pub const columns = native_plugins.merged_columns;
 
@@ -673,7 +673,7 @@ pub fn taxonomy_registrations(ctx: *const sdk.Ctx) error{OutOfMemory}![]const Ta
     return list.items;
 }
 
-pub const TaxonomyRegistered = @import("../sdk/plugin/taxonomy_define.zig").Registered;
+pub const TaxonomyRegistered = @import("../publr/plugin/taxonomy_define.zig").Registered;
 
 /// Whether the plugin `name` runs here: compiled in, or installed and enabled.
 pub fn plugin_present(ctx: *const sdk.Ctx, name: []const u8) bool {

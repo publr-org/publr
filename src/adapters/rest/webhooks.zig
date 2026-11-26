@@ -11,7 +11,7 @@ const store = @import("../../store.zig");
 const secret = @import("../../operations/secret.zig");
 const identity = @import("identity.zig");
 const auth = @import("auth.zig");
-const webhook_define = @import("../../sdk/plugin/webhook_define.zig");
+const webhook_define = @import("../../publr/plugin/webhook_define.zig");
 const Project = @import("../../server/project.zig").Project;
 
 const Request = http.Request;

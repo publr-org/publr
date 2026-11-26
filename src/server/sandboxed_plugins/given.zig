@@ -5,7 +5,7 @@
 const std = @import("std");
 const wasm = @import("publr_wasm");
 const shape_wire = @import("../../sdk/plugin/shape_wire.zig");
-const free_value = @import("../../sdk/free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const described_module = @import("described.zig");
 const given_json = @import("given_json.zig");
 

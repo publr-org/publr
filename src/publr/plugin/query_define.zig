@@ -7,9 +7,9 @@
 //! The rest of the build check (syntax, field names, `$name` types against their use) can't
 //! run at comptime: `lib/groq`'s parser allocates, and an allocator's calls run only at
 //! run time.
-const queue = @import("queue.zig");
+const queue = @import("../../sdk/plugin/queue.zig");
 const groq = @import("../../lib/groq.zig");
-const guest = @import("guest.zig");
+const guest = @import("../../sdk/plugin/guest.zig");
 const std = @import("std");
 const listed_in = @import("define.zig").listed_in;
 const sdk = @import("../../sdk.zig");

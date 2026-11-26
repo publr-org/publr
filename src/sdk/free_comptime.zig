@@ -2,7 +2,7 @@
 //! an operation's example, written as JSON in its doc comment, as an installed plugin's
 //! module holds a `Json`. Nothing here runs in a plugin's module.
 const std = @import("std");
-const free_value = @import("free_value.zig");
+const free_value = @import("../publr/free_value.zig");
 
 const Kind = free_value.Kind;
 

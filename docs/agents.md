@@ -1590,4 +1590,4 @@ the project: `PUBLR_CACHE_DIR=$PWD/.publr/cache`.
   itself may change (only as a generic pull request).
 - `publr --help`, and `--help` on any namespace or command.
 - The SDK's source, as this release builds plugins against it: `publr plugin sdk --out
-  <folder>` writes it. Start at `publr.zig` and `sdk/plugin/`.
+  <folder>` writes it. Start at `publr.zig` and `publr/`.

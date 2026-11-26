@@ -4,7 +4,7 @@ const std = @import("std");
 const registry = @import("registry.zig");
 const sdk = @import("../sdk.zig");
 const state = @import("../sdk/plugin/state.zig");
-const plugin_define = @import("../sdk/plugin/define.zig");
+const plugin_define = @import("../publr/plugin/define.zig");
 
 const stateful = registry.stateful_plugins;
 

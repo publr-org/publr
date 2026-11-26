@@ -70,7 +70,7 @@ fn print_rules(comptime Operation: type, out: *std.Io.Writer) Error!void {
 
 /// The failures the operation declares beyond the core's errors, as REST names them.
 fn print_failures(comptime Operation: type, out: *std.Io.Writer) Error!void {
-    const failures = comptime @import("plugin/words.zig").failures_of(Operation);
+    const failures = comptime @import("../publr/plugin/words.zig").failures_of(Operation);
 
     comptime std.debug.assert(failures.len <= operation.problems_max);
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const plugin_define = @import("../../sdk/plugin/define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const project_operations = @import("../../operations/project.zig");

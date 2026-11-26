@@ -5,7 +5,7 @@ const sdk = @import("../sdk.zig");
 const store = @import("../store.zig");
 const model = @import("../model/user_type.zig");
 const user_types = @import("../sdk/user_types.zig");
-const operation_define = @import("../sdk/plugin/operation_define.zig");
+const operation_define = @import("../publr/plugin/operation_define.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;

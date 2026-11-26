@@ -7,7 +7,7 @@ const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const comptime_json = @import("../../model/comptime_json.zig");
 const plugin_define = @import("define.zig");
-const PluginCtx = @import("context.zig").PluginCtx;
+const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const plugin_words = @import("words.zig");
 
 pub const Kind = sdk.operation.Kind;

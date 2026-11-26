@@ -7,21 +7,21 @@ const mods = @import("../mods.zig");
 const builtin = @import("builtin");
 const wire = @import("wire.zig");
 const read_memo = @import("read_memo.zig");
-const modify_define = @import("modify_define.zig");
+const modify_define = @import("../../publr/plugin/modify_define.zig");
 const shape_wire = @import("shape_wire.zig");
 const shape_parts = @import("shape_parts.zig");
 const laid_key = @import("laid_key.zig");
-const free_value = @import("../free_value.zig");
+const free_value = @import("../../publr/free_value.zig");
 const Caller = @import("../caller.zig").Caller;
 const Grant = @import("../grant.zig").Grant;
 const contract = @import("../plugin.zig");
 const plugin_manifest = @import("manifest.zig");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../publr/plugin/define.zig");
 const runtime = @import("sandboxed.zig");
 const mod_reads = @import("mod_reads.zig");
 const queue = @import("queue.zig");
-const job_define = @import("job_define.zig");
-const words = @import("words.zig");
+const job_define = @import("../../publr/plugin/job_define.zig");
+const words = @import("../../publr/plugin/words.zig");
 const permission_define = @import("permission_define.zig");
 const permission = @import("../../model/permission.zig");
 const caller_view = @import("caller_view.zig");
@@ -1066,7 +1066,7 @@ pub fn Exports(comptime Plugin: type) type {
         /// What entry `item` takes, laid out: its own input inside what every entry reads
         /// around it (`wire.Envelope`).
         fn EnvelopeOf(comptime item: contract.Entry) type {
-            const field_kind = @import("field_kind_define.zig");
+            const field_kind = @import("../../publr/plugin/field_kind_define.zig");
             const declared = item.declaration;
 
             return switch (item.stage) {
@@ -1079,7 +1079,7 @@ pub fn Exports(comptime Plugin: type) type {
                 .job => JobEnvelope(declared),
                 .rule_values => wire.Envelope(wire.None, wire.None),
                 .rule_matches => wire.Envelope(
-                    @import("location_rule_define.zig").Asked,
+                    @import("../../publr/plugin/location_rule_define.zig").Asked,
                     wire.None,
                 ),
                 .kind_validate, .kind_text => wire.Envelope(field_kind.Stored, wire.None),
@@ -1307,7 +1307,7 @@ pub fn Exports(comptime Plugin: type) type {
             envelope: *EnvelopeOf(item),
             arena: std.mem.Allocator,
         ) Error!void {
-            const field_kind = @import("field_kind_define.zig");
+            const field_kind = @import("../../publr/plugin/field_kind_define.zig");
             const Definition = item.declaration;
             var ctx = context(arena, envelope.*);
 
@@ -1336,7 +1336,7 @@ pub fn Exports(comptime Plugin: type) type {
             envelope: *EnvelopeOf(item),
             arena: std.mem.Allocator,
         ) Error!void {
-            const views = @import("views.zig");
+            const views = @import("../../publr/plugin/views.zig");
             const declared = item.declaration;
             var ctx = context(arena, envelope.*);
 

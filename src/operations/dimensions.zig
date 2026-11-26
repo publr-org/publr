@@ -7,7 +7,7 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
-const dimension_module = @import("../sdk/plugin/dimensions.zig");
+const dimension_module = @import("../publr/plugin/dimensions.zig");
 const model_dimension = @import("../model/dimension.zig");
 
 const Ctx = sdk.Ctx;
