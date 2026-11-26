@@ -1493,8 +1493,11 @@ pub fn Store(
                 return error.NotFound;
             }
 
-            if (ctx.memo) |memo| {
-                memo.forget();
+            // An installed plugin's reads are kept between calls: what it read is stale now.
+            if (comptime guest.mode == .sandboxed) {
+                if (ctx.memo) |memo| {
+                    memo.forget();
+                }
             }
 
             _ = try ctx.call(internal_operations.Save, .{
