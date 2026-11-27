@@ -279,7 +279,7 @@ They replace `publr.admin.require`/`accept`/`screen`/`fail`/`param`/`query_param
   name)` / `request.form_field(arena, name)`. `request.method()` answers `std.http.Method`
   (`.POST`); statuses are `std.http.Status`.
 - `bootstrap` runs with `*publr.Ctx`, as the system.
-- A sign-in provider's `from_request.read` and `new_member` take `*publr.Ctx`.
+- A sign-in provider's `from_request.read` and `organization_member` take `*publr.Ctx`.
 - A delivery gate's `Delivery.ctx` is `*publr.Ctx`, `visitor` is a caller view
   (`visitor.user_id()`, `visitor.signed_in()`).
 - A policy is `fn (who: publr.Host.PolicyView, request: publr.Host.PolicyRequest) publr.Host.PolicyGrant`: the
