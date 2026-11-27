@@ -8,7 +8,7 @@ const model_dimension = @import("dimension.zig");
 const files = @import("../lib/files.zig");
 const image = @import("../lib/image.zig");
 
-pub const type_handle = "media";
+pub const type_handle = @import("../publr/model/media.zig").type_handle;
 pub const folders_handle = "media_folders";
 pub const tags_handle = "media_tags";
 pub const filename_len_max: u32 = 200;

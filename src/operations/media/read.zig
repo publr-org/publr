@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/media/read.zig");
 const store = @import("../../store.zig");
 const files_module = @import("../../lib/files.zig");
 const image = @import("../../lib/image.zig");
@@ -13,61 +14,23 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-/// The most one answer carries, before base64: a resized copy is asked for past it.
-pub const read_bytes_max: u32 = 8 << 20;
-pub const side_max: u32 = 4096;
+pub const read_bytes_max = public.read_bytes_max;
+pub const side_max = public.side_max;
 
 pub const operations = [_]type{Read};
 
 pub const Read = struct {
-    pub const name = "media.read";
-    pub const description = "A file's bytes, as uploaded or resized";
-    pub const details =
-        \\The file at `key`, of any media type, private ones included: signed-in callers
-        \\only, and only files whose type they may read. `width` and `height` resize an
-        \\image (never
-        \\larger; with both, `fit` `cover` scales before it crops, else it crops at full
-        \\size) around its focal point; `format` (`webp`, `jpeg` or `png`) converts it,
-        \\`quality` sets the quality. Files that are not JPEG or PNG come as they are. Up to 8 MiB,
-        \\base64 in `data`; a larger image is read smaller.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        key: []const u8,
-        width: ?u32 = null,
-        height: ?u32 = null,
-        fit: []const u8 = "",
-        format: []const u8 = "",
-        quality: ?u8 = null,
-    };
-    pub const Out = struct {
-        mime_type: []const u8,
-        size: u64,
-        data: []const u8,
-    };
-    pub const example: In = .{
-        .key = library.example_item.key,
-        .width = 800,
-        .format = "webp",
-    };
-    pub const example_out: Out = .{
-        .mime_type = "image/webp",
-        .size = 4,
-        .data = "UklGRg==",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .key = "The file's key, as in its address",
-        .width = "Width to resize to, 1 to 4096",
-        .height = "Height to resize to, 1 to 4096",
-        .fit = "`crop` (the default) or `cover`",
-        .format = "`webp`, `jpeg` or `png`; empty keeps the file's own",
-        .quality = "Quality, 1 to 100",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .mime_type = "The type of the bytes sent",
-        .size = "How many bytes they are",
-        .data = "The bytes, base64",
-    };
+    pub const shape = public.Read;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

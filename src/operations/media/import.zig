@@ -1,5 +1,6 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/media/import.zig");
 const model = @import("../../model.zig");
 const files_module = @import("../../lib/files.zig");
 const http = @import("../http.zig");
@@ -15,41 +16,22 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 const media = model.media;
 
-pub const url_len_max: u32 = 2048;
-/// Addresses one `import_many` takes.
-pub const many_max: u32 = 20;
+pub const url_len_max = public.url_len_max;
+pub const many_max = public.many_max;
 
 pub const operations = [_]type{ Import, ImportMany };
 
 pub const Import = struct {
-    pub const name = "media.import";
-    pub const description = "Add a file from the web to the media library";
-    pub const details =
-        \\Adds the file at once, Pending: its id and address can be used straight away, and
-        \\its bytes follow in the background, downloaded from `url` (https or http, on a
-        \\public address: never this machine or its network) and checked as an upload is:
-        \\what its extension says, up to 32 MiB. Named after the address's last part unless
-        \\`filename` says. One that cannot be downloaded is marked missing. How a site's own
-        \\images come over when building something like it.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        url: []const u8,
-        filename: ?[]const u8 = null,
-        folder: ?[]const u8 = null,
-    };
-    pub const Out = library.Item;
-    pub const example: In = .{
-        .url = "https://example.com/images/harbour.png",
-    };
-    pub const example_out: Out = library.example_item;
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .url = "The file's address",
-        .filename = "The name it is kept under, with its extension; the address's own " ++
-            "when left out",
-        .folder = "The folder to file it in: its id, or its name (made when there is none " ++
-            "of that name)",
-    };
+    pub const shape = public.Import;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -133,43 +115,18 @@ fn filled(ctx: *Ctx, pending: store.media.Row, url: []const u8) Error!void {
 }
 
 pub const ImportMany = struct {
-    pub const name = "media.import_many";
-    pub const description = "Add several files from the web to the media library at once";
-    pub const details =
-        \\Each of `urls` (up to 20) as `media import` takes one, in one call: what a site's
-        \\images need instead of a call each, each added Pending, its bytes following in the
-        \\background. An address that cannot be taken is listed in `failed` with why; the
-        \\rest are added all the same.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        urls: []const []const u8,
-        folder: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        added: []const library.Item,
-        failed: []const Failed,
-    };
-    pub const Failed = struct {
-        url: []const u8,
-        why: []const u8,
-    };
-    pub const example: In = .{
-        .urls = &.{ "https://example.com/images/harbour.png", "https://example.com/logo.svg" },
-    };
-    pub const example_out: Out = .{
-        .added = &.{library.example_item},
-        .failed = &.{},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .urls = "The files' addresses, up to 20",
-        .folder = "The folder to file them in: its id, or its name (made when there is " ++
-            "none of that name)",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .added = "The files added, in the order asked",
-        .failed = "Each address that could not be added, and why",
-    };
+    pub const shape = public.ImportMany;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const Failed = shape.Failed;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

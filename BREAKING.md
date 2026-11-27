@@ -487,4 +487,15 @@ Before: `got.fields[0].fields`.
 After: `const Groups = []const struct { name: []const u8 };` then
 `const groups = try got.fields.as(Groups, arena);`.
 
+### `sdk:operations.media`
+
+`publr.operations.media` is the public file of the media operations' shapes. Every operation
+(`Upload`, `Add`, `List`, `Get`, `Update`, `Delete`, `Destroy`, `Move`, `Tag`, `File`,
+`FolderDelete`, `Sync`, `Read` and those under `import`, `view`, `made`), `Item`, the
+sub-namespaces' shapes and limits (`list.Folder`, `edit.Detail`, `edit.ids_max`,
+`sync.Skipped`, `read.read_bytes_max`, ...) and `namespace` keep their names; calls are
+unchanged. Gone from it: the `operations` lists, each `run`, `bootstrap`, `tags` (core's
+folder and tag helpers), and the core helpers of each sub-namespace (`library.row_of`,
+`library.save`, `upload.added`, `import.import_job`, ...).
+
 ## 0.8.4 (2026-11-26)

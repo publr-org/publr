@@ -1,6 +1,7 @@
 const std = @import("std");
 const tags = @import("tags.zig");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/media/sync.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
@@ -16,67 +17,24 @@ const Error = sdk.Error;
 const media = model.media;
 const dropped = files_module.dropped;
 
-/// How many skipped files the answer names; the count covers the rest.
-pub const skipped_listed_max: u32 = 50;
+pub const skipped_listed_max = public.skipped_listed_max;
 const kept_page: u32 = 500;
 const folder_name_len_max: u32 = 64;
 
-pub const Skipped = struct {
-    path: []const u8,
-    reason: []const u8,
-};
+pub const Skipped = public.Skipped;
 
 pub const Sync = struct {
-    pub const name = "media.sync";
-    pub const description = "Take in the files put into the media folder by hand";
-    pub const details =
-        \\Walks the media folder beside the database (never its hidden areas, nor the ones
-        \\other media types keep their files in, named after them) for files the
-        \\library does not have yet and adds each as a published `media` record marked
-        \\unreviewed. A file whose path can serve as its key (lowercase letters, digits,
-        \\`.-_`, up to four parts) stays where it is; any other is moved under a dated key.
-        \\Its directories name its folder: `Photos/Trips/a.jpg` is filed in Photos › Trips,
-        \\made when missing; a top directory of four digits is the library's own layout and
-        \\names none. Files of a type the library does not take, empty ones and ones whose
-        \\bytes are not what their extension says are skipped with the reason. Every file
-        \\of the library whose bytes are gone is marked missing, and one found again is
-        \\not. With `check`, nothing is written: the answer says what a sync would do.
-        \\Only a server keeps such a folder; in the browser it is `Unavailable`.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        check: bool = false,
-    };
-    pub const Out = struct {
-        new: u32,
-        added: u32,
-        missing: u32,
-        skipped: []const Skipped,
-        skipped_count: u32,
-        more: bool,
-    };
-    pub const example: In = .{
-        .check = true,
-    };
-    pub const example_out: Out = .{
-        .new = 0,
-        .added = 0,
-        .missing = 0,
-        .skipped = &.{},
-        .skipped_count = 0,
-        .more = false,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .check = "Only report what a sync would do",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .new = "Files in the folder the library does not have",
-        .added = "How many of them this call added",
-        .missing = "Files of the library whose bytes are gone from the folder",
-        .skipped = "Files left out and why, the first fifty",
-        .skipped_count = "How many files were left out",
-        .more = "The folder holds more files than one sync looks at; run it again",
-    };
+    pub const shape = public.Sync;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
