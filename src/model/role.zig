@@ -87,7 +87,7 @@ pub fn valid_name(name: []const u8) bool {
     return true;
 }
 
-/// `*`, or a name of `[a-z_.]` that may end in `.*`, either after an optional `!`.
+/// `*`, or a name of `[a-z0-9_.]` that may end in `.*`, either after an optional `!`.
 pub fn valid_grant(grant: []const u8) bool {
     std.debug.assert(grant_len_max > 2);
 
@@ -109,7 +109,8 @@ pub fn valid_grant(grant: []const u8) bool {
     }
 
     for (name) |char| {
-        const allowed = (char >= 'a' and char <= 'z') or char == '_' or char == '.';
+        const allowed = (char >= 'a' and char <= 'z') or (char >= '0' and char <= '9') or
+            char == '_' or char == '.';
 
         if (!allowed) {
             return false;
@@ -230,6 +231,8 @@ test "grants and names are well formed" {
         "record.*",
         "app.newsletter.*",
         "!record.purge",
+        "przelewy24.*",
+        "!przelewy24.describe",
     };
 
     for (good_grants) |good| {

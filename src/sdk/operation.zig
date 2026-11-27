@@ -196,9 +196,10 @@ pub fn assert_name(comptime name: []const u8) void {
         var dots: u32 = 0;
 
         for (name) |ch| {
-            const ok = (ch >= 'a' and ch <= 'z') or ch == '_' or ch == '.';
+            const ok = (ch >= 'a' and ch <= 'z') or (ch >= '0' and ch <= '9') or ch == '_' or
+                ch == '.';
             if (!ok) {
-                @compileError("operation name must be [a-z_.]: " ++ name);
+                @compileError("operation name must be [a-z0-9_.]: " ++ name);
             }
             if (ch == '.') {
                 dots += 1;
