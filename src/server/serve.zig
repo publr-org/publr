@@ -333,7 +333,7 @@ fn name_cookies(arena: std.mem.Allocator, project: *routes.Project) !void {
     project.session_cookie = names.session;
     project.hint_cookie = names.hint;
     project.visitor_cookie = names.visitor;
-    project.member_cookie = names.member;
+    project.staff_cookie = names.staff;
 
     std.debug.assert(!std.mem.eql(u8, names.session, names.hint));
 }

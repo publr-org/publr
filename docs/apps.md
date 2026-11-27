@@ -676,7 +676,7 @@ admin always has an origin of its own (`serve --admin-url`; by default `admin.<h
 site's port, `admin.localhost:<port>` on this machine), so the site's host never sees the
 admin's session: a signed-in administrator gets the page as it is, its storage, cookies and
 other sites' embeds working. The admin's host sends any page opened there to the site's
-host, through `/_publr/member`, which keeps a pass there for 12 hours. The pass shows the
+host, through `/_publr/staff`, which keeps a pass there for 12 hours. The pass shows the
 toolbar (its links to the admin's host) and opens nothing else. The site's host sends
 `/admin` and `/auth/sign-on` to the admin's.
 

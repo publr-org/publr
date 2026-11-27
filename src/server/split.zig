@@ -2,7 +2,7 @@
 //! site's host, and no page of the site opens as a document on the admin's, so a site's
 //! scripts never share an origin with the admin's session. The admin's host keeps its
 //! sandboxed frames (previews): those are not documents and pass. An administrator sent from
-//! the admin to the site carries a member pass there, which shows them the toolbar and
+//! the admin to the site carries a staff pass there, which shows them the toolbar and
 //! opens nothing else.
 
 const std = @import("std");
@@ -16,9 +16,9 @@ const Request = http.Request;
 const Response = http.Response;
 const Context = http.Context;
 
-/// `/_publr/member?pass=<pass>&path=<address>` on the site's host: the pass kept, then the
+/// `/_publr/staff?pass=<pass>&path=<address>` on the site's host: the pass kept, then the
 /// page.
-pub const member_path = "/_publr/member";
+pub const staff_path = "/_publr/staff";
 pub const address_len_max: u32 = 2048;
 
 /// What the admin's host answers itself; everything else there is the site's.
@@ -84,8 +84,8 @@ fn routed(
         return to_site(project, request, response, ctx.arena);
     }
 
-    if (std.mem.eql(u8, path, member_path)) {
-        return member(project, request, response, ctx.arena);
+    if (std.mem.eql(u8, path, staff_path)) {
+        return staff(project, request, response, ctx.arena);
     }
 
     const admins = std.mem.eql(u8, path, "/admin") or std.mem.startsWith(u8, path, "/admin/") or
@@ -173,7 +173,7 @@ fn to_admin(
     }));
 }
 
-/// The same address on the site's host; for an administrator, through the member pass.
+/// The same address on the site's host; for an administrator, through the staff pass.
 fn to_site(
     project: *const Project,
     request: *const Request,
@@ -197,8 +197,8 @@ fn to_site(
             location = try std.fmt.allocPrint(arena, "{s}{s}{s}?pass={s}&path={s}", .{
                 project.site_origin,
                 project.base,
-                member_path,
-                try identity_module.member_pass(project, arena, user_id),
+                staff_path,
+                try identity_module.staff_pass(project, arena, user_id),
                 try admin.query_value(arena, address),
             });
         }
@@ -209,7 +209,7 @@ fn to_site(
 
 /// Keeps the pass on the site's host, with the readable hint the toolbar script waits for,
 /// and goes on to the page. A pass that does not hold is dropped; the page opens all the same.
-fn member(
+fn staff(
     project: *const Project,
     request: *const Request,
     response: *Response,
@@ -223,16 +223,16 @@ fn member(
     const local = shown.len > 0 and shown.len <= address_len_max and shown[0] == '/' and
         !std.mem.startsWith(u8, shown, "//") and std.mem.indexOfScalar(u8, shown, '\\') == null;
     const back = if (local) shown else "/";
-    const identity = identity_module.identify_member(project, arena, pass);
+    const identity = identity_module.identify_staff(project, arena, pass);
 
     if (identity.caller.user_id() != null) {
-        const max_age_s = @divTrunc(identity_module.member_lifetime_ms, std.time.ms_per_s);
+        const max_age_s = @divTrunc(identity_module.staff_lifetime_ms, std.time.ms_per_s);
         const secure = identity_module.secure_suffix(request);
 
         try response.add_header("Set-Cookie", try std.fmt.allocPrint(
             arena,
             "{s}={s}; Path=/; HttpOnly; SameSite=Lax; Max-Age={d}{s}",
-            .{ project.member_cookie, pass, max_age_s, secure },
+            .{ project.staff_cookie, pass, max_age_s, secure },
         ));
         try response.add_header("Set-Cookie", try std.fmt.allocPrint(
             arena,
@@ -245,8 +245,8 @@ fn member(
     try response.redirect(.see_other, back);
 }
 
-/// The toolbar's caller on the site's host: the member pass's account.
-pub fn member_identity(
+/// The toolbar's caller on the site's host: the staff pass's account.
+pub fn staff_identity(
     project: *const Project,
     arena: std.mem.Allocator,
     request: *const Request,
@@ -255,9 +255,9 @@ pub fn member_identity(
     std.debug.assert(!project.on_admin_host(request));
 
     const cookies = request.header("cookie") orelse return .{};
-    const pass = identity_module.cookie_value(cookies, project.member_cookie) orelse return .{};
+    const pass = identity_module.cookie_value(cookies, project.staff_cookie) orelse return .{};
 
-    return identity_module.identify_member(project, arena, pass);
+    return identity_module.identify_staff(project, arena, pass);
 }
 
 const testing_users = @import("../operations/user.zig");
@@ -386,23 +386,23 @@ test "an administrator reaches the site with a pass that shows the toolbar and n
     const location = sent.header("Location").?;
 
     try std.testing.expect(std.mem.startsWith(u8, location, "https://" ++ site_host ++
-        member_path ++ "?pass="));
+        staff_path ++ "?pass="));
 
     const kept = try get(&harness, site_host, location["https://".len + site_host.len ..], "");
 
     try std.testing.expectEqualStrings("/", kept.header("Location").?);
 
-    var member_cookie: []const u8 = "";
+    var staff_cookie: []const u8 = "";
 
     for (kept.headers[0..kept.headers_len]) |header| {
-        if (std.mem.startsWith(u8, header.value, harness.flow.project.member_cookie)) {
-            member_cookie = header.value[0..std.mem.indexOfScalar(u8, header.value, ';').?];
+        if (std.mem.startsWith(u8, header.value, harness.flow.project.staff_cookie)) {
+            staff_cookie = header.value[0..std.mem.indexOfScalar(u8, header.value, ';').?];
         }
     }
 
-    try std.testing.expect(member_cookie.len > 0);
+    try std.testing.expect(staff_cookie.len > 0);
 
-    const with_pass = try std.fmt.allocPrint(arena, "Cookie: {s}\r\n", .{member_cookie});
+    const with_pass = try std.fmt.allocPrint(arena, "Cookie: {s}\r\n", .{staff_cookie});
     const bar = try get(&harness, site_host, "/_publr/toolbar?path=/", with_pass);
 
     try std.testing.expect(has(bar.body, "\"signed_in\":true"));
@@ -476,7 +476,7 @@ test "a forged pass keeps nothing" {
     try split_harness(&harness);
     defer harness.deinit();
 
-    const kept = try get(&harness, site_host, member_path ++ "?pass=toolbar.u1.9999999999999.00" ++
+    const kept = try get(&harness, site_host, staff_path ++ "?pass=toolbar.u1.9999999999999.00" ++
         "&path=//evil.test", "");
 
     try std.testing.expectEqualStrings("/", kept.header("Location").?);

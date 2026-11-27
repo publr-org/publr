@@ -65,7 +65,7 @@ pub fn door(
 }
 
 /// Who asks: signed in on this host, else, on the site's host of a split project, the
-/// administrator the admin sent here with a member pass.
+/// administrator the admin sent here with a staff pass.
 fn visitor_of(
     project: *const Project,
     arena: std.mem.Allocator,
@@ -79,11 +79,11 @@ fn visitor_of(
         return signed_in;
     }
 
-    const member = split.member_identity(project, arena, request).caller;
+    const staff = split.staff_identity(project, arena, request).caller;
 
-    std.debug.assert(member == .anonymous or member.user_id() != null);
+    std.debug.assert(staff == .anonymous or staff.user_id() != null);
 
-    return member;
+    return staff;
 }
 
 /// For an answer a gate made personal: whatever the render set, no shared cache keeps it.

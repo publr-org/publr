@@ -24,7 +24,7 @@ pub const cookie_name = "publr_session";
 /// page's toolbar script stays idle for everyone else without asking the server.
 pub const hint_cookie_name = "publr_signed_in";
 /// On the site's host, when the admin has its own: a pass that only opens the toolbar.
-pub const member_cookie_name = "publr_member";
+pub const staff_cookie_name = "publr_staff";
 /// How long the project's mark on its cookie names is, in hex characters.
 pub const cookie_mark_len: u32 = 8;
 
@@ -35,7 +35,7 @@ pub const CookieNames = struct {
     session: []const u8,
     hint: []const u8,
     visitor: []const u8,
-    member: []const u8,
+    staff: []const u8,
 };
 
 pub fn cookie_names(arena: std.mem.Allocator, secret: []const u8) !CookieNames {
@@ -52,7 +52,7 @@ pub fn cookie_names(arena: std.mem.Allocator, secret: []const u8) !CookieNames {
         .session = try std.fmt.allocPrint(arena, "{s}_{s}", .{ cookie_name, &mark }),
         .hint = try std.fmt.allocPrint(arena, "{s}_{s}", .{ hint_cookie_name, &mark }),
         .visitor = try std.fmt.allocPrint(arena, "publr_visitor_{s}", .{&mark}),
-        .member = try std.fmt.allocPrint(arena, "{s}_{s}", .{ member_cookie_name, &mark }),
+        .staff = try std.fmt.allocPrint(arena, "{s}_{s}", .{ staff_cookie_name, &mark }),
     };
 }
 pub const csrf_header = "x-csrf-token";
@@ -250,7 +250,7 @@ pub fn identify_preview(
     const now_ms = sdk.context.wall_clock_ms(project.io);
     const claims = preview_token.verify(pass, &project.auth.secret, now_ms) orelse return null;
 
-    if (std.mem.eql(u8, claims.record, member_claim)) {
+    if (std.mem.eql(u8, claims.record, staff_claim)) {
         return null;
     }
 
@@ -272,14 +272,14 @@ pub fn identify_preview(
     };
 }
 
-/// What a member pass names where a preview pass names its record: it opens the toolbar on
+/// What a staff pass names where a preview pass names its record: it opens the toolbar on
 /// the site's host and nothing else.
-pub const member_claim = "toolbar";
+pub const staff_claim = "toolbar";
 /// How long the toolbar stays on the site after the admin last sent someone there.
-pub const member_lifetime_ms: i64 = 12 * 60 * 60 * 1000;
+pub const staff_lifetime_ms: i64 = 12 * 60 * 60 * 1000;
 
 /// A pass for the site's host, signed for an administrator the admin's host sends there.
-pub fn member_pass(
+pub fn staff_pass(
     project: *const Project,
     arena: std.mem.Allocator,
     user: []const u8,
@@ -290,15 +290,15 @@ pub fn member_pass(
     const now_ms = sdk.context.wall_clock_ms(project.io);
 
     return preview_token.sign(arena, &project.auth.secret, .{
-        .record = member_claim,
+        .record = staff_claim,
         .user = user,
-        .expires_ms = now_ms + member_lifetime_ms,
+        .expires_ms = now_ms + staff_lifetime_ms,
     });
 }
 
-/// Who the site's toolbar is for: the member pass's account, while it holds and the account
+/// Who the site's toolbar is for: the staff pass's account, while it holds and the account
 /// is active; anonymous otherwise. Never a session: nothing it names opens more than the bar.
-pub fn identify_member(
+pub fn identify_staff(
     project: *const Project,
     arena: std.mem.Allocator,
     pass: []const u8,
@@ -309,7 +309,7 @@ pub fn identify_member(
     const now_ms = sdk.context.wall_clock_ms(project.io);
     const claims = preview_token.verify(pass, &project.auth.secret, now_ms) orelse return .{};
 
-    if (!std.mem.eql(u8, claims.record, member_claim)) {
+    if (!std.mem.eql(u8, claims.record, staff_claim)) {
         return .{};
     }
 

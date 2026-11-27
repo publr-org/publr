@@ -91,7 +91,7 @@ pub const Project = struct {
     /// The visitor's id (`apps/visitor.zig`).
     visitor_cookie: []const u8 = @import("../adapters/apps/visitor.zig").cookie_name,
     /// On the site's host, who the toolbar is for (`split.zig`).
-    member_cookie: []const u8 = @import("../adapters/rest/identity.zig").member_cookie_name,
+    staff_cookie: []const u8 = @import("../adapters/rest/identity.zig").staff_cookie_name,
     /// Where other computers clone, pull and push this site (`serve --sync-url`); empty: its
     /// own addresses. Said in `/api/health`.
     sync_origin: []const u8 = "",

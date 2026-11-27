@@ -58,10 +58,10 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
 
     const project = Project.of(ctx);
     const site_host = project.split() and !project.on_admin_host(request);
-    // On the site's host, when the admin has its own, the bar comes only with the member pass;
+    // On the site's host, when the admin has its own, the bar comes only with the staff pass;
     // a session there is a visitor of the site's apps: signed in, offered no admin.
     const identity = if (site_host)
-        split.member_identity(project, ctx.arena, request)
+        split.staff_identity(project, ctx.arena, request)
     else
         identity_module.identify_on_site(request, ctx.arena, project);
 

@@ -13,7 +13,7 @@
 // head: <meta name="publr-toolbar" content="off">.
 //
 // The admin has an origin of its own, so a page's scripts never run as the administrator: on
-// the site the bar shows for someone sent from the admin (a member pass), and in a frame the
+// the site the bar shows for someone sent from the admin (a staff pass), and in a frame the
 // admin made (a preview) it shows nothing. A page that embeds the site in a frame of its own
 // gets the bar inside it.
 //

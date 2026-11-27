@@ -14,6 +14,20 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `http:/_publr/member`
+
+The pass that carries a staff person from the admin's host to the site's host is the staff
+pass: its address is `/_publr/staff` and its cookie `publr_staff_<mark>` (was
+`publr_member_<mark>`). `/_publr/member` answers as any other address of the site. Staff on a
+site's host lose the toolbar there once the release is deployed, until they next open a page
+from the admin, which gives them the new pass; their admin sign-in is unchanged. A page or
+script that linked to the old address or read the old cookie uses the new ones.
+
+```
+Before: /_publr/member?pass=<pass>&path=<address>   cookie publr_member_<mark>
+After:  /_publr/staff?pass=<pass>&path=<address>    cookie publr_staff_<mark>
+```
+
 ### `sdk:operations.user.visitors`
 
 The two ladders of accounts are staff and members: a role a type of user gives is a member
