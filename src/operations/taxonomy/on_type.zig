@@ -9,7 +9,7 @@ const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
-const taxonomy_define = @import("../../publr/plugin/taxonomy_define.zig");
+const taxonomies = @import("../../sdk/plugin/taxonomies.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -181,7 +181,7 @@ pub fn missing_types(ctx: *Ctx, plugin: []const u8) Error![]const []const u8 {
             const dot = std.mem.indexOfScalar(u8, pattern, '.') orelse continue;
             const owner = pattern[0..dot];
 
-            if (!taxonomy_define.is_exact(pattern) or !registry.plugin_present(ctx, owner)) {
+            if (!taxonomies.is_exact(pattern) or !registry.plugin_present(ctx, owner)) {
                 continue;
             }
 
@@ -205,17 +205,17 @@ const Pick = enum { none, exact, pattern };
 /// Whether a registration's `.to` picks the type: by its name (a record or media type), or
 /// by a pattern (record types only).
 fn picks(to: []const []const u8, def: Def) Pick {
-    std.debug.assert(to.len <= taxonomy_define.to_max);
+    std.debug.assert(to.len <= taxonomies.to_max);
     std.debug.assert(def.handle.len > 0);
 
     var found: Pick = .none;
 
     for (to) |pattern| {
-        if (!taxonomy_define.matches(pattern, def.handle)) {
+        if (!taxonomies.matches(pattern, def.handle)) {
             continue;
         }
 
-        if (taxonomy_define.is_exact(pattern)) {
+        if (taxonomies.is_exact(pattern)) {
             return .exact;
         }
 

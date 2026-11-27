@@ -77,7 +77,7 @@ pub fn check(comptime Plugin: type, comptime present: []const Interface) void {
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        const plugin_define = @import("../publr/plugin/define.zig");
+        const plugin_define = @import("plugin/bound.zig");
         const types = plugin_define.get(Plugin, "content_types") ++
             plugin_define.get(Plugin, "taxonomies") ++
             @import("plugin.zig").custom_fields_of(Plugin);
@@ -98,7 +98,7 @@ const Usable = struct {
 
 fn usable_of(comptime Plugin: type, comptime present: []const Interface) Usable {
     comptime {
-        const plugin_define = @import("../publr/plugin/define.zig");
+        const plugin_define = @import("plugin/bound.zig");
         const depends_on = @import("plugin/depends_on.zig");
         const named = plugin_define.get(Plugin, "depends_on") ++
             plugin_define.get(Plugin, "compatible_with");

@@ -2,12 +2,11 @@
 //! values (`"Only {left} left"`), refusals whose status comes from the operation's `Fails:`,
 //! log lines with a level, and the call's time as `publr.Time`.
 const std = @import("std");
-const operation = @import("../../sdk/operation.zig");
 const public_operation = @import("../operation.zig");
 
 pub const Level = enum { info, warn, err };
 
-pub const message_len_max: u32 = operation.failure_message_len_max;
+pub const message_len_max = public_operation.failure_message_len_max;
 
 /// A moment, as a `datetime` field holds it: milliseconds since 1970, UTC.
 const calendar = @import("../../model/calendar.zig");

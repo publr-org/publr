@@ -2,8 +2,8 @@ const std = @import("std");
 const public_operation = @import("../publr/operation.zig");
 const held_of = @import("../model/sandboxed_plugin.zig").held_of;
 const host_of = @import("plugin/context.zig").host_of;
-const plugin_define = @import("../publr/plugin/define.zig");
-const taxonomy_define = @import("../publr/plugin/taxonomy_define.zig");
+const plugin_define = @import("plugin/bound.zig");
+const taxonomy_kept = @import("plugin/taxonomies.zig");
 const permission_model = @import("../model/permission.zig");
 const job_define = @import("../publr/plugin/job_define.zig");
 const webhook_define = @import("../publr/plugin/webhook_define.zig");
@@ -24,7 +24,7 @@ const db = @import("../lib/db.zig");
 
 pub const PluginCtx = plugin_context.PluginCtx;
 const field_group_model = @import("../model/field_group.zig");
-const location_rule_define = @import("../publr/plugin/location_rule_define.zig");
+const location_rule_define = @import("plugin/location_rules.zig");
 const column_define = @import("plugin/column_define.zig");
 pub const types = plugin_types;
 /// One registration: `pub const plugin = publr.plugin.define(manifest, options)`.
@@ -630,7 +630,7 @@ pub fn Merged(comptime plugins: anytype) type {
         var columns: []const column_define.Column = &.{};
         var content_types: []const DeclaredType = &.{};
         var taxonomies: []const DeclaredType = &.{};
-        var taxonomy_registrations: []const taxonomy_define.Registered = &.{};
+        var taxonomy_registrations: []const taxonomy_kept.Registered = &.{};
         var custom_fields: []const DeclaredType = &.{};
         var delivery_gates: []const sdk.delivery.Gate = &.{};
         var sign_in_providers: []const SignInProvider = &.{};
@@ -733,11 +733,11 @@ pub fn Merged(comptime plugins: anytype) type {
                 }};
             }
 
-            menu = menu ++ @import("../publr/plugin/menu_define.zig").entries_of(Plugin);
+            menu = menu ++ @import("plugin/menus.zig").entries_of(Plugin);
 
             registered_statuses = registered_statuses ++
-                @import("../publr/plugin/record_flow.zig").registered_of(Plugin);
-            icons = icons ++ @import("../publr/plugin/menu_define.zig").icons_of(Plugin);
+                @import("plugin/flows.zig").registered_of(Plugin);
+            icons = icons ++ @import("plugin/menus.zig").icons_of(Plugin);
 
             if (plugin_define.has(Plugin, "sign_in_at")) {
                 sign_in_at = sign_in_at ++ &[_]type{Plugin};
@@ -831,7 +831,7 @@ pub fn Merged(comptime plugins: anytype) type {
             }
 
             for (plugin_define.get(Plugin, "register_taxonomies")) |entry| {
-                taxonomy_registrations = taxonomy_registrations ++ &[_]taxonomy_define.Registered{.{
+                taxonomy_registrations = taxonomy_registrations ++ &[_]taxonomy_kept.Registered{.{
                     .plugin = Plugin.manifest.name,
                     .taxonomy = entry.taxonomy,
                     .to = entry.to,

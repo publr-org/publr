@@ -138,41 +138,8 @@ pub fn def_of(
 /// `.register_taxonomies` entries: a taxonomy on other plugins' types, by name or pattern.
 pub const Registration = @import("../model/taxonomy.zig").Registration;
 
-/// A registration as the site keeps it: whose it is.
-pub const Registered = struct {
-    plugin: []const u8,
-    taxonomy: []const u8,
-    to: []const []const u8,
-};
-
 /// How many types and patterns one registration names.
 pub const to_max: u32 = 16;
-
-/// Whether `pattern` picks the type `handle`: itself, `plugin.*` for every type of that
-/// plugin, `*` for every one.
-pub fn matches(pattern: []const u8, handle: []const u8) bool {
-    std.debug.assert(pattern.len > 0);
-    std.debug.assert(handle.len > 0);
-
-    if (std.mem.eql(u8, pattern, "*")) {
-        return true;
-    }
-
-    if (std.mem.endsWith(u8, pattern, ".*")) {
-        const prefix = pattern[0 .. pattern.len - 1];
-
-        return std.mem.startsWith(u8, handle, prefix) and handle.len > prefix.len;
-    }
-
-    return std.mem.eql(u8, pattern, handle);
-}
-
-/// Whether `pattern` is one type by name, not a pattern.
-pub fn is_exact(pattern: []const u8) bool {
-    std.debug.assert(pattern.len > 0);
-
-    return !std.mem.eql(u8, pattern, "*") and !std.mem.endsWith(u8, pattern, ".*");
-}
 
 /// What a plugin's `.register_taxonomies` names: real handles and patterns, each a few.
 pub fn check(comptime plugin: []const u8, comptime list: []const Registration) void {
@@ -206,18 +173,6 @@ pub fn check(comptime plugin: []const u8, comptime list: []const Registration) v
             }
         }
     }
-}
-
-test "a pattern picks one type, a plugin's types, or every type" {
-    try std.testing.expect(matches("*", "post"));
-    try std.testing.expect(matches("products.*", "products.variant"));
-    try std.testing.expect(!matches("products.*", "products"));
-    try std.testing.expect(!matches("products.*", "productsx.variant"));
-    try std.testing.expect(matches("events.event", "events.event"));
-    try std.testing.expect(!matches("events.event", "events.other"));
-    try std.testing.expect(is_exact("events.event"));
-    try std.testing.expect(!is_exact("products.*"));
-    try std.testing.expect(!is_exact("*"));
 }
 
 test "a declared taxonomy is stored under its plugin, a name and a slug before its fields" {

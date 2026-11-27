@@ -3,7 +3,7 @@
 //! plugins the server checks installed ones against, and for the build's own check when both
 //! sides are compiled in.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const plugin_contracts = @import("../../model/plugin_contracts.zig");
 const shapes = @import("../../model/contract.zig");
 const versions = @import("depends_on.zig");

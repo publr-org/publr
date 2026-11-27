@@ -2,7 +2,7 @@
 //! permissions it asks for and why (`http.fetch` with its domains), the limits it needs, the
 //! plugins it cannot work without. `manifest.zig` turns all of it into the manifest.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const field_kind_define = @import("../../publr/plugin/field_kind_define.zig");
 const sdk_operation = @import("../operation.zig");
 const hooks = @import("../hooks.zig");
@@ -76,7 +76,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
             }};
         }
 
-        for (@import("../../publr/plugin/location_rule_define.zig").given_of(Plugin)) |given| {
+        for (@import("location_rules.zig").given_of(Plugin)) |given| {
             const Rule = struct {
                 pub const rule = given;
             };

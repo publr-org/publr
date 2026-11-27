@@ -16,7 +16,7 @@ const Caller = @import("../caller.zig").Caller;
 const Grant = @import("../grant.zig").Grant;
 const contract = @import("../plugin.zig");
 const plugin_manifest = @import("manifest.zig");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const runtime = @import("sandboxed.zig");
 const mod_reads = @import("mod_reads.zig");
 const queue = @import("queue.zig");
@@ -996,7 +996,7 @@ pub fn Exports(comptime Plugin: type) type {
                 .job => JobEnvelope(declared),
                 .rule_values => wire.Envelope(wire.None, wire.None),
                 .rule_matches => wire.Envelope(
-                    @import("../../publr/plugin/location_rule_define.zig").Asked,
+                    @import("location_rules.zig").Asked,
                     wire.None,
                 ),
                 .kind_validate, .kind_text => wire.Envelope(field_kind.Stored, wire.None),

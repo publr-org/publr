@@ -444,7 +444,7 @@ test "http.fetch is refused outside queued work, whatever the plugin is granted"
 
 test "a compiled-in plugin is held to its http.fetch domains, as an installed one is" {
     const plugin_module = @import("../sdk/plugin.zig");
-    const plugin_define = @import("../publr/plugin/define.zig");
+    const plugin_define = @import("../sdk/plugin/bound.zig");
     const Courier = plugin_define.Bind(struct {
         pub const plugin = plugin_define.define(.{
             .name = "courier",

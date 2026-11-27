@@ -3,7 +3,7 @@
 //! permission: declaring is the request. The plugin uses exactly what it declares; a
 //! `{secret:NAME}` its code writes without declaring it fails the build.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const secrets = @import("../../model/secrets.zig");
 const permission = @import("../../model/permission.zig");
 

@@ -3,7 +3,7 @@
 //! `^0.2`: the same leftmost non-zero part, no older). A compiled-in plugin's requirements
 //! are checked when the binary is built; an installed plugin's when it is enabled.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 
 pub const depends_on_max: u32 = 16;
 const version_range = @import("../../model/version_range.zig");

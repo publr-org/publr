@@ -4,7 +4,7 @@
 //! function the admin calls for every signed-in page; a row action is data the page's owner
 //! reads.
 const std = @import("std");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../sdk/plugin/bound.zig");
 
 pub const Blank = @import("../model/sandboxed_plugin.zig").Blank;
 pub const row_actions_max: u32 = 8;

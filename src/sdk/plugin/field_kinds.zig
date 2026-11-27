@@ -3,7 +3,7 @@
 //! in the process compiled in, in the sandbox installed.
 const std = @import("std");
 const definer = @import("../../publr/plugin/field_kind_define.zig");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const kinds = @import("../../model/kinds.zig");
 const field_model = @import("../../model/field.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");

@@ -5,7 +5,7 @@
 //! the field panel by the owner's own view or as the core's cards, and a read option. The
 //! core stores, reads and picks values, and knows nothing else about what a dimension is.
 const std = @import("std");
-const plugin_define = @import("define.zig");
+const plugin_define = @import("../../sdk/plugin/bound.zig");
 const model_dimension = @import("../model/dimension.zig");
 const field_model = @import("../../model/field.zig");
 

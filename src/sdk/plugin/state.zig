@@ -2,7 +2,7 @@
 //! the server opens the project and handed to its operations, routes and hooks. A plugin
 //! keeps state here, never in a top-level `var`.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const db = @import("../../lib/db.zig");
 
 /// What a plugin's `State.init` is given: the process's allocator for what lives as long as

@@ -2,7 +2,7 @@
 //! they may open, the plugins' top bar items, which area the address is in and that area's
 //! sidebar. Filled once per page from the session; the views never forward it.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("../../sdk/plugin/bound.zig");
 const AdminBrand = @import("../../sdk/plugin.zig").AdminBrand;
 const avatar = @import("avatar.zig");
 const admin = @import("../admin.zig");

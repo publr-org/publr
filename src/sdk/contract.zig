@@ -4,7 +4,7 @@
 //! choice of providers, in order.
 const std = @import("std");
 const wire_json = @import("plugin/wire_json.zig");
-const plugin_define = @import("../publr/plugin/define.zig");
+const plugin_define = @import("plugin/bound.zig");
 const guest = @import("plugin/guest.zig");
 const sdk = @import("../sdk.zig");
 const shapes = @import("../model/contract.zig");

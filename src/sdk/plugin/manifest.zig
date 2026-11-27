@@ -3,7 +3,7 @@
 //! runs. One shape for both, so they cannot drift.
 const std = @import("std");
 const admin_slots = @import("../../publr/plugin/admin_slots.zig");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("bound.zig");
 const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
@@ -75,7 +75,7 @@ pub fn of(comptime Plugin: type) Manifest {
             .custom_fields = contract.custom_fields_of(Plugin),
             .roles = contract.roles_of(Plugin),
             .user_types = contract.user_types_of(Plugin),
-            .statuses = @import("../../publr/plugin/record_flow.zig").registered_of(Plugin),
+            .statuses = @import("flows.zig").registered_of(Plugin),
             .internal_records = plugin_define.get(Plugin, "internal_records"),
             .ledger = @import("../../publr/plugin/ledger_define.zig").declared_of(Plugin),
             .remotes = @import("remote_contract.zig").uses_of(Plugin),
@@ -85,8 +85,8 @@ pub fn of(comptime Plugin: type) Manifest {
             .providers = @import("../contract.zig").registered_of(Plugin),
             .contracts = @import("../contract.zig").owned_of(Plugin),
             .pages = pages_of(Plugin),
-            .menu = @import("../../publr/plugin/menu_define.zig").entries_of(Plugin),
-            .icons = @import("../../publr/plugin/menu_define.zig").icons_of(Plugin),
+            .menu = @import("menus.zig").entries_of(Plugin),
+            .icons = @import("menus.zig").icons_of(Plugin),
             .panels = panels_of(Plugin),
             .columns = columns_of(Plugin),
             .row_actions = row_actions_of(Plugin),
@@ -199,7 +199,7 @@ fn location_rules_of(comptime Plugin: type) []const sandboxed_plugin.LocationRul
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (@import("../../publr/plugin/location_rule_define.zig").given_of(Plugin)) |given| {
+        for (@import("location_rules.zig").given_of(Plugin)) |given| {
             list = list ++ &[_]sandboxed_plugin.LocationRule{.{
                 .name = given.name,
                 .label = given.label,

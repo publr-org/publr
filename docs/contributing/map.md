@@ -561,6 +561,12 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
 | `sdk/plugin/field_kinds.zig` | 327 | A plugin's `publr.field.kind` as core keeps it: the descriptor, its checks, text and editor, compiled in or installed |
+| `sdk/plugin/bound.zig` | 238 | A plugin as core reads it: `Bind` pairs its `define` with its words, `has`/`get` read its options |
+| `sdk/plugin/bound/declared.zig` | 393 | The options `get` answers in core's shapes: content types, collections, hooks, pages, kinds, namespaces |
+| `sdk/plugin/flows.zig` | 262 | A record's flow as core keeps it, and the statuses a plugin adds to other plugins' flows |
+| `sdk/plugin/menus.zig` | 240 | A plugin's menu items and icons as the admin reads them, checked |
+| `sdk/plugin/location_rules.zig` | 135 | A plugin's location rules as core runs them, compiled in or installed |
+| `sdk/plugin/taxonomies.zig` | 51 | Taxonomies registered on other plugins' types: whose each is, which types its patterns pick |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `SandboxApi`, the installed call behind `publr.Ctx`, proxied to the host in the plugin's own structs, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/shape_wire.zig` | 260 | A struct's layout described at build time, so the host reads values where they lie and writes answers in the plugin's own memory; how a struct with its own JSON says how it lies (`publr_form`) |
 | `sdk/plugin/shape_said.zig` | 233 | How each kind of type is said in a description |

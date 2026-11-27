@@ -2874,7 +2874,7 @@ pub fn flow_of(comptime Definition: type, comptime Docs: type) flow_model.Flow {
 
         return .{
             .statuses = statuses_of(Definition, Docs),
-            .transitions = record_flow.transitions_of(options),
+            .transitions = @import("../../sdk/plugin/flows.zig").transitions_of(options),
             .start = record_flow.start_status(options),
         };
     }

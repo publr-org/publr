@@ -1,5 +1,5 @@
 const std = @import("std");
-const plugin_define = @import("../publr/plugin/define.zig");
+const plugin_define = @import("../sdk/plugin/bound.zig");
 const sdk = @import("../sdk.zig");
 const db = @import("../lib/db.zig");
 const contract = @import("../sdk/plugin.zig");
@@ -609,7 +609,7 @@ pub fn all_location_rules(ctx: *const sdk.Ctx) error{OutOfMemory}![]const Plugin
 }
 
 const PluginRule = @import("../model/field_group.zig").PluginRule;
-const location_rule_define = @import("../publr/plugin/location_rule_define.zig");
+const location_rule_define = @import("../sdk/plugin/location_rules.zig");
 /// The columns compiled-in plugins add to lists they don't own.
 pub const columns = native_plugins.merged_columns;
 
@@ -673,7 +673,7 @@ pub fn taxonomy_registrations(ctx: *const sdk.Ctx) error{OutOfMemory}![]const Ta
     return list.items;
 }
 
-pub const TaxonomyRegistered = @import("../publr/plugin/taxonomy_define.zig").Registered;
+pub const TaxonomyRegistered = @import("../sdk/plugin/taxonomies.zig").Registered;
 
 /// Whether the plugin `name` runs here: compiled in, or installed and enabled.
 pub fn plugin_present(ctx: *const sdk.Ctx, name: []const u8) bool {
