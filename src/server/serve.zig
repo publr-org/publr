@@ -196,10 +196,10 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
         update.served(init.io, init.arena.allocator(), db_path, version);
     }
 
-    var keeper = try keeper_of(init, db_path, &project);
+    var keeper = try keeper_of(init, db_path, &apps);
     defer keeper.stop();
 
-    const worker: ?*queue_worker.Keeper = if (browser_dir == null) &keeper else null;
+    const worker = worker_of(&apps, &keeper, browser_dir == null, db_path, session);
     var plugins = try Plugins.of(&application);
 
     try listener.enable_shutdown_signals();
@@ -212,29 +212,56 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
 fn keeper_of(
     init: std.process.Init,
     db_path: [:0]const u8,
-    project: *const routes.Project,
+    apps: *const apps_host.AppsHost,
 ) !queue_worker.Keeper {
     std.debug.assert(db_path.len > 0);
 
     const arena = init.arena.allocator();
+    const project = apps.project;
     // The site's and the admin's addresses: where its plugins' outside calls may go.
-    const argv = try arena.dupe([]const u8, &.{
+    const argv = try queue_worker.argv_of(
+        arena,
         try std.process.executablePathAlloc(init.io, arena),
-        "--db",
         db_path,
-        "queue-run",
-        "--site-url",
-        project.site_origin,
-        "--admin-url",
-        project.admin_origin,
-    });
+        .{
+            .site = project.site_origin,
+            .admin = project.admin_origin,
+            .started = model_app.origin_of(apps.mode.options.base_url),
+        },
+    );
 
-    std.debug.assert(argv.len == 8);
+    std.debug.assert(argv.len >= 8);
 
     return .{
         .io = init.io,
         .argv = argv,
     };
+}
+
+/// The worker, where one runs (never beside the browser build), and with it what follows
+/// the site to another address while it runs (`site_moves.zig`): the session a command
+/// reads and the worker itself.
+fn worker_of(
+    apps: *apps_host.AppsHost,
+    keeper: *queue_worker.Keeper,
+    runs: bool,
+    db_path: []const u8,
+    session: ?operator.Session,
+) ?*queue_worker.Keeper {
+    std.debug.assert(db_path.len > 0);
+    std.debug.assert(apps.follower == null);
+
+    if (!runs) {
+        return null;
+    }
+
+    apps.follower = .{
+        .db_path = db_path,
+        .session = session,
+        .worker = keeper,
+    };
+
+    return keeper;
 }
 
 fn helpers_of(init: std.process.Init, db_path: [:0]const u8, auto_update: bool) Helpers {
@@ -375,11 +402,10 @@ fn split_hosts(
     project.admin_origin = model_app.origin_of(admin_url);
     project.admin_base = model_app.path_of(admin_url);
     project.site_origin = model_app.origin_of(site_url);
-    project.outside = try @import("project.zig").outside_of(
-        arena,
-        project.site_origin,
-        project.admin_origin,
-    );
+    project.outside = try @import("project.zig").outside_of(arena, .{
+        .site = project.site_origin,
+        .admin = project.admin_origin,
+    });
     project.on_copy = @import("project.zig").copy_of_environment();
 
     std.debug.assert(project.split());
@@ -599,7 +625,7 @@ fn claim(
     }
 
     return try operator.open(init.io, init.arena.allocator(), db_path, port, .{
-        .url = apps.mode.options.base_url,
+        .url = apps.address(),
         .admin = apps.project.admin_origin,
     });
 }

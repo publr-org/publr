@@ -61,20 +61,20 @@ pub fn run(init: std.process.Init, db_path: [:0]const u8, args: []const []const 
     return 0;
 }
 
-/// Where its plugins' outside calls may go: the rule `serve` follows, from the site's and
-/// the admin's origins `serve` passes (`--site-url`, `--admin-url`); the worker serves
-/// nothing itself.
+/// Where its plugins' outside calls may go: the rule `serve` follows, from the origins
+/// `serve` passes (`--site-url`, `--admin-url`, and `--started-url` while the site answers
+/// away from the `--url` it started at); the worker serves nothing itself.
 pub fn outside_of(
     arena: std.mem.Allocator,
     args: []const []const u8,
 ) error{OutOfMemory}!@import("../model/outside.zig").Rule {
     std.debug.assert(args.len <= 64);
 
-    return @import("project.zig").outside_of(
-        arena,
-        option_of(args, "--site-url"),
-        option_of(args, "--admin-url"),
-    );
+    return @import("project.zig").outside_of(arena, .{
+        .site = option_of(args, "--site-url"),
+        .admin = option_of(args, "--admin-url"),
+        .started = option_of(args, "--started-url"),
+    });
 }
 
 /// The value after `name` in `args`; empty when it is not there.
@@ -110,6 +110,34 @@ fn default_signals() void {
     std.posix.sigprocmask(std.posix.SIG.UNBLOCK, &stopping, null);
 
     std.debug.assert(@backingInt(std.posix.SIG.TERM) != @backingInt(std.posix.SIG.INT));
+}
+
+/// How `serve` starts the worker: `executable` on its database, told the origins its rule
+/// follows (`outside_of`); `--started-url` only while the site answers away from it.
+pub fn argv_of(
+    arena: std.mem.Allocator,
+    executable: []const u8,
+    db_path: []const u8,
+    origins: @import("../model/outside.zig").Origins,
+) error{OutOfMemory}![]const []const u8 {
+    std.debug.assert(executable.len > 0);
+    std.debug.assert(db_path.len > 0);
+
+    const moved = origins.started.len > 0 and !std.mem.eql(u8, origins.started, origins.site);
+    const argv: []const []const u8 = &.{
+        executable,
+        "--db",
+        db_path,
+        "queue-run",
+        "--site-url",
+        origins.site,
+        "--admin-url",
+        origins.admin,
+        "--started-url",
+        origins.started,
+    };
+
+    return arena.dupe([]const u8, if (moved) argv else argv[0..8]);
 }
 
 /// The worker `serve` keeps running beside it.
@@ -169,6 +197,17 @@ pub const Keeper = struct {
 
         keeper.child = null;
     }
+
+    /// Stopped, to be started again with `argv` at the next tick: the site moved.
+    pub fn restart(keeper: *Keeper, argv: []const []const u8) void {
+        std.debug.assert(argv.len >= 8 and argv.len <= 10);
+
+        keeper.stop();
+        keeper.argv = argv;
+        keeper.next_start_ms = 0;
+
+        std.debug.assert(keeper.child == null);
+    }
 };
 
 test "the worker follows serve's rule: development for a plain http site, else production" {
@@ -179,7 +218,10 @@ test "the worker follows serve's rule: development for a plain http site, else p
     const site = "http://127.0.0.1:8080";
     const admin = "http://admin.localhost:8080";
     const laptop = try outside_of(arena, &.{ "--site-url", site, "--admin-url", admin });
-    const served = try project.outside_of(arena, site, admin);
+    const served = try project.outside_of(arena, .{
+        .site = site,
+        .admin = admin,
+    });
 
     try std.testing.expectEqual(served.production, laptop.production);
     try std.testing.expect(!laptop.production);
@@ -195,4 +237,16 @@ test "the worker follows serve's rule: development for a plain http site, else p
 
     try std.testing.expect(public.production);
     try std.testing.expect((try outside_of(arena, &.{})).production);
+
+    const moved = try outside_of(arena, &.{
+        "--site-url",
+        "https://mykiosk.com",
+        "--admin-url",
+        "https://kiosk--admin.publr.app",
+        "--started-url",
+        "https://kiosk.publr.app",
+    });
+
+    try std.testing.expectEqual(@as(usize, 3), moved.own_hosts.len);
+    try std.testing.expectEqualStrings("mykiosk.com", moved.own_hosts[0]);
 }

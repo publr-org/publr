@@ -72,12 +72,40 @@ pub fn open(
         .url = addresses.url,
         .admin = addresses.admin,
     };
+
+    try write(io, arena, db_path, session);
+
+    return session;
+}
+
+/// The site answers at another address now: the session written again with it, its key
+/// and port the same, so a command beside it keeps reaching it and says the new address.
+pub fn readdress(
+    io: std.Io,
+    arena: std.mem.Allocator,
+    db_path: []const u8,
+    session: Session,
+    url: []const u8,
+) !void {
+    std.debug.assert(session.port > 0);
+    std.debug.assert(std.mem.indexOfAny(u8, url, " \n") == null);
+
+    var moved = session;
+
+    moved.url = url;
+    try write(io, arena, db_path, moved);
+}
+
+fn write(io: std.Io, arena: std.mem.Allocator, db_path: []const u8, session: Session) !void {
+    std.debug.assert(session.port > 0);
+    std.debug.assert(db_path.len > 0);
+
     const text = try std.fmt.allocPrint(arena, "{d} {s} {d} {s} {s}\n", .{
-        port,
+        session.port,
         &session.key,
         session.build,
-        addresses.url,
-        addresses.admin,
+        session.url,
+        session.admin,
     });
     var file = try std.Io.Dir.cwd().createFile(io, try path_of(arena, db_path), .{
         .permissions = .fromMode(0o600),
@@ -87,8 +115,6 @@ pub fn open(
     try file.writeStreamingAll(io, text);
 
     std.debug.assert(text.len < session_bytes_max);
-
-    return session;
 }
 
 pub fn close(io: std.Io, arena: std.mem.Allocator, db_path: []const u8) void {
@@ -443,4 +469,34 @@ test "a session reads its port, key and build; one written before builds were ke
     try std.testing.expectEqual(@as(u64, 1759740000123456789), stamped.build);
     try std.testing.expectEqual(@as(u64, 0), unstamped.build);
     try std.testing.expect(parse("0 " ++ key ++ "\n") == null);
+}
+
+test "a session written again for a moved site keeps its key and port" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const arena = arena_state.allocator();
+    const io = std.testing.io;
+    var scratch = std.testing.tmpDir(.{});
+    defer scratch.cleanup();
+
+    const root = try scratch.dir.realPathFileAlloc(io, ".", arena);
+    const db_path = try std.fs.path.join(arena, &.{ root, "publr.db" });
+    const session: Session = .{
+        .port = 8080,
+        .key = @splat('a'),
+        .url = "https://kiosk.publr.app",
+        .admin = "https://kiosk--admin.publr.app",
+    };
+
+    try write(io, arena, db_path, session);
+    try readdress(io, arena, db_path, session, "https://mykiosk.com");
+
+    const text = try scratch.dir.readFileAlloc(io, "publr.db.serve", arena, .limited(1024));
+    const read = parse(text).?;
+
+    try std.testing.expectEqualStrings("https://mykiosk.com", read.url);
+    try std.testing.expectEqualStrings(session.admin, read.admin);
+    try std.testing.expectEqualSlices(u8, &session.key, &read.key);
+    try std.testing.expectEqual(session.port, read.port);
 }

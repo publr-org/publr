@@ -4,18 +4,20 @@ const address = @import("address.zig");
 pub const entries_max: u32 = 64;
 pub const url_len_max: u32 = 512;
 
-/// One app given an address of its own by whoever runs the site: on the site whose public
-/// address is `site` (its `--url`), app `app` answers at `url`. A copy of the site elsewhere
-/// (an environment, a clone) has another `site`, so it never claims the entry.
+/// An address given by whoever runs the site, on the site that started as `site` (its
+/// `--url`): app `app` answers at `url`; with no app, `url` is the site's own address, which
+/// every app without one of its own answers under. A copy of the site elsewhere (an
+/// environment, a clone) has another `site`, so it never claims the entry.
 pub const Entry = struct {
     site: []const u8,
-    app: []const u8,
+    app: []const u8 = "",
     url: []const u8,
 };
 
 pub const Error = error{ InvalidAddresses, OutOfMemory };
 
-/// The entries `addresses.zon` lists: `.{ .{ .site = …, .app = …, .url = … }, … }`.
+/// The entries `addresses.zon` lists: `.{ .{ .site = …, .app = …, .url = … }, … }`, `.app`
+/// left out for the site's own address.
 pub fn parse(arena: std.mem.Allocator, text: [:0]const u8) Error![]const Entry {
     std.debug.assert(text.len <= 1 << 20);
 
@@ -35,7 +37,7 @@ pub fn parse(arena: std.mem.Allocator, text: [:0]const u8) Error![]const Entry {
     }
 
     for (entries) |entry| {
-        if (!valid_url(entry.url) or !valid_url(entry.site) or entry.app.len == 0) {
+        if (!valid_url(entry.url) or !valid_url(entry.site)) {
             return error.InvalidAddresses;
         }
     }
@@ -88,15 +90,31 @@ pub fn of_site(entries: []const Entry, base_url: []const u8, kept: *[entries_max
     return kept[0..len];
 }
 
-/// What is wrong with a site's entries: an app given two addresses, or two apps one host.
-/// Null when nothing is.
-pub fn problem(entries: []const Entry) ?[]const u8 {
+/// What is wrong with a site's entries: the site or an app given two addresses, two apps one
+/// host, or the site's own address under another path than it is served under (`base_url`'s:
+/// the path requests arrive at). Null when nothing is.
+pub fn problem(entries: []const Entry, base_url: []const u8) ?[]const u8 {
     std.debug.assert(entries.len <= entries_max);
+    std.debug.assert(base_url.len > 0);
+
+    if (base_of(entries)) |base| {
+        if (!std.mem.eql(u8, address.path_of(base), address.path_of(base_url))) {
+            return "the site's own address keeps the path of its --url";
+        }
+    }
 
     for (entries, 0..) |entry, index| {
         for (entries[index + 1 ..]) |other| {
             if (std.mem.eql(u8, entry.app, other.app)) {
-                return "an app is given two addresses";
+                return if (entry.app.len == 0)
+                    "the site is given two addresses"
+                else
+                    "an app is given two addresses";
+            }
+
+            // The apps on paths share the site's host: only apps of their own may not.
+            if (entry.app.len == 0 or other.app.len == 0) {
+                continue;
             }
 
             if (std.ascii.eqlIgnoreCase(address.host_of(entry.url), address.host_of(other.url))) {
@@ -115,6 +133,22 @@ pub fn url_of(entries: []const Entry, app: []const u8) ?[]const u8 {
 
     for (entries) |entry| {
         if (std.mem.eql(u8, entry.app, app)) {
+            return std.mem.trimEnd(u8, entry.url, "/");
+        }
+    }
+
+    return null;
+}
+
+/// The site's own address its entries give, without a trailing slash; null for none: it
+/// stays at its `--url`.
+pub fn base_of(entries: []const Entry) ?[]const u8 {
+    std.debug.assert(entries.len <= entries_max);
+
+    for (entries) |entry| {
+        if (entry.app.len == 0) {
+            std.debug.assert(valid_url(entry.url));
+
             return std.mem.trimEnd(u8, entry.url, "/");
         }
     }
@@ -200,7 +234,7 @@ test "only the site's own entries count; a copy's are left alone" {
     try std.testing.expectEqual(@as(usize, 1), own.len);
     try std.testing.expectEqualStrings("https://pos.mykiosk.com", url_of(own, "pos").?);
     try std.testing.expect(url_of(own, "kitchen") == null);
-    try std.testing.expect(problem(own) == null);
+    try std.testing.expect(problem(own, "https://kiosk.publr.app") == null);
 }
 
 test "an app twice, or a host twice, is a problem" {
@@ -229,8 +263,30 @@ test "an app twice, or a host twice, is a problem" {
         },
     };
 
-    try std.testing.expect(problem(&twice) != null);
-    try std.testing.expect(problem(&shared) != null);
+    try std.testing.expect(problem(&twice, "https://a.app") != null);
+    try std.testing.expect(problem(&shared, "https://a.app") != null);
+}
+
+test "an entry with no app is the site's own address, on the path it is served under" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const entries = try parse(arena_state.allocator(),
+        \\.{
+        \\    .{ .site = "https://kiosk.publr.app", .url = "https://mykiosk.com/" },
+        \\    .{ .site = "https://kiosk.publr.app", .app = "pos", .url = "https://pos.my.com" },
+        \\}
+    );
+
+    try std.testing.expectEqualStrings("https://mykiosk.com", base_of(entries).?);
+    try std.testing.expectEqualStrings("https://pos.my.com", url_of(entries, "pos").?);
+    try std.testing.expect(problem(entries, "https://kiosk.publr.app") == null);
+    try std.testing.expect(problem(entries, "https://kiosk.publr.app/shop") != null);
+    try std.testing.expect(base_of(entries[1..]) == null);
+
+    const twice = [_]Entry{ entries[0], entries[0] };
+
+    try std.testing.expect(problem(&twice, "https://kiosk.publr.app") != null);
 }
 
 test "a request is inside an app's address on its host, under its path" {

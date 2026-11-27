@@ -339,10 +339,6 @@ test "the session cookie is shared across subdomains only for a named domain" {
     try std.testing.expect(!address("example.com"));
 }
 
-/// The rule plugins' outside calls follow on a server whose site and admin answer at these
-/// origins (either may be empty): their hosts are its own, and so are the public addresses
-/// on the machine's interfaces; how calls leave is the host's (`PUBLR_EGRESS`). `serve` and
-/// its queue worker both get it from here.
 /// The variable the maker of a copy (an environment, a branch) sets, naming it: the process
 /// then serves a copy, never the site itself.
 pub const copy_variable = "PUBLR_COPY";
@@ -356,25 +352,24 @@ pub fn copy_of_environment() bool {
     return named.len > 0;
 }
 
+/// The rule plugins' outside calls follow on a server whose site and admin answer at these
+/// origins (any may be empty; `origins.started` is the `--url` the site started at, while it
+/// answers elsewhere): their hosts are its own, and so are the public addresses on the
+/// machine's interfaces; how calls leave is the host's (`PUBLR_EGRESS`). `serve` and its
+/// queue worker both get it from here.
 pub fn outside_of(
     arena: std.mem.Allocator,
-    site_origin: []const u8,
-    admin_origin: []const u8,
+    origins: outside_model.Origins,
 ) error{OutOfMemory}!outside_model.Rule {
-    std.debug.assert(site_origin.len <= 64 << 10);
-    std.debug.assert(admin_origin.len <= 64 << 10);
+    std.debug.assert(origins.site.len <= 64 << 10);
+    std.debug.assert(origins.admin.len <= 64 << 10);
 
-    var hosts: std.ArrayList([]const u8) = .empty;
-
-    for ([_][]const u8{ site_origin, admin_origin }) |origin| {
-        const host = outside_model.host_of_origin(origin);
-
-        if (host.len > 0) {
-            try hosts.append(arena, host);
-        }
-    }
-
-    var rule = outside_model.rule_of(registry.hosted, site_origin, hosts.items);
+    const hosts = try arena.create([outside_model.origins_max][]const u8);
+    var rule = outside_model.rule_of(
+        registry.hosted,
+        origins.site,
+        outside_model.hosts_of(origins, hosts),
+    );
 
     rule.own_addresses = try @import("interfaces.zig").public(arena);
     rule.egress = egress_model.parse(@import("../lib/environment.zig").get(egress_model.variable));

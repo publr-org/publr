@@ -41,6 +41,63 @@ pub fn rule_of(hosted: bool, site_origin: []const u8, own_hosts: []const []const
     };
 }
 
+/// Where a server answers: its site, its admin, and the `--url` it started at while the site
+/// answers elsewhere (that name still leads to it). Any may be empty.
+pub const Origins = struct {
+    site: []const u8 = "",
+    admin: []const u8 = "",
+    started: []const u8 = "",
+};
+
+pub const origins_max: u32 = 3;
+
+/// The hosts of `origins`, each once, in `buffer`.
+pub fn hosts_of(origins: Origins, buffer: *[origins_max][]const u8) []const []const u8 {
+    std.debug.assert(origins.site.len <= 64 << 10);
+    std.debug.assert(origins.started.len <= 64 << 10);
+
+    var len: u32 = 0;
+
+    for ([_][]const u8{ origins.site, origins.admin, origins.started }) |origin| {
+        const host = host_of_origin(origin);
+        const known = for (buffer[0..len]) |kept| {
+            if (std.ascii.eqlIgnoreCase(kept, host)) {
+                break true;
+            }
+        } else false;
+
+        if (host.len == 0 or known) {
+            continue;
+        }
+
+        buffer[len] = host;
+        len += 1;
+    }
+
+    std.debug.assert(len <= origins_max);
+
+    return buffer[0..len];
+}
+
+test "a server's own hosts: each once, the empty left out" {
+    var buffer: [origins_max][]const u8 = undefined;
+    const moved = hosts_of(.{
+        .site = "https://mykiosk.com",
+        .admin = "https://kiosk--admin.publr.app",
+        .started = "https://kiosk.publr.app",
+    }, &buffer);
+
+    try std.testing.expectEqual(@as(usize, 3), moved.len);
+    try std.testing.expectEqualStrings("kiosk.publr.app", moved[2]);
+
+    const unmoved = hosts_of(.{
+        .site = "http://127.0.0.1:8080",
+        .started = "http://127.0.0.1:8080",
+    }, &buffer);
+
+    try std.testing.expectEqual(@as(usize, 1), unmoved.len);
+}
+
 /// `example.com` from `https://example.com:8080/path`: the host alone.
 pub fn host_of_origin(origin: []const u8) []const u8 {
     std.debug.assert(origin.len <= 64 << 10);

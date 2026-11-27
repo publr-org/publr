@@ -716,8 +716,8 @@ const lessons = Publr.build.getCollection({ type: 'lesson', limit: 100 });
 - **Links** never write the app's mount: start them with `Publr.build.base()` (`/learn`,
   empty at the root or on its own host), so `${base}/lessons` follows the app wherever it
   moves. `Publr.build.baseUrl()` is the app's full address, for canonical links, sharing
-  and emails. Whoever runs the site can give an app a host of its own in
-  `apps/addresses.zon`; never edit that file by hand on a hosted site.
+  and emails. Whoever runs the site can give an app, or the whole site, a host of its
+  own in `apps/addresses.zon`; never edit that file by hand on a hosted site.
 
 A running `publr serve` watches the apps folder: save a file and the change is live within
 half a second, a stylesheet included. A change that does not compile is refused, the

@@ -12,7 +12,10 @@ const identity = @import("../adapters/rest/identity.zig");
 const registry = @import("registry.zig");
 const apps_watch = @import("apps_watch.zig");
 const apps_interactive = @import("apps_interactive.zig");
-const addresses = @import("../model/app.zig").addresses;
+const model_app = @import("../model/app.zig");
+const addresses = model_app.addresses;
+const outside = @import("../model/outside.zig");
+const site_moves = @import("site_moves.zig");
 
 /// How the apps are served: their options, and `--static` (with `--full`).
 pub const Mode = struct {
@@ -33,6 +36,14 @@ pub const AppsHost = struct {
     dir: []const u8 = "",
     /// That folder as it was when they were read (`apps_watch`): 0 for none.
     stamp: u64 = 0,
+    /// The site's own address as `addresses.zon` gave it at the last load, which the apps and
+    /// `project.site_origin` point into; unused while the site stays at its `--url`.
+    base_buffer: [addresses.url_len_max]u8 = undefined,
+    base_len: u32 = 0,
+    /// The hosts `project.outside` counts as the server's own, after a move.
+    own_hosts: [outside.origins_max][]const u8 = undefined,
+    /// What else follows a move while the server runs; none before it is set up.
+    follower: ?site_moves.Follower = null,
 
     /// At startup: a failure is a warning, the admin stays up.
     pub fn start(host: *AppsHost) void {
@@ -167,12 +178,71 @@ pub const AppsHost = struct {
         };
         const own = addresses.of_site(entries, options.base_url, kept);
 
-        if (addresses.problem(own)) |problem| {
+        if (addresses.problem(own, options.base_url)) |problem| {
             host.reason.set("addresses.zon: {s}", .{problem});
             return error.AppsRefused;
         }
 
         return own;
+    }
+
+    /// Where the site answers now: the address `addresses.zon` gives it, else its `--url`. The
+    /// site's origin, which the admin's links to the site, sign-in and the tools' addresses
+    /// read, follows it; a site with no admin of its own has none to follow.
+    fn site_address(host: *AppsHost, own: []const addresses.Entry) []const u8 {
+        std.debug.assert(host.mode.options.base_url.len > 0);
+
+        const project = host.project;
+        const started = host.mode.options.base_url;
+        const given = addresses.base_of(own) orelse started;
+        const moved = !std.ascii.eqlIgnoreCase(model_app.origin_of(given), project.site_origin);
+
+        std.debug.assert(given.len <= host.base_buffer.len);
+
+        @memcpy(host.base_buffer[0..given.len], given);
+        host.base_len = @intCast(given.len);
+
+        const kept = host.address();
+
+        // A site with no admin of its own (the browser build) has no origin to follow.
+        if (project.site_origin.len == 0 or !moved) {
+            return kept;
+        }
+
+        const origins: outside.Origins = .{
+            .site = model_app.origin_of(kept),
+            .admin = project.admin_origin,
+            .started = model_app.origin_of(started),
+        };
+        var rule = outside.rule_of(
+            registry.hosted,
+            origins.site,
+            outside.hosts_of(origins, &host.own_hosts),
+        );
+
+        rule.own_addresses = project.outside.own_addresses;
+        rule.egress = project.outside.egress;
+        project.outside = rule;
+        project.site_origin = origins.site;
+
+        if (host.follower) |*follower| {
+            follower.moved(kept, origins);
+        }
+
+        std.debug.assert(std.mem.eql(u8, kept, given));
+
+        return kept;
+    }
+
+    /// The site's whole address now, its path included: where people and agents reach it.
+    pub fn address(host: *const AppsHost) []const u8 {
+        std.debug.assert(host.mode.options.base_url.len > 0);
+
+        if (host.base_len == 0) {
+            return host.mode.options.base_url;
+        }
+
+        return host.base_buffer[0..host.base_len];
     }
 
     /// Every app loaded and validated, then: `--static` brings each app's build up to date
@@ -194,6 +264,7 @@ pub const AppsHost = struct {
         var kept: [addresses.entries_max]addresses.Entry = undefined;
 
         options.addresses = try host.addresses_of(arena_state.allocator(), &kept, options);
+        options.base_url = host.site_address(options.addresses);
 
         host.source = try apps_adapter.folder.project_apps(
             host.gpa,

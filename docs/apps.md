@@ -135,6 +135,23 @@ rebuilds only the apps whose address changed; nothing in the database holds an a
 An app given two addresses, or two apps one host, refuses the file, and the apps loaded
 before keep serving.
 
+An entry with no `.app` moves the whole site: every app without an address of its own
+answers under its `.url`, and its links, sitemaps and emails use that address, as do the
+admin's links to the site, the address agents are given and the one `publr` commands
+show. Its `--url` stays one of its own addresses while it runs: plugins' calls to it are
+refused like calls to the new one.
+
+```zig
+.{
+    .{ .site = "https://kiosk.publr.app", .url = "https://mykiosk.com" },
+}
+```
+
+The site starts at `--url`; the file's address replaces it, and taking the entry out goes
+back to `--url`. Only the host can change: the path stays the one requests arrive at, so
+an address with another path refuses the file. Whoever moves the site writes the file and
+runs `publr apps load` (a server also loads it once the apps folder holds still).
+
 Inside an app everything is seen from its mount. Its routes, `content/` and its
 middleware's `request.path()` start at `/` whether the app answers at the root, under
 `/newsletter` or on `app.example.com`. What the engine writes follows the mount: an
