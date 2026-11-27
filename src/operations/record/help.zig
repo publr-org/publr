@@ -4,6 +4,7 @@
 //! editor asks again as its values change.
 
 const std = @import("std");
+const public = @import("../../publr/operations/record/help.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
@@ -14,11 +15,7 @@ const Error = sdk.Error;
 const mods = sdk.mods;
 const Value = std.json.Value;
 
-/// One field's help as the modifiers left it.
-pub const Help = struct {
-    field: []const u8,
-    help: []const u8,
-};
+pub const Help = public.Help;
 
 /// The name a field's help is applied under: `promo.body.help`.
 pub fn help_name(
@@ -36,41 +33,19 @@ pub fn help_name(
 
 pub fn Helps(comptime Domain: type) type {
     return struct {
-        pub const name = "record.help";
-        pub const description = "The help under each field, for a document as is";
-        pub const details =
-            \\Any signed-in account. The help of each top-level field of `type` that a
-            \\plugin modifies, applied as `<type>.<field>.help` (`publr.modify("*.*.help",
-            \\…)`): each takes the `field`, the whole `record` and the `help` so far, and
-            \\answers the help to show. Modifiers read only. A field nobody modifies is left
-            \\out: its help is the type's. The document is the editor's, saved or not.
-        ;
-        pub const kind: sdk.operation.Kind = .read;
-        pub const open = true;
-        pub const In = struct {
-            type: []const u8,
-            document: sdk.operation.Json,
-        };
-        pub const Out = struct {
-            helps: []const Help,
-        };
-        pub const example_signed_in = true;
-        pub const example: In = .{
-            .type = "post",
-            .document = .{
-                .text = "{\"title\":\"Hello\"}",
-            },
-        };
-        pub const example_out: Out = .{
-            .helps = &.{},
-        };
-        pub const field_docs: sdk.operation.Docs(In) = .{
-            .type = "The record's type",
-            .document = "Its fields as JSON, as the editor holds them",
-        };
-        pub const output_docs: sdk.operation.Docs(Out) = .{
-            .helps = "Each modified field's `field` and the `help` to show",
-        };
+        pub const shape = public.Helps;
+        pub const name = shape.name;
+        pub const description = shape.description;
+        pub const details = shape.details;
+        pub const kind = shape.kind;
+        pub const open = shape.open;
+        pub const In = shape.In;
+        pub const Out = shape.Out;
+        pub const example_signed_in = shape.example_signed_in;
+        pub const example = shape.example;
+        pub const example_out = shape.example_out;
+        pub const field_docs = shape.field_docs;
+        pub const output_docs = shape.output_docs;
 
         pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
             std.debug.assert(granted.allows());

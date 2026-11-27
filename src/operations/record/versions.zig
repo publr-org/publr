@@ -5,6 +5,7 @@
 //! top of one are a draft on it until they are scheduled (`record.transition_at` with that
 //! base), saved into it (`record.save_into_scheduled`) or dropped (`record.unschedule`).
 const std = @import("std");
+const public = @import("../../publr/operations/record/versions.zig");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
@@ -300,43 +301,17 @@ fn loaded(ctx: *Ctx, granted: *const Grant, id: []const u8) Error!Loaded {
 }
 
 pub const SaveVersion = struct {
-    pub const name = "record.save_version";
-    pub const description = "Keep edits made on top of a scheduled change, as a draft";
-    pub const details =
-        \\Takes the whole document as it should read (`record get --version`) and keeps what
-        \\differs from the scheduled change as a draft on it: nothing is scheduled until
-        \\`record transition_at` with it as `base` schedules the draft on top of it, or
-        \\`record save_into_scheduled` puts it into the change itself. Back to what the
-        \\change reads, the draft goes. Live is untouched.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        version: i64,
-        document: sdk.operation.Json,
-    };
-    pub const Out = struct {
-        /// Whether a draft is kept on it.
-        changed: bool,
-    };
-    pub const example: In = .{
-        .id = record_operations.example_scheduled_id,
-        .version = 1,
-        .document = .{
-            .text = "{\"title\":\"Back to normal\"}",
-        },
-    };
-    pub const example_out: Out = .{
-        .changed = true,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The record id",
-        .version = "The scheduled change, from `scheduled` in `record get`",
-        .document = "The whole document as it should read",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .changed = "Whether edits are kept on it, waiting to be scheduled or saved into it",
-    };
+    pub const shape = public.SaveVersion;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -406,35 +381,17 @@ pub const SaveVersion = struct {
 };
 
 pub const SaveIntoScheduled = struct {
-    pub const name = "record.save_into_scheduled";
-    pub const description = "Put the edits made on top of a scheduled change into it";
-    pub const details =
-        \\The draft on the change (`record save_version`) becomes part of it: the change
-        \\then sets those fields too, at its moment. Refused when another change on the same
-        \\base already changes one of them.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        version: i64,
-    };
-    pub const Out = struct {
-        saved: bool,
-    };
-    pub const example: In = .{
-        .id = record_operations.example_scheduled_id,
-        .version = 1,
-    };
-    pub const example_out: Out = .{
-        .saved = true,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The record id",
-        .version = "The scheduled change, from `scheduled` in `record get`",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .saved = "Always true; not found when nothing waits on it",
-    };
+    pub const shape = public.SaveIntoScheduled;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -475,32 +432,16 @@ pub const SaveIntoScheduled = struct {
 };
 
 pub const PublishVersion = struct {
-    pub const name = "record.publish_version";
-    pub const description = "Put a scheduled change live now, with what it builds on";
-    pub const details =
-        \\The record goes live as the change reads, now, as you: the changes it builds on
-        \\go live with it and leave the schedule; changes beside it and on top of it keep
-        \\their moments, now on what is live. Checked as a publish is.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        version: i64,
-    };
-    pub const Out = @import("lifecycle.zig").Transition.Out;
-    pub const example: In = .{
-        .id = record_operations.example_scheduled_id,
-        .version = 1,
-    };
-    pub const example_out: Out = .{
-        .status = "published",
-        .changed = false,
-        .version = 3,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The record id",
-        .version = "The scheduled change, from `scheduled` in `record get`",
-    };
+    pub const shape = public.PublishVersion;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

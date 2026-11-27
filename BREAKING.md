@@ -498,4 +498,47 @@ unchanged. Gone from it: the `operations` lists, each `run`, `bootstrap`, `tags`
 folder and tag helpers), and the core helpers of each sub-namespace (`library.row_of`,
 `library.save`, `upload.added`, `import.import_job`, ...).
 
+### `sdk:operations.custom_fields`
+
+`publr.operations.custom_fields` is the public file of the custom field operations' shapes.
+`List` (with `List.Item`), `Get`, `Update`, `Validate`, `Create`, `Delete`, `Values`,
+`SaveValues` and `namespace` stay. Gone from it: the `operations` list, each `run`, and
+core's `Destination`.
+
+`Get`'s, `Update`'s and `Create`'s answers hold the schema as JSON (`publr.operation.Json`),
+as `Update` and `Create` take it, no longer core's own definition type: what REST, the CLI
+and MCP answer is unchanged.
+
+Before: `out.definition.handle`.
+After: the group named in the call (`in.group`), or read the fields you need from it in
+your own shape, `const def = try out.definition.as(struct { handle: []const u8 }, arena);`.
+
+### `sdk:operations.record`
+
+`publr.operations.record` is the public file of the record operations' shapes. Every
+operation (`Create`, `Get`, `Save`, `List`, `Referrers`, `Validate`, `Transition`,
+`TransitionAt`, `Unschedule`, `RunScheduled`, `Reschedule`, `Publish`, `DiscardChanges`,
+`Delete`, `Purge`, `SaveVersion`, `PublishVersion`, `SaveIntoScheduled`, `TransitionMany`,
+`CreateMany`, `DeclineRequest`, `HoldBack`, `Shown`, `Markers`, `Helps`, `Query`, `Reach`),
+`Record`, `Purpose`, `Order`, `Problem`, `Referrer`, the examples (`example_id`,
+`example_changed_id`, `example_draft_id`, `example_scheduled_id`, `example_document`) and
+`namespace` stay; `example_record`, `Title`, `Marker` and `Help` come. Calls are unchanged.
+`List.Out.extend` is as before. Gone from it: the `operations` list, each `run`, and core's
+`domain`, `access`, `document`, `fixture`, `site_side` and `list_max`.
+
+### `sdk:operations.dimensions`
+
+`publr.operations.dimensions` is gone: it named no operation, only core's readers of the
+site's dimensions (`all`, `find`, `expanded`, `values_of`, `main`, ...), which take core's
+context, and four names of `publr.dimension`.
+
+Before: `publr.operations.dimensions.Value`, `.Member`, `.Shown`, `.values_max`.
+After: `publr.dimension.Value`, `.Member`, `.Shown`, `.values_max`.
+
+### `sdk:operations.design`
+
+`publr.operations.design` is the public file of the design operations' shapes (part of the
+part A change, its line switched now). `System`, `SaveSystem`, `Moodboard`,
+`SaveMoodboard`, `Item` and `namespace` stay. Gone from it: the `operations` list, each `run` and `bootstrap`, core's.
+
 ## 0.8.4 (2026-11-26)

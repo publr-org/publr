@@ -24,7 +24,7 @@ pub fn load(session: *admin.Session, handle: []const u8) !types.Got {
     }
 
     if (space == .custom) {
-        const got = try registry.SDK.dispatch(&session.ctx, custom.Get, .{
+        const got = try custom.got(&session.ctx, .{
             .group = handle,
         });
         return .{

@@ -62,10 +62,10 @@ fn taxonomy_made(
 /// Keeps each field group made
 fn fields_made(
     ctx: *publr.Ctx,
-    _: *operations.custom_fields.Create.In,
-    out: *const operations.custom_fields.Create.Out,
+    in: *operations.custom_fields.Create.In,
+    _: *const operations.custom_fields.Create.Out,
 ) publr.Error!void {
-    try keep(ctx, operations.custom_fields.Create.name, out.definition.handle);
+    try keep(ctx, operations.custom_fields.Create.name, in.group);
 }
 
 /// Keeps each plugin added

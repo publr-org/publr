@@ -18,14 +18,7 @@ const Record = store.documents.Record;
 const Def = store.definitions.Def;
 const Value = std.json.Value;
 
-pub const Saved = struct {
-    version: i64,
-    slug: ?[]const u8,
-    changed: bool,
-    /// What the save did: `saved` (the live document written), `changes_saved` (kept as
-    /// pending changes), `changes_discarded` (an edit taken back), `unchanged`.
-    outcome: []const u8,
-};
+pub const Saved = @import("../../publr/model/record.zig").Saved;
 
 pub fn Of(comptime Domain: type) type {
     return struct {

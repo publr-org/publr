@@ -35,13 +35,12 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
         ),
     );
     _ = try registry.SDK.dispatch(&system, Update, Update.example);
-    const saved = try registry.SDK.dispatch(&system, Get, .{
+    const saved = try custom.got(&system, .{
         .group = "user",
     });
     try std.testing.expectEqualStrings("biography", saved.definition.fields[0].name);
-    try std.testing.expectError(error.NotFound, registry.SDK.dispatch(
+    try std.testing.expectError(error.NotFound, custom.got(
         &system,
-        Get,
         .{
             .group = "media",
         },
@@ -77,7 +76,7 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
         }));
     }
 
-    const unchanged = try registry.SDK.dispatch(&system, Get, .{
+    const unchanged = try custom.got(&system, .{
         .group = "user",
     });
     try std.testing.expectEqualStrings("biography", unchanged.definition.fields[0].name);
@@ -97,9 +96,8 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
             usize,
             0,
         ),
-        (try registry.SDK.dispatch(
+        (try custom.got(
             &system,
-            Get,
             Get.example,
         )).definition.fields.len,
     );
@@ -133,9 +131,8 @@ test "named groups can share a destination and remain independent" {
     );
     try std.testing.expectEqualStrings(
         "Profile",
-        (try registry.SDK.dispatch(
+        (try custom.got(
             &system,
-            Get,
             .{
                 .group = "profile",
             },
@@ -146,9 +143,8 @@ test "named groups can share a destination and remain independent" {
     });
     try std.testing.expectError(
         error.NotFound,
-        registry.SDK.dispatch(
+        custom.got(
             &system,
-            Get,
             .{
                 .group = "profile",
             },
@@ -167,9 +163,8 @@ test "named groups can share a destination and remain independent" {
     );
     try std.testing.expectError(
         error.Invalid,
-        registry.SDK.dispatch(
+        custom.got(
             &system,
-            Get,
             .{
                 .group = "../escape",
             },
@@ -191,7 +186,7 @@ test "existing destination groups keep their location when opened as named group
             .fields = &.{},
         },
     );
-    const got = try registry.SDK.dispatch(&system, Get, .{
+    const got = try custom.got(&system, .{
         .group = "user",
     });
     try std.testing.expect(model.field_group.applies(

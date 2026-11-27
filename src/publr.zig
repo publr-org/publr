@@ -86,6 +86,7 @@ pub const dimension = struct {
     pub const Value = @import("publr/plugin/dimensions.zig").Value;
     pub const Member = @import("publr/plugin/dimensions.zig").Member;
     pub const Shown = @import("publr/plugin/dimensions.zig").Shown;
+    pub const values_max = @import("publr/plugin/dimensions.zig").values_max;
 };
 
 /// `publr.hook.request(run)` in `.hooks`: a page request before it is drawn.
@@ -387,7 +388,7 @@ pub const operations = struct {
     pub const money = @import("publr/operations/money.zig");
     pub const project = @import("publr/operations/project.zig");
     pub const clock = @import("publr/operations/clock.zig");
-    pub const custom_fields = @import("operations/custom_fields.zig");
+    pub const custom_fields = @import("publr/operations/custom_fields.zig");
     pub const user = @import("operations/user.zig");
     pub const user_type = @import("publr/operations/user_type.zig");
     pub const sign_in = @import("publr/operations/sign_in.zig");
@@ -398,11 +399,11 @@ pub const operations = struct {
     pub const role = @import("publr/operations/role.zig");
     pub const operation = @import("publr/operations/operation.zig");
     pub const content_type = @import("publr/operations/content_type.zig");
-    pub const record = @import("operations/record.zig");
+    pub const record = @import("publr/operations/record.zig");
     pub const taxonomy = @import("publr/operations/taxonomy.zig");
     pub const term = @import("publr/operations/term.zig");
     pub const media = @import("publr/operations/media.zig");
-    pub const design = @import("operations/design.zig");
+    pub const design = @import("publr/operations/design.zig");
     pub const snapshot = @import("publr/operations/snapshot.zig");
     pub const view = @import("publr/operations/view.zig");
     pub const rail = @import("publr/operations/rail.zig");
@@ -415,7 +416,6 @@ pub const operations = struct {
     pub const link = @import("publr/operations/link.zig");
     pub const messaging = @import("publr/operations/messaging.zig");
     pub const plugin = @import("publr/operations/plugin.zig");
-    pub const dimensions = @import("operations/dimensions.zig");
     pub const ledger = @import("publr/operations/ledger.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");

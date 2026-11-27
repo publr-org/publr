@@ -66,7 +66,7 @@ pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     def.fields = fields;
 
     const wanted = try content_type.encode(ctx.arena, def);
-    const existing = registry.SDK.dispatch(ctx, custom_fields.Get, .{
+    const existing = custom_fields.got(ctx, .{
         .group = def.handle,
     }) catch |err| switch (err) {
         error.NotFound => {

@@ -2,6 +2,7 @@
 //! seeding a site, importing from elsewhere. A batch is all or nothing.
 
 const std = @import("std");
+const public = @import("../../publr/operations/record/create_many.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const record_operations = @import("../record.zig");
@@ -17,50 +18,17 @@ pub const documents_max: u32 = 200;
 const documents_bytes_max: u32 = 2 << 20;
 
 pub const CreateMany = struct {
-    pub const name = "record.create_many";
-    pub const description = "Create many records of a type at once, from a list of documents";
-    pub const details =
-        \\Each document is made as `record create` makes it, its checks, hooks and events
-        \\included, all in one write: up to 200 a call (`publr seed` sends a file of any size
-        \\in calls of 200). The batch is all or nothing: one document refused refuses them all,
-        \\its problems named `documents.<index>.<field>`. With `publish`, each is published
-        \\as `record transition --transition publish` would, once all are made.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        type: []const u8,
-        /// The documents, each as `record create` takes one.
-        documents: []const sdk.operation.Json,
-        publish: bool = false,
-    };
-    pub const Out = struct {
-        created: u32,
-        ids: []const []const u8,
-    };
-    pub const example: In = .{
-        .type = "post",
-        .documents = &.{
-            .{
-                .text = "{\"title\":\"First\",\"body\":\"One\"}",
-            },
-            .{
-                .text = "{\"title\":\"Second\"}",
-            },
-        },
-    };
-    pub const example_out: Out = .{
-        .created = 2,
-        .ids = &.{ record_operations.example_id, record_operations.example_changed_id },
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .type = "The content type, by handle or id",
-        .documents = "The documents, each an object as `record create` takes one, at most 200",
-        .publish = "Publish each one once all are made",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .created = "How many records were made",
-        .ids = "Their ids, in the documents' order",
-    };
+    pub const shape = public.CreateMany;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

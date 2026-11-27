@@ -2,6 +2,7 @@
 //! to modify (`sdk/mods.zig`). What is stored and what `record.list` answers stay as they are.
 
 const std = @import("std");
+const public = @import("../../publr/operations/record/shown.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
@@ -19,7 +20,7 @@ pub fn title_name(arena: std.mem.Allocator, type_name: []const u8) Error![]const
     return std.fmt.allocPrint(arena, "{s}.title", .{type_name}) catch error.OutOfMemory;
 }
 
-pub const Purpose = @import("../document/crud.zig").Purpose;
+pub const Purpose = public.Purpose;
 
 /// The title a modifier answered, when it answered one.
 fn title_of(item: std.json.Value) ?[]const u8 {
@@ -34,54 +35,21 @@ fn title_of(item: std.json.Value) ?[]const u8 {
     return if (title == .string) title.string else null;
 }
 
-pub const Title = struct {
-    id: []const u8,
-    title: []const u8,
-};
+pub const Title = public.Title;
 
-pub fn Shown(comptime List: type, comptime example_id: []const u8) type {
+pub fn Shown(comptime List: type) type {
     return struct {
-        pub const name = "record.shown";
-        pub const description = "The titles of records as people see them, modifiers applied";
-        pub const details =
-            \\Each record's title (its id when it has none), applied as `<type>.title` for
-            \\plugins to modify (`publr.modify("variant.title", …)`): what the admin's lists,
-            \\picker and reference cards show. Modifiers run once per type, read what their
-            \\plugins are granted and never write; what they answer is text. Records the
-            \\caller may not read are left out. Give `ids`, or a `type` for its newest.
-            \\Stored values and `record list` are never changed.
-        ;
-        pub const kind: sdk.operation.Kind = .read;
-        pub const In = struct {
-            ids: []const []const u8 = &.{},
-            type: ?[]const u8 = null,
-            limit: u32 = 50,
-            /// `edit`: from the pending copy of a record with changes, as its editor sees it.
-            purpose: Purpose = .delivery,
-        };
-        pub const Out = struct {
-            titles: []const Title,
-        };
-        pub const example: In = .{
-            .ids = &.{example_id},
-        };
-        pub const example_out: Out = .{
-            .titles = &.{
-                .{
-                    .id = example_id,
-                    .title = "Hello, world",
-                },
-            },
-        };
-        pub const field_docs: sdk.operation.Docs(In) = .{
-            .ids = "These records, up to 200",
-            .type = "Or a type's records, newest first",
-            .limit = "With `type`: how many, up to 200",
-            .purpose = "`delivery` (default) or `edit`: pending copies where there are changes",
-        };
-        pub const output_docs: sdk.operation.Docs(Out) = .{
-            .titles = "Each readable record's id and the title shown for it",
-        };
+        pub const shape = public.Shown;
+        pub const name = shape.name;
+        pub const description = shape.description;
+        pub const details = shape.details;
+        pub const kind = shape.kind;
+        pub const In = shape.In;
+        pub const Out = shape.Out;
+        pub const example = shape.example;
+        pub const example_out = shape.example_out;
+        pub const field_docs = shape.field_docs;
+        pub const output_docs = shape.output_docs;
 
         pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
             std.debug.assert(granted.allows());

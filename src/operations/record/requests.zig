@@ -1,6 +1,7 @@
 //! A transition someone asked for on a record, declined or withdrawn.
 
 const std = @import("std");
+const public = @import("../../publr/operations/record/requests.zig");
 const sdk = @import("../../sdk.zig");
 const record_operations = @import("../record.zig");
 
@@ -9,34 +10,17 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 
 pub const DeclineRequest = struct {
-    pub const name = "record.decline_request";
-    pub const description = "Drop the transition someone asked for on a record";
-    pub const details =
-        \\Someone who may not publish asks instead (`record transition` answers `pending`):
-        \\the transition waits on the record, `requested` and `requested_by` in `record get`,
-        \\until someone who may runs it with `record transition` or declines it here. The
-        \\asker may withdraw their own; anyone else must be allowed to publish. Not found
-        \\when nothing waits.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-    };
-    pub const Out = struct {
-        declined: []const u8,
-    };
-    pub const example: In = .{
-        .id = record_operations.example_draft_id,
-    };
-    pub const example_out: Out = .{
-        .declined = "publish",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The record id",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .declined = "The transition that was waiting",
-    };
+    pub const shape = public.DeclineRequest;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);

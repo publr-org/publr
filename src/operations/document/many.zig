@@ -26,11 +26,7 @@ pub const failed_kept_max: u32 = 100;
 /// Parts one move goes through at most: a million documents.
 pub const parts_max: u32 = 10_000;
 
-pub const Failed = struct {
-    id: []const u8,
-    title: []const u8,
-    why: []const u8,
-};
+pub const Failed = @import("../../publr/model/record.zig").Failed;
 
 pub const Outcome = struct {
     moved: u32 = 0,

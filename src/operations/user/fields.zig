@@ -36,7 +36,7 @@ pub fn definition(ctx: *Ctx, user_id: []const u8, roles: []const []const u8) Err
             break;
         }
 
-        const group = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
+        const group = try custom_fields.got(ctx, .{
             .group = item.handle,
         });
         const applies = try applies_to_any(ctx, group.definition.group, user_id, roles);

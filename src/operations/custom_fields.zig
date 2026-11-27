@@ -6,6 +6,7 @@ const store = @import("../store.zig");
 const trash = @import("trash.zig");
 const registry = @import("../server/registry.zig");
 const types = @import("content_type.zig");
+const public = @import("../publr/operations/custom_fields.zig");
 
 pub const Destination = enum {
     user,
@@ -31,14 +32,7 @@ pub const Destination = enum {
     }
 };
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "custom_fields",
-    .label = "Custom fields",
-    .area = .site,
-    .summary = "Field schemas for users and media",
-    .details = "Administrators define the additional fields shared by every user or media item. " ++
-        "These schemas do not create content types or settings documents.",
-};
+pub const namespace = public.namespace;
 pub const operations = [_]type{
     List,
     Get,
@@ -51,80 +45,84 @@ pub const operations = [_]type{
 };
 
 const values = @import("custom_fields/values.zig");
-const example_definition =
-    \\{"handle":"user","name":"User fields","kind":"component","title_field":"",
-    \\ "fields":[{"name":"biography","label":"Biography","kind":"text"}]}
-;
 
 pub const Get = struct {
-    pub const name = "custom_fields.get";
-    pub const description = "Read the field schema for users or media";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        group: []const u8,
-    };
-    pub const Out = struct {
-        definition: model.content_type.Def,
-    };
-    pub const example: In = .{
-        .group = "user",
-    };
-    pub const example_out: Out = .{
-        .definition = Destination.user.definition(),
-    };
+    pub const shape = public.Get;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
-        try valid_handle(in.group);
-        var def = definition(in.group);
 
-        const stored = try store.field_groups.get(
-            ctx.db,
-            ctx.arena,
-            .custom_fields,
-            in.group,
-        );
-
-        if (stored) |group| {
-            if (group.name.len > 0) def.name = group.name;
-            def.fields = group.fields;
-            def.group = group.options;
-            if (group.name.len == 0 and std.meta.stringToEnum(Destination, in.group) != null) {
-                def.group.location = try bound_location(
-                    ctx.arena,
-                    in.group,
-                    group.options.location,
-                );
-            }
-        } else {
-            return error.NotFound;
-        }
+        const def = try stored_definition(ctx, in.group);
 
         return .{
-            .definition = def,
+            .definition = try sdk.operation.Json.of(ctx.arena, def),
         };
     }
 };
 
+/// A group's schema as stored, its destination's bound into where it is placed.
+fn stored_definition(ctx: *sdk.Ctx, handle: []const u8) sdk.Error!model.content_type.Def {
+    std.debug.assert(ctx.now_ms >= 0);
+
+    try valid_handle(handle);
+    var def = definition(handle);
+
+    const stored = try store.field_groups.get(
+        ctx.db,
+        ctx.arena,
+        .custom_fields,
+        handle,
+    );
+
+    if (stored) |group| {
+        if (group.name.len > 0) def.name = group.name;
+        def.fields = group.fields;
+        def.group = group.options;
+        if (group.name.len == 0 and std.meta.stringToEnum(Destination, handle) != null) {
+            def.group.location = try bound_location(
+                ctx.arena,
+                handle,
+                group.options.location,
+            );
+        }
+    } else {
+        return error.NotFound;
+    }
+
+    return def;
+}
+
+/// What `custom_fields.get` answers, its schema read back from the JSON, for core's own pages.
+pub const Got = struct {
+    definition: model.content_type.Def,
+};
+
+pub fn got(ctx: *sdk.Ctx, in: Get.In) sdk.Error!Got {
+    const answered = try registry.SDK.dispatch(ctx, Get, in);
+
+    std.debug.assert(answered.definition.text.len > 0);
+
+    return .{
+        .definition = try model.content_type.read(ctx.arena, answered.definition.text),
+    };
+}
+
 pub const Validate = struct {
-    pub const name = "custom_fields.validate";
-    pub const description = "Check a destination's field schema without saving";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        group: []const u8,
-        definition: sdk.operation.Json,
-    };
-    pub const Out = types.Validate.Out;
-    pub const example: In = .{
-        .group = "user",
-        .definition = .{
-            .text = example_definition,
-        },
-    };
-    pub const example_out: Out = .{
-        .valid = true,
-        .problems = &.{},
-    };
+    pub const shape = public.Validate;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -168,23 +166,14 @@ pub const Validate = struct {
 };
 
 pub const Update = struct {
-    pub const name = "custom_fields.update";
-    pub const description = "Replace the field schema for users or media";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = Validate.In;
-    pub const Out = Get.Out;
-    pub const example = Validate.example;
-    pub const example_out: Out = .{
-        .definition = blk: {
-            var def = Destination.user.definition();
-            def.fields = &.{.{
-                .name = "biography",
-                .label = "Biography",
-                .kind = "text",
-            }};
-            break :blk def;
-        },
-    };
+    pub const shape = public.Update;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -213,7 +202,7 @@ pub const Update = struct {
         });
 
         return .{
-            .definition = canonical,
+            .definition = try sdk.operation.Json.of(ctx.arena, canonical),
         };
     }
 };
@@ -245,28 +234,15 @@ fn definition(handle: []const u8) model.content_type.Def {
 }
 
 pub const List = struct {
-    pub const name = "custom_fields.list";
-    pub const description = "List custom field groups";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Item = struct {
-        handle: []const u8,
-        name: []const u8,
-        active: bool,
-    };
-    pub const Out = struct {
-        groups: []const Item,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .groups = &.{
-            .{
-                .handle = "user",
-                .name = "User fields",
-                .active = true,
-            },
-        },
-    };
+    pub const shape = public.List;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Item = shape.Item;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *sdk.Ctx, _: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -274,13 +250,11 @@ pub const List = struct {
         const groups = try ctx.arena.alloc(Item, rows.len);
 
         for (rows, 0..) |row, index| {
-            const got = try Get.run(ctx, .{
-                .group = row.owner,
-            }, granted);
+            const def = try stored_definition(ctx, row.owner);
             groups[index] = .{
                 .handle = row.owner,
-                .name = got.definition.name,
-                .active = got.definition.group.active,
+                .name = def.name,
+                .active = def.group.active,
             };
         }
 
@@ -291,27 +265,14 @@ pub const List = struct {
 };
 
 pub const Create = struct {
-    pub const name = "custom_fields.create";
-    pub const description = "Create a named custom field group";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = Update.In;
-    pub const Out = Update.Out;
-    pub const example: In = .{
-        .group = "profile",
-        .definition = .{
-            .text = "{\"handle\":\"profile\",\"name\":\"Profile\"," ++
-                "\"kind\":\"component\",\"fields\":[]}",
-        },
-    };
-    pub const example_out: Out = .{
-        .definition = .{
-            .handle = "profile",
-            .name = "Profile",
-            .title_field = "",
-            .kind = .component,
-            .fields = &.{},
-        },
-    };
+    pub const shape = public.Create;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
@@ -332,22 +293,14 @@ pub const Create = struct {
 };
 
 pub const Delete = struct {
-    pub const name = "custom_fields.delete";
-    pub const description = "Delete a custom field group schema; it waits in the trash";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = Get.In;
-    pub const Out = struct {
-        deleted: bool,
-        /// Its trash entry: `trash restore --id` brings it back.
-        trash: []const u8 = "",
-    };
-    pub const example: In = .{
-        .group = "user",
-    };
-    pub const example_out: Out = .{
-        .deleted = true,
-        .trash = "0190a1b2c3d40001a1b2c3d4",
-    };
+    pub const shape = public.Delete;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());

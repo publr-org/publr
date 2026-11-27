@@ -11,6 +11,7 @@ const provider_values = @import("provider_values.zig");
 const access_module = @import("access.zig");
 const document_module = @import("document.zig");
 const statuses = @import("../status.zig");
+const public = @import("../../publr/model/record.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -21,43 +22,11 @@ const Value = std.json.Value;
 
 pub const Purpose = @import("../../publr/model/document.zig").Purpose;
 pub const Problem = document_module.Problem;
-pub const Created = struct {
-    id: []const u8,
-    status: []const u8,
-    slug: ?[]const u8,
-    version: i64,
-};
-pub const Got = struct {
-    record: Record,
-    slot: []const u8,
-    document: sdk.operation.Json,
-    /// What is scheduled for it (`record.transition_at`), soonest first; read for the editor.
-    scheduled: []const Scheduled = &.{},
-};
-pub const Scheduled = struct {
-    /// Its id, for `record.unschedule`.
-    entry: i64,
-    transition: []const u8,
-    at: i64,
-    /// The person it is made as.
-    by: []const u8,
-    /// A scheduled publish of changes rather than a plain transition.
-    version: bool = false,
-    /// The scheduled change it builds on; 0 for what is live.
-    base: i64 = 0,
-    /// A scheduled publish's changes: the keys it publishes (`title@language=pl`).
-    changes: []const []const u8 = &.{},
-    /// What it holds back once made, when that changes; null leaves it.
-    held_back: ?[]const u8 = null,
-    /// `waiting`, or `failed` with `problem` saying why.
-    state: []const u8 = "waiting",
-    problem: []const u8 = "",
-};
+pub const Created = public.Created;
+pub const Got = public.Got;
+pub const Scheduled = public.Scheduled;
 pub const Saved = @import("save.zig").Saved;
-pub const Referrer = struct {
-    record_id: []const u8,
-    field: []const u8,
-};
+pub const Referrer = public.Referrer;
 /// A page of the records pointing at one, and the next page's `after`.
 pub const ReferrersPage = struct {
     referrers: []const Referrer,

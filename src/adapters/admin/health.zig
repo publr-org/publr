@@ -110,7 +110,7 @@ fn unplaced_of(session: *Session) Error![]const views.Health.UnplacedItem {
     };
 
     for (listed.groups) |item| {
-        const got = registry.SDK.dispatch(&session.ctx, custom_fields.Get, .{
+        const got = custom_fields.got(&session.ctx, .{
             .group = item.handle,
         }) catch continue;
 
