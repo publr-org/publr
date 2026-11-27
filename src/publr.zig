@@ -442,6 +442,10 @@ pub const operations = struct {
     pub const random = @import("publr/operations/random.zig");
     pub const trash = @import("publr/operations/trash.zig");
     pub const webhook = @import("publr/operations/webhook.zig");
+    pub const health = @import("publr/operations/health.zig");
+    pub const provider = @import("publr/operations/provider.zig");
+    pub const removal = @import("publr/operations/removal.zig");
+    pub const update = @import("publr/operations/update.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

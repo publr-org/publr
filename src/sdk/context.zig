@@ -82,13 +82,7 @@ pub const UpdateStatus = struct {
     backups: []const UpdateBackup = &.{},
 };
 
-pub const UpdateBackup = struct {
-    name: []const u8,
-    /// The release that last opened the site before; empty when none recorded one.
-    from: []const u8,
-    to: []const u8,
-    at_ms: i64,
-};
+pub const UpdateBackup = @import("../publr/model/release.zig").UpdateBackup;
 
 /// The disagreements between installed translations, worked out once when the server
 /// started (and again when picks change): what Site Health lists.

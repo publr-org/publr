@@ -6,6 +6,7 @@
 //! every case takes one chunk's memory, however many pointers there are.
 
 const std = @import("std");
+const public = @import("../../publr/operations/health.zig");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
@@ -16,10 +17,10 @@ const Brief = store.content_types.Brief;
 const Link = store.values.Link;
 const LinkKey = store.values.LinkKey;
 
-pub const Reason = enum { deleted, gone, not_shared };
+pub const Reason = public.Reason;
 
 /// The records pointing at a case it names, the first of them; `holders_total` counts all.
-pub const holders_shown_max: u32 = 10;
+pub const holders_shown_max = public.holders_shown_max;
 /// Small under test, so a case's pointers and a page of cases cross chunks there.
 const chunk_links: u32 = if (@import("builtin").is_test) 4 else 256;
 /// The apps whose records lost one target's type: past these, a target's further apps are
@@ -29,26 +30,8 @@ const id_len_max = model.validate.id_len_max;
 const app_len_max = model.app.name_len_max;
 const field_len_max: u32 = 256;
 
-pub const Holder = struct {
-    id: []const u8,
-    type: []const u8,
-    title: []const u8,
-};
-
-pub const Case = struct {
-    target: []const u8,
-    /// Its type's handle; empty when it is gone for good.
-    type: []const u8,
-    title: []const u8,
-    reason: Reason,
-    /// For `not_shared`, the app whose records point at it; empty otherwise.
-    app: []const u8,
-    /// The first records pointing at it, up to `holders_shown_max`.
-    holders: []const Holder,
-    /// How many records point at it.
-    holders_total: u32,
-    kept: bool,
-};
+pub const Holder = public.Holder;
+pub const Case = public.Case;
 
 pub const example: Case = .{
     .target = "a1b2c3d4e5f60718293a4b5c",

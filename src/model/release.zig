@@ -14,16 +14,10 @@ pub const releases_max: u32 = 100;
 
 /// What an update from one release to another does to a site (`updates.md`): a patch only
 /// swaps the binary, a minor runs a migration that only adds, a major may need care.
-pub const Kind = enum { patch, minor, major };
+const public = @import("../publr/model/release.zig");
 
-pub const Release = struct {
-    version: []const u8,
-    kind: Kind,
-    /// The release notes, cut at `notes_bytes_max`.
-    notes: []const u8,
-    published_at: []const u8,
-    url: []const u8,
-};
+pub const Kind = public.Kind;
+pub const Release = public.Release;
 
 pub fn kind_between(from: []const u8, to: []const u8) !Kind {
     std.debug.assert(from.len > 0);

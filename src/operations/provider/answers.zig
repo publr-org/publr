@@ -8,6 +8,7 @@ const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
 const contract = @import("../../sdk/contract.zig");
 const operation_define = @import("../../publr/plugin/operation_define.zig");
+const public = @import("../../publr/operations/provider/answers.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -23,45 +24,20 @@ const Kept = struct {
 };
 
 pub const Answers = struct {
-    pub const name = "provider.answers";
-    pub const description = "What a provider answered at install: its defaults";
-    pub const details =
-        \\The answer of `provider` to its contract's part asked at install (`.at_install`),
-        \\kept since it was installed or last updated, as JSON. Asked now, and not kept, when
-        \\nothing is kept for its version yet. Not found when the provider is not registered
-        \\or the contract asks nothing at install. Administrators, and plugin calls.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const untrusted_callers = false;
-    /// `.authorize`: administrators and plugin calls, never anyone else.
-    pub const answer: ?operation_define.Answer = .plugin_calls;
-    pub const example_signed_in = true;
-    pub const In = struct {
-        contract: []const u8,
-        provider: []const u8,
-    };
-    pub const Out = struct {
-        answers: sdk.operation.Json,
-        version: []const u8,
-    };
-    pub const example: In = .{
-        .contract = "orders.item",
-        .provider = "products",
-    };
-    pub const example_out: Out = .{
-        .answers = .{
-            .text = "{\"supply\":\"goods\"}",
-        },
-        .version = "1.0.0",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .contract = "The contract's name",
-        .provider = "The provider's name",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .answers = "Its answer, as JSON",
-        .version = "The provider's version it came from",
-    };
+    pub const shape = public.Answers;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const untrusted_callers = shape.untrusted_callers;
+    pub const answer = shape.answer;
+    pub const example_signed_in = shape.example_signed_in;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -98,27 +74,17 @@ pub const Answers = struct {
 };
 
 pub const Answer = struct {
-    pub const name = "provider.answer";
-    pub const description = "Ask providers installed or updated since for their defaults";
-    pub const details =
-        \\Every provider of a contract that asks a part at install, compiled in or installed,
-        \\whose kept answer is missing or from another version, is asked it now; its answer
-        \\is kept with its version. Run by core when plugins change; administrators may run
-        \\it too. A provider whose answer fails is left out and asked again next time.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {};
-    pub const Out = struct {
-        answered: []const []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .answered = &.{"orders.item/products"},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .answered = "Each provider asked now, as `<contract>/<provider>`",
-    };
+    pub const shape = public.Answer;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
