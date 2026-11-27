@@ -167,7 +167,7 @@ fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
                 check_record_name(Plugin.manifest.name, Record.type_name);
 
                 if (!Record.is_internal) {
-                    const declared = record_define.Declared(Record, Plugin.docs).def;
+                    const declared = @import("../records.zig").Declared(Record, Plugin.docs).def;
 
                     list = list ++ [_]ContentTypeDef{declared};
                 }
@@ -182,7 +182,6 @@ fn declared_content_types(comptime Plugin: type) []const ContentTypeDef {
 
 fn declared_collections(comptime Plugin: type) []const Collection {
     comptime {
-        const record_define = @import("../../../publr/plugin/record_define.zig");
         const Options = @TypeOf(Plugin.options);
         var list: []const Collection = &.{};
 
@@ -193,7 +192,7 @@ fn declared_collections(comptime Plugin: type) []const Collection {
                 check_record_name(Plugin.manifest.name, Record.type_name);
 
                 if (Record.is_internal) {
-                    list = list ++ [_]Collection{record_define.collection_of(Record)};
+                    list = list ++ [_]Collection{@import("../records.zig").collection_of(Record)};
                 }
             }
         }
@@ -291,7 +290,7 @@ fn declared_field_groups(comptime Plugin: type) []const ContentTypeDef {
     comptime {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        return @import("../../../publr/plugin/record_define.zig").field_groups_of(Plugin);
+        return @import("../records.zig").field_groups_of(Plugin);
     }
 }
 

@@ -4,7 +4,6 @@
 //! with the list and sortable, or one an `after` hook on the list's read adds to each row
 //! (`out.extend`). The admin draws it in the host's cell style by `.kind`.
 const std = @import("std");
-const record_define = @import("../../publr/plugin/record_define.zig");
 
 pub const Kind = @import("../../model/sandboxed_plugin.zig").ColumnKind;
 
@@ -92,7 +91,7 @@ fn stored(comptime Plugin: type, comptime field: []const u8) bool {
             return false;
         }
 
-        for (record_define.field_groups_of(Plugin)) |group| {
+        for (@import("records.zig").field_groups_of(Plugin)) |group| {
             for (group.fields) |def| {
                 if (std.mem.eql(u8, field, group.handle ++ "." ++ def.name)) {
                     return true;

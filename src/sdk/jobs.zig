@@ -1099,7 +1099,7 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
     const start = ctx.now_ms;
 
     try registry.SDK.bootstrap(&ctx);
-    const declared = comptime record_define.content_type_of(Events, Docs);
+    const declared = comptime @import("plugin/records.zig").content_type_of(Events, Docs);
 
     _ = try registry.SDK.dispatch(&ctx, types.Create, .{
         .definition = .{
@@ -1207,7 +1207,7 @@ test "a yearly .due job runs on each return of its date, then follows the next o
     }) * day_ms;
 
     try registry.SDK.bootstrap(&ctx);
-    const declared = comptime record_define.content_type_of(People, Docs);
+    const declared = comptime @import("plugin/records.zig").content_type_of(People, Docs);
 
     _ = try registry.SDK.dispatch(&ctx, types.Create, .{
         .definition = .{

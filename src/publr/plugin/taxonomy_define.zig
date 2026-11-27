@@ -9,6 +9,7 @@ const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const plugin_define = @import("define.zig");
 const record_define = @import("record_define.zig");
+const field_of = @import("../../sdk/plugin/records.zig").field_of;
 
 const Option = enum {
     name,
@@ -113,7 +114,7 @@ pub fn def_of(
             record_define.field_branches_max);
 
         for (std.meta.fieldNames(Taxonomy.Doc)) |field_name| {
-            const made = record_define.field_of(Taxonomy, Docs, field_name);
+            const made = field_of(Taxonomy, Docs, field_name);
             fields = fields ++ [_]field_model.Def{made};
         }
 

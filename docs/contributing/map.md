@@ -564,6 +564,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/bound.zig` | 238 | A plugin as core reads it: `Bind` pairs its `define` with its words, `has`/`get` read its options |
 | `sdk/plugin/bound/declared.zig` | 393 | The options `get` answers in core's shapes: content types, collections, hooks, pages, kinds, namespaces |
 | `sdk/plugin/flows.zig` | 262 | A record's flow as core keeps it, and the statuses a plugin adds to other plugins' flows |
+| `sdk/plugin/records.zig` + `records/fields.zig`, `records/listed.zig` | 350 + 343, 148 | A plugin's records as core stores them: each content type's declaration, each internal record's collection, the `.register_fields` groups; each field's definition from its Zig type and overrides; the field a record is listed by, its statuses and its flow |
 | `sdk/plugin/menus.zig` | 240 | A plugin's menu items and icons as the admin reads them, checked |
 | `sdk/plugin/location_rules.zig` | 135 | A plugin's location rules as core runs them, compiled in or installed |
 | `sdk/plugin/taxonomies.zig` | 51 | Taxonomies registered on other plugins' types: whose each is, which types its patterns pick |
