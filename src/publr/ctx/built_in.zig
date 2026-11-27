@@ -4,8 +4,8 @@
 const std = @import("std");
 const guest = @import("../../sdk/plugin/guest.zig");
 const Ctx = @import("../ctx.zig").Ctx;
-// Until `publr.Error` is the public set: an operation's errors, database ones among them.
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
+const public_of = @import("../../sdk/operation.zig").public_of;
 
 fn host(ctx: anytype) @TypeOf(@import("../../sdk/plugin/context.zig").host_of(ctx)) {
     return @import("../../sdk/plugin/context.zig").host_of(ctx);
@@ -21,7 +21,7 @@ pub fn as_person(ctx: *Ctx, person: []const u8) Error!*Ctx {
         @compileError("ctx.as_person() is for a built-in plugin's own operations");
     }
 
-    return host(ctx).as_person(person);
+    return host(ctx).as_person(person) catch |err| return public_of(err);
 }
 
 /// Whether the caller (the person, through `as_person`) may run `Operation`, as the
@@ -44,7 +44,7 @@ pub fn as_system(ctx: *Ctx) Error!*Ctx {
         @compileError("ctx.as_system() is for a built-in plugin's own operations");
     }
 
-    return host(ctx).as_system();
+    return host(ctx).as_system() catch |err| return public_of(err);
 }
 
 /// The process's I/O, for a built-in plugin's own files and processes. An installed
@@ -66,7 +66,7 @@ pub fn start_session(ctx: *Ctx, user_id: []const u8) Error!Ctx.Session {
         @compileError("ctx.start_session() is for a built-in plugin's own sign-in");
     }
 
-    return host(ctx).start_session(user_id);
+    return host(ctx).start_session(user_id) catch |err| return public_of(err);
 }
 
 /// The call runs on a copy of the site (an environment, a branch), not the site itself:
