@@ -48,8 +48,12 @@ pub const Host = struct {
     pub const timed = @import("timed.zig");
     /// Other Publr servers on this host and sites packed as bundles.
     pub const processes = @import("processes.zig");
-    /// The guide `publr agents` prints, for a plugin handing it to an agent.
-    pub const agents_guide = @import("../../server/agents.zig").guide;
+    /// The guide `publr agents` prints, for a plugin handing it to an agent; the browser
+    /// build, which has no command line, has none.
+    pub const agents_guide: []const u8 = if (@import("builtin").os.tag == .wasi)
+        ""
+    else
+        @import("../../server/agents.zig").guide;
     /// Unix milliseconds now, for code outside any call (a route, a process hook); inside
     /// one, `ctx.now()`.
     pub const wall_clock_ms = @import("clock.zig").wall_clock_ms;
