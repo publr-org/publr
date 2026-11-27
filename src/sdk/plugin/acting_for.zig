@@ -12,11 +12,6 @@ const id_len_max = @import("../caller.zig").id_len_max;
 const HostApi = context.HostApi;
 const Error = sdk.Error;
 
-/// The grants of a compiled-in plugin that asked for none.
-const no_access: @import("../plugin_access.zig").Access = .{
-    .own_types = &.{},
-};
-
 /// The caller a `HostApi` made by `as_person` stands for, and the database one made by
 /// `publr.Host.as_plugin_on` calls on, in place for one call and put back after it.
 pub const Acting = struct {
@@ -144,12 +139,7 @@ pub fn as_plugin(api: *HostApi) Error!*context.PluginCtx {
         .inner = inner,
         .reads = api.reads,
         .elsewhere = api.elsewhere,
-        .person = .{
-            .plugin = .{
-                .name = inner.plugin,
-                .access = registry.SDK.compiled_access(inner.plugin) orelse &no_access,
-            },
-        },
+        .person = sdk.plugin_caller.alone(inner.plugin, registry.SDK.compiled_access(inner.plugin)),
     };
 
     return made.ctx();

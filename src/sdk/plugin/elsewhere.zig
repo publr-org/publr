@@ -12,11 +12,6 @@ const context = @import("context.zig");
 const HostApi = context.HostApi;
 const Error = sdk.Error;
 
-/// The grants of a compiled-in plugin that asked for none.
-const no_access: @import("../plugin_access.zig").Access = .{
-    .own_types = &.{},
-};
-
 /// What the call's context holds of its own database while a call runs on another.
 pub const Saved = struct {
     db: *db.Db,
@@ -51,12 +46,7 @@ pub fn as_plugin_on(api: *HostApi, database: *db.Db) Error!*context.PluginCtx {
     made.* = .{
         .inner = inner,
         .reads = api.reads,
-        .person = .{
-            .plugin = .{
-                .name = inner.plugin,
-                .access = registry.SDK.compiled_access(inner.plugin) orelse &no_access,
-            },
-        },
+        .person = sdk.plugin_caller.alone(inner.plugin, registry.SDK.compiled_access(inner.plugin)),
         .elsewhere = database,
     };
 

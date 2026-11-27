@@ -1,6 +1,7 @@
 //! Queued jobs (`publr.job.define`) run by the worker (`publr queue-run`): the due ones
-//! claimed, each run as its plugin, then removed, or moved later when it fails, until its
-//! last attempt keeps it as failed and tells the job's `on_failure`.
+//! claimed, each run as its plugin alone (the caller `ctx.as_plugin()` makes), then removed,
+//! or moved later when it fails, until its last attempt keeps it as failed and tells the
+//! job's `on_failure`.
 const std = @import("std");
 const public_operation = @import("../publr/operation.zig");
 const host_of = @import("plugin/context.zig").host_of;
@@ -608,11 +609,14 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             }) catch return "its input no longer reads as the job's";
             const running = ctx.plugin;
             const was_code = ctx.plugin_code;
+            const was_caller = ctx.caller;
 
             ctx.plugin = owner;
             ctx.plugin_code = true;
+            ctx.caller = SDK.entered_by(ctx, owner);
             defer ctx.plugin = running;
             defer ctx.plugin_code = was_code;
+            defer ctx.caller = was_caller;
 
             var wrapped: HostApi = .{
                 .inner = ctx,
@@ -640,9 +644,13 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             defer ctx.plugin = running;
 
             const was_code = ctx.plugin_code;
+            const was_caller = ctx.caller;
 
+            // The plugin's code runs as the plugin alone, held to its grants.
             ctx.plugin_code = true;
+            ctx.caller = SDK.entered_by(ctx, owner);
             defer ctx.plugin_code = was_code;
+            defer ctx.caller = was_caller;
 
             var wrapped: HostApi = .{
                 .inner = ctx,
@@ -1083,10 +1091,17 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
             },
         },
     });
+    // The job runs as its plugin, which reads its own type.
     const Runner = sdk.SDK(.{
         .operations = &.{},
         .jobs = &.{Remind},
         .job_owners = &.{"probe"},
+        .plugin_grants = &.{.{
+            .name = "probe",
+            .access = .{
+                .own_types = &.{"probe.event"},
+            },
+        }},
     }).jobs;
 
     var harness: sdk.testing.Harness = undefined;
@@ -1183,10 +1198,17 @@ test "a yearly .due job runs on each return of its date, then follows the next o
             },
         },
     });
+    // The job runs as its plugin, which reads its own type.
     const Runner = sdk.SDK(.{
         .operations = &.{},
         .jobs = &.{Greet},
         .job_owners = &.{"probe"},
+        .plugin_grants = &.{.{
+            .name = "probe",
+            .access = .{
+                .own_types = &.{"probe.person"},
+            },
+        }},
     }).jobs;
 
     var harness: sdk.testing.Harness = undefined;

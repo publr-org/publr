@@ -1460,7 +1460,9 @@ What each opens:
   changes, and a transition into or out of a published status answers `.pending` for
   someone who may publish to approve; with it, they go live. Private and internal types
   only when named. `records.destroy` alone removes a record for good.
-- Queued work (jobs, `on` hooks) runs with the plugin's own grant, `.publish` included.
+- Queued work (jobs, `on` hooks) runs as the plugin itself with the plugin's own grant,
+  `.publish` included, and nobody behind it; a provider's operation Publr's own queued work
+  calls (a message sent, an AI turn) runs so too.
 - `messaging.send` lets a plugin emit message events (`publr.messaging.Email`, `Sms`,
   `Push`) beside its own; without it a message is not sent and the write fails.
 - `mail.send` lets a plugin hand an email to an SMTP server it names, from queued work only
@@ -2014,7 +2016,8 @@ Prefer records.
 `host.state(State)`, a struct with optional `init(state: *State, process:
 publr.Host.Process)` and `deinit`, reached with `publr.Host.state_of(ctx, @This())` (a
 route's `context.state(@This())`); `host.bootstrap` (`fn (*publr.Ctx) publr.Error!void`, every
-start, as the system); `host.before_command` (`fn (*publr.Host.Command) anyerror!void`);
+start, as the plugin itself with its grants, as its jobs and `on` hooks run);
+`host.before_command` (`fn (*publr.Host.Command) anyerror!void`);
 `host.serving` (`fn (publr.Host.Serving) anyerror!void`); `host.operator_command` (`{ name,
 handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key only).
 `Process` is `{ io, gpa, arena, db_path }` (`process.databases().open(memory, path)` opens

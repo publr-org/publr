@@ -1,9 +1,11 @@
-//! A built-in plugin's `bootstrap`, run as the plugin's own code, as its jobs run: its
-//! internal records are its to read and write, its calls are held to its grants, and
-//! `publr.Host.as_system(ctx)`, `ctx.as_plugin()` and `ctx.as_person()` answer it. The caller
-//! stays Publr itself, the database opening with nobody behind it.
+//! A built-in plugin's `bootstrap`, run as its jobs run: as the plugin alone (the caller
+//! `ctx.as_plugin()` makes), held to its grants with no account and no roles, judged so by
+//! every check. Its internal records are its own to read and write; a step that needs Publr's
+//! own standing says so with `publr.Host.as_system(ctx)`. The database opens with Publr
+//! behind it, put back once the plugin's code ends.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const registry = @import("../../server/registry.zig");
 const HostApi = @import("context.zig").HostApi;
 
 pub fn run(ctx: *sdk.Ctx, comptime plugin: []const u8, comptime bootstrap: anytype) sdk.Error!void {
@@ -15,8 +17,10 @@ pub fn run(ctx: *sdk.Ctx, comptime plugin: []const u8, comptime bootstrap: anyty
 
     ctx.plugin = plugin;
     ctx.plugin_code = true;
+    ctx.caller = sdk.plugin_caller.alone(plugin, registry.SDK.compiled_access(plugin));
     defer ctx.plugin = running;
     defer ctx.plugin_code = was_code;
+    defer ctx.caller = .system;
 
     var host: HostApi = .{
         .inner = ctx,
@@ -33,13 +37,21 @@ test "a plugin's bootstrap runs as the plugin, and the database's context is put
     var system = harness.ctx(.system);
     const Seen = struct {
         fn bootstrap(ctx: *@import("context.zig").PluginCtx) sdk.Error!void {
+            std.debug.assert(ctx.now().ms >= 0);
+
+            // What the test expects, failed as the bootstrap's own error.
+            seen(ctx) catch return error.Invalid;
+        }
+
+        fn seen(ctx: *@import("context.zig").PluginCtx) !void {
             const inner = @import("context.zig").host_of(ctx).inner;
 
             std.debug.assert(inner.db.transaction_depth == 0);
 
             try std.testing.expectEqualStrings("hello", inner.plugin);
             try std.testing.expect(inner.plugin_code);
-            try std.testing.expect(inner.caller == .system);
+            try std.testing.expectEqualStrings("hello", inner.caller.plugin.name);
+            try std.testing.expect(!ctx.caller().system);
 
             const powers = @import("../../publr/extend/powers.zig");
 

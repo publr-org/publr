@@ -32,6 +32,7 @@ pub const page_request = @import("sdk/page_request.zig");
 pub const provider = @import("sdk/provider.zig");
 pub const sandboxed_plugins = @import("sdk/sandboxed_plugins.zig");
 pub const plugin_access = @import("sdk/plugin_access.zig");
+pub const plugin_caller = @import("sdk/plugin_caller.zig");
 pub const published = @import("sdk/published.zig");
 pub const call_json = @import("sdk/call_json.zig");
 pub const help = @import("sdk/help.zig");
@@ -324,7 +325,7 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.handed_by = handed_by_of(ctx, owner, if (was_code) running else null);
             defer ctx.handed_by = was_handed;
 
-            const result = run(ctx, Body, body, &granted);
+            const result = run_entered(ctx, Body, body, &granted, owner);
 
             if (result) |_| {
                 emit(ctx, .{
@@ -347,6 +348,37 @@ pub fn SDK(comptime registry: Registry) type {
             flush_top(ctx, parent == null);
 
             return result;
+        }
+
+        /// The body run as its owner's code runs (`entered_by`), the caller put back after.
+        fn run_entered(
+            ctx: *Ctx,
+            comptime Body: type,
+            body: Body,
+            granted: *const Grant,
+            owner: []const u8,
+        ) Error!Body.Out {
+            std.debug.assert(granted.allows());
+            std.debug.assert(owner.len == 0 or std.mem.eql(u8, ctx.plugin, owner));
+
+            const was_caller = ctx.caller;
+
+            ctx.caller = entered_by(ctx, owner);
+            defer ctx.caller = was_caller;
+
+            return run(ctx, Body, body, granted);
+        }
+
+        /// Who `owner`'s code runs as, reached by the caller now: as itself in place of
+        /// another plugin, for the same person; as itself alone in place of Publr in queued
+        /// work (`sdk/plugin_caller.zig`).
+        pub fn entered_by(ctx: *const Ctx, owner: []const u8) Caller {
+            std.debug.assert(owner.len <= 64);
+            std.debug.assert(ctx.now_ms >= 0);
+
+            const queued = ctx.job.len > 0;
+
+            return plugin_caller.entering(ctx.caller, owner, compiled_access(owner), queued);
         }
 
         /// A compiled-in operation as the pipeline runs it: typed input and answer.
@@ -1785,9 +1817,12 @@ pub fn SDK(comptime registry: Registry) type {
             defer ctx.plugin = running;
 
             const was_code = ctx.plugin_code;
+            const was_caller = ctx.caller;
 
             ctx.plugin_code = owner.len > 0;
+            ctx.caller = entered_by(ctx, owner);
             defer ctx.plugin_code = was_code;
+            defer ctx.caller = was_caller;
 
             // A hook never moves accounts the operation it hooks was handed.
             const was_handed = ctx.handed_by;
@@ -2180,9 +2215,12 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.plugin = owner;
 
             const was_code = ctx.plugin_code;
+            const was_caller = ctx.caller;
 
             ctx.plugin_code = true;
+            ctx.caller = entered_by(ctx, owner);
             defer ctx.plugin_code = was_code;
+            defer ctx.caller = was_caller;
 
             const was_handed = ctx.handed_by;
 
@@ -2533,9 +2571,12 @@ pub fn SDK(comptime registry: Registry) type {
             defer ctx.plugin = running;
 
             const was_code = ctx.plugin_code;
+            const was_caller = ctx.caller;
 
             ctx.plugin_code = owner.len > 0;
+            ctx.caller = entered_by(ctx, owner);
             defer ctx.plugin_code = was_code;
+            defer ctx.caller = was_caller;
 
             // A hook never moves accounts the operation it hooks was handed.
             const was_handed = ctx.handed_by;

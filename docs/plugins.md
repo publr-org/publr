@@ -185,7 +185,9 @@ What each opens:
   keeps it, ids and history kept; records and terms land as the same change made by a
   person would. `project.get` reads them back as `put` takes them, and lists every unit of
   a kind. Rows only, never files.
-- Queued work (jobs, `on` hooks) runs with the plugin's own grant, `.publish` included.
+- Queued work (jobs, `on` hooks) runs as the plugin itself with the plugin's own grant,
+  `.publish` included, and nobody behind it; a provider's operation Publr's own queued work
+  calls (a message sent, an AI turn) runs so too.
 - `messaging.send` lets a plugin emit message events (`publr.messaging.Email`, `Sms`,
   `Push`) beside its own; without it a message is not sent and the write fails.
 - `mail.send` lets a plugin hand an email to an SMTP server it names, from queued work only
@@ -1653,9 +1655,11 @@ transaction commits, only when no other write encloses it (core's `design.save_s
 loads the apps this way). Its failure is the call's answer; the write stays.
 
 A plugin can run once the database opens (`host.bootstrap`, a
-`fn (ctx: *publr.Ctx) publr.Error!void`), as the system, after every declared type and field
-is in place: a setting the product needs, a record that must exist. It runs at every start,
-so it checks before it writes.
+`fn (ctx: *publr.Ctx) publr.Error!void`), after every declared type and field is in place: a
+setting the product needs, a record that must exist. It runs at every start, so it checks
+before it writes. It runs as the plugin itself, as its jobs and `on` hooks do (the caller
+`ctx.as_plugin()` makes): its own grants, no account, no roles. A step its grants do not
+cover goes through `publr.Host.as_system(ctx)`.
 
 What a plugin keeps for itself and nobody edits (carts, reservations, stock movements,
 logs) is not content: it declares each kind as a record with `.internal = true` (and

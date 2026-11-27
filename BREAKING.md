@@ -174,13 +174,44 @@ const state = publr.Host.state_of(ctx, Sampler) orelse return error.Unavailable;
 const port = state.port;
 ```
 
+### `sdk:job.define`
+
+A built-in plugin's jobs (`publr.job.define`, `define_recurring`, their `on_failure` and
+`on_conflict`), its `on` hooks run from the queue, and its operations Publr's own queued work
+calls (a messaging or AI provider) run as the plugin itself: the caller `ctx.as_plugin()`
+makes, its grants, no account and no roles, judged so everywhere, as an installed plugin's
+always were. Before, they ran as Publr itself, held to the plugin's grants only for what a
+permission names, and Publr's standing decided the rest (operations no permission names,
+policies asking who calls, `ctx.caller().system`). A plugin's code another plugin's code
+calls runs as itself too, for the same person: its own grants, never its caller's. Installed
+plugins are unchanged. A step that needs more declares the grant it uses, or goes through
+`publr.Host.as_system(ctx)` when no grant can name the operation.
+
+```zig
+// Before: a job reading the roles, as Publr itself
+fn tidy(ctx: *publr.QueueCtx) publr.Error!void {
+    const roles = try ctx.call(publr.operations.role.List, .{});
+    _ = roles;
+}
+// After: `role.list` is in `permission.never`, so the job asks for Publr's standing
+fn tidy(ctx: *publr.QueueCtx) publr.Error!void {
+    const system = try publr.Host.as_system(ctx.base);
+    const roles = try system.call(publr.operations.role.List, .{});
+    _ = roles;
+}
+```
+
 ### `sdk:Host.bootstrap`
 
-A built-in plugin's `bootstrap` runs as the plugin's own code, as its jobs do: its internal
-records are its to read and write, its calls are held to its grants, and
-`publr.Host.as_system(ctx)` and `ctx.as_person()` answer it (they refused before). The
-caller is still Publr itself. A bootstrap that set `ctx.plugin` itself drops that; one that
-called something its grants do not reach calls it through `publr.Host.as_system(ctx)`.
+A built-in plugin's `bootstrap` runs as the plugin itself, as its jobs and `on` hooks do
+(`sdk:job.define`): the caller `ctx.as_plugin()` makes, with its grants, no account and no
+roles, judged so by every check (an operation's `authorize`, the permissions, the site's
+policies, `ctx.may`). Its internal records are its to read and write, and
+`publr.Host.as_system(ctx)` and `ctx.as_person()` answer it (they refused before). Before, it
+ran as Publr itself, held to its grants only for what a permission names. A bootstrap that
+set `ctx.plugin` itself drops that; one that calls something its grants do not reach declares
+the grant, or calls it through `publr.Host.as_system(ctx)` when no grant can name it (an
+operation in `permission.never`, or one no permission names).
 
 ```zig
 // Before

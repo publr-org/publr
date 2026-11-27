@@ -172,6 +172,8 @@ pub const Site = struct {
         var transaction = try inner.db.transaction();
         errdefer transaction.rollback();
 
+        // Queued work, as the worker's: each provider's code runs as the provider alone.
+        inner.job = "core.deliver";
         inner.parent = inner.allocate_operation_id();
 
         const id = try @import("../sdk/messaging.zig").deliver(&inner, message);
