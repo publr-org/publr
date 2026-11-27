@@ -76,12 +76,7 @@ pub fn fill(ctx: *Ctx, dir: []const u8) Error!void {
     const custom = core.operations.custom_fields;
     _ = try SDK.dispatch(ctx, custom.Update, .{
         .group = "user",
-        .definition = .{
-            .text = try core.model.content_type.encode(
-                ctx.arena,
-                custom.Destination.user.definition(),
-            ),
-        },
+        .definition = custom.Destination.user.definition(),
     });
 }
 
@@ -212,14 +207,10 @@ fn fill_taxonomies(ctx: *Ctx) Error!void {
     std.debug.assert(terms.example_parent_id.len == store.terms.id_len);
 
     _ = try SDK.dispatch(ctx, taxonomies.Create, .{
-        .definition = .{
-            .text = taxonomies.example_definition,
-        },
+        .definition = taxonomies.example_definition,
     });
     _ = try SDK.dispatch(ctx, taxonomies.Create, .{
-        .definition = .{
-            .text = tags_definition,
-        },
+        .definition = try core.model.content_type.read(ctx.arena, tags_definition),
     });
 
     try term_with_id(ctx, terms.example_parent_id, "Technology", null);
@@ -529,17 +520,13 @@ fn fill_users(ctx: *Ctx) Error!void {
 
 fn fill_types(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .user);
-    std.debug.assert(content_types.example_definition.len > 0);
+    std.debug.assert(content_types.example_definition.fields.len > 0);
 
     _ = try SDK.dispatch(ctx, content_types.Create, .{
-        .definition = .{
-            .text = content_types.example_definition,
-        },
+        .definition = content_types.example_definition,
     });
     _ = try SDK.dispatch(ctx, content_types.Create, .{
-        .definition = .{
-            .text = page_definition,
-        },
+        .definition = try core.model.content_type.read(ctx.arena, page_definition),
     });
 
     // The page's own status and transition the `flow` examples remove.
