@@ -1,10 +1,6 @@
-//! Internal records: what a plugin keeps for itself (carts, reservations, ledgers), one JSON
-//! document each, in collections the plugin declares. Called from a plugin's own code, every
-//! operation reaches that plugin's records in the app the request came through, and nobody
-//! else's. With no plugin running, an administrator names the plugin (and the app).
-
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/internal.zig");
 const registry = @import("../server/registry.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
@@ -20,43 +16,9 @@ const Collection = model.internal_record.Collection;
 const Scope = store.internal_records.Scope;
 const records = store.internal_records;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "internal",
-    .label = "Plugin records",
-    .area = .background,
-    .summary = "A plugin's internal records: what it keeps for itself, never content",
-    .details =
-    \\Carts, reservations, stock movements, logs: records a plugin keeps and nobody edits,
-    \\in collections it declares (`internal_records`), each with the fields it is found
-    \\by. No statuses, drafts, revisions or search; `version` guards a stale write. From a
-    \\plugin's code they reach that plugin's records in the request's app only. With no
-    \\plugin running, an administrator names `plugin` (and `app`, the project's own when
-    \\left out). An append-only collection refuses `save` and `delete`. Every write runs the
-    \\collection's field rules as content's: bounds and shapes, a unique value (another
-    \\record holding it is a conflict), a provider field naming an installed provider.
-    ,
-};
+pub const namespace = public.namespace;
 
-pub const example_id = "c3d4e5f60718293a4b5c6d7e";
-pub const example_document = "{\"name\":\"Ada\",\"count\":1}";
-
-pub const Item = struct {
-    id: []const u8,
-    version: i64,
-    document: sdk.operation.Json,
-    created_at: i64,
-    updated_at: i64,
-};
-
-const example_item: Item = .{
-    .id = example_id,
-    .version = 1,
-    .document = .{
-        .text = example_document,
-    },
-    .created_at = 1767225600000,
-    .updated_at = 1767225600000,
-};
+pub const Item = public.Item;
 
 pub const operations = [_]type{
     Create,
@@ -77,41 +39,16 @@ pub const HoldsUntil = computed_operations.HoldsUntil;
 const computed_operations = @import("internal/computed_operations.zig");
 
 pub const Create = struct {
-    pub const name = "internal.create";
-    pub const description = "Keep a new internal record";
-    pub const details =
-        \\The document is a JSON object; its declared fields are indexed. A value breaking its
-        \\field's rules is refused beside the field; a unique value another record of the
-        \\collection holds is a conflict.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        kind: []const u8,
-        document: sdk.operation.Json,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        id: []const u8,
-        version: i64,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .document = .{
-            .text = example_document,
-        },
-    };
-    pub const example_out: Out = .{
-        .id = example_id,
-        .version = 1,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection, as the plugin declares it",
-        .document = "The record, a JSON object",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running; the project's own when left out",
-    };
+    pub const shape = public.Create;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         return created(ctx, in, granted, true);
@@ -164,39 +101,16 @@ pub const Create = struct {
 pub const many_max: u32 = sdk.operation.page_limit_max;
 
 pub const CreateMany = struct {
-    pub const name = "internal.create_many";
-    pub const description = "Keep many new internal records of one collection at once";
-    pub const details =
-        \\Each document is kept as `internal.create` keeps one, its field rules and events
-        \\included, in one call: up to 200. All or nothing: one refused refuses them all,
-        \\named `documents.<index>`. Answers the ids in the documents' order.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        kind: []const u8,
-        documents: []const sdk.operation.Json,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        ids: []const []const u8,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .documents = &.{.{
-            .text = example_document,
-        }},
-    };
-    pub const example_out: Out = .{
-        .ids = &.{example_id},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection, as the plugin declares it",
-        .documents = "The records, JSON objects, at most 200",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running; the project's own when left out",
-    };
+    pub const shape = public.CreateMany;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -265,28 +179,15 @@ pub const CreateMany = struct {
 };
 
 pub const Get = struct {
-    pub const name = "internal.get";
-    pub const description = "Read one internal record";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        kind: []const u8,
-        id: []const u8,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = Item;
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .id = example_id,
-    };
-    pub const example_out: Out = example_item;
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .id = "The record",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
+    pub const shape = public.Get;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -311,48 +212,16 @@ pub const Get = struct {
 pub const clear_max: u32 = 64;
 
 pub const Save = struct {
-    pub const name = "internal.save";
-    pub const description = "Write fields of an internal record";
-    pub const details =
-        \\The fields the document gives replace the record's; the others keep their values.
-        \\`clear` names fields to empty: each is taken out of the record, so an optional
-        \\field holds nothing again; a required one refuses the write by its rules.
-        \\`expected_version` refuses a stale write. Refused on an append-only collection. The
-        \\record as written runs its fields' rules, as `internal.create` does.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        kind: []const u8,
-        id: []const u8,
-        document: sdk.operation.Json,
-        expected_version: ?i64 = null,
-        clear: []const []const u8 = &.{},
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        version: i64,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .id = example_id,
-        .document = .{
-            .text = "{\"count\":2}",
-        },
-    };
-    pub const example_out: Out = .{
-        .version = 2,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .id = "The record",
-        .document = "The fields to write, a JSON object",
-        .expected_version = "The `version` you read; refuse if it changed",
-        .clear = "Fields to empty, by name: taken out of the record",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
+    pub const shape = public.Save;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         return saved(ctx, in, granted, true);
@@ -428,45 +297,17 @@ pub const Save = struct {
 };
 
 pub const SaveMany = struct {
-    pub const name = "internal.save_many";
-    pub const description = "Write fields of many internal records of one collection at once";
-    pub const details =
-        \\Each record is written as `internal.save` writes one, in one call: up to 200. All
-        \\or nothing: one refused refuses them all, named `records.<index>`.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const Written = struct {
-        id: []const u8,
-        document: sdk.operation.Json,
-    };
-    pub const In = struct {
-        kind: []const u8,
-        records: []const Written,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        saved: u32,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .records = &.{.{
-            .id = example_id,
-            .document = .{
-                .text = "{\"count\":2}",
-            },
-        }},
-    };
-    pub const example_out: Out = .{
-        .saved = 1,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .records = "Each record by id with the fields to write, at most 200",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
+    pub const shape = public.SaveMany;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const Written = shape.Written;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -600,36 +441,16 @@ fn refused_at(ctx: *Ctx, err: Error, comptime list: []const u8, place: u64) Erro
 }
 
 pub const FindOne = struct {
-    pub const name = "internal.find_one";
-    pub const description = "The one internal record whose indexed field holds a value";
-    pub const details = "Null when none does; `conflict` when two do.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        kind: []const u8,
-        field: []const u8,
-        value: []const u8,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        record: ?Item,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .field = "name",
-        .value = "Ada",
-    };
-    pub const example_out: Out = .{
-        .record = example_item,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .field = "An indexed field",
-        .value = "The value it holds, as text (`42`, `true`)",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
+    pub const shape = public.FindOne;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -655,58 +476,17 @@ pub const FindOne = struct {
 };
 
 pub const Find = struct {
-    pub const name = "internal.find";
-    pub const description = "A page of internal records, newest first";
-    pub const details =
-        \\With `field` and `value`, only those whose indexed field holds it. `oldest` turns
-        \\the order round: the order they were made in. `fields` names the fields of each
-        \\document to answer, the others left out: a list that shows two fields reads two.
-        \\With `ids` (up to 200), the records of those ids instead of a page, in the order
-        \\named, one that is not there left out: many records by id are one read.
-        \\With `after`, a walk's page: the records after that id in id order, which is the order
-        \\they were made in (`""` for the first page). Each page is found from the index, so a
-        \\walk over a long list costs the same a page; `offset` is not given with it.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        kind: []const u8,
-        field: ?[]const u8 = null,
-        value: ?[]const u8 = null,
-        limit: u32 = 50,
-        offset: u32 = 0,
-        oldest: bool = false,
-        after: ?[]const u8 = null,
-        fields: []const []const u8 = &.{},
-        ids: []const []const u8 = &.{},
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        records: []const Item,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-    };
-    pub const example_out: Out = .{
-        .records = &.{example_item},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .field = "An indexed field to filter on",
-        .value = "The value it holds, as text",
-        .limit = "Page size, up to 200",
-        .offset = "Records to skip",
-        .oldest = "The oldest first, instead of the newest",
-        .after = "A walk's page: the records after this id (`\"\"` for the first)",
-        .fields = "The fields of each document to answer; every field when none is named",
-        .ids = "The records of these ids, up to 200, instead of a page",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
-
-    /// The most fields one page names.
-    pub const fields_max: u32 = 64;
+    pub const shape = public.Find;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const fields_max = shape.fields_max;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -818,41 +598,17 @@ fn only(ctx: *const Ctx, document: []const u8, fields: []const []const u8) Error
 }
 
 pub const Count = struct {
-    pub const name = "internal.count";
-    pub const description = "How many internal records a collection holds";
-    pub const details =
-        \\With `field` and `value`, how many whose indexed field holds it. Counted from the
-        \\index: no record is read, so a list can say how many there are beside the page it
-        \\shows. Changes nothing.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        kind: []const u8,
-        field: ?[]const u8 = null,
-        value: ?[]const u8 = null,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        count: u64,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-    };
-    pub const example_out: Out = .{
-        .count = 1,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .field = "An indexed field to filter on",
-        .value = "The value it holds, as text",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .count = "How many records match",
-    };
+    pub const shape = public.Count;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -874,33 +630,16 @@ pub const Count = struct {
 };
 
 pub const Delete = struct {
-    pub const name = "internal.delete";
-    pub const description = "Remove an internal record";
-    pub const details = "Refused on an append-only collection.";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        kind: []const u8,
-        id: []const u8,
-        plugin: ?[]const u8 = null,
-        app: ?[]const u8 = null,
-    };
-    pub const Out = struct {
-        deleted: bool,
-    };
-    pub const example: In = .{
-        .plugin = "greeter",
-        .kind = "visit",
-        .id = example_id,
-    };
-    pub const example_out: Out = .{
-        .deleted = true,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .kind = "The collection",
-        .id = "The record",
-        .plugin = "Whose records, when no plugin is running",
-        .app = "Which app's, when no plugin is running",
-    };
+    pub const shape = public.Delete;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -1048,29 +787,10 @@ fn raised_matched(
     };
 }
 
-/// What core's internal-record events carry.
-pub const Changed = struct {
-    /// The internal record: `<plugin>/<kind>/<id>`
-    record: []const u8,
-};
-
-/// An internal record was made.
-pub const Created = event_define(.{
-    .name = "internal.created",
-    .payload = Changed,
-});
-/// An internal record was saved.
-pub const Saved = event_define(.{
-    .name = "internal.saved",
-    .payload = Changed,
-});
-/// An internal record was deleted.
-pub const Deleted = event_define(.{
-    .name = "internal.deleted",
-    .payload = Changed,
-});
-
-const event_define = @import("../publr/plugin/hook_define.zig").event;
+pub const Changed = public.Changed;
+pub const Created = public.Created;
+pub const Saved = public.Saved;
+pub const Deleted = public.Deleted;
 
 pub fn scope_of(
     ctx: *Ctx,

@@ -7,13 +7,7 @@ const currency = @import("currency.zig");
 pub const Kind = @import("../publr/model/ledger.zig").Kind;
 pub const Limit = @import("../publr/model/ledger.zig").Limit;
 
-/// Where a transfer stands. A hold is `pending` until a post, a void or its expiry settles it.
-pub const Status = enum {
-    posted,
-    pending,
-    voided,
-    expired,
-};
+pub const Status = @import("../publr/model/ledger.zig").Status;
 
 /// What a transfer row is.
 pub const Action = enum {

@@ -526,13 +526,7 @@ fn summed(select: *db.Statement, arena: std.mem.Allocator) Error![]const Sum {
 }
 
 /// An account whose kept totals differ from what its transfers add up to.
-pub const Differing = struct {
-    account: []const u8,
-    debits_posted: i64,
-    credits_posted: i64,
-    debits_pending: i64,
-    credits_pending: i64,
-};
+pub const Differing = @import("../publr/model/ledger.zig").Differing;
 
 /// Every account whose totals its transfers do not add up to: none, unless there is a bug.
 pub fn differing(connection: *db.Db, arena: std.mem.Allocator) Error![]const Differing {

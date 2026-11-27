@@ -18,3 +18,20 @@ pub const Limit = enum {
     never_below_zero,
     never_above_zero,
 };
+
+/// Where a transfer stands. A hold is `pending` until a post, a void or its expiry settles it.
+pub const Status = enum {
+    posted,
+    pending,
+    voided,
+    expired,
+};
+
+/// An account whose totals its transfers do not add up to, as `ledger.check` names it.
+pub const Differing = struct {
+    account: []const u8,
+    debits_posted: i64,
+    credits_posted: i64,
+    debits_pending: i64,
+    credits_pending: i64,
+};

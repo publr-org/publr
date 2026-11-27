@@ -284,26 +284,8 @@ pub fn set_closed(ctx: *Ctx, account: []const u8, closed: bool) Error!void {
     try store.ledger_accounts.set_closed(ctx.db, account, closed);
 }
 
-/// A hold voided by its expiry, as its owner hears it.
-pub const Expired = @import("../../publr/plugin/hook_define.zig").event(.{
-    .name = "ledger.expired",
-    .payload = ExpiredPayload,
-});
-
-pub const ExpiredPayload = struct {
-    /// The hold, by core's id.
-    transfer: []const u8,
-    /// Its maker's own id for it.
-    hold: []const u8,
-    maker: []const u8,
-    debit: []const u8,
-    credit: []const u8,
-    unit: []const u8,
-    amount: i64,
-    reason: []const u8,
-    about: []const u8,
-    detail: []const u8,
-};
+pub const Expired = @import("../../publr/operations/ledger.zig").Expired;
+pub const ExpiredPayload = @import("../../publr/operations/ledger.zig").ExpiredPayload;
 
 pub const Expiring = struct {
     transfer: []const u8,

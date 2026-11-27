@@ -253,4 +253,26 @@ and each `run`.
 `Detailed` and `namespace` stay. Gone from it: the `operations` list, each `run` and
 `hooks_on`; read an operation's hooks from `ctx.call(publr.operations.operation.Get, ...)`.
 
+### `sdk:operations.internal`
+
+`publr.operations.internal` is the public file of the internal-record operations' shapes and
+events. `Create`, `CreateMany`, `Get`, `Save`, `SaveMany`, `FindOne`, `Find`, `Count`,
+`Delete`, `Sum`, `HoldsUntil`, `Item`, `example_id`, `example_document`, the events
+`Created`, `Saved` and `Deleted` with their `Changed`, and `namespace` stay; `example_item`
+comes. Calls are unchanged. Gone from it: the `operations` list, each `run`, and core's
+`many_max`, `clear_max`, `Target`, `drawn`, `drawn_matched`, `matching`, `scope_of`,
+`reaches_other` and `TestProject`.
+
+Before: `publr.operations.internal.Find.run(...)`.
+After: `ctx.call(publr.operations.internal.Find, .{ .kind = "cart" })`.
+
+### `sdk:operations.ledger`
+
+`publr.operations.ledger` is the public file of the ledger operations' shapes and the
+`ledger.expired` event. Every operation (`Open` through `Check`), `Step`, `StepAction`,
+`HolderKind`, `Done`, `Shown`, `Line`, `Sum`, `AccountView`, `UnitLine`, the `BalanceOut`,
+`HistoryOut` and `AccountsOut` answers, `Expired` and `namespace` stay; `Side`, `Differing`
+and `ExpiredPayload` come. Gone from it: the `operations` list, each `run` and
+`expire_job`, core's job voiding a hold at its expiry.
+
 ## 0.8.4 (2026-11-26)

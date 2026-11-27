@@ -5,7 +5,7 @@
 //! core's `ledger.*` operations, compiled in or installed alike.
 const std = @import("std");
 const model = @import("../../model/ledger.zig");
-const operations = @import("../../operations/ledger.zig");
+const operations = @import("../operations/ledger.zig");
 const words = @import("words.zig");
 const plugin_define = @import("define.zig");
 const sdk = @import("../../sdk.zig");

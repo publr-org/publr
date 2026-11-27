@@ -355,12 +355,12 @@ pub const ledger = struct {
     pub const get = ledger_define.get;
     pub const accounts = ledger_define.accounts;
     pub const account = ledger_define.account_of;
-    pub const AccountView = operations.ledger.Account.Out;
-    pub const Transfer = operations.ledger.Shown;
-    pub const Line = operations.ledger.Line;
-    pub const Sum = operations.ledger.Sum;
+    pub const AccountView = @import("publr/operations/ledger.zig").AccountView;
+    pub const Transfer = @import("publr/operations/ledger.zig").Shown;
+    pub const Line = @import("publr/operations/ledger.zig").Line;
+    pub const Sum = @import("publr/operations/ledger.zig").Sum;
     /// A hold voided by its expiry: `publr.on(publr.ledger.Expired, run)`.
-    pub const Expired = operations.ledger.Expired;
+    pub const Expired = @import("publr/operations/ledger.zig").Expired;
 };
 /// Messages Publr hands to providers: `ctx.emit(publr.messaging.Email, .{ .to, .subject,
 /// .text })`, and the `messaging` contract providers register into.
@@ -409,13 +409,13 @@ pub const operations = struct {
     pub const secret = @import("publr/operations/secret.zig");
     pub const http = @import("operations/http.zig");
     pub const mail = @import("publr/operations/mail.zig");
-    pub const internal = @import("operations/internal.zig");
+    pub const internal = @import("publr/operations/internal.zig");
     pub const request = @import("publr/operations/request.zig");
     pub const link = @import("publr/operations/link.zig");
     pub const messaging = @import("publr/operations/messaging.zig");
     pub const plugin = @import("operations/plugin.zig");
     pub const dimensions = @import("operations/dimensions.zig");
-    pub const ledger = @import("operations/ledger.zig");
+    pub const ledger = @import("publr/operations/ledger.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

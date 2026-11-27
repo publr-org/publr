@@ -1,9 +1,7 @@
-//! The ledger's reads, computed natively: an account's balance (as of a time too), its
-//! history, transfers about a record, totals per reason, one transfer, accounts, and the full
-//! check. A plugin reads its own accounts, those the plugin that called it handed over, and
-//! those of plugins its `ledger.read` grant names; a person reads what their role reaches.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/ledger/reads.zig");
+const shown_shapes = @import("../../publr/operations/ledger/shown.zig");
 const store = @import("../../store.zig");
 const model = @import("../../model/ledger.zig");
 const registry = @import("../../server/registry.zig");
@@ -13,12 +11,8 @@ const permission = @import("../../model/permission.zig");
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
-const Docs = sdk.operation.Docs;
 const AccountRow = store.ledger_accounts.Row;
 const TransferRow = store.ledger_transfers.Row;
-
-const example_account = "0190c8a3d2e1000014f2a6b9";
-const example_transfer = "0190c8a3d2e2000027c3d4e5";
 
 /// Whether the caller may read accounts `owner` keeps.
 pub fn may_read(ctx: *Ctx, owner: []const u8) bool {
@@ -97,58 +91,18 @@ fn totals_of(row: AccountRow) model.Totals {
 }
 
 pub const Balance = struct {
-    pub const name = "ledger.balance";
-    /// Plugin code calls it for whoever the request is for, visitors too, held to the
-    /// plugin's own reach.
-    pub const plugins_only = true;
-    pub const description = "An account's balance";
-    pub const details =
-        \\Its unit, posted balance, pending holds, what is available once every hold posts,
-        \\and its four totals; with `at`, the posted balance as it stood then. Balances are
-        \\read on the side the account's kind grows on.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        account: []const u8,
-        at: ?i64 = null,
-    };
-    pub const Out = struct {
-        unit: []const u8,
-        posted: i64,
-        pending: i64,
-        available: i64,
-        debits_posted: i64,
-        credits_posted: i64,
-        debits_pending: i64,
-        credits_pending: i64,
-    };
-    pub const example: In = .{
-        .account = example_account,
-    };
-    pub const example_out: Out = .{
-        .unit = "loyalty.points",
-        .posted = 1200,
-        .pending = -500,
-        .available = 700,
-        .debits_posted = 0,
-        .credits_posted = 1200,
-        .debits_pending = 500,
-        .credits_pending = 0,
-    };
-    pub const field_docs: Docs(In) = .{
-        .account = "The account",
-        .at = "A time (ms): the posted balance as it stood then",
-    };
-    pub const output_docs: Docs(Out) = .{
-        .unit = "What it counts",
-        .posted = "The posted balance",
-        .pending = "Its holds, net",
-        .available = "The balance once every hold posts",
-        .debits_posted = "Debits posted",
-        .credits_posted = "Credits posted",
-        .debits_pending = "Debits pending",
-        .credits_pending = "Credits pending",
-    };
+    pub const shape = public.Balance;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const row = try readable(ctx, in.account);
@@ -174,79 +128,7 @@ pub const Balance = struct {
     }
 };
 
-/// A transfer as reads answer it, with its accounts' owners and names and its status.
-pub const Shown = struct {
-    transfer: []const u8,
-    maker: []const u8,
-    maker_id: []const u8,
-    made_for: []const u8,
-    action: []const u8,
-    status: model.Status,
-    debit: []const u8,
-    debit_owner: []const u8,
-    debit_name: []const u8,
-    credit: []const u8,
-    credit_owner: []const u8,
-    credit_name: []const u8,
-    unit: []const u8,
-    amount: i64,
-    reason: []const u8,
-    reason_label: []const u8,
-    /// A post's, void's or expiry's: the hold it settles.
-    hold: []const u8,
-    /// A hold's: what settled it; empty while open.
-    settled_by: []const u8,
-    reverses: []const u8,
-    /// Its reversals, oldest first: `ledger.get` answers them, the lists leave them out.
-    reversals: []const []const u8 = &.{},
-    /// A conversion's: its other leg.
-    pair: []const u8,
-    rate: i64,
-    source: []const u8,
-    chain: []const u8,
-    about: []const u8,
-    detail: []const u8,
-    author: []const u8,
-    expires_at: ?i64,
-    happened_at: i64,
-    posted_at: i64,
-    debit_after: i64,
-    credit_after: i64,
-};
-
-const example_shown: Shown = .{
-    .transfer = example_transfer,
-    .maker = "loyalty",
-    .maker_id = "earned-1042",
-    .made_for = "",
-    .action = "transfer",
-    .status = .posted,
-    .debit = "0190c8a3d2e1000015a7b8c9",
-    .debit_owner = "loyalty",
-    .debit_name = "given",
-    .credit = example_account,
-    .credit_owner = "loyalty",
-    .credit_name = "held",
-    .unit = "loyalty.points",
-    .amount = 500,
-    .reason = "earned",
-    .reason_label = "Earned on an order",
-    .hold = "",
-    .settled_by = "",
-    .reverses = "",
-    .pair = "",
-    .rate = 0,
-    .source = "",
-    .chain = example_transfer,
-    .about = "",
-    .detail = "",
-    .author = "loyalty",
-    .expires_at = null,
-    .happened_at = 1_790_000_000_000,
-    .posted_at = 1_790_000_000_000,
-    .debit_after = 500,
-    .credit_after = 500,
-};
+pub const Shown = shown_shapes.Shown;
 
 /// Accounts read while showing transfers, each once.
 const Known = struct {
@@ -341,74 +223,22 @@ fn pair_of(ctx: *Ctx, row: TransferRow) Error![]const u8 {
     return if (second) |found| found.id else "";
 }
 
-pub const Side = enum { debit, credit };
-
-/// One transfer as an account's history shows it.
-pub const Line = struct {
-    transfer: []const u8,
-    action: []const u8,
-    status: model.Status,
-    reason: []const u8,
-    reason_label: []const u8,
-    maker: []const u8,
-    other: []const u8,
-    other_owner: []const u8,
-    other_name: []const u8,
-    side: Side,
-    /// On this account's side: positive when it grows the balance.
-    amount: i64,
-    balance_after: i64,
-    about: []const u8,
-    detail: []const u8,
-    author: []const u8,
-    happened_at: i64,
-    posted_at: i64,
-};
+pub const Side = shown_shapes.Side;
+pub const Line = shown_shapes.Line;
 
 pub const History = struct {
-    pub const name = "ledger.history";
-    /// Plugin code calls it for whoever the request is for, visitors too, held to the
-    /// plugin's own reach.
-    pub const plugins_only = true;
-    pub const description = "An account's transfers, newest first";
-    pub const details =
-        \\A page of the account's transfers, newest first: each with its side, its amount on
-        \\this account (positive when it grows the balance), the balance after it and its
-        \\status. The next page starts `before` the last one shown.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        account: []const u8,
-        about: []const u8 = "",
-        from: ?i64 = null,
-        to: ?i64 = null,
-        before: []const u8 = "",
-        limit: u32 = 50,
-    };
-    pub const Out = struct {
-        lines: []const Line,
-        /// Where the next page starts; empty after the last.
-        before: []const u8,
-    };
-    pub const example: In = .{
-        .account = example_account,
-    };
-    pub const example_out: Out = .{
-        .lines = &.{},
-        .before = "",
-    };
-    pub const field_docs: Docs(In) = .{
-        .account = "The account",
-        .about = "Only transfers about this record",
-        .from = "From this time (ms)",
-        .to = "Before this time (ms)",
-        .before = "Transfers before this one: the next page",
-        .limit = "1 to 200",
-    };
-    pub const output_docs: Docs(Out) = .{
-        .lines = "Newest first",
-        .before = "The next page's `before`; empty after the last",
-    };
+    pub const shape = public.History;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const row = try readable(ctx, in.account);
@@ -468,58 +298,18 @@ fn line_of(ctx: *Ctx, known: *Known, account: AccountRow, row: TransferRow) Erro
 }
 
 pub const Find = struct {
-    pub const name = "ledger.find";
-    /// Plugin code calls it for whoever the request is for, visitors too, held to the
-    /// plugin's own reach.
-    pub const plugins_only = true;
-    pub const description = "Transfers about a record, on an account or of a reason";
-    pub const details =
-        \\A page of the transfers on accounts the caller may read that match every filter
-        \\given: about a record, about a finer one (`detail`), on one account, on the
-        \\accounts of one name, of one reason. At least one of `about`, `detail`, `account`
-        \\and `name`; each is read through an index. Oldest first, or `newest` first; a page
-        \\is 50 unless `limit` says, 200 at most, and the next starts `after` the last.
-        \\For sums, ask `ledger.totals`: it adds up in the database and reads no transfer.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        about: []const u8 = "",
-        detail: []const u8 = "",
-        reason: []const u8 = "",
-        account: []const u8 = "",
-        /// The caller's accounts of this name; with `plugin`, another's it may read.
-        name: []const u8 = "",
-        plugin: []const u8 = "",
-        after: []const u8 = "",
-        limit: u32 = 50,
-        newest: bool = false,
-    };
-    pub const Out = struct {
-        transfers: []const Shown,
-        next: []const u8,
-    };
-    pub const example: In = .{
-        .about = "0190c8a3d2e3000031d4e5f6",
-    };
-    pub const example_out: Out = .{
-        .transfers = &.{example_shown},
-        .next = "",
-    };
-    pub const field_docs: Docs(In) = .{
-        .about = "The record they are about",
-        .detail = "The finer record they are about",
-        .reason = "Only transfers of this reason",
-        .account = "Only transfers on this account, either side",
-        .name = "Only transfers on the accounts of this name",
-        .plugin = "Whose accounts the name is; the caller's own when left out",
-        .after = "Transfers past this one: the next page",
-        .limit = "1 to 200; 50 when left out",
-        .newest = "Newest first; oldest first when left out",
-    };
-    pub const output_docs: Docs(Out) = .{
-        .transfers = "In the order asked",
-        .next = "The next page's `after`; empty after the last",
-    };
+    pub const shape = public.Find;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const narrowed = in.about.len > 0 or in.detail.len > 0 or in.account.len > 0 or
@@ -583,74 +373,21 @@ fn owner_named(
     return owner;
 }
 
-pub const Sum = struct {
-    reason: []const u8,
-    reason_label: []const u8,
-    unit: []const u8,
-    /// The finer record the sum is of, when sums were asked for `details`; empty otherwise.
-    detail: []const u8 = "",
-    debits_posted: i64,
-    credits_posted: i64,
-    debits_pending: i64,
-    credits_pending: i64,
-};
+pub const Sum = shown_shapes.Sum;
 
 pub const Totals = struct {
-    pub const name = "ledger.totals";
-    /// Plugin code calls it for whoever the request is for, visitors too, held to the
-    /// plugin's own reach.
-    pub const plugins_only = true;
-    pub const description = "Debits and credits per reason over matching transfers";
-    pub const details =
-        \\Posted and open-hold amounts per reason and unit over the transfers that match:
-        \\about a record, on one account, or on the caller's accounts of one name, between
-        \\two times, of one reason, about a finer record (`detail`). On an account (or a
-        \\name) each amount is on its debit or credit side; about a record alone, each
-        \\transfer counts once on both. With `details` (up to 200 finer records: a page of
-        \\an order's charges) there is one sum per detail, reason and unit, so a page's
-        \\figures are one read. Added up in the database: no transfer is read. A page of 200
-        \\sums at a time, by detail, reason and unit: `next` continues it.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        about: []const u8 = "",
-        detail: []const u8 = "",
-        details: []const []const u8 = &.{},
-        reason: []const u8 = "",
-        account: []const u8 = "",
-        /// The caller's accounts of this name; with `plugin`, another's it may read.
-        name: []const u8 = "",
-        plugin: []const u8 = "",
-        from: ?i64 = null,
-        to: ?i64 = null,
-        after: []const u8 = "",
-    };
-    pub const Out = struct {
-        totals: []const Sum,
-        next: []const u8 = "",
-    };
-    pub const example: In = .{
-        .about = "0190c8a3d2e3000031d4e5f6",
-    };
-    pub const example_out: Out = .{
-        .totals = &.{},
-    };
-    pub const field_docs: Docs(In) = .{
-        .about = "The record they are about",
-        .detail = "The finer record they are about",
-        .details = "Finer records, up to 200: one sum per detail, reason and unit",
-        .reason = "Only transfers of this reason",
-        .account = "One account",
-        .name = "An account name",
-        .plugin = "Whose accounts the name is; the caller's own when left out",
-        .from = "From this time (ms)",
-        .to = "Before this time (ms)",
-        .after = "The page after this sum: the `next` the last page answered",
-    };
-    pub const output_docs: Docs(Out) = .{
-        .totals = "One per reason and unit; per detail too when `details` were named",
-        .next = "The next page's `after`; empty after the last",
-    };
+    pub const shape = public.Totals;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -737,64 +474,18 @@ fn sum_key_of(after: []const u8) Error!?store.ledger_transfers.SumKey {
 }
 
 pub const Get = struct {
-    pub const name = "ledger.get";
-    /// Plugin code calls it for whoever the request is for, visitors too, held to the
-    /// plugin's own reach.
-    pub const plugins_only = true;
-    pub const description = "One transfer";
-    pub const details =
-        \\A transfer by core's id (`transfer`), or by the calling plugin's own id (`id`):
-        \\everything it holds, with what settled it, the hold it settles, its conversion's
-        \\other leg.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        transfer: []const u8 = "",
-        id: []const u8 = "",
-    };
-    pub const Out = Shown;
-    pub const example: In = .{
-        .transfer = example_transfer,
-    };
-    pub const example_out: Out = example_shown;
-    pub const field_docs: Docs(In) = .{
-        .transfer = "The transfer, by core's id",
-        .id = "The transfer, by the calling plugin's own id",
-    };
-    pub const output_docs: Docs(Out) = .{
-        .transfer = "Core's id",
-        .maker = "The plugin that made it",
-        .maker_id = "Its maker's id for it; empty for a post, void or expiry",
-        .made_for = "The plugin whose account it moved by being handed it; empty if none",
-        .action = "transfer, hold, post, void, expire, reverse or convert",
-        .status = "posted, pending, voided or expired",
-        .debit = "The account debited",
-        .debit_owner = "Its owner",
-        .debit_name = "Its name",
-        .credit = "The account credited",
-        .credit_owner = "Its owner",
-        .credit_name = "Its name",
-        .unit = "What it counts",
-        .amount = "In the unit's smallest step",
-        .reason = "Its maker's reason",
-        .reason_label = "The reason in words",
-        .hold = "The hold it settles",
-        .settled_by = "What settled this hold",
-        .reverses = "The transfer it undoes",
-        .reversals = "Its reversals, oldest first; the first 200",
-        .pair = "A conversion's other leg",
-        .rate = "A conversion's rate, in millionths",
-        .source = "Where the rate came from",
-        .chain = "The first transfer of the chain it was posted in",
-        .about = "What it belongs to",
-        .detail = "A finer record",
-        .author = "A person's id, else the plugin, job or visitor",
-        .expires_at = "A hold's expiry",
-        .happened_at = "When it happened in the world",
-        .posted_at = "When the ledger took it",
-        .debit_after = "The debit account's posted balance after it",
-        .credit_after = "The credit account's posted balance after it",
-    };
+    pub const shape = public.Get;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         const found = if (in.transfer.len > 0)
