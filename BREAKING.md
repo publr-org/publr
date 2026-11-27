@@ -320,8 +320,8 @@ are unchanged. Gone from it: the `operations` list and each `run`.
 `publr.operations.content_type` is the public file of the content type operations' shapes.
 `Create`, `Update`, `Get`, `List`, `Delete`, `Validate`, `Summary`, `Problem` and
 `example_definition` keep their names, as does `namespace`. Gone from it: the `operations`
-list, each `run`, and core's readers `find`, `find_raw`, `visible`, `visible_type` and `brief_of`; call
-`content_type.get` or `content_type.list` instead.
+list, each `run`, and core's readers `find`, `find_raw`, `visible`, `visible_type` and
+`brief_of`; call `content_type.get` or `content_type.list` instead.
 
 `Get`'s answer holds the definition as JSON (`publr.operation.Json`), as `Create` and
 `Update` take it, no longer core's own definition type: what REST, the CLI and MCP answer is
@@ -338,8 +338,8 @@ After: read the fields you need from it in your own shape,
 `publr.operations.taxonomy` is the public file of the taxonomy operations' shapes. `Create`,
 `Update`, `Get`, `List`, `Delete`, `Validate`, `Summary`, `Problem` and `example_definition`
 keep their names, as does `namespace`. Gone from it: the `operations` list, each `run`, and
-`find`, `visible`, `visible_type` and `brief_of`. `Get`'s answer holds the definition as JSON, as
-`content_type.get`'s does (above).
+`find`, `visible`, `visible_type` and `brief_of`. `Get`'s answer holds the definition as
+JSON, as `content_type.get`'s does (above).
 
 ### `sdk:operations.internal`
 
@@ -417,5 +417,41 @@ and `namespace` stay; calls are unchanged. Gone from it: the `operations` list, 
 `public_host` and `not_public`.
 
 Before: `const timed = publr.operations.http.timed;`. After: `const timed = publr.Host.timed;`.
+### `sdk:operations.term`
+
+`publr.operations.term` is the public file of the term operations' shapes. `Create`, `Get`,
+`Save`, `Transition`, `Publish`, `List`, `Tree`, `Delete`, `DiscardChanges`, `Purge`,
+`Validate`, `Node`, `namespace` and the examples' ids keep their names, inputs and answers;
+calls are unchanged. `Term`, `Purpose`, `Order` and `Problem` are the public
+`publr/model/document.zig` shapes (`Record`, `Purpose`, `Order`, `Problem`), the same fields.
+Gone from it: the `operations` list, each `run`, and core's `domain`, `access`, `document`,
+`published`, `has_parents` and `list_max`.
+
+### `sdk:operations.user_type`
+
+New: `publr.operations.user_type`, the shapes of `user_type.list` and `user_type.set`
+(`List`, `Set`, `Listed`, `namespace`), callable as
+`ctx.call(publr.operations.user_type.List, .{})`.
+
+### `sdk:operations.project`
+
+`publr.operations.project` is the public file of the project operations' shapes. `Init`,
+`Status`, `Put`, `impact.Impact` (with `Artifact` and `artifacts_max`), `move_app.MoveApp`,
+`namespace`, and `changes.all_records_key` and `changes.all_terms_key` keep their names and
+shapes; calls are unchanged. Gone from it: the `operations` list, each `run`, `setup_key`,
+and the rest of `changes` (the keys of records, terms and types, the hooks raising them),
+which are core's.
+
+### `sdk:operations.user`
+
+`user.get`'s answer holds the custom field groups (`fields`) as JSON (`publr.operation.Json`),
+no longer core's own field definitions: what REST, the CLI and MCP answer is unchanged. The
+user operations' shapes are defined in `publr/operations/user.zig` (and its `user/` files);
+`publr.operations.user` still names core's module until core's `language.person_speaks`,
+which Cloud reaches, has a public home.
+
+Before: `got.fields[0].fields`.
+After: `const Groups = []const struct { name: []const u8 };` then
+`const groups = try got.fields.as(Groups, arena);`.
 
 ## 0.8.4 (2026-11-26)

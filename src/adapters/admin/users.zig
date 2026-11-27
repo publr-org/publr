@@ -366,7 +366,7 @@ fn load(session: *Session, id: []const u8) Error!?Shape {
     const in: user_operations.Get.In = .{
         .user = id,
     };
-    const got = registry.SDK.dispatch(&session.ctx, user_operations.Get, in) catch |err| {
+    const got = user_operations.fields.got(&session.ctx, in) catch |err| {
         try admin.fail(session, err, back);
 
         return null;

@@ -24,36 +24,7 @@ pub const Match = struct {
     title: ?[]const u8,
 };
 
-/// One row of the documents table, with what every reader wants next to it: the
-/// definition's handle, and the live title and slug (from the definition's `title_field`
-/// and its slug field, found in the definition by SQLite's JSON functions). Field order
-/// is the column order of `select_record`: the struct is what `Statement.read` fills.
-pub const Record = struct {
-    id: []const u8,
-    type_id: []const u8,
-    type: []const u8,
-    status: []const u8,
-    changed: bool,
-    version: i64,
-    title: []const u8,
-    slug: ?[]const u8,
-    created_by: ?[]const u8,
-    updated_by: ?[]const u8,
-    created_at: i64,
-    updated_at: i64,
-    /// The app it belongs to (`app.zon`'s `.name`); null for the project's own.
-    app: ?[]const u8 = null,
-    /// A transition asked for by someone who may not publish; empty when none waits.
-    requested: []const u8 = "",
-    /// Who asked for it.
-    requested_by: ?[]const u8 = null,
-    /// The combinations of its dimensions it keeps from going live, `;` between them
-    /// (`model/dimension/live.zig`); empty when every one goes live.
-    held_back: []const u8 = "",
-    /// What it holds back once its pending changes are published; null when that is
-    /// `held_back`.
-    pending_held_back: ?[]const u8 = null,
-};
+pub const Record = @import("../../publr/model/document.zig").Record;
 
 /// Only the documents whose ids a JSON array lists.
 const list_ids = " AND r.id IN (SELECT value FROM json_each(?{d}))";
@@ -93,16 +64,7 @@ pub const App = union(enum) {
     name: []const u8,
 };
 
-pub const Order = enum {
-    updated_desc,
-    updated_asc,
-    created_desc,
-    created_asc,
-    title_asc,
-    title_desc,
-    status_asc,
-    status_desc,
-};
+pub const Order = @import("../../publr/model/document.zig").Order;
 
 pub const Filter = list_filters.Filter;
 pub const Operator = list_filters.Operator;

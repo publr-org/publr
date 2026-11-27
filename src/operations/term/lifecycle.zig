@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/term/lifecycle.zig");
 const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
 const term_operations = @import("../term.zig");
@@ -17,37 +18,16 @@ const example_changed_id = term_operations.example_changed_id;
 const example_draft_id = term_operations.example_draft_id;
 
 pub const Transition = struct {
-    pub const name = "term.transition";
-    pub const description = "Move a term by a transition of its flow: publish, archive, ...";
-    pub const details =
-        \\As `record transition`: the transition by name, into a live status applies pending
-        \\edits, out of one keeps them. Bumps `version`.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        transition: []const u8,
-        expected_version: ?i64 = null,
-    };
-    pub const Out = struct {
-        status: []const u8,
-        changed: bool,
-        version: i64,
-    };
-    pub const example: In = .{
-        .id = example_draft_id,
-        .transition = "publish",
-    };
-    pub const example_out: Out = .{
-        .status = "published",
-        .changed = false,
-        .version = 2,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The term id",
-        .transition = "The transition's name, `publish`",
-        .expected_version = "The `version` you read; refuse if it changed",
-    };
+    pub const shape = public.Transition;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -74,26 +54,15 @@ fn moved_out(moved: Moved) Transition.Out {
 }
 
 pub const Publish = struct {
-    pub const name = "term.publish";
-    pub const description = "Make the term's latest document live";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        expected_version: ?i64 = null,
-    };
-    pub const Out = Transition.Out;
-    pub const example: In = .{
-        .id = example_changed_id,
-    };
-    pub const example_out: Out = .{
-        .status = "published",
-        .changed = false,
-        .version = 2,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The term id",
-        .expected_version = "The `version` you read; refuse if it changed",
-    };
+    pub const shape = public.Publish;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -107,22 +76,14 @@ pub const Publish = struct {
 };
 
 pub const DiscardChanges = struct {
-    pub const name = "term.discard_changes";
-    pub const description = "Drop a term's pending edits; the document stays as it is";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        expected_version: ?i64 = null,
-    };
-    pub const Out = struct {
-        version: i64,
-    };
-    pub const example: In = .{
-        .id = example_changed_id,
-    };
-    pub const example_out: Out = .{
-        .version = 4,
-    };
+    pub const shape = public.DiscardChanges;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -138,22 +99,14 @@ pub const DiscardChanges = struct {
 };
 
 pub const Delete = struct {
-    pub const name = "term.delete";
-    pub const description = "Move a term to `deleted` (reversible: transition back to draft)";
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        id: []const u8,
-        expected_version: ?i64 = null,
-    };
-    pub const Out = Transition.Out;
-    pub const example: In = .{
-        .id = example_id,
-    };
-    pub const example_out: Out = .{
-        .status = "trashed",
-        .changed = false,
-        .version = 2,
-    };
+    pub const shape = public.Delete;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -167,27 +120,16 @@ pub const Delete = struct {
 };
 
 pub const Purge = struct {
-    pub const name = "term.purge";
-    pub const description = "Remove a term for good; refused while it has children or records";
-    pub const details =
-        \\Admins only. A term with child terms, or one that records are filed under
-        \\(directly or through a descendant), answers `conflict`: move the children and
-        \\the records first.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const destroys = true;
-    pub const In = struct {
-        id: []const u8,
-    };
-    pub const Out = struct {
-        purged: bool,
-    };
-    pub const example: In = .{
-        .id = example_id,
-    };
-    pub const example_out: Out = .{
-        .purged = true,
-    };
+    pub const shape = public.Purge;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const destroys = shape.destroys;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);

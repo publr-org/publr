@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/project/move_app.zig");
 const registry = @import("../../server/registry.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
@@ -12,37 +13,17 @@ const Error = sdk.Error;
 const Def = model.content_type.Def;
 
 pub const MoveApp = struct {
-    pub const name = "project.move_app";
-    pub const description = "Hand every type of one app to another, after renaming it";
-    pub const details =
-        \\An app is known by its `.name`, so renaming it in `app.zon` leaves its content
-        \\types and taxonomies under the old name: this moves them to the new one, or with
-        \\`to` empty makes them Global. Types shared with the old name are shared with the
-        \\new one, and the app's design records (templates, parts, patterns, moodboard
-        \\cards) follow. No record changes. Administrators only: it is the project's.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        from: []const u8,
-        to: []const u8 = "",
-    };
-    pub const Out = struct {
-        moved: u32,
-    };
-    pub const example: In = .{
-        .from = "www",
-        .to = "site",
-    };
-    pub const example_out: Out = .{
-        .moved = 6,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .from = "The app's old `.name`",
-        .to = "Its new `.name`; empty to make its types Global",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .moved = "How many content types and taxonomies changed",
-    };
+    pub const shape = public.MoveApp;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);

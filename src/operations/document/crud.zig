@@ -19,7 +19,7 @@ const Record = store.documents.Record;
 const Order = store.documents.Order;
 const Value = std.json.Value;
 
-pub const Purpose = enum { delivery, edit };
+pub const Purpose = @import("../../publr/model/document.zig").Purpose;
 pub const Problem = document_module.Problem;
 pub const Created = struct {
     id: []const u8,
@@ -63,10 +63,7 @@ pub const ReferrersPage = struct {
     referrers: []const Referrer,
     next: []const u8,
 };
-pub const Report = struct {
-    valid: bool,
-    problems: []const Problem,
-};
+pub const Report = @import("../../publr/model/document.zig").Report;
 
 /// What a list takes, whatever the domain calls its definitions.
 pub const ListInput = struct {

@@ -11,6 +11,7 @@
 
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/project/changes.zig");
 const deps = @import("../../lib/deps.zig");
 const records = @import("../../store/records.zig");
 const statuses = @import("../status.zig");
@@ -22,10 +23,8 @@ const terms = @import("../../store/terms.zig");
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 
-/// The key every listing render records, raised when a change cannot be pinned to a type.
-pub const all_records_key = "records";
-/// The same for terms: every term listing reads it, a term gone for good raises it.
-pub const all_terms_key = "terms";
+pub const all_records_key = public.all_records_key;
+pub const all_terms_key = public.all_terms_key;
 pub const key_len_max: u32 = 128;
 
 fn failed(ctx: *Ctx, err: anyerror) void {

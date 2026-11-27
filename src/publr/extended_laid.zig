@@ -3,10 +3,10 @@
 //! own `after` hook adds is kept beside them and written into one value when the hook is
 //! done (`seal`), which Publr merges under the plugin's name.
 const std = @import("std");
-const free_value = @import("../publr/free_value.zig");
-const free_builder = @import("../publr/free_builder.zig");
-const free_typed = @import("../publr/free_typed.zig");
-const Json = @import("../publr/operation/json.zig").Laid;
+const free_value = @import("free_value.zig");
+const free_builder = @import("free_builder.zig");
+const free_typed = @import("free_typed.zig");
+const Json = @import("operation/json.zig").Laid;
 
 pub const Error = error{ Denied, Invalid, OutOfMemory };
 
@@ -160,7 +160,7 @@ test "a hook's added fields are sealed into one value, each row's under its id" 
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const free_json = @import("free_json.zig");
+    const free_json = @import("../sdk/free_json.zig");
     var plugin: []const u8 = "loyalty";
     const extended = try Extended.start(arena, &plugin);
 

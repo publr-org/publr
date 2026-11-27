@@ -3,6 +3,7 @@
 //! `user_values` through the record machinery.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/user/fields.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
@@ -35,20 +36,20 @@ pub fn definition(ctx: *Ctx, user_id: []const u8, roles: []const []const u8) Err
             break;
         }
 
-        const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
+        const group = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
             .group = item.handle,
         });
-        const applies = try applies_to_any(ctx, got.definition.group, user_id, roles);
+        const applies = try applies_to_any(ctx, group.definition.group, user_id, roles);
 
-        if (!applies or got.definition.fields.len == 0) {
+        if (!applies or group.definition.fields.len == 0) {
             continue;
         }
 
         try groups.append(ctx.arena, .{
-            .name = got.definition.handle,
-            .label = got.definition.name,
+            .name = group.definition.handle,
+            .label = group.definition.name,
             .kind = "group",
-            .fields = got.definition.fields,
+            .fields = group.definition.fields,
         });
     }
 
@@ -164,47 +165,17 @@ pub fn write(ctx: *Ctx, user_id: []const u8, defs: []const Def, text: []const u8
 }
 
 pub const Get = struct {
-    pub const name = "user.get";
-    pub const description = "One account with its custom fields and their values";
-    pub const details =
-        \\Admins only. `fields` lists one group per custom field group that applies to the
-        \\account (its destination is `user` and its role rules match); every field's path
-        \\in `document` is `<group handle>.<field name>`.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        user: []const u8,
-    };
-    pub const Out = struct {
-        user: user_operations.Summary,
-        fields: []const Def,
-        document: sdk.operation.Json,
-    };
-    pub const example: In = .{
-        .user = "editor@example.com",
-    };
-    pub const example_out: Out = .{
-        .user = .{
-            .id = "9b1e7c3d5a2f4e6b8d0c1a3f",
-            .email = "editor@example.com",
-            .display_name = "Editor",
-            .roles = &.{"editor"},
-            .created_at = 1789646400000,
-            .active = true,
-        },
-        .fields = &.{},
-        .document = .{
-            .text = "{}",
-        },
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .user = "The user's id or email",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .user = "The account",
-        .fields = "The groups that apply, each with its fields",
-        .document = "The values, as JSON, one object per group",
-    };
+    pub const shape = public.Get;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.caller != .anonymous);
@@ -228,7 +199,7 @@ pub const Get = struct {
 
         return .{
             .user = user_operations.summary_of(found.user),
-            .fields = defs,
+            .fields = try sdk.operation.Json.of(ctx.arena, defs),
             .document = .{
                 .text = text,
             },
@@ -236,37 +207,52 @@ pub const Get = struct {
     }
 };
 
+/// The answer of `user.get` as core's own pages read it: the fields typed.
+pub const Got = struct {
+    user: user_operations.Summary,
+    fields: []const Def,
+    document: sdk.operation.Json,
+};
+
+/// `user.get` for core's own pages: called as any caller calls it, its fields read back from
+/// the JSON it answers.
+pub fn got(ctx: *Ctx, in: Get.In) Error!Got {
+    std.debug.assert(in.user.len <= 64 << 10);
+
+    return typed(ctx.arena, try registry.SDK.dispatch(ctx, Get, in));
+}
+
+/// `answered`, a `user.get` answer, with its fields read back from their JSON.
+pub fn typed(arena: std.mem.Allocator, answered: Get.Out) Error!Got {
+    const options: std.json.ParseOptions = .{
+        .allocate = .alloc_always,
+    };
+    const text = answered.fields.text;
+    const defs = std.json.parseFromSliceLeaky([]const Def, arena, text, options) catch |err| {
+        return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+    };
+
+    std.debug.assert(defs.len <= model.field.fields_max);
+
+    return .{
+        .user = answered.user,
+        .fields = defs,
+        .document = answered.document,
+    };
+}
+
 pub const Validate = struct {
-    pub const name = "user.validate";
-    pub const description = "Check an account's custom field values without saving";
-    pub const details = "Admins only. The same rules `user update --document` applies.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        user: []const u8,
-        document: sdk.operation.Json,
-    };
-    pub const Out = struct {
-        valid: bool,
-        problems: []const Problem,
-    };
-    pub const example: In = .{
-        .user = "editor@example.com",
-        .document = .{
-            .text = "{}",
-        },
-    };
-    pub const example_out: Out = .{
-        .valid = true,
-        .problems = &.{},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .user = "The user's id or email",
-        .document = "The values, as JSON, one object per group",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .valid = "Whether the document would be saved",
-        .problems = "What was refused, by field path",
-    };
+    pub const shape = public.Validate;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.caller != .anonymous);
@@ -333,16 +319,16 @@ test "get: one namespaced group per applicable custom field group; update writes
     const Create = user_operations.Create;
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
 
-    const editor = try TestSDK.dispatch(&admin, Get, .{
+    const editor = try typed(admin.arena, try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
-    });
+    }));
     try std.testing.expectEqual(@as(usize, 2), editor.fields.len);
     try std.testing.expectEqualStrings("basic", editor.fields[0].name);
     try std.testing.expectEqualStrings("Group staff", editor.fields[1].label);
     try std.testing.expectEqualStrings("{}", editor.document.text);
-    const own = try TestSDK.dispatch(&admin, Get, .{
+    const own = try typed(admin.arena, try TestSDK.dispatch(&admin, Get, .{
         .user = admin_id,
-    });
+    }));
     try std.testing.expectEqual(@as(usize, 1), own.fields.len);
 
     const empty: Validate.In = .{
@@ -395,9 +381,9 @@ test "get: one namespaced group per applicable custom field group; update writes
         .text = "{\"basic\":{\"bio\":\"Leads\"}}",
     };
     _ = try TestSDK.dispatch(&admin, user_operations.Update, promoted);
-    const as_admin = try TestSDK.dispatch(&admin, Get, .{
+    const as_admin = try typed(admin.arena, try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
-    });
+    }));
     try std.testing.expectEqual(@as(usize, 1), as_admin.fields.len);
     try std.testing.expect(std.mem.indexOf(u8, as_admin.document.text, "staff") == null);
 }

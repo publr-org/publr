@@ -3,6 +3,7 @@
 //! everyone, else none hidden.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/user/columns.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
 
@@ -10,58 +11,30 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-/// The lists a person picks plugins' columns on, and the setting each choice is kept in.
-const List = enum {
-    users,
-    media,
-
-    fn key(list: List) []const u8 {
-        return switch (list) {
-            .users => "people_columns",
-            .media => "media_columns",
-        };
-    }
-};
-
 pub const Columns = struct {
-    pub const name = "user.columns";
-    pub const description = "The plugins' columns on People or the media library you hide";
-    pub const details =
-        \\Any signed-in account, about itself: `hidden` names the columns plugins add to
-        \\`list` (`users`, People; `media`, the media library) that it does not show, by
-        \\field (`loyalty.points`): its own choice, else the one administrators made for
-        \\everyone.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const open = true;
-    /// Open, but about the account asking: its example names one.
-    pub const example_signed_in = true;
-    pub const In = struct {
-        list: List = .users,
-    };
-    pub const Out = struct {
-        hidden: []const []const u8,
-    };
-    pub const example: In = .{};
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .list = "`users` for People, `media` for the media library",
-    };
-    pub const example_out: Out = .{
-        .hidden = &.{},
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .hidden = "The columns not shown, by field",
-    };
+    pub const shape = public.Columns;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const example_signed_in = shape.example_signed_in;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const field_docs = shape.field_docs;
+    pub const example_out = shape.example_out;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
 
         const user = ctx.caller.user_id() orelse return error.Denied;
-        const key = std.mem.concat(ctx.arena, u8, &.{ in.list.key(), ":", user }) catch {
+        const key = std.mem.concat(ctx.arena, u8, &.{ key_of(in.list), ":", user }) catch {
             return error.OutOfMemory;
         };
         const saved = try store.settings.get(ctx.db, ctx.arena, key) orelse
-            try store.settings.get(ctx.db, ctx.arena, in.list.key()) orelse "[]";
+            try store.settings.get(ctx.db, ctx.arena, key_of(in.list)) orelse "[]";
         const hidden = std.json.parseFromSliceLeaky([]const []const u8, ctx.arena, saved, .{}) catch
             &.{};
 
@@ -72,38 +45,19 @@ pub const Columns = struct {
 };
 
 pub const SetColumns = struct {
-    pub const name = "user.set_columns";
-    pub const description = "Choose which plugins' columns on People or the media library you hide";
-    pub const details =
-        \\Any signed-in account, for itself: `hidden` names the columns plugins add to `list`
-        \\(`users`, People; `media`, the media library) that it does not show, by field.
-        \\`for_everyone` (administrators only) makes the choice everyone starts at who made
-        \\none.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
-    /// Open, but about the account asking: its example names one.
-    pub const example_signed_in = true;
-    pub const In = struct {
-        hidden: []const []const u8 = &.{},
-        list: List = .users,
-        for_everyone: bool = false,
-    };
-    pub const Out = struct {
-        hidden: []const []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .hidden = &.{},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .hidden = "Columns plugins add to the list, by field (`loyalty.points`)",
-        .list = "`users` for People, `media` for the media library",
-        .for_everyone = "Everyone's choice (administrators only)",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .hidden = "The columns not shown now",
-    };
+    pub const shape = public.SetColumns;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const example_signed_in = shape.example_signed_in;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -124,9 +78,9 @@ pub const SetColumns = struct {
         }
 
         const key = if (in.for_everyone)
-            in.list.key()
+            key_of(in.list)
         else
-            std.mem.concat(ctx.arena, u8, &.{ in.list.key(), ":", user }) catch {
+            std.mem.concat(ctx.arena, u8, &.{ key_of(in.list), ":", user }) catch {
                 return error.OutOfMemory;
             };
         const text = try sdk.stringify(ctx.arena, in.hidden);
@@ -150,4 +104,16 @@ fn on_list(all_columns: []const registry.Column, list: []const u8, field: []cons
     }
 
     return false;
+}
+
+const List = public.List;
+
+/// The setting a list's choice is kept in.
+fn key_of(list: List) []const u8 {
+    std.debug.assert(std.enums.values(List).len == 2);
+
+    return switch (list) {
+        .users => "people_columns",
+        .media => "media_columns",
+    };
 }

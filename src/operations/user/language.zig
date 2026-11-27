@@ -2,6 +2,7 @@
 //! English. The languages are the ones plugins bring PO files for, and English.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/user/language.zig");
 const store = @import("../../store.zig");
 const registry = @import("../../server/registry.zig");
 
@@ -14,10 +15,7 @@ const site_key = "admin_language";
 pub const choices_key = "translation_choices";
 const person_prefix = "admin_language:";
 
-pub const Choice = struct {
-    locale: []const u8,
-    label: []const u8,
-};
+pub const Choice = public.Choice;
 
 /// English, then every language a plugin translates the admin into, compiled in or
 /// installed, each once. Where no server built the catalogues (the browser), the
@@ -75,48 +73,19 @@ fn known(list: []const Choice, locale: []const u8) bool {
 }
 
 pub const Language = struct {
-    pub const name = "user.language";
-    pub const description = "The language the admin speaks to you, and the ones it can";
-    pub const details =
-        \\Any signed-in account, about itself: `chosen` is its own choice (empty: the
-        \\site's), `site` the site's default, `shown` the one in use, and `choices` English
-        \\and every language a plugin translates the admin into.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const open = true;
-    /// Open, but about the account asking: its example names one.
-    pub const example_signed_in = true;
-    pub const In = struct {};
-    pub const Out = struct {
-        chosen: []const u8,
-        site: []const u8,
-        shown: []const u8,
-        choices: []const Choice,
-        /// Whether the person ever chose (the site's default counts): the admin welcomes
-        /// someone who has not.
-        answered: bool = true,
-        /// Site Health's choices between translations that disagree, as stored.
-        chosen_translations: ?sdk.operation.Json = null,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .chosen = "",
-        .site = "",
-        .shown = "en",
-        .choices = &.{.{
-            .locale = "en",
-            .label = "English",
-        }},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .chosen = "Your own choice; empty for the site's",
-        .site = "The site's default for everyone who chose none",
-        .shown = "The language the admin speaks to you",
-        .choices = "Each language the admin speaks: `locale` and its own name",
-        .chosen_translations = "The translations picked where several disagree; null for none",
-        .answered = "Whether you ever chose; until then the site's default, else English",
-    };
+    pub const shape = public.Language;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const example_signed_in = shape.example_signed_in;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -192,34 +161,19 @@ fn stored(ctx: *Ctx, key: []const u8, all: []const Choice) Error![]const u8 {
 }
 
 pub const SetLanguage = struct {
-    pub const name = "user.set_language";
-    pub const description = "Choose the language the admin speaks to you";
-    pub const details =
-        \\Any signed-in account, for itself: one of `user language`'s choices, or empty for
-        \\the site's.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
-    /// Open, but about the account asking: its example names one.
-    pub const example_signed_in = true;
-    pub const In = struct {
-        language: []const u8,
-    };
-    pub const Out = struct {
-        language: []const u8,
-    };
-    pub const example: In = .{
-        .language = "en",
-    };
-    pub const example_out: Out = .{
-        .language = "en",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .language = "A language's code (`pl`), or empty for the site's",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .language = "Your choice now",
-    };
+    pub const shape = public.SetLanguage;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const example_signed_in = shape.example_signed_in;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -239,30 +193,17 @@ pub const SetLanguage = struct {
 };
 
 pub const SetSiteLanguage = struct {
-    pub const name = "project.set_admin_language";
-    pub const description = "Choose the language the admin speaks to everyone who chose none";
-    pub const details =
-        \\Administrators only. One of `user language`'s choices, or empty for English.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        language: []const u8,
-    };
-    pub const Out = struct {
-        language: []const u8,
-    };
-    pub const example: In = .{
-        .language = "en",
-    };
-    pub const example_out: Out = .{
-        .language = "en",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .language = "A language's code (`pl`), or empty for English",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .language = "The site's default now",
-    };
+    pub const shape = public.SetSiteLanguage;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
