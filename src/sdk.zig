@@ -3416,6 +3416,7 @@ test {
     _ = @import("sdk/hook_runs.zig");
     _ = @import("sdk/operation/checked.zig");
     _ = @import("sdk/operation/budget.zig");
+    _ = @import("sdk/examples/site.zig");
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
     _ = @import("sdk/plugin/written_secrets.zig");

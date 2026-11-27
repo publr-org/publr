@@ -1,12 +1,14 @@
 //! Every `Example:` a plugin's operations give, run as a test against an empty site with the
-//! plugin: `zig build`'s `test-native-plugins` runs one per compiled-in plugin. The example
-//! is called by an administrator; it passes when the answer has the shape its `out:` shows.
+//! plugin and what it stands on (`examples/site.zig`): `zig build`'s `test-native-plugins`
+//! runs one per compiled-in plugin. The example is called by an administrator; it passes
+//! when the answer has the shape its `out:` shows.
 //! A refusal for what an empty site lacks (nothing found, credentials it never issued, a
 //! declared failure, someone else's, a service down) passes too; a refusal of the example's
 //! own input fails, as does a crash.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const shape = @import("shape.zig");
+const site = @import("examples/site.zig");
 
 pub const Error = error{ExampleFailed};
 
@@ -20,7 +22,7 @@ pub fn check(comptime registry: type, comptime plugin: []const u8) !void {
     inline for (comptime owned(declared, plugin)) |index| {
         const Operation = declared.operations[index];
 
-        run_one(registry.SDK, Operation) catch |err| {
+        run_one(registry, plugin, Operation) catch |err| {
             std.debug.print("example of {s}: {t}\n", .{ Operation.name, err });
             failed += 1;
         };
@@ -52,8 +54,14 @@ fn owned(comptime declared: sdk.Registry, comptime plugin: []const u8) []const u
     }
 }
 
-fn run_one(comptime SDK: type, comptime Operation: type) !void {
+fn run_one(
+    comptime registry: type,
+    comptime plugin: []const u8,
+    comptime Operation: type,
+) !void {
     comptime std.debug.assert(Operation.name.len > 0);
+
+    const SDK = registry.SDK;
 
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
@@ -70,6 +78,9 @@ fn run_one(comptime SDK: type, comptime Operation: type) !void {
             .roles = &.{@import("../model/role.zig").admin},
         },
     });
+
+    try site.keep_to(registry, &admin, plugin);
+
     const out = SDK.dispatch(&admin, Operation, Operation.example) catch |err| {
         return if (lacking(&admin, Operation, err)) {} else err;
     };
