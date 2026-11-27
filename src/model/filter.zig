@@ -9,13 +9,7 @@ const model_app = @import("app.zig");
 
 pub const Error = error{Invalid};
 
-/// One filter in force: `status is draft`, `updated within 7d`. An empty value is the
-/// filter shown with nothing chosen yet ("any"), which constrains nothing.
-pub const Clause = struct {
-    key: []const u8,
-    operator: []const u8,
-    value: []const u8 = "",
-};
+pub const Clause = @import("../publr/model/filter.zig").Clause;
 
 /// Who asks and when: what `me` and a duration resolve against.
 pub const Context = struct {

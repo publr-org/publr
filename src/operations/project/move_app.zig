@@ -180,11 +180,11 @@ test "move_app hands an app's types to another, or makes them Global; admins onl
     });
     try std.testing.expectEqual(2, moved.moved);
 
-    const got_stock = try SDK.dispatch(&admin, types.Get, .{
+    const got_stock = try types.got(&admin, .{
         .type = "stock",
     });
     try std.testing.expectEqualStrings("stockroom", got_stock.definition.app);
-    const got_page = try SDK.dispatch(&admin, types.Get, .{
+    const got_page = try types.got(&admin, .{
         .type = "page",
     });
     try std.testing.expectEqualStrings("stockroom", got_page.definition.shared.?.apps[0]);
@@ -192,11 +192,11 @@ test "move_app hands an app's types to another, or makes them Global; admins onl
     try std.testing.expectEqual(2, (try SDK.dispatch(&admin, MoveApp, .{
         .from = "stockroom",
     })).moved);
-    const global = try SDK.dispatch(&admin, types.Get, .{
+    const global = try types.got(&admin, .{
         .type = "stock",
     });
     try std.testing.expectEqualStrings("", global.definition.app);
-    const unshared = try SDK.dispatch(&admin, types.Get, .{
+    const unshared = try types.got(&admin, .{
         .type = "page",
     });
     try std.testing.expectEqual(0, unshared.definition.shared.?.apps.len);

@@ -352,7 +352,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
             .roles = &.{"admin"},
         },
     });
-    const greeting = try registry.SDK.dispatch(&admin, types.Get, .{
+    const greeting = try types.got(&admin, .{
         .type = "greeting",
     });
     try std.testing.expect(greeting.definition.system);
@@ -375,7 +375,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
             .text = with_extra,
         },
     });
-    const extended = try registry.SDK.dispatch(&admin, types.Get, .{
+    const extended = try types.got(&admin, .{
         .type = "greeting",
     });
     try std.testing.expectEqual(@as(usize, 3), extended.definition.fields.len);
@@ -395,7 +395,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
             .text = tampered,
         },
     });
-    const still = try registry.SDK.dispatch(&admin, types.Get, .{
+    const still = try types.got(&admin, .{
         .type = "greeting",
     });
     try std.testing.expectEqualStrings("Note", still.definition.fields[0].label);
@@ -410,7 +410,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     });
 
     try apply(&system, &declared_greeting);
-    const after = try registry.SDK.dispatch(&admin, types.Get, .{
+    const after = try types.got(&admin, .{
         .type = "greeting",
     });
     try std.testing.expectEqual(@as(usize, 3), after.definition.fields.len);

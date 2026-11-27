@@ -41,6 +41,8 @@ pub const scratch = @import("sdk/scratch.zig");
 pub const plugin_memory = @import("sdk/plugin_memory.zig");
 pub const moved = @import("sdk/moved.zig");
 pub const definition_cache = @import("sdk/definition_cache.zig");
+/// Core's operations, whole: `p.operations`.
+pub const operations = @import("operations.zig");
 
 pub const Caller = caller.Caller;
 pub const Ctx = context.Ctx;

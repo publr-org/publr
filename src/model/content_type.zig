@@ -38,14 +38,7 @@ pub const Menu = struct {
     hidden: bool = false,
 };
 
-/// A type's default view of its list, as its plugin gives it: the columns shown after the
-/// title, and where the list starts (filters people can clear, an order: `-number`). What
-/// a list can filter and order by is the fields' to say (`filterable`, `sortable`).
-pub const View = struct {
-    columns: []const []const u8 = &.{},
-    filters: []const @import("filter.zig").Clause = &.{},
-    order: ?[]const u8 = null,
-};
+pub const View = @import("../publr/model/content_type.zig").View;
 
 /// One taxonomy on a content type's list: ticked by an administrator, declared by the type's
 /// plugin (`locked`, there while the plugin declares it), or another plugin's registration
@@ -547,6 +540,20 @@ pub fn decode(arena: std.mem.Allocator, text: []const u8) Error!Def {
     };
     def.fields = try @import("field/presets.zig").apply(arena, def.fields);
     return def;
+}
+
+/// A definition as `encode` writes it (`content_type.get` answers it so), read back whole:
+/// its presets already applied, its size whatever the type grew to.
+pub fn read(arena: std.mem.Allocator, text: []const u8) Error!Def {
+    std.debug.assert(text.len > 0);
+
+    const options: std.json.ParseOptions = .{
+        .allocate = .alloc_always,
+    };
+
+    return @import("../lib/json.zig").parse(Def, arena, text, options) catch |err| {
+        return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
+    };
 }
 
 /// A type's id is derived from its handle, so the same declared type gets the same id

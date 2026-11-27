@@ -679,7 +679,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             const Get = domain.definitions.Get;
             const in = keyed(Get.In, domain.definition_key, handle, .{});
-            const got = registry.SDK.dispatch(&session.ctx, Get, in) catch |err| {
+            const got = domain.definitions.got(&session.ctx, in) catch |err| {
                 try admin.fail(session, err, back);
 
                 return null;
@@ -2740,7 +2740,7 @@ fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote 
             continue;
         }
 
-        const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+        const got = types.got(&session.ctx, .{
             .type = field.options.to[0],
         }) catch continue;
 

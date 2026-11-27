@@ -295,7 +295,7 @@ fn redirect_by_kind(session: *Session, address: Filters) Error!bool {
     }
 
     const handle = address.types[0];
-    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+    const got = types.got(&session.ctx, .{
         .type = handle,
     }) catch |err| {
         try admin.fail(session, err, back);
@@ -540,7 +540,7 @@ fn new_values(
         return named;
     }
 
-    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
+    const got = types.got(&session.ctx, .{
         .type = handles[0],
     }) catch return named;
 

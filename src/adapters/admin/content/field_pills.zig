@@ -382,7 +382,7 @@ fn field_def(page: *const Page, name: []const u8) Error!?model.field.Def {
     }
 
     var reading = page.session.*;
-    const got = registry.SDK.dispatch(&reading.ctx, types.Get, .{
+    const got = types.got(&reading.ctx, .{
         .type = page.effective.types[0],
     }) catch return null;
     const found = model.document.find_path(got.definition.fields, name) orelse return null;

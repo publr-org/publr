@@ -252,6 +252,49 @@ and each `run`.
 `Get`, `Authorize`, `Limit`, `Who`, `Rate`, `Described`, `Grouped`, `Failure`, `Hook`,
 `Detailed` and `namespace` stay. Gone from it: the `operations` list, each `run` and
 `hooks_on`; read an operation's hooks from `ctx.call(publr.operations.operation.Get, ...)`.
+### `sdk:operations.snapshot`
+
+`publr.operations.snapshot` is the public file of the snapshot operations' shapes, no longer
+core's whole `operations/snapshot.zig`. `List`, `Get`, `Take`, `Restore`, `Prune` and `Item`
+keep their names, inputs and answers, as does the `namespace` descriptor; calls are
+unchanged. Gone from it: the `operations` list and each operation's `run`, which are core's.
+
+Before: `publr.operations.snapshot.Take.run(...)`.
+After: call the operation,
+`ctx.call(publr.operations.snapshot.Take, .{ .id = id, .kind = "order.completed" })`.
+
+### `sdk:operations.flow`
+
+`publr.operations.flow` is the public file of the flow operations' shapes. `Get`,
+`Authorize`, `Add`, `Remove`, `SetOn`, `AddStatus`, `RemoveStatus` and the `Status`,
+`Transition` and `Flow` they answer keep their names and fields, as does `namespace`; calls
+are unchanged. Gone from it: the `operations` list and each `run`.
+
+### `sdk:operations.content_type`
+
+`publr.operations.content_type` is the public file of the content type operations' shapes.
+`Create`, `Update`, `Get`, `List`, `Delete`, `Validate`, `Summary`, `Problem` and
+`example_definition` keep their names, as does `namespace`. Gone from it: the `operations`
+list, each `run`, and core's readers `find`, `find_raw`, `visible`, `visible_type` and `brief_of`; call
+`content_type.get` or `content_type.list` instead.
+
+`Get`'s answer holds the definition as JSON (`publr.operation.Json`), as `Create` and
+`Update` take it, no longer core's own definition type: what REST, the CLI and MCP answer is
+unchanged.
+
+Before: `const got = try ctx.call(publr.operations.content_type.Get, .{ .type = "post" });`
+then `got.definition.fields`.
+After: read the fields you need from it in your own shape,
+`const Fields = struct { fields: []const struct { name: []const u8 } };` then
+`const def = try got.definition.as(Fields, arena);`.
+
+### `sdk:operations.taxonomy`
+
+`publr.operations.taxonomy` is the public file of the taxonomy operations' shapes. `Create`,
+`Update`, `Get`, `List`, `Delete`, `Validate`, `Summary`, `Problem` and `example_definition`
+keep their names, as does `namespace`. Gone from it: the `operations` list, each `run`, and
+`find`, `visible`, `visible_type` and `brief_of`. `Get`'s answer holds the definition as JSON, as
+`content_type.get`'s does (above).
 
 ### `sdk:operations.internal`
 

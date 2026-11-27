@@ -2052,7 +2052,7 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     });
     try std.testing.expectError(error.Invalid, naming_types);
 
-    const bare = try SDK.dispatch(&admin, types.Get, .{
+    const bare = try types.got(&admin, .{
         .type = "post",
     });
     var filed_def = bare.definition;
@@ -2078,7 +2078,7 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
         },
     });
 
-    const post = try SDK.dispatch(&admin, types.Get, .{
+    const post = try types.got(&admin, .{
         .type = "post",
     });
     const last = post.definition.fields[post.definition.fields.len - 1];
@@ -2117,7 +2117,7 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
         },
     });
     try std.testing.expectEqual(@as(u32, 0), kept.values_dropped);
-    const stored = try SDK.dispatch(&admin, types.Get, .{
+    const stored = try types.got(&admin, .{
         .type = "post",
     });
     try std.testing.expectEqual(post.definition.fields.len, stored.definition.fields.len);
@@ -2129,7 +2129,7 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
             .text = try model.content_type.encode(arena, bare.definition),
         },
     });
-    const off = try SDK.dispatch(&admin, types.Get, .{
+    const off = try types.got(&admin, .{
         .type = "post",
     });
     try std.testing.expectEqual(post.definition.fields.len - 1, off.definition.fields.len);

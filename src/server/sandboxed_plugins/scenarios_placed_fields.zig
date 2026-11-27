@@ -57,7 +57,7 @@ fn create_of(arena: std.mem.Allocator, grams: i64) ![]const u8 {
 fn salutation(scenario: *Scenario) !model.content_type.Def {
     var reading = scenario.ctx(admin);
 
-    return (try registry.SDK.dispatch(&reading, content_types.Get, .{
+    return (try content_types.got(&reading, .{
         .type = "greeter.salutation",
     })).definition;
 }

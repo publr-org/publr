@@ -27,7 +27,7 @@ pub const project = publr.project;
 pub const split = publr.split;
 pub const apps = publr.apps;
 pub const template = publr.template;
-pub const operations = publr.operations;
+pub const operations = publr.sdk.operations;
 
 pub const serve = publr.serve;
 pub const build = publr.build;

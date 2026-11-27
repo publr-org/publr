@@ -7,18 +7,14 @@ const custom = @import("../../operations/custom_fields.zig");
 const model = @import("../../model.zig");
 const spaces = @import("schema_space.zig");
 
-pub fn load(session: *admin.Session, handle: []const u8) !types.Get.Out {
+pub fn load(session: *admin.Session, handle: []const u8) !types.Got {
     std.debug.assert(session.signed_in());
     const space = spaces.of(session);
 
     if (space == .taxonomies) {
-        const got = try registry.SDK.dispatch(
-            &session.ctx,
-            @import("../../operations/taxonomy.zig").Get,
-            .{
-                .taxonomy = handle,
-            },
-        );
+        const got = try @import("../../operations/taxonomy.zig").got(&session.ctx, .{
+            .taxonomy = handle,
+        });
         return .{
             .id = got.id,
             .definition = got.definition,
@@ -39,7 +35,7 @@ pub fn load(session: *admin.Session, handle: []const u8) !types.Get.Out {
         };
     }
 
-    const got = try registry.SDK.dispatch(&session.ctx, types.Get, .{
+    const got = try types.got(&session.ctx, .{
         .type = handle,
     });
 

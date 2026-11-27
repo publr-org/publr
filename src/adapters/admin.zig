@@ -1860,7 +1860,7 @@ test "settings and custom fields have isolated authoring and validated field for
     ) != null);
     const section = try std.fmt.allocPrint(arena, "csrf={s}&name=Brand&handle=brand", .{csrf});
     _ = try flow.call("POST", "/admin/structure/settings/create", section);
-    const got = try registry.SDK.dispatch(&system, types.Get, .{
+    const got = try types.got(&system, .{
         .type = "brand",
     });
     try std.testing.expectEqual(
@@ -1909,7 +1909,7 @@ test "settings and custom fields have isolated authoring and validated field for
         ),
     );
     try std.testing.expect(cross.header("Location") == null);
-    _ = try registry.SDK.dispatch(&system, types.Get, .{
+    _ = try types.got(&system, .{
         .type = "brand",
     });
 }

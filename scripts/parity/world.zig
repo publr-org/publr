@@ -326,11 +326,11 @@ pub const tiny_png = [_]u8{
 /// The view the examples name, Ada's.
 fn fill_views(ctx: *Ctx) Error!void {
     std.debug.assert(ctx.caller == .user);
-    std.debug.assert(saved_views.example_id.len == store.views.id_len);
+    std.debug.assert(saved_views.Get.example.id.len == store.views.id_len);
 
     const created = try SDK.dispatch(ctx, saved_views.Create, saved_views.Create.example);
 
-    try store.views.rename(ctx.db, created.id, saved_views.example_id);
+    try store.views.rename(ctx.db, created.id, saved_views.Get.example.id);
 }
 
 /// What the `ai` examples name: Ada's conversation under the documented id, its turn
@@ -471,17 +471,17 @@ fn fill_internal(ctx: *Ctx) Error!void {
         .kind = "visit",
     };
 
-    std.debug.assert(internal.example_id.len == store.internal_records.id_len);
+    std.debug.assert(internal.Get.example.id.len == store.internal_records.id_len);
     std.debug.assert(ctx.db.transaction_depth == 0);
 
     try store.internal_records.insert_as(
         ctx.db,
         scope,
-        internal.example_id,
-        internal.example_document,
+        internal.Get.example.id,
+        internal.Get.example_out.document.text,
         ctx.now_ms,
     );
-    try store.internal_record_values.replace(ctx.db, internal.example_id, &.{
+    try store.internal_record_values.replace(ctx.db, internal.Get.example.id, &.{
         .{
             .field = "name",
             .value = "Ada",

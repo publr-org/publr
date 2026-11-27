@@ -138,10 +138,7 @@ pub const Wrapped = struct {
     value: []const u8,
 };
 
-pub const Problem = struct {
-    path: []const u8,
-    message: []const u8,
-};
+pub const Problem = @import("../publr/model/field.zig").Problem;
 
 pub const problems_max: u32 = 64;
 pub const path_len_max: u32 = 256;

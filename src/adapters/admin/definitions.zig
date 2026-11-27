@@ -361,13 +361,13 @@ pub fn Pages(comptime domain: Domain) type {
         }
 
         /// The definition, or a not-found page.
-        pub fn load(session: *Session, handle: []const u8) Error!?operations.Get.Out {
+        pub fn load(session: *Session, handle: []const u8) Error!?operations.Got {
             std.debug.assert(handle.len > 0);
             std.debug.assert(session.signed_in());
 
             const in = keyed(operations.Get.In, domain.key, handle, .{});
 
-            const got = registry.SDK.dispatch(&session.ctx, operations.Get, in) catch |err| {
+            const got = operations.got(&session.ctx, in) catch |err| {
                 try admin.fail(session, err, back);
 
                 return null;

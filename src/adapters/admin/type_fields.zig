@@ -126,7 +126,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
 }
 
 /// The type, or a not-found page.
-pub fn load(session: *Session, handle: []const u8) Error!?types.Get.Out {
+pub fn load(session: *Session, handle: []const u8) Error!?types.Got {
     std.debug.assert(handle.len > 0);
     std.debug.assert(session.signed_in());
 
@@ -493,7 +493,7 @@ fn targets_of(session: *Session, def: Def, chosen: []const []const u8) Error![]c
             continue;
         }
 
-        const got = registry.SDK.dispatch(&everything, types.Get, .{
+        const got = types.got(&everything, .{
             .type = handle,
         }) catch continue;
 
@@ -528,7 +528,7 @@ fn target_reached(session: *Session, def: Def, handle: []const u8) Error!bool {
     everything.app_reach = "";
     everything.app_plugins = null;
 
-    const got = registry.SDK.dispatch(&everything, types.Get, .{
+    const got = types.got(&everything, .{
         .type = handle,
     }) catch return false;
     const target = got.definition;

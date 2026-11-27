@@ -305,7 +305,7 @@ fn fix(session: *Session, target: []const u8, app: []const u8) !void {
     const reach = try registry.SDK.dispatch(&across, record_operations.Reach, .{
         .id = target,
     });
-    const got = try registry.SDK.dispatch(&across, types.Get, .{
+    const got = try types.got(&across, .{
         .type = reach.type,
     });
     var def = got.definition;
@@ -360,7 +360,7 @@ fn type_name(session: *Session, handle: []const u8) Error![]const u8 {
         return "";
     }
 
-    const got = registry.SDK.dispatch(&across, types.Get, .{
+    const got = types.got(&across, .{
         .type = handle,
     }) catch return handle;
 

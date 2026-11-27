@@ -21,27 +21,7 @@ const Row = store.definitions.Row;
 const Brief = store.definitions.Brief;
 
 pub const Problem = model.field.Problem;
-pub const Summary = struct {
-    id: []const u8,
-    handle: []const u8,
-    name: []const u8,
-    kind: content_type.Kind,
-    public: bool,
-    system: bool,
-    owner: []const u8,
-    editor: []const u8,
-    fields: u32,
-    /// The app it lives in; empty for a Global type.
-    app: []const u8 = "",
-    /// The menu items its list sits under, the first that exists.
-    menu_parents: []const []const u8 = &.{},
-    /// `.menu = .none`: left out of the menu; its pages still open.
-    menu_hidden: bool = false,
-    /// Its default view: where its list starts.
-    view: content_type.View = .{},
-    /// An icon of the set; empty for none.
-    icon: []const u8 = "",
-};
+pub const Summary = @import("../../publr/model/content_type.zig").Summary;
 /// Which page of definitions a list answers.
 pub const Window = struct {
     offset: u32 = 0,

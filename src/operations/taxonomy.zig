@@ -1,5 +1,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/taxonomy.zig");
 const model = @import("../model.zig");
 const term = @import("term.zig");
 
@@ -11,22 +12,7 @@ const definition = term.domain.definition;
 const definition_module = @import("document/definition.zig");
 const Def = content_type.Def;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "taxonomy",
-    .label = "Taxonomies",
-    .area = .content,
-    .summary = "Taxonomies: the classifications records are filed under",
-    .details =
-    \\A taxonomy is the schema of its terms, as a content type is the schema of its
-    \\records: a handle, a name, whether it is public, and the fields a term carries
-    \\(a name, a slug, a colour, a cover image: any field kind but `terms`). A
-    \\`hierarchical` taxonomy lets a term have a parent term; a flat one does not. A
-    \\taxonomy never names types: a content type lists it in `taxonomies`, and each
-    \\record then selects its terms in the editor's sidebar (or in a `terms` field of the
-    \\form naming it). An `internal` taxonomy never reaches the site. Definitions are
-    \\passed as JSON. Signed-in users may read taxonomies; changing them needs an admin.
-    ,
-};
+pub const namespace = public.namespace;
 
 pub const Summary = definition_module.Summary;
 pub const Problem = model.field.Problem;
@@ -35,52 +21,20 @@ pub const visible = definition.visible;
 pub const visible_type = definition.visible_type;
 pub const brief_of = definition.brief_of;
 
-const new_definition =
-    \\{"handle":"regions","name":"Regions","title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
-;
-pub const example_definition =
-    \\{"handle":"topics","name":"Topics","public":true,"hierarchical":true,
-    \\ "title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
-    \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
-;
-const example_id = "d4e5f60718293a4b5c6d7e8f";
+pub const example_definition = public.example_definition;
 
 pub const Create = struct {
-    pub const name = "taxonomy.create";
-    pub const description = "Create a taxonomy from a JSON definition";
-    pub const details =
-        \\Admins only. The definition takes the keys of a content type definition
-        \\(`handle`, `name`, `public`, `title_field`, `statuses`, `fields`; see
-        \\`content_type create`) plus `hierarchical` (default false: terms may have a
-        \\parent term). Its kind is always `record`, it has no `url`, and no field of
-        \\kind `terms`. Use `taxonomy validate` to see problems.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        definition: sdk.operation.Json,
-    };
-    pub const Out = struct {
-        id: []const u8,
-        handle: []const u8,
-    };
-    pub const example: In = .{
-        .definition = .{
-            .text = new_definition,
-        },
-    };
-    pub const example_out: Out = .{
-        .id = example_id,
-        .handle = "regions",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .definition = "The taxonomy definition as JSON",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .id = "The new taxonomy's id",
-        .handle = "Its handle",
-    };
+    pub const shape = public.Create;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -99,50 +53,17 @@ pub const Create = struct {
 };
 
 pub const Update = struct {
-    pub const name = "taxonomy.update";
-    pub const description = "Change a taxonomy's definition; existing terms follow";
-    pub const details =
-        \\Admins only. Takes the taxonomy by handle or id and the full new definition.
-        \\Existing terms follow the change as records follow a content type change: a
-        \\removed field is refused while terms hold values for it unless `drop_content`
-        \\is true; a field whose kind changes is converted when every value fits. Turning
-        \\`hierarchical` off is refused while any term has a parent.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        taxonomy: []const u8,
-        definition: sdk.operation.Json,
-        drop_content: bool = false,
-    };
-    pub const Out = struct {
-        id: []const u8,
-        handle: []const u8,
-        terms_rewritten: u32,
-        values_dropped: u32,
-    };
-    pub const example: In = .{
-        .taxonomy = "topics",
-        .definition = .{
-            .text = example_definition,
-        },
-    };
-    pub const example_out: Out = .{
-        .id = example_id,
-        .handle = "topics",
-        .terms_rewritten = 0,
-        .values_dropped = 0,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .taxonomy = "Handle or id",
-        .definition = "The complete new definition as JSON",
-        .drop_content = "Delete the values of fields that the new definition removes",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .id = "The taxonomy's id",
-        .handle = "Its handle",
-        .terms_rewritten = "Terms whose values were converted or re-indexed",
-        .values_dropped = "Values deleted for removed fields",
-    };
+    pub const shape = public.Update;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -188,30 +109,15 @@ fn refuse_flattening(ctx: *Ctx, handle_or_id: []const u8, text: []const u8) Erro
 }
 
 pub const Get = struct {
-    pub const name = "taxonomy.get";
-    pub const description = "Read a taxonomy's full definition";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        taxonomy: []const u8,
-    };
-    pub const Out = struct {
-        id: []const u8,
-        definition: Def,
-        created_at: i64,
-        updated_at: i64,
-    };
-    pub const example: In = .{
-        .taxonomy = "topics",
-    };
-    pub const example_out: Out = .{
-        .id = example_id,
-        .definition = model.taxonomy.test_topics,
-        .created_at = 1789650000000,
-        .updated_at = 1789650000000,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .taxonomy = "Handle or id",
-    };
+    pub const shape = public.Get;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         if (in.taxonomy.len > 64 << 10) {
@@ -224,7 +130,7 @@ pub const Get = struct {
 
         return .{
             .id = row.id,
-            .definition = row.def,
+            .definition = try sdk.operation.Json.of(ctx.arena, row.def),
             .created_at = row.created_at,
             .updated_at = row.updated_at,
         };
@@ -232,39 +138,16 @@ pub const Get = struct {
 };
 
 pub const List = struct {
-    pub const name = "taxonomy.list";
-    pub const description = "List taxonomies";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        limit: u32 = 50,
-        offset: u32 = 0,
-    };
-    pub const Out = struct {
-        taxonomies: []const Summary,
-        total: u32 = 0,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .limit = "How many at most; 50 when omitted, up to 200",
-        .offset = "How many to pass over first, by name: the next page's start",
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .taxonomies = &.{.{
-            .id = example_id,
-            .handle = "topics",
-            .name = "Topics",
-            .kind = .record,
-            .public = true,
-            .system = false,
-            .owner = "",
-            .editor = "form",
-            .fields = 2,
-        }},
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .taxonomies = "Sorted by name",
-        .total = "How many the caller sees in all",
-    };
+    pub const shape = public.List;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const field_docs = shape.field_docs;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
@@ -287,39 +170,16 @@ pub const List = struct {
 };
 
 pub const Delete = struct {
-    pub const name = "taxonomy.delete";
-    pub const description = "Delete a taxonomy; refuses while it has terms unless forced";
-    pub const details =
-        \\Admins only. With `force`, every term goes too, and with them every assignment
-        \\of records to those terms; the records' `terms` fields keep pointing at ids
-        \\that no longer exist until the records are saved again.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        taxonomy: []const u8,
-        force: bool = false,
-    };
-    pub const Out = struct {
-        deleted: bool,
-        /// The handle it had.
-        handle: []const u8,
-        terms_removed: u32,
-        /// Its trash entry: `trash restore --id` brings it back.
-        trash: []const u8 = "",
-    };
-    pub const example: In = .{
-        .taxonomy = "tags",
-    };
-    pub const example_out: Out = .{
-        .deleted = true,
-        .handle = "tags",
-        .terms_removed = 0,
-        .trash = "0190a1b2c3d40001a1b2c3d4",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .taxonomy = "Handle or id",
-        .force = "Also delete every term of the taxonomy",
-    };
+    pub const shape = public.Delete;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -340,31 +200,14 @@ pub const Delete = struct {
 };
 
 pub const Validate = struct {
-    pub const name = "taxonomy.validate";
-    pub const description = "Check a JSON definition and list every problem without saving";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        definition: sdk.operation.Json,
-    };
-    pub const Out = struct {
-        valid: bool,
-        problems: []const Problem,
-    };
-    pub const example: In = .{
-        .definition = .{
-            .text = "{\"handle\":\"topics\",\"name\":\"Topics\",\"kind\":\"settings\"," ++
-                "\"fields\":[]}",
-        },
-    };
-    pub const example_out: Out = .{
-        .valid = false,
-        .problems = &.{
-            .{
-                .path = "kind",
-                .message = "a taxonomy holds terms: its kind is record",
-            },
-        },
-    };
+    pub const shape = public.Validate;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
@@ -425,11 +268,11 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     const listed = try SDK.dispatch(&editor, List, .{});
     try std.testing.expectEqual(@as(usize, 1), listed.taxonomies.len);
     try std.testing.expectEqualStrings("Topics", listed.taxonomies[0].name);
-    const got = try SDK.dispatch(&editor, Get, .{
+    const read = try got(&editor, .{
         .taxonomy = "topics",
     });
-    try std.testing.expect(got.definition.hierarchical);
-    try std.testing.expectEqualStrings(created.id, got.id);
+    try std.testing.expect(read.definition.hierarchical);
+    try std.testing.expectEqualStrings(created.id, read.id);
 
     const with_url = try SDK.dispatch(&admin, Validate, Validate.example);
     try std.testing.expect(!with_url.valid);
@@ -464,7 +307,7 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     try std.testing.expectEqual(@as(u32, 0), updated.terms_rewritten);
     try std.testing.expectEqualStrings(
         "Subjects",
-        (try SDK.dispatch(&editor, Get, .{
+        (try got(&editor, .{
             .taxonomy = created.id,
         })).definition.name,
     );
@@ -472,7 +315,7 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     const content_types = @import("content_type.zig");
     try std.testing.expectError(
         error.NotFound,
-        SDK.dispatch(&editor, content_types.Get, .{
+        content_types.got(&editor, .{
             .type = "topics",
         }),
     );
@@ -484,4 +327,27 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
         .taxonomy = "topics",
     });
     try std.testing.expectError(error.NotFound, gone);
+}
+
+/// The answer of `taxonomy.get` as core's own pages read it: the definition typed.
+pub const Got = struct {
+    id: []const u8,
+    definition: Def,
+    created_at: i64,
+    updated_at: i64,
+};
+
+/// `taxonomy.get` for core's own pages: called as any caller calls it, its definition read back
+/// from the JSON it answers.
+pub fn got(ctx: *Ctx, in: Get.In) Error!Got {
+    const answered = try @import("../server/registry.zig").SDK.dispatch(ctx, Get, in);
+
+    std.debug.assert(answered.id.len > 0);
+
+    return .{
+        .id = answered.id,
+        .definition = try content_type.read(ctx.arena, answered.definition.text),
+        .created_at = answered.created_at,
+        .updated_at = answered.updated_at,
+    };
 }
