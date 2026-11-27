@@ -6,6 +6,7 @@ const record = @import("../record.zig");
 const term = @import("../term.zig");
 const taxonomy = @import("../taxonomy.zig");
 const content_type = @import("../content_type.zig");
+const model_content_type = @import("../../model/content_type.zig");
 const custom_fields = @import("../custom_fields.zig");
 const role = @import("../role.zig");
 const user = @import("../user.zig");
@@ -194,16 +195,18 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
         },
     });
     const note = try SDK.dispatch(&admin, content_type.Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[{\"name\":" ++
+        .definition = try model_content_type.read(
+            admin.arena,
+            "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[{\"name\":" ++
                 "\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
-        },
+        ),
     });
     const topics = try SDK.dispatch(&admin, taxonomy.Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"topic\",\"name\":\"Topic\",\"title_field\":\"name\"," ++
+        .definition = try model_content_type.read(
+            admin.arena,
+            "{\"handle\":\"topic\",\"name\":\"Topic\",\"title_field\":\"name\"," ++
                 "\"fields\":[{\"name\":\"name\",\"label\":\"Name\",\"kind\":\"string\"}]}",
-        },
+        ),
     });
     const filed = try SDK.dispatch(&admin, term.Create, .{
         .taxonomy = "topic",
@@ -214,11 +217,12 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
 
     _ = try SDK.dispatch(&admin, custom_fields.Update, .{
         .group = "user",
-        .definition = .{
-            .text = "{\"handle\":\"user\",\"name\":\"User fields\",\"kind\":\"component\"," ++
+        .definition = try model_content_type.read(
+            admin.arena,
+            "{\"handle\":\"user\",\"name\":\"User fields\",\"kind\":\"component\"," ++
                 "\"title_field\":\"\",\"fields\":[{\"name\":\"bio\",\"label\":\"Bio\"," ++
                 "\"kind\":\"text\"}]}",
-        },
+        ),
     });
     _ = try SDK.dispatch(&admin, role.Create, .{
         .name = "reviewer",

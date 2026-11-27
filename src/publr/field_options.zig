@@ -1,12 +1,18 @@
-//! What a plugin writes for one field in `record.define`'s `.fields` (and a `.register_fields`
-//! group's): `.fields = .{ .title = .{ .validation = .{ .max_len = 80 } } }`. The struct field
-//! says the rest (its kind, whether it is required, its words). A part named replaces that
-//! part whole: `.options = .{ .number = .{ .unit = "kg" } }` sets the number's unit and keeps
-//! the number's other settings at their defaults. Two names are not here: `.fields` (a group
-//! or repeater's own fields, the same way) and a dimension's field option, named by the
-//! plugin that owns the dimension (`.translatable = .required`).
+//! A field's options, rules and readers: what a plugin writes for one field in
+//! `record.define`'s `.fields` (and a `.register_fields` group's), and what a field's
+//! definition holds when it is read back (`publr.field.Def`, `content_type.get`). One type
+//! for both. Declaring: `.fields = .{ .title = .{ .validation = .{ .max_len = 80 } } }`. The
+//! struct field says the rest (its kind, whether it is required, its words). A part named
+//! replaces that part whole: `.options = .{ .number = .{ .unit = "kg" } }` sets the number's
+//! unit and keeps the number's other settings at their defaults. Two names are not here:
+//! `.fields` (a group or repeater's own fields, the same way) and a dimension's field option,
+//! named by the plugin that owns the dimension (`.translatable = .required`).
+const written = @import("../model/field/json.zig");
 
-/// One field's overrides, each optional.
+/// A select's choices at most, and the labels beside them.
+pub const choices_max: u32 = 256;
+
+/// One field's overrides, each optional. `.visibility.plugin` is Publr's to set.
 pub const Overrides = struct {
     /// A kind id (`string`, `reference`, a plugin's `geo.point`), when the struct field's type
     /// does not say it.
@@ -30,6 +36,16 @@ pub const Visibility = struct {
     special: bool = false,
     /// The roles that read it besides its plugin.
     roles: []const []const u8 = &.{},
+    /// The plugin declaring it: set by Publr from the type or field group it is on, never
+    /// by a plugin declaring it.
+    plugin: []const u8 = "",
+
+    pub const publr_form = .fields;
+
+    /// Written sparsely: only what differs from the defaults.
+    pub fn jsonStringify(visibility: Visibility, writer: anytype) !void {
+        return written.sparse(Visibility, visibility, writer);
+    }
 };
 
 /// What a value must be for a write to go through.
@@ -60,6 +76,13 @@ pub const Validation = struct {
     url: UrlRule = .{},
     reference: ReferenceRule = .{},
     media: MediaRule = .{},
+
+    pub const publr_form = .fields;
+
+    /// Written sparsely: only what differs from the defaults.
+    pub fn jsonStringify(validation: Validation, writer: anytype) !void {
+        return written.sparse(Validation, validation, writer);
+    }
 };
 
 /// The message an editor sees when a value breaks the matching rule; the built-in one when
@@ -171,6 +194,19 @@ pub const Options = struct {
     container: Container = .{},
     media: Media = .{},
     provider: Provider = .{},
+
+    pub const publr_form = .fields;
+    /// A select may offer more choices than a page of a list holds.
+    pub const bulk_limits = .{
+        .choices = choices_max,
+        .labels = choices_max,
+    };
+
+    /// Written sparsely: only what differs from the defaults, groups included, so a
+    /// definition carries what was set and reads as such.
+    pub fn jsonStringify(shown: Options, writer: anytype) !void {
+        return written.sparse(Options, shown, writer);
+    }
 };
 
 /// How a date and time field is shown and posted: a moment, or a day alone.

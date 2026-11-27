@@ -316,7 +316,7 @@ fn definition_of(ctx: *sdk.Ctx, handle: []const u8) ?Def {
     std.debug.assert(handle.len > 0);
     std.debug.assert(ctx.caller != .anonymous);
 
-    const got = types.got(ctx, .{
+    const got = registry.SDK.dispatch(ctx, types.Get, .{
         .type = handle,
     }) catch return null;
 

@@ -133,7 +133,7 @@ pub fn readable(ctx: *const sdk.Ctx, def: Def, path: []const u8) Error!void {
             continue;
         }
 
-        if (field.visibility.hidden() and !visibility.sees(ctx, field.visibility)) {
+        if (model.field.hidden(field.visibility) and !visibility.sees(ctx, field.visibility)) {
             return error.Invalid;
         }
 

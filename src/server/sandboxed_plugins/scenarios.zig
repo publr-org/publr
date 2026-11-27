@@ -598,10 +598,11 @@ test "a grant's flags: without .publish a plugin's write waits, with it it goes 
     var system = scenario.ctx(.system);
 
     _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
+        .definition = try model.content_type.read(
+            system.arena,
+            "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
                 "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
-        },
+        ),
     });
 
     const path = try std.mem.replaceOwned(
@@ -688,10 +689,11 @@ test "an installed plugin destroys from its .destructive operation, for an admin
     var system = scenario.ctx(.system);
 
     _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
+        .definition = try model.content_type.read(
+            system.arena,
+            "{\"handle\":\"note\",\"name\":\"Note\",\"public\":true," ++
                 "\"fields\":[{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"}]}",
-        },
+        ),
     });
 
     const path = try std.mem.replaceOwned(

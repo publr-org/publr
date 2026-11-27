@@ -1594,9 +1594,7 @@ test "a settings type uses the shared editor and publishes only after a guarded 
     };
     try records.fixture.post_type(&system);
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try content_type.encode(arena, website),
-        },
+        .definition = website,
     });
     const record = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "post",
@@ -1699,9 +1697,7 @@ test "a long entry draws its items past the fold closed and answers their fields
         },
     };
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try content_type.encode(arena, faq_type),
-        },
+        .definition = faq_type,
     });
 
     var items: std.Io.Writer.Allocating = .init(arena);
@@ -1860,7 +1856,7 @@ test "settings and custom fields have isolated authoring and validated field for
     ) != null);
     const section = try std.fmt.allocPrint(arena, "csrf={s}&name=Brand&handle=brand", .{csrf});
     _ = try flow.call("POST", "/admin/structure/settings/create", section);
-    const got = try types.got(&system, .{
+    const got = try registry.SDK.dispatch(&system, types.Get, .{
         .type = "brand",
     });
     try std.testing.expectEqual(
@@ -1909,7 +1905,7 @@ test "settings and custom fields have isolated authoring and validated field for
         ),
     );
     try std.testing.expect(cross.header("Location") == null);
-    _ = try types.got(&system, .{
+    _ = try registry.SDK.dispatch(&system, types.Get, .{
         .type = "brand",
     });
 }
@@ -1955,9 +1951,7 @@ test "schema creation pages fit a fixed request arena with many field definition
             .fields = &fields,
         };
         _ = try registry.SDK.dispatch(&system, types.Create, .{
-            .definition = .{
-                .text = try model.content_type.encode(arena, def),
-            },
+            .definition = def,
         });
     }
     // Same 4 MiB scratch budget as the HTTP server, reset for every request.

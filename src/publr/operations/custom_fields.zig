@@ -1,6 +1,9 @@
 //! Field schemas extending built-in entities, users and media, and the values they hold on
-//! each: definitions are JSON, as `content_type` takes them.
+//! each: a schema is a `publr.content_type.Def`, as `content_type` takes one.
 const operation = @import("../operation.zig");
+
+/// A schema, as these operations take and answer it.
+pub const Def = @import("../model/content_type.zig").Def;
 
 pub const namespace: operation.Namespace = .{
     .name = "custom_fields",
@@ -15,10 +18,19 @@ pub const Values = values.Values;
 pub const SaveValues = values.SaveValues;
 const values = @import("custom_fields/values.zig");
 
-const example_definition =
-    \\{"handle":"user","name":"User fields","kind":"component","title_field":"",
-    \\ "fields":[{"name":"biography","label":"Biography","kind":"text"}]}
-;
+const example_definition: Def = .{
+    .handle = "user",
+    .name = "User fields",
+    .kind = .component,
+    .title_field = "",
+    .fields = &.{
+        .{
+            .name = "biography",
+            .label = "Biography",
+            .kind = "text",
+        },
+    },
+};
 
 pub const Get = struct {
     pub const name = "custom_fields.get";
@@ -28,16 +40,19 @@ pub const Get = struct {
         group: []const u8,
     };
     pub const Out = struct {
-        /// The schema as JSON, as `custom_fields.update` takes it.
-        definition: operation.Json,
+        /// The schema, as `custom_fields.update` takes it.
+        definition: Def,
     };
     pub const example: In = .{
         .group = "user",
     };
     pub const example_out: Out = .{
         .definition = .{
-            .text = "{\"handle\":\"user\",\"name\":\"User fields\",\"kind\":\"component\"," ++
-                "\"title_field\":\"\",\"fields\":[]}",
+            .handle = "user",
+            .name = "User fields",
+            .kind = .component,
+            .title_field = "",
+            .fields = &.{},
         },
     };
 };
@@ -48,14 +63,12 @@ pub const Validate = struct {
     pub const kind: operation.Kind = .read;
     pub const In = struct {
         group: []const u8,
-        definition: operation.Json,
+        definition: Def,
     };
     pub const Out = @import("content_type.zig").Validate.Out;
     pub const example: In = .{
         .group = "user",
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
     };
     pub const example_out: Out = .{
         .valid = true,
@@ -71,9 +84,7 @@ pub const Update = struct {
     pub const Out = Get.Out;
     pub const example = Validate.example;
     pub const example_out: Out = .{
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
     };
 };
 
@@ -111,14 +122,19 @@ pub const Create = struct {
     pub const example: In = .{
         .group = "profile",
         .definition = .{
-            .text = "{\"handle\":\"profile\",\"name\":\"Profile\"," ++
-                "\"kind\":\"component\",\"fields\":[]}",
+            .handle = "profile",
+            .name = "Profile",
+            .kind = .component,
+            .fields = &.{},
         },
     };
     pub const example_out: Out = .{
         .definition = .{
-            .text = "{\"handle\":\"profile\",\"name\":\"Profile\",\"kind\":\"component\"," ++
-                "\"title_field\":\"\",\"fields\":[]}",
+            .handle = "profile",
+            .name = "Profile",
+            .kind = .component,
+            .title_field = "",
+            .fields = &.{},
         },
     };
 };

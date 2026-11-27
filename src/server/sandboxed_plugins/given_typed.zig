@@ -37,9 +37,18 @@ pub fn through_json(comptime Shape: type) bool {
     }
 }
 
+/// A type writing or reading its own JSON goes through it, unless it says it lies by its
+/// fields (`publr_form = .fields`): its JSON is only how it is written for people.
 fn own_json(comptime Shape: type) bool {
     comptime {
         std.debug.assert(@typeInfo(Shape) == .@"struct" or @typeInfo(Shape) == .@"enum");
+
+        const by_fields = @hasDecl(Shape, "publr_form") and
+            std.mem.eql(u8, @tagName(Shape.publr_form), "fields");
+
+        if (by_fields) {
+            return false;
+        }
 
         return std.meta.hasFn(Shape, "jsonParse") or std.meta.hasFn(Shape, "jsonStringify") or
             std.meta.hasFn(Shape, "jsonParseFromValue");

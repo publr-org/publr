@@ -204,9 +204,7 @@ test "money: amounts per currency, any ISO 4217 one while no plugin names the si
         \\ {"name":"price","label":"Price","kind":"money"}]}
     ;
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = .{
-            .text = definition,
-        },
+        .definition = try model.content_type.read(system.arena, definition),
     });
 
     const cheap = try registry.SDK.dispatch(&system, records.Create, .{

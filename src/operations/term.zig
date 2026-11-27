@@ -451,9 +451,7 @@ pub fn seed_topics(harness: *sdk.testing.Harness) !void {
 
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, taxonomy_operations.Create, .{
-        .definition = .{
-            .text = taxonomy_operations.example_definition,
-        },
+        .definition = taxonomy_operations.example_definition,
     });
 }
 
@@ -582,13 +580,13 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
         },
     });
     _ = try SDK.dispatch(&admin, taxonomy_operations.Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"tags","name":"Tags","title_field":"name",
             \\ "fields":[{"name":"name","label":"Name","kind":"string",
             \\ "validation":{"required":true}}]}
             ,
-        },
+        ),
     });
     const one = try SDK.dispatch(&admin, Create, .{
         .taxonomy = "tags",
@@ -638,14 +636,14 @@ test "a flat taxonomy refuses parents; the hierarchy is bounded" {
 
     const flatten = SDK.dispatch(&admin, taxonomy_operations.Update, .{
         .taxonomy = "topics",
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
             \\ "fields":[{"name":"name","label":"Name","kind":"string",
             \\ "validation":{"required":true}},
             \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
             ,
-        },
+        ),
     });
     try std.testing.expectError(error.Conflict, flatten);
 }

@@ -447,8 +447,10 @@ Grouped by kind. Lines are the whole file, tests included.
 | File | Lines | What |
 |---|---|---|
 | `model/field.zig` | 299 | Field kinds, options, `Def`, validation of field definitions |
-| `model/field/given.zig` | 146 | A field's overrides as a plugin gives them (`publr/field_options.zig`) made into core's `Def` parts |
-| `publr/field_options.zig` | 256 | `publr.field.Overrides`: what one field of `record.define`'s `.fields` takes |
+| `model/field/json.zig` | 65 | A field's definition as JSON: options, rules and readers sparsely, `visibility` only when hidden |
+| `publr/field_options.zig` | 292 | `publr.field.Overrides`, `Options`, `Validation`, `Visibility`: what one field of `record.define`'s `.fields` takes, and what a field's definition holds read back |
+| `publr/model/field.zig` | 70 | `publr.field.Def`: a field as its definition holds it |
+| `publr/model/content_type.zig` | 145 | `publr.content_type.Def`: a content type or taxonomy as its definition holds it |
 | `model/content_type.zig` | 153 | A content type `Def`, its validation, JSON encode/decode, id from handle |
 | `model/validate.zig` | 416 | A JSON document against a type's fields: problems |
 | `model/key_page.zig` | 90 | A page of a list held in memory, in the order of its keys: the window after `after` and the next page's key |
@@ -586,6 +588,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `publr/free_read.zig` | 225 | Such a value read as a struct |
 | `sdk/free_comptime.zig` | 244 | An example's JSON read into such a value at build time |
 | `sdk/operation/json.zig` | 301 | `operation.Json`: JSON text in Publr, bytes read where they lie in an installed plugin's module, one way to work with it in both |
+| `sdk/operation/json_fields.zig` | 149 | The rule that an operation of Publr's holds `operation.Json` only under a name saying its shape comes with the data (`document`, `values`, `query`); a shape of Publr's own is its type |
 | `sdk/operation/lists.zig` | 330 | The rule that every list of an operation's input or answer holds a page (200) unless its struct's `limits` says fewer, checked as the operation runs; what answering a page at a time (`after` in, `next` out) is |
 | `publr/money.zig` | 201 | `publr.Money`: a list of amounts by currency, handed over as it lies, `{ "PLN": 12300 }` in JSON |
 | `sdk/extended_laid.zig` | 179 | The fields plugins add to a list read's rows, as an installed plugin's module holds them |

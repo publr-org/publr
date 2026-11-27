@@ -54,7 +54,7 @@ pub fn transitions_of(comptime options: anytype) []const flow_model.Transition {
                 .from = leaving_from,
                 .to = status_id(options.name, to),
                 .label = step.label,
-                .authorize = if (step.authorize) |answer| flow_model.Who.of(answer) else null,
+                .authorize = if (step.authorize) |answer| flow_model.who_of(answer) else null,
                 .from_any = every,
             }};
         }

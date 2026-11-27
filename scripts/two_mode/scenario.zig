@@ -130,6 +130,8 @@ pub const steps = [_][]const []const u8{
     &.{ "--as", admin, "record", "list", "--type", "greeter.salutation" },
     &.{ "--as", admin, "record", "list", "--type", "sampler.sample_note" },
     &.{ "--as", admin, "content_type", "get", "--handle", "sampler.sample_note" },
+    // The same definition read by the plugin's own code: typed, laid out, both ways alike.
+    &.{ "--as", admin, "sampler", "outline" },
     &.{ "--as", admin, "custom_fields", "get", "--group", "sampler" },
     &.{ "--as", admin, "role", "list" },
     // The variant dimension sampler declares, read and chosen through core's own operations.

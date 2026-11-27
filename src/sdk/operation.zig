@@ -5,6 +5,8 @@ const public = @import("../publr/operation.zig");
 pub const values = @import("operation/values.zig");
 pub const lists = @import("operation/lists.zig");
 pub const shaped = @import("operation/shaped.zig");
+pub const json_fields = @import("operation/json_fields.zig");
+const held = @import("operation/held.zig");
 
 pub const name_len_max = public.name_len_max;
 pub const type_depth_max: u32 = 8;
@@ -247,6 +249,10 @@ pub fn validate(comptime Operation: type) void {
             @compileError(message);
         }
 
+        if (json_fields.problem(Operation)) |message| {
+            @compileError(message);
+        }
+
         if (@hasDecl(Operation, "failures")) {
             for (Operation.failures) |failure| {
                 if (!valid_failure(failure)) {
@@ -328,7 +334,13 @@ pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
                 if (structure.field_names.len > fields_max) {
                     @compileError("too many fields: " ++ @typeName(Type));
                 }
-                for (structure.field_types) |Field| assert_serialisable(Field, depth + 1);
+
+                // A tree's node inside itself (a field's `fields`) is the node already read.
+                for (structure.field_types) |Field| {
+                    if (held.inner_of(Field) != Type) {
+                        assert_serialisable(Field, depth + 1);
+                    }
+                }
             },
             else => @compileError("not serialisable: " ++ @typeName(Type)),
         }

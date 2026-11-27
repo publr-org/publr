@@ -203,7 +203,7 @@ const term_fields = [_]model.field.Def{
 };
 
 /// An operation's input with the definition under the domain's key, the rest from
-/// `extra` or the field's default; a value field takes its JSON text from `extra`.
+/// `extra` or the field's default; a JSON field takes its text from `extra`.
 pub fn keyed(comptime In: type, comptime key: []const u8, value: []const u8, extra: anytype) In {
     comptime std.debug.assert(@hasField(In, key));
     std.debug.assert(value.len > 0);
@@ -361,13 +361,13 @@ pub fn Pages(comptime domain: Domain) type {
         }
 
         /// The definition, or a not-found page.
-        pub fn load(session: *Session, handle: []const u8) Error!?operations.Got {
+        pub fn load(session: *Session, handle: []const u8) Error!?operations.Get.Out {
             std.debug.assert(handle.len > 0);
             std.debug.assert(session.signed_in());
 
             const in = keyed(operations.Get.In, domain.key, handle, .{});
 
-            const got = operations.got(&session.ctx, in) catch |err| {
+            const got = registry.SDK.dispatch(&session.ctx, operations.Get, in) catch |err| {
                 try admin.fail(session, err, back);
 
                 return null;
@@ -520,15 +520,10 @@ pub fn Pages(comptime domain: Domain) type {
                 def = try type_editor.with_body(session.arena, def);
             }
 
-            const definition = model.content_type.encode(session.arena, def) catch {
-                return error.OutOfMemory;
-            };
             const created = registry.SDK.dispatch(&session.ctx, operations.Create, .{
-                .definition = .{
-                    .text = definition,
-                },
+                .definition = def,
             }) catch |err| {
-                return render_form(session, def, null, try problems_of(session, err, definition));
+                return render_form(session, def, null, try problems_of(session, err, def));
             };
             // A taxonomy goes on to its terms, a type to its fields.
             const location = try print(session.arena, "{s}/{s}{s}", .{
@@ -555,14 +550,11 @@ pub fn Pages(comptime domain: Domain) type {
             }
 
             const def = try head_of(session, form, got.definition);
-            const definition = model.content_type.encode(session.arena, def) catch {
-                return error.OutOfMemory;
-            };
             const in = keyed(operations.Update.In, domain.key, handle, .{
-                .definition = definition,
+                .definition = def,
             });
             const updated = registry.SDK.dispatch(&session.ctx, operations.Update, in) catch |err| {
-                return render_form(session, def, handle, try problems_of(session, err, definition));
+                return render_form(session, def, handle, try problems_of(session, err, def));
             };
             const moved = try print(session.arena, "{s}/{s}", .{ back, updated.handle });
 
@@ -615,11 +607,8 @@ pub fn Pages(comptime domain: Domain) type {
 
             def.taxonomies = kept.items;
 
-            const definition = model.content_type.encode(session.arena, def) catch {
-                return error.OutOfMemory;
-            };
             const in = keyed(operations.Update.In, domain.key, handle, .{
-                .definition = definition,
+                .definition = def,
             });
 
             _ = registry.SDK.dispatch(&session.ctx, operations.Update, in) catch |err| {
@@ -699,9 +688,8 @@ pub fn Pages(comptime domain: Domain) type {
         pub fn problems_of(
             session: *Session,
             err: anyerror,
-            definition: []const u8,
+            definition: Def,
         ) Error![]const model.field.Problem {
-            std.debug.assert(definition.len > 0);
             std.debug.assert(@errorName(err).len > 0);
 
             if (err == error.OutOfMemory) {
@@ -729,9 +717,7 @@ pub fn Pages(comptime domain: Domain) type {
             }
 
             const checked = registry.SDK.dispatch(&session.ctx, operations.Validate, .{
-                .definition = .{
-                    .text = definition,
-                },
+                .definition = definition,
             }) catch return error.OutOfMemory;
 
             return checked.problems;

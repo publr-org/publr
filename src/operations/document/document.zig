@@ -541,7 +541,7 @@ pub fn drafts(def: Def, status: []const u8) bool {
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(status.len > 0);
 
-    return def.kind == .record and !def.flow.is_live(status);
+    return def.kind == .record and !model.flow.is_live(def.flow, status);
 }
 
 /// The document's title; a draft (`drafting`) may have none yet, and reads as empty.

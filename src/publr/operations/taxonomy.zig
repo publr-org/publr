@@ -1,7 +1,9 @@
 //! Taxonomies: the classifications records are filed under. A taxonomy is the schema of its
-//! terms, as a content type is the schema of its records; definitions travel as JSON, both
-//! into these operations and out of them.
+//! terms, as a content type is the schema of its records. A definition is a
+//! `publr.content_type.Def`, taken and answered as a value; REST, the CLI and MCP write it as
+//! a JSON object.
 const operation = @import("../operation.zig");
+const model = @import("../model/content_type.zig");
 
 pub const namespace: operation.Namespace = .{
     .name = "taxonomy",
@@ -16,7 +18,7 @@ pub const namespace: operation.Namespace = .{
     \\taxonomy never names types: a content type lists it in `taxonomies`, and each
     \\record then selects its terms in the editor's sidebar (or in a `terms` field of the
     \\form naming it). An `internal` taxonomy never reaches the site. Definitions are
-    \\passed as JSON. Signed-in users may read taxonomies; changing them needs an admin.
+    \\JSON objects. Signed-in users may read taxonomies; changing them needs an admin.
     ,
 };
 
@@ -25,23 +27,56 @@ pub const Summary = @import("../model/content_type.zig").Summary;
 /// One thing wrong with a definition, at its path.
 pub const Problem = @import("../model/field.zig").Problem;
 
-const new_definition =
-    \\{"handle":"regions","name":"Regions","title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
-;
+/// A definition, as these operations take and answer it.
+pub const Def = model.Def;
 
-pub const example_definition =
-    \\{"handle":"topics","name":"Topics","public":true,"hierarchical":true,
-    \\ "title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
-    \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
-;
+const new_definition: Def = .{
+    .handle = "regions",
+    .name = "Regions",
+    .title_field = "name",
+    .fields = &.{
+        .{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+            .validation = .{
+                .required = true,
+            },
+        },
+    },
+};
+
+pub const example_definition: Def = .{
+    .handle = "topics",
+    .name = "Topics",
+    .public = true,
+    .hierarchical = true,
+    .title_field = "name",
+    .fields = &.{
+        .{
+            .name = "name",
+            .label = "Name",
+            .kind = "string",
+            .validation = .{
+                .required = true,
+            },
+        },
+        .{
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
+            .options = .{
+                .source = "name",
+            },
+        },
+    },
+};
 
 const example_id = "d4e5f60718293a4b5c6d7e8f";
 
 pub const Create = struct {
     pub const name = "taxonomy.create";
-    pub const description = "Create a taxonomy from a JSON definition";
+    pub const description = "Create a taxonomy from its definition";
     pub const details =
         \\Admins only. The definition takes the keys of a content type definition
         \\(`handle`, `name`, `public`, `title_field`, `statuses`, `fields`; see
@@ -51,23 +86,21 @@ pub const Create = struct {
     ;
     pub const kind: operation.Kind = .write;
     pub const In = struct {
-        definition: operation.Json,
+        definition: Def,
     };
     pub const Out = struct {
         id: []const u8,
         handle: []const u8,
     };
     pub const example: In = .{
-        .definition = .{
-            .text = new_definition,
-        },
+        .definition = new_definition,
     };
     pub const example_out: Out = .{
         .id = example_id,
         .handle = "regions",
     };
     pub const field_docs: operation.Docs(In) = .{
-        .definition = "The taxonomy definition as JSON",
+        .definition = "The taxonomy's definition",
     };
     pub const output_docs: operation.Docs(Out) = .{
         .id = "The new taxonomy's id",
@@ -88,7 +121,7 @@ pub const Update = struct {
     pub const kind: operation.Kind = .write;
     pub const In = struct {
         taxonomy: []const u8,
-        definition: operation.Json,
+        definition: Def,
         drop_content: bool = false,
     };
     pub const Out = struct {
@@ -99,9 +132,7 @@ pub const Update = struct {
     };
     pub const example: In = .{
         .taxonomy = "topics",
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
     };
     pub const example_out: Out = .{
         .id = example_id,
@@ -111,7 +142,7 @@ pub const Update = struct {
     };
     pub const field_docs: operation.Docs(In) = .{
         .taxonomy = "Handle or id",
-        .definition = "The complete new definition as JSON",
+        .definition = "The complete new definition",
         .drop_content = "Delete the values of fields that the new definition removes",
     };
     pub const output_docs: operation.Docs(Out) = .{
@@ -131,8 +162,8 @@ pub const Get = struct {
     };
     pub const Out = struct {
         id: []const u8,
-        /// The full definition as JSON, as `taxonomy.create` takes it.
-        definition: operation.Json,
+        /// The full definition, as `taxonomy.create` takes it.
+        definition: Def,
         created_at: i64,
         updated_at: i64,
     };
@@ -141,9 +172,7 @@ pub const Get = struct {
     };
     pub const example_out: Out = .{
         .id = example_id,
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
         .created_at = 1789650000000,
         .updated_at = 1789650000000,
     };
@@ -226,10 +255,10 @@ pub const Delete = struct {
 
 pub const Validate = struct {
     pub const name = "taxonomy.validate";
-    pub const description = "Check a JSON definition and list every problem without saving";
+    pub const description = "Check a definition and list every problem without saving";
     pub const kind: operation.Kind = .read;
     pub const In = struct {
-        definition: operation.Json,
+        definition: Def,
     };
     pub const Out = struct {
         valid: bool,
@@ -237,8 +266,10 @@ pub const Validate = struct {
     };
     pub const example: In = .{
         .definition = .{
-            .text = "{\"handle\":\"topics\",\"name\":\"Topics\",\"kind\":\"settings\"," ++
-                "\"fields\":[]}",
+            .handle = "topics",
+            .name = "Topics",
+            .kind = .settings,
+            .fields = &.{},
         },
     };
     pub const example_out: Out = .{

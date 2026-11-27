@@ -57,7 +57,7 @@ fn create_of(arena: std.mem.Allocator, grams: i64) ![]const u8 {
 fn salutation(scenario: *Scenario) !model.content_type.Def {
     var reading = scenario.ctx(admin);
 
-    return (try content_types.got(&reading, .{
+    return (try registry.SDK.dispatch(&reading, content_types.Get, .{
         .type = "greeter.salutation",
     })).definition;
 }
@@ -113,9 +113,7 @@ test "an installed plugin's group on another's type: in the record, checked, nev
 
     _ = try registry.SDK.dispatch(&reading, content_types.Update, .{
         .type = "greeter.salutation",
-        .definition = .{
-            .text = try model.content_type.encode(arena, def),
-        },
+        .definition = def,
     });
 
     const raw = (try content_types.find_raw(&reading, "greeter.salutation")).?;

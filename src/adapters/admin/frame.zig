@@ -305,7 +305,7 @@ fn type_label(session: *Session, handle: []const u8) Error![]const u8 {
     std.debug.assert(handle.len > 0);
 
     const definitions = @import("../../operations/content_type.zig");
-    const def = definitions.got(&session.ctx, .{
+    const def = registry.SDK.dispatch(&session.ctx, definitions.Get, .{
         .type = handle,
     }) catch return handle;
 

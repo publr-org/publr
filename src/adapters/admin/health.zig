@@ -110,7 +110,7 @@ fn unplaced_of(session: *Session) Error![]const views.Health.UnplacedItem {
     };
 
     for (listed.groups) |item| {
-        const got = custom_fields.got(&session.ctx, .{
+        const got = registry.SDK.dispatch(&session.ctx, custom_fields.Get, .{
             .group = item.handle,
         }) catch continue;
 
@@ -305,7 +305,7 @@ fn fix(session: *Session, target: []const u8, app: []const u8) !void {
     const reach = try registry.SDK.dispatch(&across, record_operations.Reach, .{
         .id = target,
     });
-    const got = try types.got(&across, .{
+    const got = try registry.SDK.dispatch(&across, types.Get, .{
         .type = reach.type,
     });
     var def = got.definition;
@@ -320,9 +320,7 @@ fn fix(session: *Session, target: []const u8, app: []const u8) !void {
     };
     _ = try registry.SDK.dispatch(&across, types.Update, .{
         .type = def.handle,
-        .definition = .{
-            .text = try model.content_type.encode(session.arena, def),
-        },
+        .definition = def,
     });
 }
 
@@ -360,7 +358,7 @@ fn type_name(session: *Session, handle: []const u8) Error![]const u8 {
         return "";
     }
 
-    const got = types.got(&across, .{
+    const got = registry.SDK.dispatch(&across, types.Get, .{
         .type = handle,
     }) catch return handle;
 

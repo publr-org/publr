@@ -129,6 +129,28 @@ grants never let it call.
 `ctx.failure_message()` compiles in an installed plugin too and answers the refusal's words,
 as compiled in. Nothing to change.
 
+### `sdk:content_type`
+
+`publr.content_type` names a definition's types: `Def` (what `content_type.get` and
+`taxonomy.get` answer and `content_type.create` takes), `Kind`, `Shared`, `Menu`, `View`,
+`Classified`, `NounForms`, `NounForm`, `EditorConfig`, `Flow`, `Transition`, `Who`,
+`Changed`, `Group` and `Presentation`; `publr.field.Def` and `publr.field.Wrapped` are a
+field's. They are plain values: core's helpers over them are not part of them.
+
+### `call:content_type.validate`
+
+`content_type.validate`, `taxonomy.validate` and `custom_fields.validate` take a definition
+as a value. Sent as JSON (REST, the CLI, MCP), a definition that is not a definition's shape
+(a field of the wrong type, a key no definition has) is refused as invalid input, as any
+other operation's input is, instead of answering one problem, "definition is not valid JSON
+for a definition". Every other problem is listed as before.
+
+```sh
+# Before: {"valid":false,"problems":[{"path":"","message":"definition is not valid JSON ..."}]}
+# After: the call is refused as invalid input
+publr content_type validate --definition '{"handle":"x","name":"X","fields":3}'
+```
+
 ### `sdk:Ctx.state`
 
 `ctx.state(Plugin)` is `publr.Host.state_of(ctx, Plugin)` (`host.state(State)` still
@@ -309,11 +331,11 @@ fn ping(request: *publr.Host.Request, response: *publr.Host.Response, ctx: *publ
 ### `sdk:field`
 
 A field's overrides in `record.define`'s `.fields` (and a `.register_fields` group's) are
-read in their own public shape, `publr.field.Overrides`, with its parts
-`publr.field.Validation`, `publr.field.Options` and `publr.field.Visibility`; core makes them
-into its stored field definition. What a plugin writes is the same, every option included,
-except `.visibility.plugin`: the plugin a restricted field belongs to is set by core, and a
-plugin naming it fails the build. Leave it out:
+`publr.field.Overrides`, with its parts `publr.field.Validation`, `publr.field.Options` and
+`publr.field.Visibility`: the same types a field's definition holds when it is read back
+(`publr.field.Def`, in `content_type.get`'s answer). What a plugin writes is the same, every
+option included, except `.visibility.plugin`: the plugin a restricted field belongs to is
+set by Publr, and a plugin naming it fails the build. Leave it out:
 
 ```zig
 // Before
@@ -570,23 +592,33 @@ are unchanged. Gone from it: the `operations` list and each `run`.
 list, each `run`, and core's readers `find`, `find_raw`, `visible`, `visible_type` and
 `brief_of`; call `content_type.get` or `content_type.list` instead.
 
-`Get`'s answer holds the definition as JSON (`publr.operation.Json`), as `Create` and
-`Update` take it, no longer core's own definition type: what REST, the CLI and MCP answer is
-unchanged.
+A definition is a value of the public `publr.content_type.Def` (its fields each a
+`publr.field.Def`), taken and answered as one: `Get` answers it, and `Create`, `Update` and
+`Validate` take it, no longer JSON text (`publr.operation.Json`). Installed plugins get it
+laid out like any other value. REST, the CLI and MCP still send and answer the same JSON
+object. What reads it is the same, but the methods core's type had are gone: a flow's
+`allows`, `is_live`, `find` and the rest, a visibility's `hidden()`, an editor config's
+`text()`; read the fields.
 
-Before: `const got = try ctx.call(publr.operations.content_type.Get, .{ .type = "post" });`
-then `got.definition.fields`.
-After: read the fields you need from it in your own shape,
-`const Fields = struct { fields: []const struct { name: []const u8 } };` then
-`const def = try got.definition.as(Fields, arena);`.
+```zig
+// Before
+_ = try ctx.call(publr.operations.content_type.Create, .{
+    .definition = .{ .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[]}" },
+});
+// After
+_ = try ctx.call(publr.operations.content_type.Create, .{
+    .definition = .{ .handle = "note", .name = "Note", .fields = &.{} },
+});
+```
 
 ### `sdk:operations.taxonomy`
 
 `publr.operations.taxonomy` is the public file of the taxonomy operations' shapes. `Create`,
 `Update`, `Get`, `List`, `Delete`, `Validate`, `Summary`, `Problem` and `example_definition`
 keep their names, as does `namespace`. Gone from it: the `operations` list, each `run`, and
-`find`, `visible`, `visible_type` and `brief_of`. `Get`'s answer holds the definition as
-JSON, as `content_type.get`'s does (above).
+`find`, `visible`, `visible_type` and `brief_of`. A definition is a
+`publr.content_type.Def`, answered by `Get` and taken by `Create`, `Update` and `Validate`,
+as `content_type`'s are (above).
 
 ### `sdk:operations.internal`
 
@@ -691,9 +723,9 @@ which are core's.
 
 ### `sdk:operations.user`
 
-`user.get`'s answer holds the custom field groups (`fields`) as JSON (`publr.operation.Json`),
-no longer core's own field definitions: what REST, the CLI and MCP answer is unchanged. The
-user operations' shapes are defined in `publr/operations/user.zig` (and its `user/` files),
+`user.get`'s answer holds the custom field groups (`fields`) as `[]const publr.field.Def`,
+the public type, no longer core's own: each group a `group` field holding its fields. What
+REST, the CLI and MCP answer is unchanged. The user operations' shapes are defined in `publr/operations/user.zig` (and its `user/` files),
 and `publr.operations.user` names that file: every operation, `Summary`, `Link`,
 `invitation_path`, `fields`, `language`, `members`, `columns`, `types`. Core's functions are
 no longer reached through it (`language.person_speaks`, `create_user`, `staff`, `summary_of`
@@ -701,10 +733,6 @@ and the rest). The language a person reads, for a message composed in their word
 `ctx.locale(person).code` (the site's when their account names none): before
 `try publr.operations.user.language.person_speaks(ctx, reader)`, after
 `ctx.locale(reader).code`.
-
-Before: `got.fields[0].fields`.
-After: `const Groups = []const struct { name: []const u8 };` then
-`const groups = try got.fields.as(Groups, arena);`.
 
 ### `sdk:operations.media`
 
@@ -724,13 +752,16 @@ folder and tag helpers), and the core helpers of each sub-namespace (`library.ro
 `SaveValues` and `namespace` stay. Gone from it: the `operations` list, each `run`, and
 core's `Destination`.
 
-`Get`'s, `Update`'s and `Create`'s answers hold the schema as JSON (`publr.operation.Json`),
-as `Update` and `Create` take it, no longer core's own definition type: what REST, the CLI
-and MCP answer is unchanged.
+A schema is a `publr.content_type.Def`: `Get`, `Update` and `Create` answer it, and
+`Update`, `Create` and `Validate` take it, no longer JSON text (`publr.operation.Json`).
+REST, the CLI and MCP send and answer the same JSON object.
 
-Before: `out.definition.handle`.
-After: the group named in the call (`in.group`), or read the fields you need from it in
-your own shape, `const def = try out.definition.as(struct { handle: []const u8 }, arena);`.
+```zig
+// Before
+.definition = .{ .text = "{\"handle\":\"profile\",\"name\":\"Profile\",\"kind\":\"component\",\"fields\":[]}" },
+// After
+.definition = .{ .handle = "profile", .name = "Profile", .kind = .component, .fields = &.{} },
+```
 
 ### `sdk:operations.record`
 

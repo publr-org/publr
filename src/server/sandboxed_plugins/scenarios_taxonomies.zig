@@ -44,7 +44,7 @@ fn type_of(scenario: *Scenario, handle: []const u8) !model.content_type.Def {
 
     std.debug.assert(handle.len > 0);
 
-    return (try content_types.got(&reading, .{
+    return (try registry.SDK.dispatch(&reading, content_types.Get, .{
         .type = handle,
     })).definition;
 }
@@ -57,7 +57,7 @@ test "an installed plugin's taxonomies go on its type and, by pattern, on greete
     try install(&scenario);
 
     var reading = scenario.ctx(admin);
-    const shelves = (try taxonomies.got(&reading, .{
+    const shelves = (try registry.SDK.dispatch(&reading, taxonomies.Get, .{
         .taxonomy = "sampler.shelf",
     })).definition;
 
@@ -67,7 +67,7 @@ test "an installed plugin's taxonomies go on its type and, by pattern, on greete
     try std.testing.expectEqual(@as(usize, 3), shelves.fields.len);
     try std.testing.expectEqualStrings("color", shelves.fields[2].kind);
 
-    const flags = (try taxonomies.got(&reading, .{
+    const flags = (try registry.SDK.dispatch(&reading, taxonomies.Get, .{
         .taxonomy = "sampler.flag",
     })).definition;
 
@@ -107,13 +107,10 @@ test "an installed plugin's taxonomies go on its type and, by pattern, on greete
         .taxonomy = "sampler.shelf",
         .removed = true,
     }};
-    const arena = scenario.harness.fixed.allocator();
 
     _ = try registry.SDK.dispatch(&reading, content_types.Update, .{
         .type = "greeter.salutation",
-        .definition = .{
-            .text = try model.content_type.encode(arena, off),
-        },
+        .definition = off,
     });
     const taken_off = try type_of(&scenario, "greeter.salutation");
 
@@ -122,9 +119,7 @@ test "an installed plugin's taxonomies go on its type and, by pattern, on greete
     off.taxonomies = &.{};
     _ = try registry.SDK.dispatch(&reading, content_types.Update, .{
         .type = "greeter.salutation",
-        .definition = .{
-            .text = try model.content_type.encode(arena, off),
-        },
+        .definition = off,
     });
     const put_back = try type_of(&scenario, "greeter.salutation");
 

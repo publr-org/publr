@@ -84,10 +84,7 @@ pub fn save(
     def.group = options(session, &post.form) catch |err| {
         return admin.fail(session, err, back);
     };
-    const encoded = model.content_type.encode(session.arena, def) catch |err| {
-        return admin.fail(session, err, back);
-    };
-    schemas.update(session, handle, encoded, false) catch |err| {
+    schemas.update(session, handle, def, false) catch |err| {
         return admin.fail(session, err, back);
     };
     try response.redirect(.see_other, back);

@@ -78,7 +78,7 @@ fn fields_of(
     std.debug.assert(handle.len > 0);
 
     var reading = session.*;
-    const got = types.got(&reading.ctx, .{
+    const got = registry.SDK.dispatch(&reading.ctx, types.Get, .{
         .type = handle,
     }) catch {
         return &.{};

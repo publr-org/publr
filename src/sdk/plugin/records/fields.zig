@@ -135,7 +135,7 @@ fn field_in(
         }
 
         // Its plugin reads it whoever else may not: the one declaring the type.
-        if (def.visibility.hidden()) {
+        if (field_model.hidden(def.visibility)) {
             def.visibility.plugin = own_plugin(Definition.type_name);
         }
 
@@ -192,8 +192,8 @@ pub fn apply(
     }
 }
 
-/// The parts of `group` (`options`, `validation`, `visibility`) that `values` names, each
-/// read in the public shape and made into core's.
+/// The parts of `group` (`options`, `validation`, `visibility`) that `values` names.
+/// `.visibility.plugin` is never a plugin's to give: Publr sets it from the type.
 fn apply_group(
     comptime record_name: []const u8,
     comptime def: *field_model.Def,
@@ -212,10 +212,16 @@ fn apply_group(
                     "` has no option `." ++ group ++ "." ++ part ++ "`");
             }
 
-            const Target = @TypeOf(@field(@field(def, group), part));
-            const typed = coerced(@FieldType(Public, part), @field(values, part), 0);
+            if (std.mem.eql(u8, group, "visibility") and std.mem.eql(u8, part, "plugin")) {
+                @compileError("record " ++ record_name ++ ": field `" ++ def.name ++
+                    "` sets `.visibility.plugin`, which Publr sets from the type");
+            }
 
-            @field(@field(def, group), part) = field_model.given.converted(Target, typed, 0);
+            @field(@field(def, group), part) = coerced(
+                @FieldType(Public, part),
+                @field(values, part),
+                0,
+            );
         }
     }
 }

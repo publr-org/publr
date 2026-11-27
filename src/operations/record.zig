@@ -801,14 +801,14 @@ test "a unique field refuses a value another record holds; a new record takes de
     var system = harness.ctx(.system);
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            system.arena,
             \\{"handle":"product","name":"Product","public":true,"title_field":"title","fields":[
             \\{"name":"title","label":"Title","kind":"string","default":"Untitled"},
             \\{"name":"sku","label":"SKU","kind":"string","validation":{"unique":true}},
             \\{"name":"stock","label":"Stock","kind":"integer","default":"5"}]}
             ,
-        },
+        ),
     });
 
     var editor = harness.ctx(.{
@@ -958,9 +958,7 @@ test "a slug field that refuses taken slugs: a given one conflicts, a derived on
     };
     const definition = try model.content_type.encode(harness.fixed.allocator(), strict);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = definition,
-        },
+        .definition = try model.content_type.read(admin.arena, definition),
     });
 
     const first = try SDK.dispatch(&admin, Create, .{
@@ -1022,9 +1020,7 @@ test "anonymous callers see live records of public types only; private types are
     private.public = false;
     const private_definition = try model.content_type.encode(harness.fixed.allocator(), private);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = private_definition,
-        },
+        .definition = try model.content_type.read(admin.arena, private_definition),
     });
 
     const draft = try SDK.dispatch(
@@ -1074,9 +1070,7 @@ test "anonymous callers see live records of public types only; private types are
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&anon, types.Create, .{
-            .definition = .{
-                .text = private_definition,
-            },
+            .definition = try model.content_type.read(anon.arena, private_definition),
         }),
     );
 
@@ -1089,9 +1083,7 @@ test "anonymous callers see live records of public types only; private types are
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&editor, types.Create, .{
-            .definition = .{
-                .text = private_definition,
-            },
+            .definition = try model.content_type.read(editor.arena, private_definition),
         }),
     );
 
@@ -1132,9 +1124,7 @@ test "list across types: every readable type, the ones named, exclusions, one-ty
     private.public = false;
     const private_definition = try model.content_type.encode(harness.fixed.allocator(), private);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = private_definition,
-        },
+        .definition = try model.content_type.read(admin.arena, private_definition),
     });
     _ = try SDK.dispatch(&admin, Create, .{
         .type = "post",
@@ -1256,9 +1246,7 @@ test "list by a type's own fields: clauses on fields, an order by one; one type 
     note.handle = "note";
     note.name = "Note";
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(harness.fixed.allocator(), note),
-        },
+        .definition = note,
     });
     const documents_given = [_][]const u8{
         "{\"title\":\"Alpha\",\"body\":\"<p>a</p>\",\"views\":10}",
@@ -1417,9 +1405,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
         \\ {"name":"age","label":"Age","kind":"integer"}]}
     ;
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = definition,
-        },
+        .definition = try model.content_type.read(admin.arena, definition),
     });
 
     const ada_document = "{\"name\":\"Ada L.\",\"age\":36}";
@@ -1459,9 +1445,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
         types.Update,
         .{
             .type = "person",
-            .definition = .{
-                .text = widened,
-            },
+            .definition = try model.content_type.read(admin.arena, widened),
         },
     );
     try std.testing.expectEqual(@as(u32, 2), evolved.records_rewritten);
@@ -1486,9 +1470,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
         types.Update,
         .{
             .type = "person",
-            .definition = .{
-                .text = narrowed,
-            },
+            .definition = try model.content_type.read(admin.arena, narrowed),
         },
     );
     try std.testing.expectError(error.Failed, refused);
@@ -1497,9 +1479,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
 
     const dropped = try SDK.dispatch(&admin, types.Update, .{
         .type = "person",
-        .definition = .{
-            .text = narrowed,
-        },
+        .definition = try model.content_type.read(admin.arena, narrowed),
         .drop_content = true,
     });
     try std.testing.expectEqual(@as(u32, 2), dropped.values_dropped);
@@ -1511,9 +1491,7 @@ test "slug comes from the slug field's source; type update re-indexes existing r
     ;
     const invalid = SDK.dispatch(&admin, types.Update, .{
         .type = "person",
-        .definition = .{
-            .text = shape,
-        },
+        .definition = try model.content_type.read(admin.arena, shape),
     });
     try std.testing.expectError(error.Invalid, invalid);
 }
@@ -1586,9 +1564,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
         \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}}]}
     ;
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = without,
-        },
+        .definition = try model.content_type.read(admin.arena, without),
     });
     const abc: Create.In = .{
         .type = "hotel",
@@ -1607,9 +1583,7 @@ test "adding a slug field to a type backfills existing records, duplicates get s
     ;
     const updated = try SDK.dispatch(&admin, types.Update, .{
         .type = "hotel",
-        .definition = .{
-            .text = with_slug,
-        },
+        .definition = try model.content_type.read(admin.arena, with_slug),
     });
     try std.testing.expectEqual(@as(u32, 2), updated.records_rewritten);
 
@@ -1639,31 +1613,29 @@ test "terms fields: a type opts into a taxonomy, records file under terms, ances
     });
     const term_operations = @import("term.zig");
     const unknown_taxonomy = SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"article","name":"Article","fields":[
             \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
             \\{"name":"topics","label":"Topics","kind":"terms","many":true,
             \\"options":{"taxonomy":"topics"}}]}
             ,
-        },
+        ),
     });
     try std.testing.expectError(error.Invalid, unknown_taxonomy);
 
     _ = try SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition = .{
-            .text = taxonomies.example_definition,
-        },
+        .definition = taxonomies.example_definition,
     });
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"article","name":"Article","public":true,"fields":[
             \\{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
             \\{"name":"topics","label":"Topics","kind":"terms","many":true,
             \\"options":{"taxonomy":"topics"}}]}
             ,
-        },
+        ),
     });
     const tech = try term_operations.published(&admin, .{
         .taxonomy = "topics",
@@ -1773,25 +1745,25 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     const arena = harness.fixed.allocator();
     const term_operations = @import("term.zig");
     _ = try SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"topics","name":"Topics","public":true,"title_field":"name",
             \\ "fields":[{"name":"name","label":"Name","kind":"string",
             \\ "validation":{"required":true}}]}
             ,
-        },
+        ),
     });
     const naming_types = SDK.dispatch(&admin, taxonomies.Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"tags","name":"Tags","taxonomies":[{"taxonomy":"topics"}],
             \\ "fields":[{"name":"name","label":"Name","kind":"string"}]}
             ,
-        },
+        ),
     });
     try std.testing.expectError(error.Invalid, naming_types);
 
-    const bare = try types.got(&admin, .{
+    const bare = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "post",
     });
     var filed_def = bare.definition;
@@ -1800,9 +1772,7 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     }};
     const unknown = SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = .{
-            .text = try model.content_type.encode(arena, filed_def),
-        },
+        .definition = filed_def,
     });
     try std.testing.expectError(error.Invalid, unknown);
 
@@ -1812,12 +1782,10 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     const filed_text = try model.content_type.encode(arena, filed_def);
     _ = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = .{
-            .text = filed_text,
-        },
+        .definition = try model.content_type.read(admin.arena, filed_text),
     });
 
-    const post = try types.got(&admin, .{
+    const post = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "post",
     });
     const last = post.definition.fields[post.definition.fields.len - 1];
@@ -1851,12 +1819,10 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     const sent_back = try model.content_type.encode(arena, post.definition);
     const kept = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = .{
-            .text = sent_back,
-        },
+        .definition = try model.content_type.read(admin.arena, sent_back),
     });
     try std.testing.expectEqual(@as(u32, 0), kept.values_dropped);
-    const stored = try types.got(&admin, .{
+    const stored = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "post",
     });
     try std.testing.expectEqual(post.definition.fields.len, stored.definition.fields.len);
@@ -1864,11 +1830,9 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
     // Taken off, the field goes and the record reads without it; ticked again, it is back.
     _ = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = .{
-            .text = try model.content_type.encode(arena, bare.definition),
-        },
+        .definition = bare.definition,
     });
-    const off = try types.got(&admin, .{
+    const off = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "post",
     });
     try std.testing.expectEqual(post.definition.fields.len - 1, off.definition.fields.len);
@@ -1879,9 +1843,7 @@ test "a type filed under a taxonomy gets its implicit terms field; taking it off
 
     _ = try SDK.dispatch(&admin, types.Update, .{
         .type = "post",
-        .definition = .{
-            .text = filed_text,
-        },
+        .definition = try model.content_type.read(admin.arena, filed_text),
     });
     const back = try SDK.dispatch(&admin, Get, .{
         .id = record.id,

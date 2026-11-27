@@ -2823,10 +2823,10 @@ fn hears_ends(comptime Middleware: type) bool {
 
 /// Branches the registry's own checks take (roles, namespaces, policies), whatever its size.
 const validation_branches_base: u32 = 100_000;
-/// Branches one operation's checks add at most: its shapes and examples walked once, the doc
-/// lines of its text fields read once (`operation.values`), its name compared with every
-/// other's.
-const validation_branches_per_operation: u32 = 512;
+/// Branches one operation's checks add at most: its shapes and examples walked once (an
+/// example holding a definition walks each of its fields' options and rules), the doc lines
+/// of its text fields read once (`operation.values`), its name compared with every other's.
+const validation_branches_per_operation: u32 = 800;
 
 fn validate_registry(comptime registry: Registry) void {
     comptime {

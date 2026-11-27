@@ -191,6 +191,12 @@ output structs, one example call with the answer it gives, and `run`. Optional:
 `details`, `field_docs`, `output_docs` for richer help. What a call touches, for
 policies, is read from the input by field name (`type`, `id`, `to`).
 
+`In` and `Out` hold values. A field of `publr.operation.Json` is for a value whose shape
+someone else decides, and its name says which (`document`, `values`, `input`, `query`,
+`result` and the rest of the list in `src/sdk/operation/json_fields.zig`); any other name
+does not build. A shape of Publr's own is its type: `content_type.get` answers a
+`publr.content_type.Def`, and JSON is written from it only at REST, the CLI and MCP.
+
 An operation fails with the core's errors (`error.Denied`, `error.NotFound`,
 `error.Conflict`, ...) or with a failure of its own, for what the core has no word for. A
 plugin lists its failures in the operation's `Fails:` words and refuses with

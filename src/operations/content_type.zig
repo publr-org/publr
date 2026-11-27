@@ -40,11 +40,7 @@ pub const Create = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
-            return error.Invalid;
-        }
-
-        const row = try definition.create(ctx, in.definition.text);
+        const row = try definition.create(ctx, in.definition);
 
         return .{
             .id = row.id,
@@ -73,7 +69,7 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        const updated = try definition.update(ctx, in.type, in.definition.text, in.drop_content);
+        const updated = try definition.update(ctx, in.type, in.definition, in.drop_content);
 
         return .{
             .id = updated.id,
@@ -106,7 +102,7 @@ pub const Get = struct {
 
         return .{
             .id = row.id,
-            .definition = try sdk.operation.Json.of(ctx.arena, row.def),
+            .definition = row.def,
             .created_at = row.created_at,
             .updated_at = row.updated_at,
         };
@@ -187,11 +183,7 @@ pub const Validate = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
 
-        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
-            return error.Invalid;
-        }
-
-        const report = try definition.validate(ctx, in.definition.text);
+        const report = try definition.validate(ctx, in.definition);
 
         return .{
             .valid = report.valid,
@@ -216,9 +208,7 @@ test "definition input limits are checked before preparation and domain checks" 
 
     for ([_][]const u8{ too_many_fields, too_many_statuses }) |input_text| {
         try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&ctx, Create, .{
-            .definition = .{
-                .text = input_text,
-            },
+            .definition = try content_type.read(ctx.arena, input_text),
         }));
         try std.testing.expectEqual(@as(u32, 0), ctx.db.transaction_depth);
     }
@@ -228,27 +218,4 @@ test "definition input limits are checked before preparation and domain checks" 
 inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
     const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
     return @ptrCast(&copies);
-}
-
-/// The answer of `content_type.get` as core's own pages read it: the definition typed.
-pub const Got = struct {
-    id: []const u8,
-    definition: Def,
-    created_at: i64,
-    updated_at: i64,
-};
-
-/// `content_type.get` for core's own pages: called as any caller calls it, its definition read back
-/// from the JSON it answers.
-pub fn got(ctx: *Ctx, in: Get.In) Error!Got {
-    const answered = try @import("../server/registry.zig").SDK.dispatch(ctx, Get, in);
-
-    std.debug.assert(answered.id.len > 0);
-
-    return .{
-        .id = answered.id,
-        .definition = try content_type.read(ctx.arena, answered.definition.text),
-        .created_at = answered.created_at,
-        .updated_at = answered.updated_at,
-    };
 }

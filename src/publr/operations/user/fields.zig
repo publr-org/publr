@@ -4,6 +4,7 @@
 const operation = @import("../../operation.zig");
 const user_shapes = @import("../user.zig");
 const Problem = @import("../../model/field.zig").Problem;
+const Def = @import("../../model/field.zig").Def;
 
 pub const Get = struct {
     pub const name = "user.get";
@@ -19,8 +20,8 @@ pub const Get = struct {
     };
     pub const Out = struct {
         user: user_shapes.Summary,
-        /// The groups that apply, each with its fields, as JSON.
-        fields: operation.Json,
+        /// The groups that apply, each a `group` field holding its fields.
+        fields: []const Def,
         document: operation.Json,
     };
     pub const example: In = .{
@@ -35,9 +36,7 @@ pub const Get = struct {
             .created_at = 1789646400000,
             .active = true,
         },
-        .fields = .{
-            .text = "[]",
-        },
+        .fields = &.{},
         .document = .{
             .text = "{}",
         },

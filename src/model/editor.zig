@@ -8,83 +8,68 @@ pub const form = "form";
 pub const visual = "visual";
 pub const config_bytes_max: u32 = 256;
 
-/// A type's `editor_config`: `{"field": name}`, the rich text field a visual type writes;
-/// `{}` for its first one.
-pub const Config = struct {
-    field: []const u8 = "",
+pub const Config = @import("../publr/model/editor.zig").Config;
 
-    pub const publr_form = .fields;
+/// A config written as text holding the object, as releases before 0.8 wrote and still read
+/// it.
+pub fn write_config(config: Config, writer: anytype) !void {
+    std.debug.assert(config.field.len <= config_bytes_max);
 
-    /// Written as text holding the object, as releases before 0.8 wrote and still read it.
-    pub fn jsonStringify(config: Config, writer: anytype) !void {
-        std.debug.assert(config.field.len <= config_bytes_max);
+    var buffer: [config_bytes_max * 2]u8 = undefined;
 
-        var buffer: [config_bytes_max * 2]u8 = undefined;
+    try writer.write(text(config, &buffer));
+}
 
-        try writer.write(config.text(&buffer));
-    }
-
-    pub fn jsonParse(
-        allocator: std.mem.Allocator,
-        source: anytype,
-        options: std.json.ParseOptions,
-    ) !Config {
-        const value = try std.json.Value.jsonParse(allocator, source, options);
-
-        return jsonParseFromValue(allocator, value, options);
-    }
-
-    /// A definition stored before the config was a value keeps it as text holding the
-    /// object: read as the object it holds.
-    pub fn jsonParseFromValue(
-        allocator: std.mem.Allocator,
-        source: std.json.Value,
-        options: std.json.ParseOptions,
-    ) !Config {
-        const given = if (source == .string)
-            std.json.parseFromSliceLeaky(std.json.Value, allocator, source.string, options) catch {
-                return error.UnexpectedToken;
-            }
-        else
-            source;
-
-        if (given != .object) {
+/// A definition stored before the config was a value keeps it as text holding the object:
+/// read as the object it holds.
+pub fn config_of(
+    allocator: std.mem.Allocator,
+    source: std.json.Value,
+    options: std.json.ParseOptions,
+) !Config {
+    const given = if (source == .string)
+        std.json.parseFromSliceLeaky(std.json.Value, allocator, source.string, options) catch {
             return error.UnexpectedToken;
         }
+    else
+        source;
 
-        const named = given.object.get("field") orelse return .{};
-
-        if (named != .string or named.string.len > config_bytes_max) {
-            return error.UnexpectedToken;
-        }
-
-        return .{
-            .field = named.string,
-        };
+    if (given != .object) {
+        return error.UnexpectedToken;
     }
 
-    /// The config as the JSON text a column keeps, written into `buffer`.
-    pub fn text(config: Config, buffer: *[config_bytes_max * 2]u8) []const u8 {
-        std.debug.assert(config.field.len <= config_bytes_max);
+    const named = given.object.get("field") orelse return .{};
 
-        if (config.field.len == 0) {
-            return "{}";
-        }
-
-        var writer = std.Io.Writer.fixed(buffer);
-        const object: struct {
-            field: []const u8,
-        } = .{
-            .field = config.field,
-        };
-
-        std.json.Stringify.value(object, .{}, &writer) catch return "{}";
-
-        std.debug.assert(writer.end >= 2);
-
-        return writer.buffered();
+    if (named != .string or named.string.len > config_bytes_max) {
+        return error.UnexpectedToken;
     }
-};
+
+    return .{
+        .field = named.string,
+    };
+}
+
+/// The config as the JSON text a column keeps, written into `buffer`.
+pub fn text(config: Config, buffer: *[config_bytes_max * 2]u8) []const u8 {
+    std.debug.assert(config.field.len <= config_bytes_max);
+
+    if (config.field.len == 0) {
+        return "{}";
+    }
+
+    var writer = std.Io.Writer.fixed(buffer);
+    const object: struct {
+        field: []const u8,
+    } = .{
+        .field = config.field,
+    };
+
+    std.json.Stringify.value(object, .{}, &writer) catch return "{}";
+
+    std.debug.assert(writer.end >= 2);
+
+    return writer.buffered();
+}
 
 pub fn is_visual(editor: []const u8) bool {
     return std.mem.eql(u8, editor, visual);
@@ -273,8 +258,8 @@ test "a config reads as an object, and as the text a stored definition kept it i
         .field = "body",
     };
 
-    try std.testing.expectEqualStrings("{}", (Config{}).text(&buffer));
-    try std.testing.expectEqualStrings("{\"field\":\"body\"}", named.text(&buffer));
+    try std.testing.expectEqualStrings("{}", text(.{}, &buffer));
+    try std.testing.expectEqualStrings("{\"field\":\"body\"}", text(named, &buffer));
 }
 
 test "a config is written as the text holding it, which releases before 0.8 read" {

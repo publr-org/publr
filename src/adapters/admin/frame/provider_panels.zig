@@ -25,7 +25,7 @@ pub fn of_type(
     std.debug.assert(handle.len > 0);
 
     var reading = session.*;
-    const got = content_type.got(&reading.ctx, .{
+    const got = registry.SDK.dispatch(&reading.ctx, content_type.Get, .{
         .type = handle,
     }) catch return;
 

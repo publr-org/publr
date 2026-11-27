@@ -19,7 +19,7 @@ pub fn strip(ctx: *const Ctx, fields: []const model.field.Def, document: *Value)
     }
 
     for (fields) |field| {
-        if (field.visibility.hidden() and !sees(ctx, field.visibility)) {
+        if (model.field.hidden(field.visibility) and !sees(ctx, field.visibility)) {
             _ = document.object.orderedRemove(field.name);
         }
     }
@@ -32,7 +32,7 @@ pub fn any_hidden(fields: []const model.field.Def) bool {
     std.debug.assert(fields.len <= model.field.fields_max);
 
     for (fields) |field| {
-        if (field.visibility.hidden()) {
+        if (model.field.hidden(field.visibility)) {
             return true;
         }
     }
@@ -41,7 +41,7 @@ pub fn any_hidden(fields: []const model.field.Def) bool {
 }
 
 pub fn sees(ctx: *const Ctx, visibility: model.field.Visibility) bool {
-    std.debug.assert(visibility.hidden());
+    std.debug.assert(model.field.hidden(visibility));
     std.debug.assert(visibility.roles.len <= role.user_roles_max * 4);
 
     const plugin = switch (ctx.caller) {

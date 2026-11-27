@@ -679,7 +679,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             const Get = domain.definitions.Get;
             const in = keyed(Get.In, domain.definition_key, handle, .{});
-            const got = domain.definitions.got(&session.ctx, in) catch |err| {
+            const got = registry.SDK.dispatch(&session.ctx, Get, in) catch |err| {
                 try admin.fail(session, err, back);
 
                 return null;
@@ -812,7 +812,7 @@ pub fn Editor(comptime domain: Domain) type {
             const row = shape.loaded.?.row;
 
             const flow = shape.def.flow;
-            const status = flow.find(row.status);
+            const status = model.flow.find(flow, row.status);
             const loaded = shape.loaded.?;
             // In a scheduled version, its own actions: Publish now, Remove version.
             const draft = loaded.version > 0 and draft_on(loaded.scheduled, loaded.version);
@@ -835,7 +835,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .status = row.status,
                 .status_label = try status_label_of(session, status, row.status),
                 .changed = if (loaded.version > 0) draft else row.changed,
-                .parks = row.changed or flow.is_live(row.status),
+                .parks = row.changed or model.flow.is_live(flow, row.status),
                 .actions = actions,
                 .has_destructive = has_destructive(actions),
             }) catch return error.OutOfMemory;
@@ -1176,7 +1176,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             const def = shape.def;
             const status_now = if (shape.loaded) |full| full.row.status else "";
-            const live = shape.loaded != null and def.flow.is_live(status_now);
+            const live = shape.loaded != null and model.flow.is_live(def.flow, status_now);
 
             return .{
                 .arena = session.arena,
@@ -1458,8 +1458,8 @@ pub fn Editor(comptime domain: Domain) type {
                     if (shape.preview) null else try of(session, def, row, document)
                 else
                     null;
-                const parks = row.changed or def.flow.is_live(row.status);
-                const status = def.flow.find(row.status);
+                const parks = row.changed or model.flow.is_live(def.flow, row.status);
+                const status = model.flow.find(def.flow, row.status);
                 const may = may_of(session, row);
                 const version = full.version;
                 const listed = try without_drafts(arena, full.scheduled);
@@ -1567,7 +1567,7 @@ pub fn Editor(comptime domain: Domain) type {
                     .schedule = try schedule_of(session, def, row, scheduled, listed, version),
                     .scheduled_count = @floatFromInt(scheduled.len),
                     .live_href = try print(arena, "{s}/{s}", .{ back, row.id }),
-                    .versions_open = def.flow.is_live(row.status) or scheduled.len > 0,
+                    .versions_open = model.flow.is_live(def.flow, row.status) or scheduled.len > 0,
                     .schedule_options = try schedule_options(
                         session,
                         live_actions,
@@ -1758,8 +1758,8 @@ pub fn actions_of(
 
     const arena = session.arena;
     const status = row.status;
-    const live = flow.is_live(status);
-    const publishes = !live and flow.allows(status, "published");
+    const live = model.flow.is_live(flow, status);
+    const publishes = !live and model.flow.allows(flow, status, "published");
     var actions: std.ArrayList(Action) = .empty;
 
     // Someone who may not publish asks for it: the `publish` transition, kept on the record.
@@ -1789,10 +1789,10 @@ pub fn actions_of(
 
     var buffer: [model.flow.transitions_max + 1]model.flow.Target = undefined;
 
-    for (flow.out_of(status, &buffer)) |transition| {
+    for (model.flow.out_of(flow, status, &buffer)) |transition| {
         // Publishing has its own button; a type's other transitions into a live status do not.
         const covered = std.mem.eql(u8, transition.to, "published") and (publishes or live) or
-            (!flow.own() and flow.is_live(transition.to));
+            (!model.flow.own(flow) and model.flow.is_live(flow, transition.to));
 
         if (covered or std.mem.eql(u8, transition.to, status)) {
             continue;
@@ -2514,7 +2514,7 @@ fn scheduled_of(
         const shown = model_time.datetime_local_text(arena, local) catch "";
         const label = if (kept.version)
             try session.translated("Scheduled change", .{})
-        else if (def.flow.named(kept.transition, row.status)) |target|
+        else if (model.flow.named(def.flow, kept.transition, row.status)) |target|
             try session.declared(target.label)
         else
             kept.transition;
@@ -2632,9 +2632,11 @@ pub fn requested_of(
 
     const asker = row.requested_by orelse "";
     const own = asker.len > 0 and std.mem.eql(u8, asker, session.ctx.caller.user_id() orelse "");
-    const label = if (std.mem.eql(u8, row.requested, "publish") and flow.is_live(row.status))
+    const publishing = std.mem.eql(u8, row.requested, "publish") and
+        model.flow.is_live(flow, row.status);
+    const label = if (publishing)
         try session.translated("Publish changes", .{})
-    else if (flow.named(row.requested, row.status)) |target|
+    else if (model.flow.named(flow, row.requested, row.status)) |target|
         try session.declared(target.label)
     else
         row.requested;
@@ -2740,7 +2742,7 @@ fn delete_notes_of(session: *Session, def: Def) Error![]const fields.DeleteNote 
             continue;
         }
 
-        const got = types.got(&session.ctx, .{
+        const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
             .type = field.options.to[0],
         }) catch continue;
 

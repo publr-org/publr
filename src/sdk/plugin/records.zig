@@ -288,7 +288,7 @@ fn rules_of(comptime Definition: type) []const field_model.Def {
             apply(Definition.type_name, &def, overrides);
 
             // Its plugin reads it whoever else may not.
-            if (def.visibility.hidden()) {
+            if (field_model.hidden(def.visibility)) {
                 def.visibility.plugin = own_plugin(Definition.type_name);
             }
 

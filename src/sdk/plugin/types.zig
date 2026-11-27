@@ -66,15 +66,13 @@ pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
     def.fields = fields;
 
     const wanted = try content_type.encode(ctx.arena, def);
-    const existing = custom_fields.got(ctx, .{
+    const existing = registry.SDK.dispatch(ctx, custom_fields.Get, .{
         .group = def.handle,
     }) catch |err| switch (err) {
         error.NotFound => {
             _ = try registry.SDK.dispatch(ctx, custom_fields.Create, .{
                 .group = def.handle,
-                .definition = .{
-                    .text = wanted,
-                },
+                .definition = def,
             });
 
             return;
@@ -90,9 +88,7 @@ pub fn apply_group(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
     _ = try registry.SDK.dispatch(ctx, custom_fields.Update, .{
         .group = def.handle,
-        .definition = .{
-            .text = wanted,
-        },
+        .definition = def,
     });
 }
 
@@ -143,18 +139,14 @@ pub fn apply_one(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
         _ = try registry.SDK.dispatch(ctx, types.Update, .{
             .type = def.handle,
-            .definition = .{
-                .text = wanted,
-            },
+            .definition = def,
         });
 
         return;
     }
 
     _ = try registry.SDK.dispatch(ctx, types.Create, .{
-        .definition = .{
-            .text = wanted,
-        },
+        .definition = def,
     });
 }
 
@@ -198,18 +190,14 @@ pub fn apply_taxonomy(ctx: *sdk.Ctx, declared: Declared) sdk.Error!void {
 
         _ = try registry.SDK.dispatch(ctx, taxonomies.Update, .{
             .taxonomy = def.handle,
-            .definition = .{
-                .text = wanted,
-            },
+            .definition = def,
         });
 
         return;
     }
 
     _ = try registry.SDK.dispatch(ctx, taxonomies.Create, .{
-        .definition = .{
-            .text = wanted,
-        },
+        .definition = def,
     });
 }
 
@@ -352,7 +340,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
             .roles = &.{"admin"},
         },
     });
-    const greeting = try types.got(&admin, .{
+    const greeting = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "greeting",
     });
     try std.testing.expect(greeting.definition.system);
@@ -371,11 +359,9 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     ;
     _ = try registry.SDK.dispatch(&admin, types.Update, .{
         .type = "greeting",
-        .definition = .{
-            .text = with_extra,
-        },
+        .definition = try content_type.read(admin.arena, with_extra),
     });
-    const extended = try types.got(&admin, .{
+    const extended = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "greeting",
     });
     try std.testing.expectEqual(@as(usize, 3), extended.definition.fields.len);
@@ -391,11 +377,9 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     ;
     _ = try registry.SDK.dispatch(&admin, types.Update, .{
         .type = "greeting",
-        .definition = .{
-            .text = tampered,
-        },
+        .definition = try content_type.read(admin.arena, tampered),
     });
-    const still = try types.got(&admin, .{
+    const still = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "greeting",
     });
     try std.testing.expectEqualStrings("Note", still.definition.fields[0].label);
@@ -404,13 +388,11 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
     arranged.group.presentation.labels = .beside;
     _ = try registry.SDK.dispatch(&admin, types.Update, .{
         .type = "greeting",
-        .definition = .{
-            .text = try content_type.encode(admin.arena, arranged),
-        },
+        .definition = arranged,
     });
 
     try apply(&system, &declared_greeting);
-    const after = try types.got(&admin, .{
+    const after = try registry.SDK.dispatch(&admin, types.Get, .{
         .type = "greeting",
     });
     try std.testing.expectEqual(@as(usize, 3), after.definition.fields.len);
@@ -422,9 +404,7 @@ test "declared types: locked fields stay, hand-added fields survive a redeclarat
         \\ "fields":[{"name":"title","label":"T","kind":"string"}]}
     ;
     const refused = registry.SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = by_hand,
-        },
+        .definition = try content_type.read(admin.arena, by_hand),
     });
     try std.testing.expectError(error.Invalid, refused);
 }

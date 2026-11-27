@@ -277,9 +277,7 @@ test "site health: a type no longer shared and a deleted target are cases; keep 
 
     for ([_]model.content_type.Def{ stock, product }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = .{
-                .text = try model.content_type.encode(system.arena, def),
-            },
+            .definition = def,
         });
     }
 
@@ -303,9 +301,7 @@ test "site health: a type no longer shared and a deleted target are cases; keep 
     stock.shared = null;
     _ = try SDK.dispatch(&system, types.Update, .{
         .type = "stock",
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, stock),
-        },
+        .definition = stock,
     });
     _ = try SDK.dispatch(&system, record_operations.Delete, .{
         .id = cup,
@@ -385,9 +381,7 @@ test "site health: cases come a page at a time, a case's records counted across 
 
     for ([_]model.content_type.Def{ stock, product }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = .{
-                .text = try model.content_type.encode(system.arena, def),
-            },
+            .definition = def,
         });
     }
 

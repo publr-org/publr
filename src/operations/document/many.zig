@@ -231,7 +231,7 @@ pub fn Of(comptime Domain: type) type {
                 return "Its type is gone";
             };
 
-            const target = type_row.def.flow.named(name, row.status);
+            const target = model.flow.named(type_row.def.flow, name, row.status);
 
             if (target == null or !std.mem.eql(u8, target.?.to, to)) {
                 return "Not a transition its status allows";
@@ -252,7 +252,7 @@ pub fn Of(comptime Domain: type) type {
                 return "Its type does not take that status";
             };
 
-            if (type_row.def.flow.is_live(to)) {
+            if (model.flow.is_live(type_row.def.flow, to)) {
                 return try live_refusal(ctx, row, type_row.def);
             }
 
@@ -427,7 +427,7 @@ pub fn Of(comptime Domain: type) type {
 
                 moving.append(ctx.arena, row.id) catch return error.OutOfMemory;
 
-                if (flow.is_live(to) and row.changed) {
+                if (model.flow.is_live(flow, to) and row.changed) {
                     if (try lifecycle.apply_pending(ctx, record_of(row))) {
                         applied.append(ctx.arena, row.id) catch return error.OutOfMemory;
                     }

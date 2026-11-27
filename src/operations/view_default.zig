@@ -228,7 +228,7 @@ fn readable(ctx: *Ctx, fields: []const model.field.Def) Error![]const model.fiel
     var kept: std.ArrayList(model.field.Def) = .empty;
 
     for (fields) |field| {
-        if (!field.visibility.hidden() or visibility.sees(ctx, field.visibility)) {
+        if (!model.field.hidden(field.visibility) or visibility.sees(ctx, field.visibility)) {
             kept.append(ctx.arena, field) catch return error.OutOfMemory;
         }
     }
@@ -325,12 +325,13 @@ test "a type's default view: core's, everyone's, the caller's own; reset goes a 
     });
 
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(
+        .definition = try model.content_type.read(
+            admin.arena,
+            try model.content_type.encode(
                 harness.fixed.allocator(),
                 model.content_type.test_post,
             ),
-        },
+        ),
     });
 
     const fresh = try SDK.dispatch(&ada, Default, .{

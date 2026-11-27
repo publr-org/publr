@@ -272,19 +272,43 @@ pub const type_def: content_type.Def = .{
     },
 };
 
-pub const folders_definition =
-    \\{"handle":"media_folders","name":"Media folders","hierarchical":true,"single":true,
-    \\ "system":true,"title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
-    \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
-;
+/// The fields of a library taxonomy's terms: a name, and a slug made from it.
+const term_fields = [_]content_type.field.Def{
+    .{
+        .name = "name",
+        .label = "Name",
+        .kind = "string",
+        .validation = .{
+            .required = true,
+        },
+    },
+    .{
+        .name = "slug",
+        .label = "Slug",
+        .kind = "slug",
+        .options = .{
+            .source = "name",
+        },
+    },
+};
 
-pub const tags_definition =
-    \\{"handle":"media_tags","name":"Media tags","system":true,
-    \\ "title_field":"name",
-    \\ "fields":[{"name":"name","label":"Name","kind":"string","validation":{"required":true}},
-    \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"name"}}]}
-;
+pub const folders_definition: content_type.Def = .{
+    .handle = "media_folders",
+    .name = "Media folders",
+    .hierarchical = true,
+    .single = true,
+    .system = true,
+    .title_field = "name",
+    .fields = &term_fields,
+};
+
+pub const tags_definition: content_type.Def = .{
+    .handle = "media_tags",
+    .name = "Media tags",
+    .system = true,
+    .title_field = "name",
+    .fields = &term_fields,
+};
 
 /// Where a file put into the media folder by hand belongs: its name, and the library
 /// folders its directories name, outermost first and no deeper than folders nest. A top

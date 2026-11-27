@@ -41,9 +41,9 @@ pub fn bootstrap(ctx: *Ctx) Error!void {
 }
 
 /// The library's taxonomy of this handle, made from its definition when it is missing.
-fn ensure_taxonomy(ctx: *Ctx, handle: []const u8, definition: []const u8) Error!void {
+fn ensure_taxonomy(ctx: *Ctx, handle: []const u8, definition: model.content_type.Def) Error!void {
     std.debug.assert(handle.len > 0);
-    std.debug.assert(definition.len > 0);
+    std.debug.assert(std.mem.eql(u8, definition.handle, handle));
 
     const found = store.taxonomies.get_by_handle(ctx.db, ctx.arena, handle) catch {
         return error.Unavailable;
@@ -51,9 +51,7 @@ fn ensure_taxonomy(ctx: *Ctx, handle: []const u8, definition: []const u8) Error!
 
     if (found == null) {
         _ = try registry.SDK.dispatch(ctx, taxonomy.Create, .{
-            .definition = .{
-                .text = definition,
-            },
+            .definition = definition,
         });
     }
 }

@@ -5,6 +5,7 @@ const sdk = @import("../../sdk.zig");
 const deps = @import("../../lib/deps.zig");
 const registry = @import("../../server/registry.zig");
 const content_type = @import("../content_type.zig");
+const model_content_type = @import("../../model/content_type.zig");
 const record = @import("../record.zig");
 const term = @import("../term.zig");
 
@@ -36,9 +37,7 @@ test "site changes: live writes and moves raise, pending edits and drafts do not
     try SDK.bootstrap(&system);
 
     _ = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = .{
-            .text = note_definition,
-        },
+        .definition = try model_content_type.read(system.arena, note_definition),
     });
 
     const start = (try raised(&system, 0)).revision;
@@ -132,9 +131,7 @@ test "site changes: a page's reads name the record, the type and every record" {
     try SDK.bootstrap(&system);
 
     _ = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = .{
-            .text = note_definition,
-        },
+        .definition = try model_content_type.read(system.arena, note_definition),
     });
 
     const made = try SDK.dispatch(&system, record.Create, .{

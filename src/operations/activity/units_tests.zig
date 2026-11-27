@@ -7,6 +7,7 @@ const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
 const activity = @import("../activity.zig");
 const content_type = @import("../content_type.zig");
+const model_content_type = @import("../../model/content_type.zig");
 const custom_fields = @import("../custom_fields.zig");
 const record = @import("../record.zig");
 const Put = @import("../project/put.zig").Put;
@@ -48,17 +49,16 @@ test "activity: a field group and a type by their handles, from the write's inpu
 
     _ = try SDK.dispatch(&system, custom_fields.Create, .{
         .group = "profile",
-        .definition = .{
-            .text = "{\"handle\":\"profile\",\"name\":\"Profile\",\"kind\":\"component\"," ++
+        .definition = try @import("../../model/content_type.zig").read(
+            system.arena,
+            "{\"handle\":\"profile\",\"name\":\"Profile\",\"kind\":\"component\"," ++
                 "\"fields\":[]}",
-        },
+        ),
     });
     try expect_units(&.{"field_group:profile"}, try units_of(&system, "custom_fields.create"));
 
     const note = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = .{
-            .text = note_definition,
-        },
+        .definition = try model_content_type.read(system.arena, note_definition),
     });
 
     try expect_units(&.{"content_type:note"}, try units_of(&system, "content_type.create"));
@@ -79,9 +79,7 @@ test "activity: project.put lists what it put in its order, before what landing 
     try SDK.bootstrap(&system);
 
     const note = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = .{
-            .text = note_definition,
-        },
+        .definition = try model_content_type.read(system.arena, note_definition),
     });
     const created = try SDK.dispatch(&system, record.Create, .{
         .type = "note",
@@ -165,9 +163,7 @@ test "activity: a record's own writes and a move over many, each record by its i
     try SDK.bootstrap(&system);
 
     _ = try SDK.dispatch(&system, content_type.Create, .{
-        .definition = .{
-            .text = note_definition,
-        },
+        .definition = try model_content_type.read(system.arena, note_definition),
     });
 
     const one = try SDK.dispatch(&system, record.Create, .{

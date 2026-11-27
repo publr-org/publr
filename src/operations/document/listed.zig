@@ -168,19 +168,21 @@ test "listed documents: read with their page, the same as one read each, in list
     try registry.SDK.bootstrap(&system);
 
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
+        .definition = try model.content_type.read(
+            system.arena,
+            "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
                 "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
                 "\"validation\":{\"required\":true}}," ++
                 "{\"name\":\"tags\",\"label\":\"Tags\",\"kind\":\"string\",\"many\":true}]}",
-        },
+        ),
     });
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"memo\",\"name\":\"Memo\",\"fields\":[" ++
+        .definition = try model.content_type.read(
+            system.arena,
+            "{\"handle\":\"memo\",\"name\":\"Memo\",\"fields\":[" ++
                 "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
                 "\"validation\":{\"required\":true}}]}",
-        },
+        ),
     });
 
     const first = try registry.SDK.dispatch(&system, records.Create, .{

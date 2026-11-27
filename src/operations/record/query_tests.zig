@@ -136,9 +136,7 @@ const Library = struct {
             const definition = try model.content_type.encode(system.arena, def);
 
             _ = try SDK.dispatch(&system, types.Create, .{
-                .definition = .{
-                    .text = definition,
-                },
+                .definition = try model.content_type.read(system.arena, definition),
             });
         }
 

@@ -208,7 +208,7 @@ fn term_field_of(
     std.debug.assert(session.signed_in());
 
     const arena = session.arena;
-    const got = types_taxonomy.got(&session.ctx, .{
+    const got = registry.SDK.dispatch(&session.ctx, types_taxonomy.Get, .{
         .taxonomy = field.options.taxonomy,
     }) catch return null;
     const tree = registry.SDK.dispatch(&session.ctx, term_operations.Tree, .{
@@ -354,7 +354,7 @@ pub fn pick(request: *Request, response: *Response, ctx: *Context) Error!void {
     };
     const field = admin.query_param(&session, "field") orelse "";
     const search = admin.query_param(&session, "q");
-    const got = types.got(&session.ctx, .{
+    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
         .type = handle,
     }) catch |err| {
         return admin.fail(&session, err, back);

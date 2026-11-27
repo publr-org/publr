@@ -4,15 +4,16 @@ const admin = @import("../admin.zig");
 const registry = @import("../../server/registry.zig");
 const types = @import("../../operations/content_type.zig");
 const custom = @import("../../operations/custom_fields.zig");
+const taxonomies = @import("../../operations/taxonomy.zig");
 const model = @import("../../model.zig");
 const spaces = @import("schema_space.zig");
 
-pub fn load(session: *admin.Session, handle: []const u8) !types.Got {
+pub fn load(session: *admin.Session, handle: []const u8) !types.Get.Out {
     std.debug.assert(session.signed_in());
     const space = spaces.of(session);
 
     if (space == .taxonomies) {
-        const got = try @import("../../operations/taxonomy.zig").got(&session.ctx, .{
+        const got = try registry.SDK.dispatch(&session.ctx, taxonomies.Get, .{
             .taxonomy = handle,
         });
         return .{
@@ -24,7 +25,7 @@ pub fn load(session: *admin.Session, handle: []const u8) !types.Got {
     }
 
     if (space == .custom) {
-        const got = try custom.got(&session.ctx, .{
+        const got = try registry.SDK.dispatch(&session.ctx, custom.Get, .{
             .group = handle,
         });
         return .{
@@ -35,7 +36,7 @@ pub fn load(session: *admin.Session, handle: []const u8) !types.Got {
         };
     }
 
-    const got = try types.got(&session.ctx, .{
+    const got = try registry.SDK.dispatch(&session.ctx, types.Get, .{
         .type = handle,
     });
 
@@ -49,7 +50,7 @@ pub fn load(session: *admin.Session, handle: []const u8) !types.Got {
 pub fn update(
     session: *admin.Session,
     handle: []const u8,
-    definition: []const u8,
+    definition: model.content_type.Def,
     drop: bool,
 ) !void {
     std.debug.assert(session.signed_in());
@@ -57,28 +58,22 @@ pub fn update(
     if (spaces.of(session) == .taxonomies) {
         _ = try registry.SDK.dispatch(
             &session.ctx,
-            @import("../../operations/taxonomy.zig").Update,
+            taxonomies.Update,
             .{
                 .taxonomy = handle,
-                .definition = .{
-                    .text = definition,
-                },
+                .definition = definition,
                 .drop_content = drop,
             },
         );
     } else if (spaces.of(session) == .custom) {
         _ = try registry.SDK.dispatch(&session.ctx, custom.Update, .{
             .group = handle,
-            .definition = .{
-                .text = definition,
-            },
+            .definition = definition,
         });
     } else {
         _ = try registry.SDK.dispatch(&session.ctx, types.Update, .{
             .type = handle,
-            .definition = .{
-                .text = definition,
-            },
+            .definition = definition,
             .drop_content = drop,
         });
     }
@@ -87,7 +82,7 @@ pub fn update(
 pub fn problems(
     session: *admin.Session,
     err: anyerror,
-    definition: []const u8,
+    definition: model.content_type.Def,
 ) admin.Error![]const model.field.Problem {
     std.debug.assert(session.signed_in());
 
@@ -102,9 +97,7 @@ pub fn problems(
     const handle = session.request.param("handle") orelse return error.OutOfMemory;
     const report = registry.SDK.dispatch(&session.ctx, custom.Validate, .{
         .group = handle,
-        .definition = .{
-            .text = definition,
-        },
+        .definition = definition,
     }) catch |failure| {
         if (failure == error.OutOfMemory) {
             return error.OutOfMemory;

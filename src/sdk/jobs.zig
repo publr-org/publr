@@ -1045,7 +1045,6 @@ test "queued work applies a mod and calls an operation by name, as a request's c
 
 test "a .due job runs once per moment of its record's field, moved by edits, given the record" {
     const registry = @import("../server/registry.zig");
-    const model = @import("../model.zig");
     const record_define = @import("../publr/plugin/record_define.zig");
     const words = @import("../publr/plugin/words.zig");
     const records = @import("../operations/record.zig");
@@ -1102,9 +1101,7 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
     const declared = comptime @import("plugin/records.zig").content_type_of(Events, Docs);
 
     _ = try registry.SDK.dispatch(&ctx, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(ctx.arena, declared),
-        },
+        .definition = declared,
     });
 
     const launch = "{{\"title\":\"Launch\",\"starts_at\":{d}}}";
@@ -1153,7 +1150,6 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
 
 test "a yearly .due job runs on each return of its date, then follows the next one" {
     const registry = @import("../server/registry.zig");
-    const model = @import("../model.zig");
     const record_define = @import("../publr/plugin/record_define.zig");
     const words = @import("../publr/plugin/words.zig");
     const records = @import("../operations/record.zig");
@@ -1210,9 +1206,7 @@ test "a yearly .due job runs on each return of its date, then follows the next o
     const declared = comptime @import("plugin/records.zig").content_type_of(People, Docs);
 
     _ = try registry.SDK.dispatch(&ctx, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(ctx.arena, declared),
-        },
+        .definition = declared,
     });
 
     // Born thirty years and ten days from now: greeted the day before it comes back.

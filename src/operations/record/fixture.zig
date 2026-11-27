@@ -16,9 +16,7 @@ pub fn post_type(ctx: *Ctx) Error!void {
     const definition = try model.content_type.encode(ctx.arena, model.content_type.test_post);
 
     _ = try registry.SDK.dispatch(ctx, types.Create, .{
-        .definition = .{
-            .text = definition,
-        },
+        .definition = try model.content_type.read(ctx.arena, definition),
     });
 }
 

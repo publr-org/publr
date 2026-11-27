@@ -6,6 +6,7 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
 const record_operations = @import("../record.zig");
+const flow_model = @import("../../model/flow.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -205,7 +206,7 @@ pub const TransitionAt = struct {
             return error.NotFound;
         }).def;
 
-        if (!def.flow.is_live(row.status)) {
+        if (!flow_model.is_live(def.flow, row.status)) {
             return;
         }
 

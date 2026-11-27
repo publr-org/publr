@@ -32,7 +32,9 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(from.len > 0);
             std.debug.assert(to.len > 0);
 
-            return !std.mem.eql(u8, from, to) and (flow.is_live(from) or flow.is_live(to));
+            const live = model.flow.is_live(flow, from) or model.flow.is_live(flow, to);
+
+            return !std.mem.eql(u8, from, to) and live;
         }
 
         /// Keeps `transition` as asked by the caller, in place of any request before it: the

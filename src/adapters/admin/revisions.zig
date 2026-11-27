@@ -105,7 +105,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
     const full = registry.SDK.dispatch(&session.ctx, record_operations.Get, .{
         .id = id,
     }) catch |err| return admin.fail(&session, err, back);
-    const got = types.got(&session.ctx, .{
+    const got = registry.SDK.dispatch(&session.ctx, types.Get, .{
         .type = full.record.type,
     }) catch |err| return admin.fail(&session, err, back);
     const item = registry.SDK.dispatch(&session.ctx, snapshots.Get, .{

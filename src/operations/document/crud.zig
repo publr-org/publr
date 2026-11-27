@@ -99,9 +99,9 @@ pub fn Of(comptime Domain: type) type {
             try Domain.config.check_create(ctx, row);
 
             const requests = Domain.lifecycle.requests;
-            const initial = row.def.flow.initial().id;
+            const initial = model.flow.initial(row.def.flow).id;
             const wanted = wanted_status orelse initial;
-            const held_back = row.def.flow.is_live(wanted) and
+            const held_back = model.flow.is_live(row.def.flow, wanted) and
                 !requests.may_publish(ctx, row.def.handle);
 
             // A plugin without `.publish` makes it in the first status; a person is refused.
@@ -134,7 +134,7 @@ pub fn Of(comptime Domain: type) type {
             const known = registry.kinds(ctx);
 
             try values.write(known, ctx, ctx.db, id, values.live, row.id, def.fields, parsed);
-            ctx.publishes = ctx.publishes or row.def.flow.is_live(status);
+            ctx.publishes = ctx.publishes or model.flow.is_live(row.def.flow, status);
 
             return .{
                 .id = id,

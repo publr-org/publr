@@ -168,7 +168,12 @@ A record, a list or a map in `In` or `Out` is a value: a struct or a slice, or
 `publr.operation.Json` where its shape comes with the data. Text holding JSON does not
 compile: a text field whose example is a JSON object or array, or whose words say JSON, is
 refused with the operation and the field named. Core's operations follow the same rule
-(`record.get` answers `document` as an object), and an installed plugin's typed reads
+(`record.get` answers `document` as an object) and hand over `publr.operation.Json` only
+where someone else decides the shape (a record's `document`, custom field `values`, a
+query's `result`); a shape of Publr's own is its type: `content_type.get` answers its
+`definition` as a `publr.content_type.Def`, each field a `publr.field.Def` with the same
+`publr.field.Options`, `Validation` and `Visibility` a plugin declares fields with
+(`got.definition.fields[0].options.choices`). An installed plugin's typed reads
 (`Record.get`, `publr.fields.get`, a query's result, a provider's answers) arrive laid out
 as their structs, never as text to read. What it sends goes the same way: an operation's
 input, `publr.fields.save`, an event's payload (`ctx.emit`) and a queued job's input

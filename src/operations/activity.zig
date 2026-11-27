@@ -653,11 +653,12 @@ test "logs: a write and what it set off, secrets masked, failures apart, never c
     try registry.SDK.bootstrap(&system);
 
     _ = try registry.SDK.dispatch(&system, content_types.Create, .{
-        .definition = .{
-            .text = "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
+        .definition = try model.content_type.read(
+            system.arena,
+            "{\"handle\":\"note\",\"name\":\"Note\",\"fields\":[" ++
                 "{\"name\":\"title\",\"label\":\"Title\",\"kind\":\"string\"," ++
                 "\"validation\":{\"required\":true}}]}",
-        },
+        ),
     });
     const created = try registry.SDK.dispatch(&system, records.Create, .{
         .type = "note",

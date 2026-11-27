@@ -76,14 +76,9 @@ pub fn create(
     def.group = @import("field_group.zig").options(session, &post.form) catch |err| {
         return admin.fail(session, err, "/admin/custom-fields/new");
     };
-    const encoded = model.content_type.encode(session.arena, def) catch |err| {
-        return admin.fail(session, err, "/admin/custom-fields/new");
-    };
     _ = registry.SDK.dispatch(&session.ctx, operations.Create, .{
         .group = def.handle,
-        .definition = .{
-            .text = encoded,
-        },
+        .definition = def,
     }) catch |err| {
         return admin.fail(session, err, "/admin/custom-fields/new");
     };

@@ -63,7 +63,7 @@ pub fn Of(comptime Domain: type) type {
 
             const live_only = granted.live_only_on(type_row.def.handle, type_row.def.public);
 
-            if (live_only and !type_row.def.flow.is_live(found.status)) {
+            if (live_only and !model.flow.is_live(type_row.def.flow, found.status)) {
                 return null;
             }
 
@@ -77,7 +77,7 @@ pub fn Of(comptime Domain: type) type {
         pub fn check_status(def: Def, status: []const u8) Error!void {
             std.debug.assert(def.handle.len > 0);
 
-            if (def.flow.find(status) == null) {
+            if (model.flow.find(def.flow, status) == null) {
                 return error.Invalid;
             }
 

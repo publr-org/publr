@@ -326,9 +326,7 @@ test "the switcher narrows the admin to what the app reaches, and places new typ
     note.name = "Note";
     note.app = "docs";
     _ = try registry.SDK.dispatch(&system, @import("../../operations/content_type.zig").Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(arena, note),
-        },
+        .definition = note,
     });
 
     const Create = record_operations.Create;

@@ -64,7 +64,7 @@ pub const Authorize = struct {
             return error.Invalid;
         }
 
-        if (!flow.reserved(in.transition) and !def.flow.lists(in.transition)) {
+        if (!flow.reserved(in.transition) and !flow.lists(def.flow, in.transition)) {
             return error.NotFound;
         }
 
@@ -125,13 +125,13 @@ pub const Add = struct {
             return error.Invalid;
         }
 
-        if (flow.reserved(transition_name) or def.flow.lists(transition_name)) {
+        if (flow.reserved(transition_name) or flow.lists(def.flow, transition_name)) {
             return taken(ctx);
         }
 
         // Between statuses the type has, never the trash: `trash` and `restore` do that.
         for (try std.mem.concat(ctx.arena, []const u8, &.{ in.from, &.{in.to} })) |id| {
-            if (def.flow.find(id) == null or std.mem.eql(u8, id, flow.trashed)) {
+            if (flow.find(def.flow, id) == null or std.mem.eql(u8, id, flow.trashed)) {
                 return error.Invalid;
             }
         }
@@ -186,7 +186,7 @@ pub const Remove = struct {
         }
 
         if (kept.items.len == changes.transitions.len) {
-            return if (def.flow.lists(in.transition)) locked(ctx) else error.NotFound;
+            return if (flow.lists(def.flow, in.transition)) locked(ctx) else error.NotFound;
         }
 
         changes.transitions = kept.items;
@@ -214,7 +214,7 @@ pub const SetOn = struct {
         var changes = try changes_of(ctx, def.handle);
         var kept: std.ArrayList([]const u8) = .empty;
 
-        if (flow.reserved(in.transition) or !def.flow.lists(in.transition)) {
+        if (flow.reserved(in.transition) or !flow.lists(def.flow, in.transition)) {
             return error.NotFound;
         }
 
@@ -270,7 +270,7 @@ pub const AddStatus = struct {
             try name_of(ctx.arena, in.label, room),
         });
 
-        if (def.flow.find(id) != null) {
+        if (flow.find(def.flow, id) != null) {
             return taken(ctx);
         }
 
@@ -313,7 +313,7 @@ pub const RemoveStatus = struct {
         }
 
         if (kept.items.len == changes.statuses.len) {
-            return if (def.flow.find(in.status) != null) locked(ctx) else error.NotFound;
+            return if (flow.find(def.flow, in.status) != null) locked(ctx) else error.NotFound;
         }
 
         // Only the site's own transitions can reach the site's own status.
@@ -431,7 +431,8 @@ fn shown(ctx: *Ctx, handle: []const u8) Error!Flow {
     const changes = try changes_of(ctx, handle);
     // The code's own flow, as stored; without one, core's.
     const stored = try definitions.find_raw(ctx, handle) orelse return error.NotFound;
-    const code: []const u8 = if (def.owner.len > 0 and stored.def.flow.own()) "plugin" else "core";
+    const owned = def.owner.len > 0 and flow.own(stored.def.flow);
+    const code: []const u8 = if (owned) "plugin" else "core";
     const site = flow.Flow{
         .statuses = changes.statuses,
         .transitions = changes.transitions,
@@ -446,7 +447,8 @@ fn shown(ctx: *Ctx, handle: []const u8) Error!Flow {
 
     for (all) |one| {
         const core = model.status.Core.find(one.id) != null;
-        const source = if (core) "core" else if (site.find(one.id) != null) "site" else "plugin";
+        const by_site = flow.find(site, one.id) != null;
+        const source = if (core) "core" else if (by_site) "site" else "plugin";
 
         if (std.mem.eql(u8, one.id, flow.trashed)) {
             continue;
@@ -481,14 +483,19 @@ fn shown(ctx: *Ctx, handle: []const u8) Error!Flow {
         },
     };
 
-    for (try std.mem.concat(ctx.arena, flow.Transition, &.{ def.flow.listed(), &trash })) |listed| {
-        const marked = def.flow.changed(.{
+    const listed_all = try std.mem.concat(ctx.arena, flow.Transition, &.{
+        flow.listed(def.flow),
+        &trash,
+    });
+
+    for (listed_all) |listed| {
+        const marked = flow.changed(def.flow, .{
             .name = listed.name,
             .to = listed.to,
             .label = listed.label,
             .authorize = listed.authorize,
         });
-        const own = site.transitions.len > 0 and site.lists(listed.name);
+        const own = site.transitions.len > 0 and flow.lists(site, listed.name);
 
         const reserved = flow.reserved(listed.name);
         const declared = try who_text(ctx.arena, listed.authorize);
@@ -517,7 +524,7 @@ fn who_text(arena: std.mem.Allocator, who: ?flow.Who) Error![]const u8 {
 
     const given = who orelse return "";
 
-    return model.operation_override.answer_text(arena, given.answered());
+    return model.operation_override.answer_text(arena, model.flow.answered(given));
 }
 
 /// Who may, from the roles given: anyone holding one of them; none, whoever may edit.
@@ -683,9 +690,7 @@ fn start(site: *Testing) !void {
 
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, testing_types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, reviewed_type),
-        },
+        .definition = reviewed_type,
     });
 
     std.debug.assert(system.now_ms >= 0);
@@ -866,8 +871,9 @@ test "a site type on core's flow takes a status and a transition of its own" {
     var system = site.harness.ctx(.system);
 
     _ = try SDK.dispatch(&system, testing_types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, .{
+        .definition = try model.content_type.read(
+            system.arena,
+            try model.content_type.encode(system.arena, .{
                 .handle = "post",
                 .name = "Post",
                 .fields = &.{.{
@@ -876,7 +882,7 @@ test "a site type on core's flow takes a status and a transition of its own" {
                     .kind = "string",
                 }},
             }),
-        },
+        ),
     });
     _ = try SDK.dispatch(&admin, AddStatus, .{
         .type = "post",

@@ -16,6 +16,7 @@
 //! refused before the operation runs, an answer past it fails the call.
 
 const std = @import("std");
+const held = @import("held.zig");
 
 /// The most items a list of an operation may hold: one page.
 pub const items_max: u32 = 200;
@@ -175,7 +176,12 @@ pub fn misdeclared_in(comptime Type: type, comptime depth: u32) ?[]const u8 {
                     }
                 }
 
+                // A tree's node inside itself (a field's `fields`) is the node already read.
                 for (structure.field_types) |Field| {
+                    if (held.inner_of(Field) == Type) {
+                        continue;
+                    }
+
                     if (misdeclared_in(Field, depth + 1)) |found| {
                         return found;
                     }

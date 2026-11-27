@@ -174,17 +174,16 @@ pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void 
     @memcpy(kept[place.index..], place.siblings[place.index + 1 ..]);
 
     const def = try with_siblings(session.arena, got.definition, place.parent, kept);
-    const definition = model.content_type.encode(session.arena, def) catch return error.OutOfMemory;
 
     schemas.update(
         session,
         handle,
-        definition,
+        def,
         form.get("drop_content") != null,
     ) catch |err| return held_or_problems(
         session,
         err,
-        definition,
+        def,
         path,
         hub,
     );
@@ -197,7 +196,7 @@ pub fn delete(request: *Request, response: *Response, ctx: *Context) Error!void 
 fn held_or_problems(
     session: *Session,
     err: anyerror,
-    definition: []const u8,
+    definition: Def,
     path: []const u8,
     hub: []const u8,
 ) Error!void {
@@ -261,17 +260,15 @@ pub fn save(session: *Session, handle: []const u8, def: Def) Error!?[]const Prob
     std.debug.assert(handle.len > 0);
     std.debug.assert(session.signed_in());
 
-    const definition = model.content_type.encode(session.arena, def) catch return error.OutOfMemory;
-
     schemas.update(
         session,
         handle,
-        definition,
+        def,
         false,
     ) catch |err| return try schemas.problems(
         session,
         err,
-        definition,
+        def,
     );
 
     return null;

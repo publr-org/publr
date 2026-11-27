@@ -20,34 +20,16 @@ pub const shared_apps_max: u32 = 64;
 /// project's own, in every app's reach, as a type without an owner is.
 pub const core_owner = "publr";
 
-pub const Kind = @import("../publr/model/content_type.zig").Kind;
+const public = @import("../publr/model/content_type.zig");
 
-/// The apps that reach a type besides the one it lives in: every app (apps added later
-/// too), or the ones listed. A Global type is shared with every app unless it says
-/// otherwise; an app's type with none.
-pub const Shared = struct {
-    all: bool = false,
-    apps: []const []const u8 = &.{},
-};
-
-/// Where a type's list sits in the admin's menu: under the first of these menu items that
-/// exists (`checkout.orders`), else where content types go.
-pub const Menu = struct {
-    parents: []const []const u8 = &.{},
-    /// `.menu = .none`: no entry in the menu; its pages still open at their addresses.
-    hidden: bool = false,
-};
-
-pub const View = @import("../publr/model/content_type.zig").View;
-
-/// One taxonomy on a content type's list: ticked by an administrator, declared by the type's
-/// plugin (`locked`, there while the plugin declares it), or another plugin's registration
-/// an administrator took off (`removed`: hidden, its assignments kept for when it comes back).
-pub const Classified = struct {
-    taxonomy: []const u8,
-    locked: bool = false,
-    removed: bool = false,
-};
+pub const Kind = public.Kind;
+pub const Shared = public.Shared;
+pub const Menu = public.Menu;
+pub const View = public.View;
+pub const Classified = public.Classified;
+pub const NounForms = public.NounForms;
+pub const NounForm = public.NounForm;
+pub const Def = public.Def;
 
 /// A type's taxonomies after an edit: the locked ones as `kept` holds them, then the rest
 /// as `given` says (an administrator's ticks and the registrations taken off).
@@ -125,76 +107,6 @@ pub const taxonomies_max: u32 = 64;
 
 pub const menu_parents_max: u32 = 8;
 pub const view_columns_max: u32 = @import("view.zig").columns_max;
-
-/// A type's name in one of the admin's languages, as the sentences that decline it need it:
-/// its gender and its forms, singular and plural, by case (`genitive`), as the language's
-/// pack names them. A form left out reads the name.
-pub const NounForms = struct {
-    locale: []const u8,
-    gender: []const u8 = "",
-    forms: []const NounForm = &.{},
-};
-
-pub const NounForm = struct {
-    case: []const u8,
-    singular: []const u8 = "",
-    plural: []const u8 = "",
-};
-
-pub const Def = struct {
-    handle: []const u8,
-    name: []const u8,
-    /// The name for more than one: `Products`; empty reads the name.
-    plural_name: []const u8 = "",
-    /// The name declined in the admin's other languages.
-    noun_forms: []const NounForms = &.{},
-    /// What the type is for, in a sentence or two, for the people who build with it.
-    description: []const u8 = "",
-    kind: Kind = .record,
-    /// The file families a media type takes (`image`, `pdf`...); empty takes every one the
-    /// library takes. Meaningless on other kinds.
-    families: []const []const u8 = &.{},
-    icon: []const u8 = "",
-    /// Where its records live on the site, `posts` for `/posts/<slug>`; empty for a type
-    /// without pages of its own. Public and Private types alike may have one.
-    url: []const u8 = "",
-    /// Public: any visitor of an app the type reaches reads its live records. Private:
-    /// only callers that are signed in, whose roles allow it.
-    public: bool = false,
-    /// Private: the roles that reach it, administrators always; empty: every role whose
-    /// grants reach records. A shop's orders are its administrators', not every editor's.
-    roles: []const []const u8 = &.{},
-    /// The app the type lives in (`app.zon`'s `.name`); empty for a Global type.
-    app: []const u8 = "",
-    /// The other apps that reach it; null for the default of where it lives.
-    shared: ?Shared = null,
-    /// Owned by the core or a plugin: its declared fields are locked, only fields added
-    /// by hand can change.
-    system: bool = false,
-    /// The plugin that declared it (its manifest name), empty for hand-made types.
-    owner: []const u8 = "",
-    editor: []const u8 = "form",
-    editor_config: @import("editor.zig").Config = .{},
-    title_field: []const u8 = "title",
-    statuses: []const []const u8 = &.{},
-    /// Its own statuses and the transitions between them; empty: core's flow.
-    flow: flow.Flow = .{},
-    /// A taxonomy whose terms may have a parent term; meaningless on a content type.
-    hierarchical: bool = false,
-    /// The taxonomies a content type is classified by, each an implicit `terms` field named
-    /// after it; another plugin's registration adds more where it matches. Meaningless on a
-    /// taxonomy, which never names types.
-    taxonomies: []const Classified = &.{},
-    /// A taxonomy whose records take one term, not several.
-    single: bool = false,
-    /// A taxonomy that never reaches the site: staff-only labels, order tags. Admin only; on
-    /// a type only by its name, never by a pattern. Meaningless on a content type.
-    internal: bool = false,
-    group: @import("field_group.zig").Options = .{},
-    menu: Menu = .{},
-    view: View = .{},
-    fields: []const field.Def,
-};
 
 /// A type's handle: a name, `[a-z][a-z0-9_]*`, or a plugin's type under the plugin's name
 /// (`products.variant`).
@@ -524,6 +436,17 @@ pub fn encode(arena: std.mem.Allocator, def: Def) Error![]const u8 {
     return std.json.Stringify.valueAlloc(arena, def, .{}) catch error.OutOfMemory;
 }
 
+/// `def` with the fields a preset kind brings (a `link`'s `url` and `label`) filled in.
+pub fn with_presets(arena: std.mem.Allocator, def: Def) error{OutOfMemory}!Def {
+    var given = def;
+
+    given.fields = try @import("field/presets.zig").apply(arena, def.fields);
+
+    std.debug.assert(given.fields.len == def.fields.len);
+
+    return given;
+}
+
 pub fn decode(arena: std.mem.Allocator, text: []const u8) Error!Def {
     std.debug.assert(definition_bytes_max > field.name_len_max);
 
@@ -626,16 +549,16 @@ fn validate_flow(def: Def, problems: *field.Problems) void {
         }
     }
 
-    if (def.flow.start.len > 0 and def.flow.find(def.flow.start) == null) {
+    if (def.flow.start.len > 0 and flow.find(def.flow, def.flow.start) == null) {
         problems.add("flow", "it starts in a status it does not have");
     }
 
     for (def.flow.transitions) |transition| {
-        const target = def.flow.find(transition.to) != null;
+        const target = flow.find(def.flow, transition.to) != null;
         var known = transition.name.len > 0 and transition.from.len > 0 and target;
 
         for (transition.from) |leaving| {
-            known = known and def.flow.find(leaving) != null;
+            known = known and flow.find(def.flow, leaving) != null;
         }
 
         if (!known) {

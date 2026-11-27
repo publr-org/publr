@@ -51,9 +51,7 @@ test "a transition's authorize holds on every path that moves a record" {
     var system = harness.ctx(.system);
     try SDK.bootstrap(&system);
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, reviewed_type),
-        },
+        .definition = reviewed_type,
     });
 
     var editor = harness.ctx(.{
@@ -127,9 +125,7 @@ test "a move in bulk raises each record's named transition, as a move of its own
     var admin = harness.ctx(.system);
     try SDK.bootstrap(&admin);
     _ = try SDK.dispatch(&admin, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(admin.arena, reviewed_type),
-        },
+        .definition = reviewed_type,
     });
 
     const created = try SDK.dispatch(&admin, record.Create, .{
@@ -345,19 +341,15 @@ test "a status standing in for another plugin's takes its meaning and is found b
 
     // Without orders, the sale's own meaning: settled is not shown on the site.
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, sale_type),
-        },
+        .definition = sale_type,
     });
 
     const alone = (try record.domain.definition.find(&admin, "shop.sale")).?;
 
-    try std.testing.expect(!alone.def.flow.is_live("shop.settled"));
+    try std.testing.expect(!model.flow.is_live(alone.def.flow, "shop.settled"));
 
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, order_type),
-        },
+        .definition = order_type,
     });
 
     const sale = try SDK.dispatch(&admin, record.Create, .{
@@ -376,8 +368,10 @@ test "a status standing in for another plugin's takes its meaning and is found b
     // With orders present: Paid's meaning, and found by anything asking for orders' status.
     const joined = (try record.domain.definition.find(&admin, "shop.sale")).?;
 
-    try std.testing.expect(joined.def.flow.is_live("shop.settled"));
-    try std.testing.expectEqualStrings("Paid", joined.def.flow.find("shop.settled").?.label);
+    try std.testing.expect(model.flow.is_live(joined.def.flow, "shop.settled"));
+    const paid = model.flow.find(joined.def.flow, "shop.settled").?;
+
+    try std.testing.expectEqualStrings("Paid", paid.label);
 
     const asked = try SDK.dispatch(&admin, record.List, .{
         .type = "shop.sale",
@@ -400,9 +394,7 @@ test "a Private type with roles ticked: those roles and administrators reach it,
     ledger.roles = &.{"editor"};
 
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, ledger),
-        },
+        .definition = ledger,
     });
 
     const made = try SDK.dispatch(&system, record.Create, .{

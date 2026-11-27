@@ -191,7 +191,7 @@ pub const TransitionMany = struct {
     fn target_in(flow: model.flow.Flow, transition_name: []const u8) ?[]const u8 {
         std.debug.assert(transition_name.len > 0);
 
-        for (flow.listed()) |listed| {
+        for (model.flow.listed(flow)) |listed| {
             if (std.mem.eql(u8, listed.name, transition_name)) {
                 return listed.to;
             }

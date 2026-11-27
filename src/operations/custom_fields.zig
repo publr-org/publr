@@ -62,7 +62,7 @@ pub const Get = struct {
         const def = try stored_definition(ctx, in.group);
 
         return .{
-            .definition = try sdk.operation.Json.of(ctx.arena, def),
+            .definition = def,
         };
     }
 };
@@ -99,21 +99,6 @@ fn stored_definition(ctx: *sdk.Ctx, handle: []const u8) sdk.Error!model.content_
     return def;
 }
 
-/// What `custom_fields.get` answers, its schema read back from the JSON, for core's own pages.
-pub const Got = struct {
-    definition: model.content_type.Def,
-};
-
-pub fn got(ctx: *sdk.Ctx, in: Get.In) sdk.Error!Got {
-    const answered = try registry.SDK.dispatch(ctx, Get, in);
-
-    std.debug.assert(answered.definition.text.len > 0);
-
-    return .{
-        .definition = try model.content_type.read(ctx.arena, answered.definition.text),
-    };
-}
-
 pub const Validate = struct {
     pub const shape = public.Validate;
     pub const name = shape.name;
@@ -127,7 +112,9 @@ pub const Validate = struct {
     pub fn run(ctx: *sdk.Ctx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
         std.debug.assert(granted.allows());
 
-        if (in.definition.text.len > store.settings.value_len_max) {
+        const written = try sdk.stringify(ctx.arena, in.definition);
+
+        if (written.len > store.settings.value_len_max) {
             return error.Invalid;
         }
 
@@ -139,7 +126,7 @@ pub const Validate = struct {
             return checked;
         }
 
-        const def = try model.content_type.decode(ctx.arena, in.definition.text);
+        const def = try model.content_type.with_presets(ctx.arena, in.definition);
         try valid_handle(in.group);
 
         const invalid = def.kind != .component or def.public or def.system or
@@ -184,7 +171,7 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        const def = try model.content_type.decode(ctx.arena, in.definition.text);
+        const def = try model.content_type.with_presets(ctx.arena, in.definition);
         var canonical = definition(in.group);
         canonical.name = def.name;
         canonical.fields = def.fields;
@@ -202,7 +189,7 @@ pub const Update = struct {
         });
 
         return .{
-            .definition = try sdk.operation.Json.of(ctx.arena, canonical),
+            .definition = canonical,
         };
     }
 };

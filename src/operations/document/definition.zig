@@ -298,14 +298,10 @@ pub fn Of(comptime Domain: type) type {
             };
         }
 
-        pub fn create(ctx: *Ctx, definition: []const u8) Error!Row {
+        pub fn create(ctx: *Ctx, definition: Def) Error!Row {
             std.debug.assert(ctx.db.transaction_depth >= 1);
 
-            if (definition.len > content_type.definition_bytes_max + 1) {
-                return error.Invalid;
-            }
-
-            const def = try parse_and_validate(ctx, definition);
+            const def = try prepared(ctx, definition);
             const id = try definitions.insert(ctx.db, ctx.arena, def, ctx.now_ms);
 
             return .{
@@ -319,7 +315,7 @@ pub fn Of(comptime Domain: type) type {
         pub fn update(
             ctx: *Ctx,
             handle_or_id: []const u8,
-            definition: []const u8,
+            definition: Def,
             drop_content: bool,
         ) Error!Updated {
             std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -330,9 +326,9 @@ pub fn Of(comptime Domain: type) type {
 
             const row = try find_raw(ctx, handle_or_id) orelse return error.NotFound;
             var def = if (row.def.system and ctx.caller != .system)
-                try parse_addition(ctx, row.def, definition)
+                try added_by_hand(ctx, row.def, definition)
             else
-                try parse_and_validate(ctx, definition);
+                try prepared(ctx, definition);
 
             // The flow as read back unchanged keeps the stored one: what other plugins and
             // the site's changes lay over it is never copied in.
@@ -578,22 +574,11 @@ pub fn Of(comptime Domain: type) type {
             _ = try definitions.delete(ctx.db, id);
         }
 
-        pub fn validate(ctx: *Ctx, definition: []const u8) Error!Report {
+        pub fn validate(ctx: *Ctx, definition: Def) Error!Report {
             std.debug.assert(ctx.now_ms >= 0);
 
-            if (definition.len > content_type.definition_bytes_max + 1) {
-                return error.Invalid;
-            }
-
             var problems: model.field.Problems = .{};
-            const def = content_type.decode(ctx.arena, definition) catch {
-                problems.add("", "definition is not valid JSON for a definition");
-
-                return .{
-                    .valid = false,
-                    .problems = try copy_problems(ctx, &problems),
-                };
-            };
+            const def = try content_type.with_presets(ctx.arena, definition);
 
             content_type.validate_def(registry.kinds(ctx), def, &problems);
 
@@ -741,15 +726,11 @@ pub fn Of(comptime Domain: type) type {
             try values.write(known, ctx, ctx.db, record_id, slot, type_id, new.fields, converted);
         }
 
-        fn parse_and_validate(ctx: *Ctx, definition: []const u8) Error!Def {
+        fn prepared(ctx: *Ctx, definition: Def) Error!Def {
             std.debug.assert(ctx.now_ms >= 0);
             std.debug.assert(content_type.definition_bytes_max > 0);
 
-            if (definition.len == 0 or definition.len > content_type.definition_bytes_max) {
-                return error.Invalid;
-            }
-
-            const given = try content_type.decode(ctx.arena, definition);
+            const given = try content_type.with_presets(ctx.arena, definition);
             const def = try Domain.config.prepare_def(ctx, given);
             var problems: model.field.Problems = .{};
 
@@ -793,16 +774,12 @@ pub fn Of(comptime Domain: type) type {
 
         /// A system definition edited by hand: everything declared stays as declared;
         /// only fields added by hand (after the locked ones) may change.
-        fn parse_addition(ctx: *Ctx, current: Def, definition: []const u8) Error!Def {
+        fn added_by_hand(ctx: *Ctx, current: Def, definition: Def) Error!Def {
             std.debug.assert(current.system);
             std.debug.assert(ctx.caller != .system);
 
-            if (definition.len == 0 or definition.len > content_type.definition_bytes_max) {
-                return error.Invalid;
-            }
-
-            const decoded = try content_type.decode(ctx.arena, definition);
-            const given = try Domain.config.prepare_def(ctx, decoded);
+            const with_presets = try content_type.with_presets(ctx.arena, definition);
+            const given = try Domain.config.prepare_def(ctx, with_presets);
             const unlocked = @import("../../sdk/plugin/types.zig").unlocked_of(current).len;
             const locked = current.fields.len - unlocked;
 
@@ -851,7 +828,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(def.statuses.len <= content_type.statuses_max);
 
             for (def.statuses) |id| {
-                if (def.flow.find(id) == null) {
+                if (model.flow.find(def.flow, id) == null) {
                     problems.add("statuses", "unknown status");
                 }
             }

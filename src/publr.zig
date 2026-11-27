@@ -42,6 +42,7 @@ pub const Secret = public.Secret;
 pub const fields = public.fields;
 pub const location = public.location;
 pub const field = public.field;
+pub const content_type = public.content_type;
 pub const job = public.job;
 pub const webhook = public.webhook;
 pub const QueueCtx = public.QueueCtx;

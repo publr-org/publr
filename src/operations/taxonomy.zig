@@ -39,11 +39,7 @@ pub const Create = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
-            return error.Invalid;
-        }
-
-        const row = try definition.create(ctx, in.definition.text);
+        const row = try definition.create(ctx, in.definition);
 
         return .{
             .id = row.id,
@@ -72,10 +68,9 @@ pub const Update = struct {
             return error.Invalid;
         }
 
-        try refuse_flattening(ctx, in.taxonomy, in.definition.text);
+        try refuse_flattening(ctx, in.taxonomy, in.definition);
 
-        const text = in.definition.text;
-        const updated = try definition.update(ctx, in.taxonomy, text, in.drop_content);
+        const updated = try definition.update(ctx, in.taxonomy, in.definition, in.drop_content);
 
         return .{
             .id = updated.id,
@@ -87,19 +82,14 @@ pub const Update = struct {
 };
 
 /// A hierarchy is not taken away from terms that use it.
-fn refuse_flattening(ctx: *Ctx, handle_or_id: []const u8, text: []const u8) Error!void {
+fn refuse_flattening(ctx: *Ctx, handle_or_id: []const u8, wanted: Def) Error!void {
     if (handle_or_id.len > 64 << 10) {
         return error.Invalid;
     }
 
     std.debug.assert(ctx.db.transaction_depth >= 1);
 
-    if (text.len == 0 or text.len > content_type.definition_bytes_max) {
-        return error.Invalid;
-    }
-
     const row = try find(ctx, handle_or_id) orelse return error.NotFound;
-    const wanted = try content_type.decode(ctx.arena, text);
 
     if (row.def.hierarchical and !wanted.hierarchical) {
         if (try term.has_parents(ctx, row.id)) {
@@ -130,7 +120,7 @@ pub const Get = struct {
 
         return .{
             .id = row.id,
-            .definition = try sdk.operation.Json.of(ctx.arena, row.def),
+            .definition = row.def,
             .created_at = row.created_at,
             .updated_at = row.updated_at,
         };
@@ -212,11 +202,7 @@ pub const Validate = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
 
-        if (in.definition.text.len > content_type.definition_bytes_max + 1) {
-            return error.Invalid;
-        }
-
-        const report = try definition.validate(ctx, in.definition.text);
+        const report = try definition.validate(ctx, in.definition);
 
         return .{
             .valid = report.valid,
@@ -250,17 +236,13 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     var anon = harness.ctx(.anonymous);
 
     const created = try SDK.dispatch(&admin, Create, .{
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
     });
     try std.testing.expectEqualStrings("topics", created.handle);
     try std.testing.expectError(
         error.Denied,
         SDK.dispatch(&editor, Create, .{
-            .definition = .{
-                .text = example_definition,
-            },
+            .definition = example_definition,
         }),
     );
     try std.testing.expectError(error.Denied, SDK.dispatch(&anon, List, .{}));
@@ -268,7 +250,7 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     const listed = try SDK.dispatch(&editor, List, .{});
     try std.testing.expectEqual(@as(usize, 1), listed.taxonomies.len);
     try std.testing.expectEqualStrings("Topics", listed.taxonomies[0].name);
-    const read = try got(&editor, .{
+    const read = try SDK.dispatch(&editor, Get, .{
         .taxonomy = "topics",
     });
     try std.testing.expect(read.definition.hierarchical);
@@ -278,17 +260,20 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     try std.testing.expect(!with_url.valid);
     const settings_kind = SDK.dispatch(&admin, Create, .{
         .definition = .{
-            .text = "{\"handle\":\"tags\",\"name\":\"Tags\",\"kind\":\"settings\",\"fields\":[]}",
+            .handle = "tags",
+            .name = "Tags",
+            .kind = .settings,
+            .fields = &.{},
         },
     });
     try std.testing.expectError(error.Invalid, settings_kind);
     const nested_terms = SDK.dispatch(&admin, Create, .{
-        .definition = .{
-            .text =
+        .definition = try model.content_type.read(
+            admin.arena,
             \\{"handle":"tags","name":"Tags","fields":[{"name":"topics","label":"Topics",
             \\"kind":"terms","options":{"taxonomy":"topics"}}]}
             ,
-        },
+        ),
     });
     try std.testing.expectError(error.Invalid, nested_terms);
 
@@ -300,14 +285,12 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     ;
     const updated = try SDK.dispatch(&admin, Update, .{
         .taxonomy = "topics",
-        .definition = .{
-            .text = renamed,
-        },
+        .definition = try model.content_type.read(admin.arena, renamed),
     });
     try std.testing.expectEqual(@as(u32, 0), updated.terms_rewritten);
     try std.testing.expectEqualStrings(
         "Subjects",
-        (try got(&editor, .{
+        (try SDK.dispatch(&editor, Get, .{
             .taxonomy = created.id,
         })).definition.name,
     );
@@ -315,7 +298,7 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
     const content_types = @import("content_type.zig");
     try std.testing.expectError(
         error.NotFound,
-        content_types.got(&editor, .{
+        registry.SDK.dispatch(&editor, content_types.Get, .{
             .type = "topics",
         }),
     );
@@ -327,27 +310,4 @@ test "taxonomies: admins create, update and delete; editors read; the rules hold
         .taxonomy = "topics",
     });
     try std.testing.expectError(error.NotFound, gone);
-}
-
-/// The answer of `taxonomy.get` as core's own pages read it: the definition typed.
-pub const Got = struct {
-    id: []const u8,
-    definition: Def,
-    created_at: i64,
-    updated_at: i64,
-};
-
-/// `taxonomy.get` for core's own pages: called as any caller calls it, its definition read back
-/// from the JSON it answers.
-pub fn got(ctx: *Ctx, in: Get.In) Error!Got {
-    const answered = try @import("../server/registry.zig").SDK.dispatch(ctx, Get, in);
-
-    std.debug.assert(answered.id.len > 0);
-
-    return .{
-        .id = answered.id,
-        .definition = try content_type.read(ctx.arena, answered.definition.text),
-        .created_at = answered.created_at,
-        .updated_at = answered.updated_at,
-    };
 }

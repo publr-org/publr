@@ -91,7 +91,7 @@ pub fn fill_selection(
             .status = "",
         });
     } else {
-        for (flow.listed()) |transition| {
+        for (model.flow.listed(flow)) |transition| {
             if (named_already(transitions.items, transition.name)) {
                 continue;
             }

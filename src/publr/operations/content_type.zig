@@ -1,6 +1,8 @@
-//! Content types: the shapes records are made of, as data. Definitions travel as JSON, both
-//! into these operations and out of them.
+//! Content types: the shapes records are made of, as data. A definition is a
+//! `publr.content_type.Def`, taken and answered as a value; REST, the CLI and MCP write it as
+//! a JSON object.
 const operation = @import("../operation.zig");
+const model = @import("../model/content_type.zig");
 
 pub const namespace: operation.Namespace = .{
     .name = "content_type",
@@ -13,7 +15,7 @@ pub const namespace: operation.Namespace = .{
     \\number, datetime, select, image, reference, terms, group, repeater). A `record`
     \\type holds any number of records, a `settings` type exactly one, a `component`
     \\none: fields are for other types to reuse. A `media` type's records are files
-    \\(`media` commands); only core and plugins declare one. Definitions are passed as JSON. Editors
+    \\(`media` commands); only core and plugins declare one. Definitions are JSON objects. Editors
     \\may read types; changing them needs an admin. Public types are readable by anyone;
     \\private types only by signed-in users.
     ,
@@ -24,25 +26,68 @@ pub const Summary = @import("../model/content_type.zig").Summary;
 /// One thing wrong with a definition, at its path.
 pub const Problem = @import("../model/field.zig").Problem;
 
-const new_definition =
-    \\{"handle":"note","name":"Note","public":false,
-    \\ "fields":[{"name":"title","label":"Title","kind":"string","validation":{"required":true}}]}
-;
+/// A definition, as these operations take and answer it.
+pub const Def = model.Def;
 
-pub const example_definition =
-    \\{"handle":"post","name":"Post","public":true,
-    \\ "fields":[{"name":"title","label":"Title","kind":"string","validation":{"required":true}},
-    \\ {"name":"slug","label":"Slug","kind":"slug","options":{"source":"title"}},
-    \\ {"name":"body","label":"Body","kind":"richtext","searchable":true},
-    \\ {"name":"related","label":"Related","kind":"reference","many":true,
-    \\ "options":{"to":["post"]}}]}
-;
+const new_definition: Def = .{
+    .handle = "note",
+    .name = "Note",
+    .fields = &.{
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .validation = .{
+                .required = true,
+            },
+        },
+    },
+};
+
+pub const example_definition: Def = .{
+    .handle = "post",
+    .name = "Post",
+    .public = true,
+    .fields = &.{
+        .{
+            .name = "title",
+            .label = "Title",
+            .kind = "string",
+            .validation = .{
+                .required = true,
+            },
+        },
+        .{
+            .name = "slug",
+            .label = "Slug",
+            .kind = "slug",
+            .options = .{
+                .source = "title",
+            },
+        },
+        .{
+            .name = "body",
+            .label = "Body",
+            .kind = "richtext",
+            .searchable = true,
+        },
+        .{
+            .name = "related",
+            .label = "Related",
+            .kind = "reference",
+            .many = true,
+            .options = .{
+                .to = &.{"post"},
+            },
+        },
+    },
+};
 
 pub const Create = struct {
     pub const name = "content_type.create";
-    pub const description = "Create a content type from a JSON definition";
+    pub const description = "Create a content type from its definition";
     pub const details =
-        \\Admins only. The definition is a JSON object: `handle` (`[a-z][a-z0-9_]*`,
+        \\Admins only. The definition is an object: `handle` (`[a-z][a-z0-9_]*`,
         \\unique), `name`, `kind` (`record`, `settings` or `component`,
         \\default `record`), optional `icon`, `public` (default false), `editor` (default
         \\`form`), `editor_config`, `title_field` (default `title`: records take their
@@ -61,23 +106,21 @@ pub const Create = struct {
     ;
     pub const kind: operation.Kind = .write;
     pub const In = struct {
-        definition: operation.Json,
+        definition: Def,
     };
     pub const Out = struct {
         id: []const u8,
         handle: []const u8,
     };
     pub const example: In = .{
-        .definition = .{
-            .text = new_definition,
-        },
+        .definition = new_definition,
     };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
         .handle = "note",
     };
     pub const field_docs: operation.Docs(In) = .{
-        .definition = "The type definition as JSON",
+        .definition = "The type's definition",
     };
     pub const output_docs: operation.Docs(Out) = .{
         .id = "The new type's id",
@@ -102,7 +145,7 @@ pub const Update = struct {
     pub const kind: operation.Kind = .write;
     pub const In = struct {
         type: []const u8,
-        definition: operation.Json,
+        definition: Def,
         drop_content: bool = false,
     };
     pub const Out = struct {
@@ -113,9 +156,7 @@ pub const Update = struct {
     };
     pub const example: In = .{
         .type = "post",
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
     };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
@@ -125,7 +166,7 @@ pub const Update = struct {
     };
     pub const field_docs: operation.Docs(In) = .{
         .type = "Handle or id",
-        .definition = "The complete new definition as JSON",
+        .definition = "The complete new definition",
         .drop_content = "Delete the values of fields that the new definition removes",
     };
     pub const output_docs: operation.Docs(Out) = .{
@@ -145,8 +186,8 @@ pub const Get = struct {
     };
     pub const Out = struct {
         id: []const u8,
-        /// The full definition as JSON, as `content_type.create` takes it.
-        definition: operation.Json,
+        /// The full definition, as `content_type.create` takes it.
+        definition: Def,
         created_at: i64,
         updated_at: i64,
     };
@@ -155,9 +196,7 @@ pub const Get = struct {
     };
     pub const example_out: Out = .{
         .id = "7c2d9e4f1a8b3c5d6e7f8a9b",
-        .definition = .{
-            .text = example_definition,
-        },
+        .definition = example_definition,
         .created_at = 1789650000000,
         .updated_at = 1789650000000,
     };
@@ -237,10 +276,10 @@ pub const Delete = struct {
 
 pub const Validate = struct {
     pub const name = "content_type.validate";
-    pub const description = "Check a JSON definition and list every problem without saving";
+    pub const description = "Check a definition and list every problem without saving";
     pub const kind: operation.Kind = .read;
     pub const In = struct {
-        definition: operation.Json,
+        definition: Def,
     };
     pub const Out = struct {
         valid: bool,
@@ -248,7 +287,9 @@ pub const Validate = struct {
     };
     pub const example: In = .{
         .definition = .{
-            .text = "{\"handle\":\"Post\",\"name\":\"\",\"fields\":[]}",
+            .handle = "Post",
+            .name = "",
+            .fields = &.{},
         },
     };
     pub const example_out: Out = .{

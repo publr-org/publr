@@ -22,9 +22,7 @@ pub fn seed_posts_and_notes(system: *sdk.Ctx) !void {
 
     for ([_]model.content_type.Def{ model.content_type.test_post, note }) |def| {
         _ = try SDK.dispatch(system, types.Create, .{
-            .definition = .{
-                .text = try model.content_type.encode(system.arena, def),
-            },
+            .definition = def,
         });
     }
 
@@ -244,25 +242,17 @@ pub fn seed_taxonomies(system: *sdk.Ctx) !void {
     std.debug.assert(system.caller == .system);
 
     _ = try SDK.dispatch(system, taxonomy.Create, .{
-        .definition = .{
-            .text = taxonomy.example_definition,
-        },
+        .definition = taxonomy.example_definition,
     });
 
-    const private = try std.mem.replaceOwned(
-        u8,
-        system.arena,
-        taxonomy.example_definition,
-        "\"handle\":\"topics\",\"name\":\"Topics\",\"public\":true",
-        "\"handle\":\"desk\",\"name\":\"Desk notes\",\"public\":false",
-    );
+    var private = taxonomy.example_definition;
 
-    std.debug.assert(!std.mem.eql(u8, private, taxonomy.example_definition));
+    private.handle = "desk";
+    private.name = "Desk notes";
+    private.public = false;
 
     _ = try SDK.dispatch(system, taxonomy.Create, .{
-        .definition = .{
-            .text = private,
-        },
+        .definition = private,
     });
 
     for ([_][]const u8{ "topics", "desk" }) |handle| {

@@ -155,7 +155,7 @@ pub fn Of(comptime Domain: type) type {
             const row = found orelse return;
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
             const def = type_row.def;
-            const live = def.flow.is_live(row.status);
+            const live = flow_model.is_live(def.flow, row.status);
 
             try rewrite_copies(ctx, row, def);
 
@@ -190,7 +190,7 @@ pub fn Of(comptime Domain: type) type {
         }
 
         fn check_live(ctx: *Ctx, row: Record, def: store.definitions.Def) Error!void {
-            std.debug.assert(def.flow.is_live(row.status));
+            std.debug.assert(flow_model.is_live(def.flow, row.status));
             std.debug.assert(def.fields.len <= model.field.fields_max);
 
             for (def.fields) |field| {
@@ -207,7 +207,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(row.id.len > 0);
             std.debug.assert(was.status.len > 0);
 
-            const live = def.flow.is_live(row.status);
+            const live = flow_model.is_live(def.flow, row.status);
             const now = try live_text(ctx, row, def);
             const replaced = if (was.live) |old|
                 now == null or !std.mem.eql(u8, old, now.?)
@@ -255,7 +255,7 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(to.len > 0);
             std.debug.assert(!std.mem.eql(u8, from, to));
 
-            if (flow.is_live(from) != flow.is_live(to)) {
+            if (flow_model.is_live(flow, from) != flow_model.is_live(flow, to)) {
                 ctx.publishes = true;
             }
         }
@@ -280,15 +280,15 @@ pub fn Of(comptime Domain: type) type {
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
             const flow = type_row.def.flow;
 
-            if (!flow_model.reserved(name) and !flow.lists(name)) {
+            if (!flow_model.reserved(name) and !flow_model.lists(flow, name)) {
                 return error.Invalid;
             }
 
-            if (std.mem.eql(u8, name, "publish") and flow.is_live(row.status)) {
+            if (std.mem.eql(u8, name, "publish") and flow_model.is_live(flow, row.status)) {
                 return publish_changes(ctx, granted, row, expected);
             }
 
-            const target = flow.named(name, row.status) orelse {
+            const target = flow_model.named(flow, name, row.status) orelse {
                 return ctx.fail(.{
                     .name = "NotFrom",
                     .status = 409,
@@ -314,7 +314,7 @@ pub fn Of(comptime Domain: type) type {
             }
 
             const to = if (std.mem.eql(u8, name, "restore"))
-                flow.restored_to(try documents.trashed_from(ctx.db, ctx.arena, row.id))
+                flow_model.restored_to(flow, try documents.trashed_from(ctx.db, ctx.arena, row.id))
             else
                 target.to;
 
@@ -439,7 +439,7 @@ pub fn Of(comptime Domain: type) type {
 
             const staying = std.mem.eql(u8, row.status, to);
 
-            if (!staying and !def.flow.allows(row.status, to)) {
+            if (!staying and !flow_model.allows(def.flow, row.status, to)) {
                 return error.Invalid;
             }
 
@@ -467,9 +467,9 @@ pub fn Of(comptime Domain: type) type {
             std.debug.assert(from.len > 0);
             std.debug.assert(to.len > 0);
 
-            const listed = flow.transition_between(from, to) orelse return;
+            const listed = flow_model.transition_between(flow, from, to) orelse return;
 
-            if (!admits(ctx, flow.named(listed.name, from).?)) {
+            if (!admits(ctx, flow_model.named(flow, listed.name, from).?)) {
                 return error.Denied;
             }
         }
@@ -493,7 +493,7 @@ pub fn Of(comptime Domain: type) type {
             const who = authorize orelse return true;
             const through_app = ctx.app_plugins != null;
 
-            const answer = who.answered();
+            const answer = flow_model.answered(who);
 
             return operation_define.admits(answer, ctx.caller, through_app, from_plugin(ctx));
         }
@@ -537,7 +537,7 @@ pub fn Of(comptime Domain: type) type {
 
             const flow = type_row.def.flow;
 
-            if (flow.is_live(to)) {
+            if (flow_model.is_live(flow, to)) {
                 try check_references(ctx, row, if (applying) values.pending else values.live);
             }
 
@@ -549,7 +549,7 @@ pub fn Of(comptime Domain: type) type {
                 try registry.SDK.hooks_on(ctx, .before, heard.named, heard.payload, true);
             }
 
-            const applied = if (flow.is_live(to) and applying)
+            const applied = if (flow_model.is_live(flow, to) and applying)
                 try apply_pending(ctx, row)
             else
                 false;
@@ -606,7 +606,7 @@ pub fn Of(comptime Domain: type) type {
             const by = if (std.mem.eql(u8, to, "destroyed"))
                 "destroy"
             else
-                def.flow.name_between(from, to);
+                flow_model.name_between(def.flow, from, to);
             const plugin_type = std.mem.indexOfScalar(u8, def.handle, '.') != null;
             const named = if (plugin_type and by.len > 0)
                 std.fmt.allocPrint(ctx.arena, "{s}_{s}", .{ def.handle, by }) catch {
@@ -644,7 +644,7 @@ pub fn Of(comptime Domain: type) type {
             const row = try load(ctx, id, granted) orelse return error.NotFound;
             const type_row = try definitions.find(ctx, row.type_id) orelse return error.NotFound;
 
-            if (!type_row.def.flow.is_live(row.status)) {
+            if (!flow_model.is_live(type_row.def.flow, row.status)) {
                 return move(ctx, row, "published", expected, granted, .apply_pending);
             }
 
@@ -688,7 +688,7 @@ pub fn Of(comptime Domain: type) type {
             const row = try load(ctx, id, granted) orelse return error.NotFound;
             const def = (try definitions.find(ctx, row.type_id) orelse return error.NotFound).def;
 
-            if (!def.flow.is_live(row.status)) {
+            if (!flow_model.is_live(def.flow, row.status)) {
                 return error.Invalid;
             }
 

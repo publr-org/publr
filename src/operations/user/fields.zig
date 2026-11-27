@@ -36,7 +36,7 @@ pub fn definition(ctx: *Ctx, user_id: []const u8, roles: []const []const u8) Err
             break;
         }
 
-        const group = try custom_fields.got(ctx, .{
+        const group = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
             .group = item.handle,
         });
         const applies = try applies_to_any(ctx, group.definition.group, user_id, roles);
@@ -199,47 +199,13 @@ pub const Get = struct {
 
         return .{
             .user = user_operations.summary_of(found.user),
-            .fields = try sdk.operation.Json.of(ctx.arena, defs),
+            .fields = defs,
             .document = .{
                 .text = text,
             },
         };
     }
 };
-
-/// The answer of `user.get` as core's own pages read it: the fields typed.
-pub const Got = struct {
-    user: user_operations.Summary,
-    fields: []const Def,
-    document: sdk.operation.Json,
-};
-
-/// `user.get` for core's own pages: called as any caller calls it, its fields read back from
-/// the JSON it answers.
-pub fn got(ctx: *Ctx, in: Get.In) Error!Got {
-    std.debug.assert(in.user.len <= 64 << 10);
-
-    return typed(ctx.arena, try registry.SDK.dispatch(ctx, Get, in));
-}
-
-/// `answered`, a `user.get` answer, with its fields read back from their JSON.
-pub fn typed(arena: std.mem.Allocator, answered: Get.Out) Error!Got {
-    const options: std.json.ParseOptions = .{
-        .allocate = .alloc_always,
-    };
-    const text = answered.fields.text;
-    const defs = std.json.parseFromSliceLeaky([]const Def, arena, text, options) catch |err| {
-        return if (err == error.OutOfMemory) error.OutOfMemory else error.Invalid;
-    };
-
-    std.debug.assert(defs.len <= model.field.fields_max);
-
-    return .{
-        .user = answered.user,
-        .fields = defs,
-        .document = answered.document,
-    };
-}
 
 pub const Validate = struct {
     pub const shape = public.Validate;
@@ -294,9 +260,7 @@ fn seed_group(ctx: *Ctx, handle: []const u8, role: []const u8) Error!void {
 
     _ = try TestSDK.dispatch(ctx, custom_fields.Create, .{
         .group = handle,
-        .definition = .{
-            .text = text,
-        },
+        .definition = try model.content_type.read(ctx.arena, text),
     });
 }
 
@@ -319,16 +283,16 @@ test "get: one namespaced group per applicable custom field group; update writes
     const Create = user_operations.Create;
     const created = try TestSDK.dispatch(&admin, Create, Create.example);
 
-    const editor = try typed(admin.arena, try TestSDK.dispatch(&admin, Get, .{
+    const editor = try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
-    }));
+    });
     try std.testing.expectEqual(@as(usize, 2), editor.fields.len);
     try std.testing.expectEqualStrings("basic", editor.fields[0].name);
     try std.testing.expectEqualStrings("Group staff", editor.fields[1].label);
     try std.testing.expectEqualStrings("{}", editor.document.text);
-    const own = try typed(admin.arena, try TestSDK.dispatch(&admin, Get, .{
+    const own = try TestSDK.dispatch(&admin, Get, .{
         .user = admin_id,
-    }));
+    });
     try std.testing.expectEqual(@as(usize, 1), own.fields.len);
 
     const empty: Validate.In = .{
@@ -381,9 +345,9 @@ test "get: one namespaced group per applicable custom field group; update writes
         .text = "{\"basic\":{\"bio\":\"Leads\"}}",
     };
     _ = try TestSDK.dispatch(&admin, user_operations.Update, promoted);
-    const as_admin = try typed(admin.arena, try TestSDK.dispatch(&admin, Get, .{
+    const as_admin = try TestSDK.dispatch(&admin, Get, .{
         .user = created.user_id,
-    }));
+    });
     try std.testing.expectEqual(@as(usize, 1), as_admin.fields.len);
     try std.testing.expect(std.mem.indexOf(u8, as_admin.document.text, "staff") == null);
 }

@@ -195,7 +195,7 @@ fn owns(plugin: []const u8, group: []const u8) bool {
 fn group_of(ctx: *Ctx, handle: []const u8) Error!Def {
     std.debug.assert(handle.len > 0);
 
-    const got = try custom_fields.got(ctx, .{
+    const got = try registry.SDK.dispatch(ctx, custom_fields.Get, .{
         .group = handle,
     });
 
@@ -250,9 +250,7 @@ test "a plugin's own group read and written by field, other groups kept and refu
 
         _ = try registry.SDK.dispatch(&system, custom_fields.Create, .{
             .group = handle,
-            .definition = .{
-                .text = text,
-            },
+            .definition = try model.content_type.read(system.arena, text),
         });
     }
 

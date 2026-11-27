@@ -119,7 +119,7 @@ fn rules_problem(collection: Collection) ?[]const u8 {
 
     for (collection.rules) |rule| {
         // Found by it, a record would tell its value to whoever may not read it.
-        if (rule.visibility.hidden() and indexes(collection, rule.name)) {
+        if (field_model.hidden(rule.visibility) and indexes(collection, rule.name)) {
             return "a field only some may read is never indexed";
         }
 

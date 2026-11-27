@@ -1264,9 +1264,7 @@ test "an app whose build fails answers 503 until a publish lets it build" {
         "\"public\":true,\"title_field\":\"\",\"fields\":[" ++
         "{\"name\":\"hero\",\"label\":\"Hero\",\"kind\":\"string\"}]}";
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = homepage,
-        },
+        .definition = try @import("../model/content_type.zig").read(system.arena, homepage),
     });
     var index = try deps.Index.open(system.db, .{
         .quiet_ms = deps.quiet_ms,

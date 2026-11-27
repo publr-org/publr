@@ -6,20 +6,11 @@
 const std = @import("std");
 const status = @import("status.zig");
 const caller_answer = @import("caller_answer.zig");
+const public = @import("../publr/model/flow.zig");
 
 pub const transitions_max: u32 = status.transitions_max;
 
-/// A status transition by its name (`publish`): from any of `from`, to `to`; `label` is its
-/// button. `authorize`, when set, is who may make it besides administrators.
-pub const Transition = struct {
-    name: []const u8,
-    from: []const []const u8,
-    to: []const u8,
-    label: []const u8,
-    authorize: ?Who = null,
-    /// Written `from = any`: it also leaves statuses other plugins add to the flow.
-    from_any: bool = false,
-};
+pub const Transition = public.Transition;
 
 /// A status another plugin adds to a type's flow (`.register_statuses`), stored under that
 /// plugin's name, and the transitions into and out of it.
@@ -60,11 +51,11 @@ pub fn with_added(
         return flow;
     }
 
-    for (flow.listed()) |own| {
-        var copy = own;
+    for (listed(flow)) |declared| {
+        var copy = declared;
 
-        if (own.from_any) {
-            copy.from = try std.mem.concat(arena, []const u8, &.{ own.from, joined.items });
+        if (declared.from_any) {
+            copy.from = try std.mem.concat(arena, []const u8, &.{ declared.from, joined.items });
         }
 
         try transitions.append(arena, copy);
@@ -79,7 +70,7 @@ pub fn with_added(
     return .{
         .statuses = statuses.items,
         .transitions = transitions.items,
-        .start = if (flow.start.len > 0) flow.start else flow.initial().id,
+        .start = if (flow.start.len > 0) flow.start else initial(flow).id,
     };
 }
 
@@ -95,10 +86,10 @@ pub fn way_out(added: Added) ?Transition {
                 break true;
             }
         } else false;
-        const own = std.mem.startsWith(u8, step.to, added.plugin) and
+        const returns = std.mem.startsWith(u8, step.to, added.plugin) and
             step.to.len > added.plugin.len and step.to[added.plugin.len] == '.';
 
-        if (leaves and !own) {
+        if (leaves and !returns) {
             return step;
         }
     }
@@ -106,44 +97,38 @@ pub fn way_out(added: Added) ?Transition {
     return null;
 }
 
-/// Who may make a transition, kept as plain data: a ready answer of `publr.authorize`.
-pub const Who = struct {
-    answer: Kind,
-    /// With `roles`: anyone holding one of them.
-    roles: []const []const u8 = &.{},
+pub const Who = public.Who;
 
-    pub const Kind = enum { signed_in, roles, plugin_calls };
+/// Who may, as `publr.authorize` answered it.
+pub fn who_of(given: caller_answer.Answer) Who {
+    std.debug.assert(@backingInt(given) <= @backingInt(caller_answer.Answer.plugin_calls));
 
-    pub fn of(given: caller_answer.Answer) Who {
-        std.debug.assert(@backingInt(given) <= @backingInt(caller_answer.Answer.plugin_calls));
+    return switch (given) {
+        .visitor, .signed_in => .{
+            .answer = .signed_in,
+        },
+        .roles => |names| .{
+            .answer = .roles,
+            .roles = names,
+        },
+        .plugin_calls => .{
+            .answer = .plugin_calls,
+        },
+    };
+}
 
-        return switch (given) {
-            .visitor, .signed_in => .{
-                .answer = .signed_in,
-            },
-            .roles => |names| .{
-                .answer = .roles,
-                .roles = names,
-            },
-            .plugin_calls => .{
-                .answer = .plugin_calls,
-            },
-        };
-    }
+pub fn answered(who: Who) caller_answer.Answer {
+    std.debug.assert(who.roles.len <= 64);
+    std.debug.assert(who.answer == .roles or who.roles.len == 0);
 
-    pub fn answered(who: Who) caller_answer.Answer {
-        std.debug.assert(who.roles.len <= 64);
-        std.debug.assert(who.answer == .roles or who.roles.len == 0);
-
-        return switch (who.answer) {
-            .signed_in => .signed_in,
-            .roles => .{
-                .roles = who.roles,
-            },
-            .plugin_calls => .plugin_calls,
-        };
-    }
-};
+    return switch (who.answer) {
+        .signed_in => .signed_in,
+        .roles => .{
+            .roles = who.roles,
+        },
+        .plugin_calls => .plugin_calls,
+    };
+}
 
 /// Names every flow has from core, which a type's own transitions never take.
 pub const reserved_names = [_][]const u8{
@@ -243,11 +228,7 @@ pub const Changes = struct {
     }
 };
 
-/// Who may make the transition `name`, as a site changed it.
-pub const Changed = struct {
-    name: []const u8,
-    who: Who,
-};
+pub const Changed = public.Changed;
 
 /// `flow` with a site's changes laid over it: its own statuses and transitions after the
 /// code's (core's listed when the type has none of its own), who may and what is off as
@@ -260,25 +241,25 @@ pub fn with_changes(
     std.debug.assert(changes.statuses.len <= status.statuses_max);
     std.debug.assert(changes.transitions.len <= transitions_max);
 
-    var changed = flow;
+    var laid = flow;
 
-    changed.who = changes.who;
-    changed.off = changes.off;
+    laid.who = changes.who;
+    laid.off = changes.off;
 
     if (changes.statuses.len == 0 and changes.transitions.len == 0) {
-        return changed;
+        return laid;
     }
 
-    changed.statuses = try std.mem.concat(arena, status.Status, &.{
+    laid.statuses = try std.mem.concat(arena, status.Status, &.{
         flow.statuses,
         changes.statuses,
     });
-    changed.transitions = try std.mem.concat(arena, Transition, &.{
-        flow.listed(),
+    laid.transitions = try std.mem.concat(arena, Transition, &.{
+        listed(flow),
         changes.transitions,
     });
 
-    return changed;
+    return laid;
 }
 
 pub fn reserved(name: []const u8) bool {
@@ -294,288 +275,278 @@ pub fn reserved(name: []const u8) bool {
     return false;
 }
 
-pub const Flow = struct {
-    /// The type's own statuses, namespaced (`guestbook.in_review`); core's are not listed.
-    statuses: []const status.Status = &.{},
-    transitions: []const Transition = &.{},
-    /// Where every record of the type begins; empty: core's `draft`.
-    start: []const u8 = "",
-    /// Who may, as the site changed it (`Changes`); read as the type is, never stored in it.
-    who: []const Changed = &.{},
-    /// The transitions the site turned off.
-    off: []const []const u8 = &.{},
+pub const Flow = public.Flow;
 
-    /// `target` with what the site changed of it: who may for people, and whether it is off.
-    pub fn changed(flow: Flow, target: Target) Target {
-        std.debug.assert(target.name.len > 0);
-        std.debug.assert(flow.who.len <= transitions_max);
+/// `target` with what the site changed of it: who may for people, and whether it is off.
+pub fn changed(flow: Flow, target: Target) Target {
+    std.debug.assert(target.name.len > 0);
+    std.debug.assert(flow.who.len <= transitions_max);
 
-        var marked = target;
+    var marked = target;
 
-        for (flow.who) |change| {
-            if (std.mem.eql(u8, change.name, target.name)) {
-                marked.people = change.who;
-            }
+    for (flow.who) |change| {
+        if (std.mem.eql(u8, change.name, target.name)) {
+            marked.people = change.who;
         }
-
-        for (flow.off) |name| {
-            if (std.mem.eql(u8, name, target.name)) {
-                marked.off = true;
-            }
-        }
-
-        return marked;
     }
 
-    /// Whether the type has a flow of its own, rather than core's.
-    pub fn own(flow: Flow) bool {
-        std.debug.assert(flow.transitions.len <= transitions_max);
-        std.debug.assert(flow.statuses.len <= status.statuses_max);
-
-        return flow.transitions.len > 0 or flow.statuses.len > 0 or flow.start.len > 0;
+    for (flow.off) |name| {
+        if (std.mem.eql(u8, name, target.name)) {
+            marked.off = true;
+        }
     }
 
-    pub fn find(flow: Flow, id: []const u8) ?status.Status {
-        std.debug.assert(id.len > 0);
-        std.debug.assert(flow.statuses.len <= status.statuses_max);
+    return marked;
+}
 
-        if (status.Core.find(id)) |found| {
+/// Whether the type has a flow of its own, rather than core's.
+pub fn own(flow: Flow) bool {
+    std.debug.assert(flow.transitions.len <= transitions_max);
+    std.debug.assert(flow.statuses.len <= status.statuses_max);
+
+    return flow.transitions.len > 0 or flow.statuses.len > 0 or flow.start.len > 0;
+}
+
+pub fn find(flow: Flow, id: []const u8) ?status.Status {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(flow.statuses.len <= status.statuses_max);
+
+    if (status.Core.find(id)) |found| {
+        return found;
+    }
+
+    for (flow.statuses) |declared| {
+        if (std.mem.eql(u8, declared.id, id)) {
+            return declared;
+        }
+    }
+
+    return null;
+}
+
+pub fn is_live(flow: Flow, id: []const u8) bool {
+    std.debug.assert(id.len > 0);
+
+    const found = find(flow, id) orelse return false;
+
+    std.debug.assert(std.mem.eql(u8, found.id, id));
+
+    return found.live;
+}
+
+pub fn initial(flow: Flow) status.Status {
+    std.debug.assert(flow.statuses.len <= status.statuses_max);
+
+    if (flow.start.len > 0) {
+        if (find(flow, flow.start)) |found| {
             return found;
         }
+    }
 
-        for (flow.statuses) |declared| {
-            if (std.mem.eql(u8, declared.id, id)) {
-                return declared;
+    const first = status.Core.initial();
+
+    std.debug.assert(first.initial);
+
+    return first;
+}
+
+/// Whether a record of the type may go from `from` to `to`: one of its listed transitions,
+/// or core's trash transitions (into `deleted` from anywhere, back to where records start).
+pub fn allows(flow: Flow, from: []const u8, to: []const u8) bool {
+    std.debug.assert(from.len > 0);
+    std.debug.assert(to.len > 0);
+
+    if (!own(flow)) {
+        return status.Core.allows(from, to);
+    }
+
+    const in_trash = std.mem.eql(u8, from, trashed);
+
+    if (std.mem.eql(u8, to, trashed)) {
+        return !in_trash;
+    }
+
+    if (in_trash) {
+        return find(flow, to) != null and !is_live(flow, to);
+    }
+
+    return transition_between(flow, from, to) != null;
+}
+
+/// Where `restore` takes a record that had `before` it went into the trash: back there,
+/// or where records start when it was live or its status is gone.
+pub fn restored_to(flow: Flow, before: []const u8) []const u8 {
+    std.debug.assert(flow.statuses.len <= status.statuses_max);
+
+    const kept = before.len > 0 and !std.mem.eql(u8, before, trashed) and
+        find(flow, before) != null and !is_live(flow, before);
+
+    return if (kept) before else initial(flow).id;
+}
+
+/// The transition named `name` out of `from`, where it leads; null when none of that
+/// name leaves `from`. Every flow has core's `trash` (from anywhere but the trash) and
+/// `restore` (out of it, to where records start).
+pub fn named(flow: Flow, name: []const u8, from: []const u8) ?Target {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(from.len > 0);
+
+    const in_trash = std.mem.eql(u8, from, trashed);
+
+    if (std.mem.eql(u8, name, "trash")) {
+        return if (in_trash) null else changed(flow, .{
+            .name = "trash",
+            .to = trashed,
+            .label = "Delete",
+        });
+    }
+
+    if (std.mem.eql(u8, name, "restore")) {
+        return if (!in_trash) null else changed(flow, .{
+            .name = "restore",
+            .to = initial(flow).id,
+            .label = "Restore",
+        });
+    }
+
+    if (std.mem.eql(u8, name, "destroy")) {
+        return if (!in_trash) null else changed(flow, .{
+            .name = "destroy",
+            .to = trashed,
+            .label = "Destroy",
+        });
+    }
+
+    for (listed(flow)) |transition| {
+        if (!std.mem.eql(u8, transition.name, name)) {
+            continue;
+        }
+
+        for (transition.from) |leaving| {
+            if (std.mem.eql(u8, leaving, from)) {
+                return changed(flow, .{
+                    .name = transition.name,
+                    .to = transition.to,
+                    .label = transition.label,
+                    .authorize = transition.authorize,
+                });
             }
         }
-
-        return null;
     }
 
-    pub fn is_live(flow: Flow, id: []const u8) bool {
-        std.debug.assert(id.len > 0);
+    return null;
+}
 
-        const found = flow.find(id) orelse return false;
+/// The transitions out of `from` people may make, in the order listed, core's trash
+/// transition last; the ones the site turned off are left out.
+pub fn out_of(flow: Flow, from: []const u8, buffer: []Target) []const Target {
+    std.debug.assert(from.len > 0);
+    std.debug.assert(buffer.len > transitions_max);
 
-        std.debug.assert(std.mem.eql(u8, found.id, id));
+    var count: u32 = 0;
 
-        return found.live;
-    }
-
-    pub fn initial(flow: Flow) status.Status {
-        std.debug.assert(flow.statuses.len <= status.statuses_max);
-
-        if (flow.start.len > 0) {
-            if (flow.find(flow.start)) |found| {
-                return found;
+    for (listed(flow)) |transition| {
+        for (transition.from) |leaving| {
+            if (std.mem.eql(u8, leaving, from)) {
+                buffer[count] = changed(flow, .{
+                    .name = transition.name,
+                    .to = transition.to,
+                    .label = transition.label,
+                    .authorize = transition.authorize,
+                });
+                count += @intFromBool(!buffer[count].off);
+                break;
             }
         }
-
-        const first = status.Core.initial();
-
-        std.debug.assert(first.initial);
-
-        return first;
     }
 
-    /// Whether a record of the type may go from `from` to `to`: one of its listed transitions,
-    /// or core's trash transitions (into `deleted` from anywhere, back to where records start).
-    pub fn allows(flow: Flow, from: []const u8, to: []const u8) bool {
-        std.debug.assert(from.len > 0);
-        std.debug.assert(to.len > 0);
+    const back = if (std.mem.eql(u8, from, trashed)) "restore" else "trash";
 
-        if (!flow.own()) {
-            return status.Core.allows(from, to);
+    buffer[count] = named(flow, back, from).?;
+    count += 1;
+
+    return buffer[0..count];
+}
+
+/// Whether the flow lists a transition named `name`, from anywhere.
+pub fn lists(flow: Flow, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(flow.transitions.len <= transitions_max);
+
+    for (listed(flow)) |transition| {
+        if (std.mem.eql(u8, transition.name, name)) {
+            return true;
         }
-
-        const in_trash = std.mem.eql(u8, from, trashed);
-
-        if (std.mem.eql(u8, to, trashed)) {
-            return !in_trash;
-        }
-
-        if (in_trash) {
-            return flow.find(to) != null and !flow.is_live(to);
-        }
-
-        return flow.transition_between(from, to) != null;
     }
 
-    /// Where `restore` takes a record that had `before` it went into the trash: back there,
-    /// or where records start when it was live or its status is gone.
-    pub fn restored_to(flow: Flow, before: []const u8) []const u8 {
-        std.debug.assert(flow.statuses.len <= status.statuses_max);
+    return false;
+}
 
-        const kept = before.len > 0 and !std.mem.eql(u8, before, trashed) and
-            flow.find(before) != null and !flow.is_live(before);
+/// The type's own transitions, or core's for a type without a flow.
+pub fn listed(flow: Flow) []const Transition {
+    std.debug.assert(flow.transitions.len <= transitions_max);
 
-        return if (kept) before else flow.initial().id;
+    return if (own(flow)) flow.transitions else &core_transitions;
+}
+
+/// The name of the transition from `from` to `to`: its own, core's, or the trash's;
+/// empty when none leads there.
+pub fn name_between(flow: Flow, from: []const u8, to: []const u8) []const u8 {
+    std.debug.assert(from.len > 0);
+    std.debug.assert(to.len > 0);
+
+    if (std.mem.eql(u8, to, trashed)) {
+        return "trash";
     }
 
-    /// The transition named `name` out of `from`, where it leads; null when none of that
-    /// name leaves `from`. Every flow has core's `trash` (from anywhere but the trash) and
-    /// `restore` (out of it, to where records start).
-    pub fn named(flow: Flow, name: []const u8, from: []const u8) ?Target {
-        std.debug.assert(name.len > 0);
-        std.debug.assert(from.len > 0);
+    if (std.mem.eql(u8, from, trashed)) {
+        return "restore";
+    }
 
-        const in_trash = std.mem.eql(u8, from, trashed);
-
-        if (std.mem.eql(u8, name, "trash")) {
-            return if (in_trash) null else flow.changed(.{
-                .name = "trash",
-                .to = trashed,
-                .label = "Delete",
-            });
+    for (listed(flow)) |transition| {
+        if (!std.mem.eql(u8, transition.to, to)) {
+            continue;
         }
 
-        if (std.mem.eql(u8, name, "restore")) {
-            return if (!in_trash) null else flow.changed(.{
-                .name = "restore",
-                .to = flow.initial().id,
-                .label = "Restore",
-            });
-        }
-
-        if (std.mem.eql(u8, name, "destroy")) {
-            return if (!in_trash) null else flow.changed(.{
-                .name = "destroy",
-                .to = trashed,
-                .label = "Destroy",
-            });
-        }
-
-        for (flow.listed()) |transition| {
-            if (!std.mem.eql(u8, transition.name, name)) {
-                continue;
-            }
-
-            for (transition.from) |leaving| {
-                if (std.mem.eql(u8, leaving, from)) {
-                    return flow.changed(.{
-                        .name = transition.name,
-                        .to = transition.to,
-                        .label = transition.label,
-                        .authorize = transition.authorize,
-                    });
-                }
+        for (transition.from) |leaving| {
+            if (std.mem.eql(u8, leaving, from)) {
+                return transition.name;
             }
         }
-
-        return null;
     }
 
-    /// The transitions out of `from` people may make, in the order listed, core's trash
-    /// transition last; the ones the site turned off are left out.
-    pub fn out_of(flow: Flow, from: []const u8, buffer: []Target) []const Target {
-        std.debug.assert(from.len > 0);
-        std.debug.assert(buffer.len > transitions_max);
+    return "";
+}
 
-        var count: u32 = 0;
+/// The listed transition from `from` to `to`; null when there is none.
+pub fn transition_between(flow: Flow, from: []const u8, to: []const u8) ?Transition {
+    std.debug.assert(from.len > 0);
+    std.debug.assert(to.len > 0);
 
-        for (flow.listed()) |transition| {
-            for (transition.from) |leaving| {
-                if (std.mem.eql(u8, leaving, from)) {
-                    buffer[count] = flow.changed(.{
-                        .name = transition.name,
-                        .to = transition.to,
-                        .label = transition.label,
-                        .authorize = transition.authorize,
-                    });
-                    count += @intFromBool(!buffer[count].off);
-                    break;
-                }
-            }
+    for (flow.transitions) |transition| {
+        if (!std.mem.eql(u8, transition.to, to)) {
+            continue;
         }
 
-        const back = if (std.mem.eql(u8, from, trashed)) "restore" else "trash";
-
-        buffer[count] = flow.named(back, from).?;
-        count += 1;
-
-        return buffer[0..count];
+        for (transition.from) |leaving| {
+            if (std.mem.eql(u8, leaving, from)) {
+                return transition;
+            }
+        }
     }
 
-    /// Whether the flow lists a transition named `name`, from anywhere.
-    pub fn lists(flow: Flow, name: []const u8) bool {
-        std.debug.assert(name.len > 0);
-        std.debug.assert(flow.transitions.len <= transitions_max);
-
-        for (flow.listed()) |transition| {
-            if (std.mem.eql(u8, transition.name, name)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// The type's own transitions, or core's for a type without a flow.
-    pub fn listed(flow: Flow) []const Transition {
-        std.debug.assert(flow.transitions.len <= transitions_max);
-
-        return if (flow.own()) flow.transitions else &core_transitions;
-    }
-
-    /// The name of the transition from `from` to `to`: its own, core's, or the trash's;
-    /// empty when none leads there.
-    pub fn name_between(flow: Flow, from: []const u8, to: []const u8) []const u8 {
-        std.debug.assert(from.len > 0);
-        std.debug.assert(to.len > 0);
-
-        if (std.mem.eql(u8, to, trashed)) {
-            return "trash";
-        }
-
-        if (std.mem.eql(u8, from, trashed)) {
-            return "restore";
-        }
-
-        for (flow.listed()) |transition| {
-            if (!std.mem.eql(u8, transition.to, to)) {
-                continue;
-            }
-
-            for (transition.from) |leaving| {
-                if (std.mem.eql(u8, leaving, from)) {
-                    return transition.name;
-                }
-            }
-        }
-
-        return "";
-    }
-
-    /// The listed transition from `from` to `to`; null when there is none.
-    pub fn transition_between(flow: Flow, from: []const u8, to: []const u8) ?Transition {
-        std.debug.assert(from.len > 0);
-        std.debug.assert(to.len > 0);
-
-        for (flow.transitions) |transition| {
-            if (!std.mem.eql(u8, transition.to, to)) {
-                continue;
-            }
-
-            for (transition.from) |leaving| {
-                if (std.mem.eql(u8, leaving, from)) {
-                    return transition;
-                }
-            }
-        }
-
-        return null;
-    }
-};
+    return null;
+}
 
 /// Core's flow: what every type without its own has.
 pub const core: Flow = .{};
 
 test "a type without a flow has core's" {
-    try std.testing.expect(!core.own());
-    try std.testing.expect(core.allows("draft", "published"));
-    try std.testing.expect(core.is_live("published"));
-    try std.testing.expectEqualStrings("draft", core.initial().id);
-    try std.testing.expect(core.find("guestbook.in_review") == null);
+    try std.testing.expect(!own(core));
+    try std.testing.expect(allows(core, "draft", "published"));
+    try std.testing.expect(is_live(core, "published"));
+    try std.testing.expectEqualStrings("draft", initial(core).id);
+    try std.testing.expect(find(core, "guestbook.in_review") == null);
 }
 
 test "a type's own flow allows only its transitions and the trash" {
@@ -601,18 +572,18 @@ test "a type's own flow allows only its transitions and the trash" {
         .start = "draft",
     };
 
-    try std.testing.expect(flow.own());
-    try std.testing.expect(flow.allows("draft", "guestbook.in_review"));
-    try std.testing.expect(flow.allows("guestbook.in_review", "published"));
-    try std.testing.expect(!flow.allows("draft", "published"));
-    try std.testing.expect(flow.allows("published", "trashed"));
-    try std.testing.expect(flow.allows("trashed", "draft"));
-    try std.testing.expect(!flow.allows("trashed", "published"));
-    const in_review = flow.find("guestbook.in_review").?;
+    try std.testing.expect(own(flow));
+    try std.testing.expect(allows(flow, "draft", "guestbook.in_review"));
+    try std.testing.expect(allows(flow, "guestbook.in_review", "published"));
+    try std.testing.expect(!allows(flow, "draft", "published"));
+    try std.testing.expect(allows(flow, "published", "trashed"));
+    try std.testing.expect(allows(flow, "trashed", "draft"));
+    try std.testing.expect(!allows(flow, "trashed", "published"));
+    const in_review = find(flow, "guestbook.in_review").?;
 
     try std.testing.expectEqualStrings("Waiting for review", in_review.label);
-    try std.testing.expect(!flow.is_live("guestbook.in_review"));
-    const submit = flow.transition_between("draft", "guestbook.in_review").?;
+    try std.testing.expect(!is_live(flow, "guestbook.in_review"));
+    const submit = transition_between(flow, "draft", "guestbook.in_review").?;
 
     try std.testing.expectEqualStrings("submit", submit.name);
 }
@@ -638,18 +609,18 @@ test "a transition is found by its name and only out of its own statuses" {
         .start = "draft",
     };
 
-    try std.testing.expectEqualStrings("published", flow.named("publish", "draft").?.to);
-    try std.testing.expect(flow.named("publish", "published") == null);
-    try std.testing.expect(flow.named("nope", "draft") == null);
-    try std.testing.expect(flow.named("publish", "draft").?.authorize != null);
-    try std.testing.expectEqualStrings("trashed", flow.named("trash", "draft").?.to);
-    try std.testing.expect(flow.named("trash", "trashed") == null);
-    try std.testing.expectEqualStrings("draft", flow.named("restore", "trashed").?.to);
-    try std.testing.expectEqualStrings("archived", core.named("archive", "published").?.to);
-    try std.testing.expect(core.named("unarchive", "draft") == null);
+    try std.testing.expectEqualStrings("published", named(flow, "publish", "draft").?.to);
+    try std.testing.expect(named(flow, "publish", "published") == null);
+    try std.testing.expect(named(flow, "nope", "draft") == null);
+    try std.testing.expect(named(flow, "publish", "draft").?.authorize != null);
+    try std.testing.expectEqualStrings("trashed", named(flow, "trash", "draft").?.to);
+    try std.testing.expect(named(flow, "trash", "trashed") == null);
+    try std.testing.expectEqualStrings("draft", named(flow, "restore", "trashed").?.to);
+    try std.testing.expectEqualStrings("archived", named(core, "archive", "published").?.to);
+    try std.testing.expect(named(core, "unarchive", "draft") == null);
 
     var buffer: [transitions_max + 1]Target = undefined;
-    const out = flow.out_of("draft", &buffer);
+    const out = out_of(flow, "draft", &buffer);
 
     try std.testing.expectEqual(@as(usize, 2), out.len);
     try std.testing.expectEqualStrings("trash", out[1].name);
@@ -713,12 +684,12 @@ test "statuses another plugin adds join the flow; the owner's `any` transitions 
     const joined = try with_added(fixed.allocator(), "orders.order", orders, &added);
     const untouched = try with_added(fixed.allocator(), "blog.post", orders, &added);
 
-    try std.testing.expect(joined.find("inventory.awaiting_stock") != null);
-    try std.testing.expect(joined.named("await_stock", "orders.paid") != null);
+    try std.testing.expect(find(joined, "inventory.awaiting_stock") != null);
+    try std.testing.expect(named(joined, "await_stock", "orders.paid") != null);
     // The owner's `ship` from paid does not ship an order waiting for stock; `cancel`, from
     // any status, still works from it.
-    try std.testing.expect(joined.named("ship", "inventory.awaiting_stock") == null);
-    try std.testing.expect(joined.named("cancel", "inventory.awaiting_stock") != null);
+    try std.testing.expect(named(joined, "ship", "inventory.awaiting_stock") == null);
+    try std.testing.expect(named(joined, "cancel", "inventory.awaiting_stock") != null);
     try std.testing.expectEqual(orders.transitions.len, untouched.transitions.len);
 
     try std.testing.expectEqualStrings("stock_arrived", way_out(added[0]).?.name);

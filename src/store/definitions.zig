@@ -150,7 +150,7 @@ pub fn Store(comptime tables: tables_module.Tables) type {
             try statement.bind_text(7, def.editor);
             var config: [editor_model.config_bytes_max * 2]u8 = undefined;
 
-            try statement.bind_text(8, def.editor_config.text(&config));
+            try statement.bind_text(8, editor_model.text(def.editor_config, &config));
             try statement.bind_text(9, definition);
             try statement.bind_int(11, if (def.system) 1 else 0);
         }

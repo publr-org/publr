@@ -224,6 +224,30 @@ pub const field = struct {
     pub const Validation = @import("field_options.zig").Validation;
     pub const Options = @import("field_options.zig").Options;
     pub const Visibility = @import("field_options.zig").Visibility;
+    /// A field as its definition holds it (`content_type.get`): `.name`, `.kind`,
+    /// `.options`, `.validation`, `.fields` for a group or repeater.
+    pub const Def = @import("model/field.zig").Def;
+    pub const Wrapped = @import("model/field.zig").Wrapped;
+};
+/// A content type or a taxonomy as its definition holds it, as `content_type.get` and
+/// `taxonomy.get` answer it: `.handle`, `.name`, `.kind`, `.fields` (each a `publr.field.Def`).
+pub const content_type = struct {
+    pub const Def = @import("model/content_type.zig").Def;
+    pub const Kind = @import("model/content_type.zig").Kind;
+    pub const Shared = @import("model/content_type.zig").Shared;
+    pub const Menu = @import("model/content_type.zig").Menu;
+    pub const View = @import("model/content_type.zig").View;
+    pub const Classified = @import("model/content_type.zig").Classified;
+    pub const NounForms = @import("model/content_type.zig").NounForms;
+    pub const NounForm = @import("model/content_type.zig").NounForm;
+    pub const EditorConfig = @import("model/editor.zig").Config;
+    pub const Flow = @import("model/flow.zig").Flow;
+    pub const Transition = @import("model/flow.zig").Transition;
+    pub const Who = @import("model/flow.zig").Who;
+    pub const Changed = @import("model/flow.zig").Changed;
+    /// Whether a field group is on, where it shows and how (`.group`).
+    pub const Group = @import("model/field_group.zig").Options;
+    pub const Presentation = @import("model/field_group.zig").Presentation;
 };
 /// Queued work: `publr.job.define(In, .{ .name, .run })` for `ctx.enqueue`,
 /// `publr.job.define_recurring(.{ .name, .run, .every, .at })` for what repeats.

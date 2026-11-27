@@ -11,154 +11,28 @@ pub const pattern_len_max: u32 = 255;
 pub const decimals_max: u32 = 10;
 pub const dimension_max: u32 = 100_000;
 
-/// How a date and time field is shown and posted: a moment, or a day alone.
-pub const DateFormat = enum { datetime, date };
+const public = @import("../../publr/field_options.zig");
 
-pub const Date = struct {
-    format: DateFormat = .datetime,
-};
-
-pub const TextFormat = enum { plain, markdown };
-
-pub const Text = struct {
-    format: TextFormat = .plain,
-};
-
-pub const RichFormat = enum { bold, italic, link };
-
-pub const RichText = struct {
-    /// The formatting its editor offers; null for all of it, empty for plain paragraphs.
-    formats: ?[]const RichFormat = null,
-};
-
-pub const Slug = struct {
-    /// Once the record is live the slug stays as it is, whatever the source does.
-    lock_on_publish: bool = false,
-};
-
-pub const Email = struct {
-    lowercase: bool = false,
-};
-
-pub const BooleanControl = enum { toggle, checkbox, radio };
-
-pub const Boolean = struct {
-    true_label: []const u8 = "",
-    false_label: []const u8 = "",
-    control: BooleanControl = .toggle,
-};
-
-pub const NumberControl = enum { input, slider, rating };
-
-pub const Number = struct {
-    /// Shown beside the input: `kg`, `$`, `%`.
-    unit: []const u8 = "",
-    unit_after: bool = true,
-    /// How many decimal places the input steps by; null for any.
-    decimals: ?u32 = null,
-    control: NumberControl = .input,
-};
-
-pub const SelectControl = enum { dropdown, list, buttons };
-
-pub const Select = struct {
-    /// A dropdown, or the choices laid out as radios (one value) or checkboxes (many).
-    control: SelectControl = .dropdown,
-};
-
-pub const OnDelete = enum { keep, block, clear };
-
-pub const Reference = struct {
-    create: bool = true,
-    link: bool = true,
-    /// What purging a record this field points at does to the pointer.
-    on_delete: OnDelete = .keep,
-};
-
-pub const Container = struct {
-    collapsed: bool = false,
-    /// The child whose value names a repeater item in its header.
-    label_field: []const u8 = "",
-    add_label: []const u8 = "",
-};
-
-/// The contract whose registered providers a provider field names.
-pub const Provider = struct {
-    contract: []const u8 = "",
-};
-
-/// What a media field's editor offers: creating new files, linking existing ones.
-pub const Media = struct {
-    create: bool = true,
-    link: bool = true,
-};
-
-pub const Options = struct {
-    /// How far a number's control steps.
-    step: ?f64 = null,
-    /// A select's values, or the only values a number may take.
-    choices: []const []const u8 = &.{},
-    /// What the choices read as, one per choice; empty when the values are the labels.
-    labels: []const []const u8 = &.{},
-    source: []const u8 = "",
-    /// The record types a reference may point at, by handle; empty for any record type.
-    /// A virtual field names the one type its records are of.
-    to: []const []const u8 = &.{},
-    /// A virtual field: which kind (`referenced_by`), and the reference field of the `to`
-    /// type that points here.
-    virtual: []const u8 = "",
-    via: []const u8 = "",
-    /// The taxonomy a terms field assigns from, by handle.
-    taxonomy: []const u8 = "",
-    rows: ?u32 = null,
-    placeholder: []const u8 = "",
-    text: Text = .{},
-    richtext: RichText = .{},
-    date: Date = .{},
-    slug: Slug = .{},
-    email: Email = .{},
-    boolean: Boolean = .{},
-    number: Number = .{},
-    select: Select = .{},
-    reference: Reference = .{},
-    container: Container = .{},
-    media: Media = .{},
-    provider: Provider = .{},
-
-    /// Written sparsely: only what differs from the defaults, groups included, so a
-    /// definition carries what was set and reads as such.
-    pub fn jsonStringify(self: Options, writer: anytype) !void {
-        try write_sparse(Options, self, writer);
-    }
-};
-
-pub fn write_sparse(comptime Struct: type, value: Struct, writer: anytype) !void {
-    comptime std.debug.assert(@typeInfo(Struct) == .@"struct");
-    comptime std.debug.assert(std.meta.fieldNames(Struct).len > 0);
-
-    const base: Struct = .{};
-
-    try writer.beginObject();
-
-    inline for (
-        comptime std.meta.fieldNames(Struct),
-        comptime std.meta.fieldTypes(Struct),
-    ) |info_name, InfoType| {
-        const field_value = @field(value, info_name);
-
-        if (!std.meta.eql(field_value, @field(base, info_name))) {
-            try writer.objectField(info_name);
-
-            if (@typeInfo(InfoType) == .@"struct") {
-                try write_sparse(InfoType, field_value, writer);
-            } else {
-                try writer.write(field_value);
-            }
-        }
-    }
-
-    try writer.endObject();
-}
+pub const DateFormat = public.DateFormat;
+pub const Date = public.Date;
+pub const TextFormat = public.TextFormat;
+pub const Text = public.Text;
+pub const RichFormat = public.RichFormat;
+pub const RichText = public.RichText;
+pub const Slug = public.Slug;
+pub const Email = public.Email;
+pub const BooleanControl = public.BooleanControl;
+pub const Boolean = public.Boolean;
+pub const NumberControl = public.NumberControl;
+pub const Number = public.Number;
+pub const SelectControl = public.SelectControl;
+pub const Select = public.Select;
+pub const OnDelete = public.OnDelete;
+pub const Reference = public.Reference;
+pub const Container = public.Container;
+pub const Provider = public.Provider;
+pub const Media = public.Media;
+pub const Options = public.Options;
 
 pub const MediaType = struct {
     id: []const u8,

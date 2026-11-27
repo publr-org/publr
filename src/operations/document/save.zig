@@ -52,7 +52,7 @@ pub fn Of(comptime Domain: type) type {
                 return save_live(ctx, granted, row, type_row.def, given, expected, to);
             }
 
-            const live = type_row.def.flow.is_live(row.status);
+            const live = model.flow.is_live(type_row.def.flow, row.status);
             const park = row.changed or live;
             const base = if (row.changed) values.pending else values.live;
             // Written to the pending copy, or to a record that is not live: a draft.
@@ -150,7 +150,7 @@ pub fn Of(comptime Domain: type) type {
 
             try lifecycle.check_move(ctx, row, def, to);
 
-            const live = def.flow.is_live(row.status);
+            const live = model.flow.is_live(def.flow, row.status);
             const drafting = @import("document.zig").drafts(def, to);
             var parsed = try merged(ctx, row, def, values.live, given, drafting);
             const slug = try checked(ctx, row, def, &parsed, live, drafting);
@@ -236,7 +236,7 @@ pub fn Of(comptime Domain: type) type {
             // A field the caller may not read is not theirs to write either; one they leave
             // out keeps what it holds.
             for (def.fields) |field| {
-                const shown_to_some = field.visibility.hidden();
+                const shown_to_some = model.field.hidden(field.visibility);
                 const hidden = shown_to_some and !visibility.sees(ctx, field.visibility);
 
                 if (hidden and given.object.get(field.name) != null) {

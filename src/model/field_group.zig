@@ -1,20 +1,14 @@
 const std = @import("std");
 pub const conditions = @import("conditions.zig");
 
-pub const Destination = @import("../publr/model/field_group.zig").Destination;
-pub const Position = enum { main, sidebar };
-pub const Labels = enum { above, beside };
-pub const Instructions = enum { below_label, below_input };
-pub const Presentation = struct {
-    position: Position = .main,
-    labels: Labels = .above,
-    instructions: Instructions = .below_input,
-};
-pub const Options = struct {
-    active: bool = true,
-    location: conditions.Set = &.{},
-    presentation: Presentation = .{},
-};
+const public = @import("../publr/model/field_group.zig");
+
+pub const Destination = public.Destination;
+pub const Position = public.Position;
+pub const Labels = public.Labels;
+pub const Instructions = public.Instructions;
+pub const Presentation = public.Presentation;
+pub const Options = public.Options;
 
 pub fn valid(options: Options) bool {
     std.debug.assert(conditions.groups_max > 0);
@@ -54,7 +48,7 @@ pub const Context = struct {
     rules: []const PluginRule = &.{},
 };
 
-pub const Target = @import("../publr/model/field_group.zig").Target;
+pub const Target = public.Target;
 
 /// A location rule a plugin brings (`loyalty.tier`): the values the admin's dropdown offers
 /// and whether a target matches. `ctx` is the caller's `*sdk.Ctx`; a rule that fails offers

@@ -58,7 +58,7 @@ pub const HoldBack = struct {
 
         const type_row = try domain.definition.find(ctx, row.type_id) orelse return error.NotFound;
 
-        if (!type_row.def.flow.is_live(row.status)) {
+        if (!model.flow.is_live(type_row.def.flow, row.status)) {
             try store.records.hold_back(ctx.db, row.id, held_back, .live);
 
             return .{

@@ -163,9 +163,7 @@ test "an app reaches its own types, the ones shared with it and Global ones" {
 
     for ([_]model.content_type.Def{ stock, supplier }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = .{
-                .text = try model.content_type.encode(system.arena, def),
-            },
+            .definition = def,
         });
     }
 
@@ -237,9 +235,7 @@ test "an app's plugins: a type another plugin owns is out of reach, the project'
     order.owner = "shop";
     const types = @import("../content_type.zig");
     _ = try SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = try model.content_type.encode(system.arena, order),
-        },
+        .definition = order,
     });
 
     const document = "{\"title\":\"Mine\"}";
@@ -316,9 +312,7 @@ test "reach: why a reference stands restricted, and when nothing stands in the w
 
     for ([_]model.content_type.Def{ stock, supplier, assessment }) |def| {
         _ = try SDK.dispatch(&system, types.Create, .{
-            .definition = .{
-                .text = try model.content_type.encode(system.arena, def),
-            },
+            .definition = def,
         });
     }
 

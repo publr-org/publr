@@ -358,9 +358,7 @@ pub const Harness = struct {
         system.now_ms = now_ms;
         try registry.SDK.bootstrap(&system);
         _ = try registry.SDK.dispatch(&system, content_type_operations.Create, .{
-            .definition = .{
-                .text = post,
-            },
+            .definition = try content_type.read(system.arena, post),
         });
     }
 
@@ -678,9 +676,7 @@ test "a per-request render reads as the visitor, live records only; a shared one
     const definition = try @import("../model.zig").content_type.encode(arena, private);
     const types = @import("../operations/content_type.zig");
     _ = try registry.SDK.dispatch(&system, types.Create, .{
-        .definition = .{
-            .text = definition,
-        },
+        .definition = try content_type.read(system.arena, definition),
     });
     const live = try registry.SDK.dispatch(&system, record_operations.Create, .{
         .type = "note",

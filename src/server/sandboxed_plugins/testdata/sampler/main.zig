@@ -54,6 +54,7 @@ const Measure = @import("operations/measure.zig");
 const Stretch = @import("operations/stretch.zig");
 const Reference = @import("operations/reference.zig");
 const Motto = @import("operations/motto.zig");
+const Outline = @import("operations/outline.zig");
 const Referral = @import("operations/referral.zig");
 const Settings = @import("operations/settings.zig");
 const HasMotto = @import("rules/has_motto.zig");
@@ -154,6 +155,10 @@ const permissions = .{
         .key = "request.read",
         .reason = "Knows which referral brought a visitor",
     },
+    .{
+        .key = "schema.read",
+        .reason = "Outlines its note type from the definition Publr holds",
+    },
 };
 
 /// The query parameter core keeps for each visitor who brings one.
@@ -227,6 +232,7 @@ const operations = [_]type{
     Reference.operation,
     Hi.operation,
     Motto.operation,
+    Outline.operation,
     Editions.operation,
     Referral.operation,
     Tally.operation,

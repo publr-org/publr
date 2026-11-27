@@ -9,7 +9,6 @@ pub const hint = @import("field/hint.zig");
 pub const conditions = @import("conditions.zig");
 pub const presets = @import("field/presets.zig");
 pub const pattern = @import("field/pattern.zig");
-pub const given = @import("field/given.zig");
 
 pub const name_len_max: u32 = 64;
 pub const label_len_max: u32 = 128;
@@ -27,7 +26,7 @@ pub const too_many_children = std.fmt.comptimePrint(
     .{fields_max},
 );
 pub const depth_max: u32 = 3;
-pub const choices_max: u32 = 256;
+pub const choices_max: u32 = @import("../publr/field_options.zig").choices_max;
 pub const targets_max: u32 = 64;
 
 pub const Column = enum { text, int, real, ref, long };
@@ -35,110 +34,20 @@ pub const Column = enum { text, int, real, ref, long };
 pub const Options = options.Options;
 pub const Validation = validation.Validation;
 
-pub const Def = struct {
-    name: []const u8,
-    label: []const u8,
-    /// A kind id from the registry (`string`, `reference`, a plugin's `geo.point`).
-    kind: []const u8,
-    conditions: conditions.Set = &.{},
-    searchable: bool = false,
-    /// Lists can filter by it, when its kind filters at all (`field_filter.family_of`).
-    filterable: bool = true,
-    /// Lists can order by it; null: as its kind does (numbers, money, dates, times).
-    sortable: ?bool = null,
-    /// The dimensions it holds a value per combination of, beside the main one
-    /// (`name@language=pl`, see `dimension.zig`); `"*"` for every one the site has. How it
-    /// holds each (`dimension.Holds`): listed only here, an empty value shows the main one;
-    /// also in `required_in`, every value going live must be filled; also in `empty_in`, an
-    /// empty value shows nothing.
-    dimensions: []const []const u8 = &.{},
-    required_in: []const []const u8 = &.{},
-    empty_in: []const []const u8 = &.{},
-    /// The dimensions it holds one value for though they would vary a field that says
-    /// nothing of them (`Declared.default`): an A/B test's family, said no to.
-    not_in: []const []const u8 = &.{},
-    /// What a plugin's code says through another plugin's field option (`.translatable =
-    /// .required`): made into `dimensions` above where the plugin's types are applied, by
-    /// whichever dimension the site has offers the option; nothing while none does.
-    wrapped: []const Wrapped = &.{},
-    /// Declared in code by the type's owner: shown, never edited or removed by hand.
-    locked: bool = false,
-    many: bool = false,
-    /// Shown under the control in the record form.
-    help: []const u8 = "",
-    /// What a new record starts with, as the text its kind's control posts; empty for none.
-    default: []const u8 = "",
-    /// What a value must be for a write to go through.
-    validation: Validation = .{},
-    /// How the field is shown and edited.
-    options: Options = .{},
-    /// Who may read its value.
-    visibility: Visibility = .{},
-    fields: []const Def = &.{},
+const public = @import("../publr/model/field.zig");
 
-    /// Every member as std.json writes it, but `visibility` only when the field is hidden:
-    /// releases before 0.8 refuse a definition holding a member they do not know.
-    pub fn jsonStringify(def: Def, writer: anytype) !void {
-        var written: u32 = 0;
+pub const Def = public.Def;
+pub const Visibility = public.Visibility;
+pub const Wrapped = public.Wrapped;
 
-        try writer.beginObject();
+/// Whether only some may read the field's value: restricted or special-category.
+pub fn hidden(visibility: Visibility) bool {
+    std.debug.assert(visibility.roles.len <= 64);
 
-        const info = @typeInfo(Def).@"struct";
+    return visibility.restricted or visibility.special;
+}
 
-        inline for (info.field_names, info.field_types) |name, Member| {
-            const value = @field(def, name);
-            const kept = if (comptime std.mem.eql(u8, name, "visibility"))
-                def.visibility.hidden()
-            else if (comptime @typeInfo(Member) == .optional)
-                value != null or writer.options.emit_null_optional_fields
-            else
-                true;
-
-            if (kept) {
-                try writer.objectField(name);
-                try writer.write(value);
-                written += 1;
-            }
-        }
-
-        try writer.endObject();
-
-        // Name, label and kind always.
-        std.debug.assert(written >= 3);
-    }
-};
-
-/// Who may read a field's value: by default whoever reads its record. A restricted field is
-/// read only by the plugin that declares it, people holding one of `roles`, and
-/// administrators; a special-category field (health data) only by the plugin and `roles`,
-/// never by administrators or agents, and never in core's views, exports, search or emails.
-pub const Visibility = struct {
-    restricted: bool = false,
-    special: bool = false,
-    /// The roles that read it besides its plugin.
-    roles: []const []const u8 = &.{},
-    /// The plugin declaring it; set by core from the type or field group it is on.
-    plugin: []const u8 = "",
-
-    pub fn hidden(visibility: Visibility) bool {
-        return visibility.restricted or visibility.special;
-    }
-
-    /// Written sparsely: only what differs from the defaults.
-    pub fn jsonStringify(self: Visibility, writer: anytype) !void {
-        try options.write_sparse(Visibility, self, writer);
-    }
-};
-
-/// One field option of a dimension's owner, as a plugin's field gives it.
-pub const Wrapped = struct {
-    /// `translatable`.
-    option: []const u8,
-    /// `required`: one of the values the option takes.
-    value: []const u8,
-};
-
-pub const Problem = @import("../publr/model/field.zig").Problem;
+pub const Problem = public.Problem;
 
 pub const problems_max: u32 = 64;
 pub const path_len_max: u32 = 256;
@@ -457,7 +366,7 @@ fn validate_kind_rules(
         problems.add(def.name, "only a terms field names a taxonomy");
     }
 
-    if (def.visibility.hidden() and (def.searchable or def.validation.unique)) {
+    if (hidden(def.visibility) and (def.searchable or def.validation.unique)) {
         problems.add(def.name, "a field only some may read is never searched or unique");
     }
 
@@ -1185,7 +1094,7 @@ test "a field's visibility is written only when it hides the field" {
         .label = "Title",
         .kind = "string",
     };
-    const hidden: Def = .{
+    const concealed: Def = .{
         .name = "cost",
         .label = "Cost",
         .kind = "number",
@@ -1194,7 +1103,7 @@ test "a field's visibility is written only when it hides the field" {
         },
     };
     const open_text = try std.json.Stringify.valueAlloc(arena, open, .{});
-    const hidden_text = try std.json.Stringify.valueAlloc(arena, hidden, .{});
+    const hidden_text = try std.json.Stringify.valueAlloc(arena, concealed, .{});
 
     try std.testing.expect(std.mem.indexOf(u8, open_text, "visibility") == null);
     try std.testing.expect(std.mem.indexOf(u8, open_text, "\"sortable\":null") != null);
