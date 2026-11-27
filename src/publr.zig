@@ -417,6 +417,14 @@ pub const operations = struct {
     pub const messaging = @import("publr/operations/messaging.zig");
     pub const plugin = @import("publr/operations/plugin.zig");
     pub const ledger = @import("publr/operations/ledger.zig");
+    pub const activity = @import("publr/operations/activity.zig");
+    pub const errors = @import("publr/operations/errors.zig");
+    pub const event = @import("publr/operations/event.zig");
+    pub const job = @import("publr/operations/job.zig");
+    pub const mod = @import("publr/operations/mod.zig");
+    pub const random = @import("publr/operations/random.zig");
+    pub const trash = @import("publr/operations/trash.zig");
+    pub const webhook = @import("publr/operations/webhook.zig");
 };
 pub const serve = if (builtin.os.tag == .wasi) void else @import("server/serve.zig");
 pub const build = if (builtin.os.tag == .wasi) void else @import("server/build.zig");

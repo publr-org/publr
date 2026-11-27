@@ -195,17 +195,7 @@ test "unverified deliveries are kept to the newest few; verified ones stay" {
 }
 
 /// A delivery as its plugin's page lists it, in the column order of `list`.
-pub const Listed = struct {
-    id: i64,
-    name: []const u8,
-    delivery_id: []const u8,
-    received_at: i64,
-    sender: []const u8,
-    verified: bool,
-    result: []const u8,
-    problem: []const u8,
-    lines: []const u8,
-};
+pub const Listed = @import("../publr/model/webhook.zig").Delivery;
 
 /// The plugin's deliveries, newest first, up to `max`.
 pub fn list(

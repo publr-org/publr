@@ -18,28 +18,13 @@ pub const name_len_max: u32 = 96;
 pub const text_bytes_max: u32 = 512;
 
 /// What `ctx.mod` calls (core's `mod.apply`): the values through every modifier of `name`;
-/// they come back in the same order. A plugin's values are held laid out the whole way
-/// (`Ctx.applying`); `values` is a JSON array only for a call from the outer edge.
-pub const Apply = struct {
-    pub const name = "mod.apply";
-    pub const In = struct {
-        name: []const u8,
-        values: operation.Json,
-    };
-    pub const Out = struct {
-        values: operation.Json,
-    };
-};
+/// they come back in the same order.
+pub const Apply = @import("../publr/operations/mod.zig").Apply;
 
 /// What a modifier's plugin calls when the data its answer follows changed.
 pub const Changed = @import("../publr/mods.zig").Changed;
 
-/// A modifier as administrators see it: whose it is, the name it takes, why.
-pub const Modifier = struct {
-    plugin: []const u8,
-    name: []const u8,
-    reason: []const u8,
-};
+pub const Modifier = @import("../publr/operations/mod.zig").Modifier;
 
 /// The values of one apply whose shape comes with the data (the outer edge's JSON, a
 /// record's document), in order.

@@ -10,76 +10,29 @@ const shapes = @import("../model/contract.zig");
 const plugin_contracts = @import("../model/plugin_contracts.zig");
 const operation_operations = @import("operation.zig");
 const key_page = @import("../model/key_page.zig");
+const public = @import("../publr/operations/event.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "event",
-    .label = "Events",
-    .area = .system,
-    .summary = "The events plugins declare, with their payloads",
-    .details =
-    \\What each plugin's events carry, compiled in and installed: the payload's fields, each
-    \\with its kind, for a plugin hooking one to write its own words against. Every
-    \\operation also emits an event under its own name, carrying its answer (`operation
-    \\get`). Administrators only.
-    ,
-};
+pub const namespace = public.namespace;
 
-/// One field of a payload: its path (`lines[].sku`), its kind, whether it may be null or
-/// left out, an enumeration's values.
-pub const Field = struct {
-    path: []const u8,
-    kind: []const u8,
-    optional: bool = false,
-    required: bool = true,
-    values: []const []const u8 = &.{},
-};
-
-pub const Described = struct {
-    name: []const u8,
-    /// The plugin that emits it.
-    plugin: []const u8,
-    installed: bool = false,
-    payload: []const Field,
-};
+pub const Field = public.Field;
+pub const Described = public.Described;
 
 pub const List = struct {
-    pub const name = "event.list";
-    pub const description = "Every event plugins declare, with its payload";
-    pub const details =
-        \\Administrators only. Each event a plugin declares, compiled in and installed: its
-        \\name (`orders.paid`), the plugin emitting it, and its payload's fields with their
-        \\kinds. `plugin` keeps one plugin's. Operations' own events (one per operation,
-        \\carrying its answer) are not listed: `operation get` describes them. A page at a
-        \\time, in the order of their names: `next` continues it.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        plugin: []const u8 = "",
-        after: []const u8 = "",
-    };
-    pub const Out = struct {
-        events: []const Described,
-        next: []const u8 = "",
-    };
-    pub const example: In = .{
-        .plugin = "hello",
-    };
-    pub const example_out: Out = .{
-        .events = &.{example_described},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .plugin = "Only this plugin's events; every plugin's when left out",
-        .after = "The page after this name: the `next` the last page answered",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .events = "Each event: name, plugin, installed, payload (path, kind, optional, " ++
-            "required, values)",
-        .next = "The next page's `after`; empty after the last",
-    };
+    pub const shape = public.List;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -119,34 +72,17 @@ pub const List = struct {
 };
 
 pub const Get = struct {
-    pub const name = "event.get";
-    pub const description = "One event: its payload, and the hooks that hear it";
-    pub const details =
-        \\Administrators only. The event as `event list` describes it, and each hook on it
-        \\(plugin, stage `after` or `on`, its reason, its last failed run). Fails as not
-        \\found for a name no plugin declares.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        name: []const u8,
-    };
-    pub const Out = struct {
-        event: Described,
-        hooks: []const operation_operations.Hook = &.{},
-    };
-    pub const example: In = .{
-        .name = "hello.recorded",
-    };
-    pub const example_out: Out = .{
-        .event = example_described,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "The event's name, as `event list` gives it",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .event = "As `event list` describes it",
-        .hooks = "Each hook on it: plugin, stage, reason and last_failure",
-    };
+    pub const shape = public.Get;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -165,14 +101,7 @@ pub const Get = struct {
     }
 };
 
-const example_described: Described = .{
-    .name = "hello.recorded",
-    .plugin = "hello",
-    .payload = &.{.{
-        .path = "note",
-        .kind = "string",
-    }},
-};
+const example_described = public.example_described;
 
 /// Every declared event, compiled-in plugins' first, then installed ones'.
 fn declared(ctx: *Ctx) Error![]const Described {

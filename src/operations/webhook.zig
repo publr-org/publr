@@ -3,75 +3,28 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 const store = @import("../store.zig");
+const public = @import("../publr/operations/webhook.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "webhook",
-    .label = "Webhooks",
-    .area = .system,
-    .summary = "What other servers sent to plugins' webhooks",
-    .details =
-    \\A plugin's webhook is an address another server sends to:
-    \\`/_webhooks/<plugin>.<name>`. Publr checks the signature with the plugin's secret,
-    \\answers at once and runs the plugin's code as queued work. Every delivery is kept:
-    \\when it came, whether its signature held, how its run ended and what it logged.
-    ,
-};
+pub const namespace = public.namespace;
 
-pub const Webhook = struct {
-    name: []const u8,
-    /// The address, below the site's: `/_webhooks/<plugin>.<name>`.
-    path: []const u8,
-};
+pub const Webhook = public.Webhook;
 
 pub const List = struct {
-    pub const name = "webhook.list";
-    pub const description = "A plugin's webhooks and what was sent to them, newest first";
-    pub const details =
-        \\Administrators only. Each webhook with its address, then the last 100 deliveries:
-        \\when, from where, whether the signature held, and the result: `waiting` (to run),
-        \\`ran`, `failed` (after every try), `refused` (signature) or `unreadable` (body).
-        \\Changes nothing.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        plugin: []const u8,
-    };
-    pub const Out = struct {
-        webhooks: []const Webhook,
-        deliveries: []const store.webhook_deliveries.Listed,
-    };
-    pub const example: In = .{
-        .plugin = "shop",
-    };
-    pub const example_out: Out = .{
-        .webhooks = &.{.{
-            .name = "paid",
-            .path = "/_webhooks/shop.paid",
-        }},
-        .deliveries = &.{.{
-            .id = 3,
-            .name = "paid",
-            .delivery_id = "evt_1",
-            .received_at = 1_790_000_000_000,
-            .sender = "203.0.113.9",
-            .verified = true,
-            .result = "ran",
-            .problem = "",
-            .lines = "info: Order 1042 paid\n",
-        }},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .plugin = "The plugin, `shop`",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .webhooks = "Each webhook's name and its address below the site's",
-        .deliveries = "Newest first: id, webhook, the sender's id for it, when, from where, " ++
-            "whether the signature held, the result, why it failed, what its run logged",
-    };
+    pub const shape = public.List;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -119,24 +72,16 @@ pub const List = struct {
 };
 
 pub const RunAgain = struct {
-    pub const name = "webhook.run_again";
-    pub const description = "Run a delivery's queued work again";
-    pub const details =
-        \\Administrators only. The plugin's code runs again on the delivery as it came, as
-        \\queued work, its tries counted afresh. Only a delivery whose signature held.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        delivery: i64,
-    };
-    pub const Out = struct {};
-    pub const example: In = .{
-        .delivery = 3,
-    };
-    pub const example_out: Out = .{};
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .delivery = "The delivery's id, from `webhook.list`",
-    };
+    pub const shape = public.RunAgain;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

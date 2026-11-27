@@ -2,10 +2,4 @@
 //! `ctx.call(publr.mod_changed, .{ .name = "money.currencies" })` (core's `mod.changed`), and
 //! what was built with the values applied under `name` is built again.
 
-pub const Changed = struct {
-    pub const name = "mod.changed";
-    pub const In = struct {
-        name: []const u8,
-    };
-    pub const Out = struct {};
-};
+pub const Changed = @import("operations/mod.zig").Changed;
