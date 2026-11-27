@@ -193,7 +193,7 @@ fn validate_entries(comptime Plugin: type, comptime name: []const u8) void {
 
         if (plugin_define.has(Plugin, "bootstrap")) {
             const Bootstrap = @TypeOf(plugin_define.get(Plugin, "bootstrap"));
-            const expected = fn (*PluginCtx) sdk.Error!void;
+            const expected = fn (*PluginCtx) public_operation.Error!void;
 
             if (Bootstrap != expected) {
                 @compileError("plugin " ++ name ++ ": `bootstrap` is " ++
@@ -1068,9 +1068,10 @@ pub const testing = struct {
             .icon = "user",
         });
 
-        fn extend(host: *host_module.Host) sdk.Error!void {
+        fn extend(host: *host_module.Host) public_operation.Error!void {
             std.debug.assert(host.routes.len == 0);
 
+            try host.bootstrap(started);
             try host.policy(&no_shouting);
             try host.route(.{
                 .path = "/api/hello/greeting",
@@ -1086,6 +1087,11 @@ pub const testing = struct {
                 .path = "/api/hello/upload",
                 .stream = &counted_upload,
             });
+        }
+
+        /// Run once the database opens: a plugin declares it with the public error set.
+        fn started(ctx: *PluginCtx) public_operation.Error!void {
+            std.debug.assert(ctx.now().ms >= 0);
         }
 
         /// An upload taken a piece at a time, answered with how many bytes came.
