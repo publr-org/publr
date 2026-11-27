@@ -1102,6 +1102,11 @@ pub fn SDK(comptime registry: Registry) type {
                 .operation_name = Operation.name,
                 .kind = Operation.kind,
                 .open = @hasDecl(Operation, "open") and Operation.open,
+                // A compiled-in plugin's own code is held to its grants, as its call is.
+                .plugin_access = if (ctx.caller != .plugin and ctx.plugin_code)
+                    compiled_access(ctx.plugin)
+                else
+                    null,
             };
             const held = held_roles(ctx) catch return false;
             const granted = authorize.authorize(ctx, request, registry.policies, held);

@@ -26,6 +26,7 @@ const permission_define = @import("permission_define.zig");
 const permission = @import("../../model/permission.zig");
 const caller_view = @import("caller_view.zig");
 const operation_contract = @import("../operation.zig");
+const asks = @import("guest_asks.zig");
 
 pub const Error = wire.Error;
 
@@ -57,6 +58,7 @@ const walks_guest = @import("walks/guest.zig");
 const allocator = guest_memory.heap;
 
 extern "env" fn publr_call_shaped(call: *const shape_wire.Call, sizes: *[2]u32) u32;
+extern "env" fn publr_call_alone(call: *const shape_wire.Call, sizes: *[2]u32) u32;
 extern "env" fn publr_shaped_take(block: u32, table: u32) u32;
 extern "env" fn publr_item(index: u32, status: u32) void;
 extern "env" fn publr_emit(sent: *const shape_wire.Sent) void;
@@ -99,6 +101,15 @@ pub const SandboxApi = struct {
     last_failure: []const u8 = "",
     /// Set while a read operation runs: the reads it made, answered again without the host.
     memo: ?*read_memo.Memo = null,
+    /// What the last refusal says to people; empty for none.
+    last_message: []const u8 = "",
+    /// Made by `as_plugin`: its calls run as the plugin alone, with no person behind them.
+    alone: bool = false,
+
+    pub const as_plugin = asks.as_plugin;
+    pub const may = asks.may;
+    pub const failure_message = asks.failure_message;
+    pub const said_values = asks.said_values;
 
     /// The plugin's `ctx` this call stands behind.
     pub fn ctx(self: *SandboxApi) *Ctx {
@@ -427,6 +438,10 @@ pub const SandboxApi = struct {
                 api.last_failure = self.outer.dupe(u8, api.last_failure) catch "";
             }
 
+            if (api.last_message.len > 0) {
+                api.last_message = self.outer.dupe(u8, api.last_message) catch "";
+            }
+
             held.deinit();
             self.memory = null;
         }
@@ -543,6 +558,7 @@ pub const SandboxApi = struct {
 
         if (memo.find(Out, name, input)) |answered| {
             self.last_failure = "";
+            self.last_message = "";
             return answered;
         }
 
@@ -589,9 +605,13 @@ pub const SandboxApi = struct {
             .answer = @intCast(@intFromPtr(answer.ptr)),
             .answer_len = answer.len,
         };
-        const status = publr_call_shaped(&call_parts, &sizes);
+        const status = if (self.alone)
+            publr_call_alone(&call_parts, &sizes)
+        else
+            publr_call_shaped(&call_parts, &sizes);
 
         self.last_failure = "";
+        self.last_message = "";
 
         if (status != wire.ok) {
             return self.refused(status, sizes[0]);
@@ -609,6 +629,7 @@ pub const SandboxApi = struct {
 
             if (publr_shaped_take(@intCast(@intFromPtr(named.ptr)), 0) == wire.ok) {
                 self.last_failure = named;
+                self.last_message = asks.message_of_refusal(self);
             }
         }
 
@@ -710,6 +731,7 @@ pub const SandboxApi = struct {
 
         publr_refuse(tag.ptr, @intCast(tag.len), message.ptr, @intCast(message.len), status);
         self.last_failure = tag;
+        self.last_message = message;
 
         return error.Failed;
     }

@@ -4,18 +4,19 @@
 //! whatever it registers is read where the server reads it. Having it makes a plugin
 //! built-in only: its sandboxed build leaves everything it registers out, and says so.
 const std = @import("std");
-const sdk = @import("../../sdk.zig");
 const routing = @import("route.zig");
 const Ctx = @import("../ctx.zig").Ctx;
 const policy_module = @import("policy.zig");
 const delivery = @import("delivery.zig");
 const sign_in = @import("sign_in.zig");
 const admin = @import("admin.zig");
+const powers = @import("powers.zig");
 
 pub const Error = @import("../operation.zig").Error;
 
 /// A table of the plugin's own, named under it (`shipping_shipments`): `schema` is the one
-/// `CREATE TABLE` making it, with its indexes. Read and written with `ctx.database()`.
+/// `CREATE TABLE` making it, with its indexes. Read and written with
+/// `publr.Host.database(ctx)`.
 pub const Table = struct {
     name: []const u8,
     schema: []const u8,
@@ -92,7 +93,7 @@ pub const Host = struct {
     pub const Callback = sign_in.Callback;
     pub const Authorize = sign_in.Authorize;
     pub const FromRequest = sign_in.FromRequest;
-    /// `ctx.database()`: SQL on the plugin's own tables.
+    /// `publr.Host.database(ctx)`: SQL on the plugin's own tables.
     pub const Database = @import("database.zig").Database;
     pub const Statement = @import("database.zig").Statement;
     pub const Databases = @import("database.zig").Databases;
@@ -101,6 +102,14 @@ pub const Host = struct {
     /// When a middleware (`host.middleware`) runs, and what an `.on` one hears.
     pub const Stage = @import("middleware.zig").Stage;
     pub const Event = @import("middleware.zig").Event;
+    /// What only a built-in plugin does with its `ctx` (`powers.zig`): calls as Publr itself,
+    /// SQL on its own tables, its state, I/O, a call on a copy, installed plugins reloaded.
+    pub const as_system = powers.as_system;
+    pub const database = powers.database;
+    pub const state_of = powers.state_of;
+    pub const io = powers.io;
+    pub const mark_copy = powers.mark_copy;
+    pub const reload_plugins = powers.reload_plugins;
     /// A built-in plugin's own admin screens, in the admin's chrome.
     pub const admin_pages = @import("admin_page.zig");
     /// What `admin_brand` answers.
@@ -147,7 +156,8 @@ pub const Host = struct {
     }
 
     /// Runs once as the database opens, as the plugin's own code with nobody behind it: its
-    /// own records reachable, its calls held to its grants (`ctx.as_system()` for the rest).
+    /// own records reachable, its calls held to its grants (`publr.Host.as_system(ctx)` for
+    /// the rest).
     pub fn bootstrap(host: *Host, comptime run: fn (*Ctx) Error!void) Error!void {
         host.give("bootstrap", run);
     }
@@ -361,33 +371,6 @@ test "what extend registers is read under the server's names" {
     const sql = comptime host.get("schema_sql");
 
     try std.testing.expect(std.mem.startsWith(u8, sql, "CREATE TABLE shipping_shipments"));
-}
-
-test "ctx.database() runs SQL on the plugin's own table, values bound in order" {
-    const Database = @import("database.zig").Database;
-    var harness: sdk.testing.Harness = undefined;
-    try harness.init();
-    defer harness.deinit();
-
-    var ctx = harness.ctx(.system);
-    const database: Database = .{
-        .connection = ctx.db,
-    };
-
-    try ctx.db.exec("CREATE TABLE shipping_shipments (carrier TEXT, sent_at INTEGER, note TEXT)");
-    try database.exec(
-        "INSERT INTO shipping_shipments (carrier, sent_at, note) VALUES (?, ?, ?)",
-        .{ "inpost", @as(i64, 42), null },
-    );
-
-    var select = try database.prepare(
-        "SELECT sent_at FROM shipping_shipments WHERE carrier = ?",
-        .{"inpost"},
-    );
-    defer select.finalize();
-
-    try std.testing.expect(try select.step());
-    try std.testing.expectEqual(@as(i64, 42), select.read_int());
 }
 
 test "every admin page call compiles" {

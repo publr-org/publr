@@ -1,14 +1,19 @@
 //! Tips points on the sampler's own ledger, then tries to spend twice as many.
 //!
 //! The ledger's calls both ways: two accounts opened, a transfer under the caller's id (sent
-//! again, it moves nothing), a balance read, and a spend past the floor refused by name.
+//! again, it moves nothing), a balance read, and a spend past the floor refused by name and
+//! in words. Then what the plugin asks of its ctx: whether it may call its own greeting and
+//! core's list of accounts, and the balance read again as the plugin alone, nobody behind it.
 //!
 //! Example:
 //!   in: { "id": "t1", "points": 5 }
-//!   out: { "made": true, "posted": 5, "refused": "Overdrawn" }
+//!   out: { "made": true, "posted": 5, "refused": "Overdrawn",
+//!     "said": "This would break an account's limit", "may_greet": true,
+//!     "may_list_users": false, "alone_posted": 5, "alone_signed_in": false }
 const publr = @import("publr");
 const std = @import("std");
 const Books = @import("../ledger.zig");
+const Hello = @import("hello.zig");
 
 const Ledger = Books.Ledger;
 
@@ -30,6 +35,18 @@ pub const Out = struct {
     posted: i64,
     /// How the spend past the floor was refused
     refused: []const u8,
+    /// What that refusal says to people
+    said: []const u8,
+    /// Whether the plugin may call its own greeting
+    may_greet: bool,
+    /// Whether the plugin may list core's accounts, which it holds no grant for
+    may_list_users: bool,
+    /// Points held, read as the plugin alone
+    ///
+    /// Why: a ledger amount, in its unit's smallest step.
+    alone_posted: i64,
+    /// Whether the plugin alone has anyone signed in behind it
+    alone_signed_in: bool,
 };
 
 fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
@@ -62,10 +79,19 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
         else => return err,
     };
 
+    const refused = ctx.failure();
+    const said = ctx.failure_message();
+    const alone = try ctx.as_plugin();
+
     return .{
         .made = tipped.made,
         .posted = balance.posted,
-        .refused = ctx.failure(),
+        .refused = refused,
+        .said = said,
+        .may_greet = ctx.may(Hello.operation),
+        .may_list_users = ctx.may(publr.operations.user.List),
+        .alone_posted = (try publr.ledger.balance(alone, held)).posted,
+        .alone_signed_in = alone.caller().signed_in(),
     };
 }
 

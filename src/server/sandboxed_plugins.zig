@@ -261,6 +261,7 @@ test {
     _ = @import("sandboxed_plugins/scenarios.zig");
     _ = @import("sandboxed_plugins/scenarios_remotes.zig");
     _ = @import("sandboxed_plugins/scenarios_hook_runs.zig");
+    _ = @import("sandboxed_plugins/scenarios_asks.zig");
     _ = @import("sandboxed_plugins/scenarios_user_types.zig");
     _ = @import("sandboxed_plugins/scenarios_staff.zig");
     _ = @import("sandboxed_plugins/scenarios_internal_rules.zig");

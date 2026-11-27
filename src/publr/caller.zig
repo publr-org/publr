@@ -39,7 +39,7 @@ pub const View = struct {
     /// Administrators, and roles an administrator granted this operation; false through an
     /// app's address.
     granted_here: bool = false,
-    /// Publr itself: its work between requests, or a built-in plugin's `ctx.as_system()`.
+    /// Publr itself: its work between requests, or a built-in plugin's `publr.Host.as_system(ctx)`.
     system: bool = false,
     /// Made inside another operation's run, not by whoever sent the request.
     nested: bool = false,

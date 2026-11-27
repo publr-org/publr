@@ -1412,7 +1412,9 @@ const teller = struct {
     ) public_operation.Error!void {
         std.debug.assert(who.len > 0);
 
-        try ctx.database().exec("INSERT INTO told (what, who) VALUES (?1, ?2)", .{ what, who });
+        const told = @import("../publr/extend/powers.zig").database(ctx);
+
+        try told.exec("INSERT INTO told (what, who) VALUES (?1, ?2)", .{ what, who });
     }
 };
 

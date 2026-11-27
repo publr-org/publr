@@ -230,6 +230,9 @@ The same calls compiled in (direct) and installed (each call a message to the ho
 | `try ctx.random(&buffer)` | fills `buffer` (1 to 64 bytes) from the host's cryptographic source, compiled in and installed alike: for codes a person must not guess (a pickup code, a voucher), never a hash of an id |
 | `ctx.caller()` | who calls: `.from` (`admin`, `command_line`, `api`, `app`, or `.{ .plugin = name }`: a plugin whose code called, compiled in or installed, its queued work too, Publr's own work `publr`), `.visitor` (the app visitor's stable id), `.referer` (the other site whose page sent the request, empty for the site's own; it tells, never grants), `signed_in()`, `has_role(name)`, `granted()`, `is(id)`, `account()` (the signed-in person's account as a `publr.Account`, null for nobody: keep it in a `publr.Account` field, a `user` field holding the id, never in text) |
 | `ctx.grant(key)` | `.{ .on, .publish, .drafts, .domains }`: what the plugin was given for a request |
+| `ctx.failure()`, `ctx.failure_message()` | after `error.Failed`: the refusal's `Fails:` name (`Overdrawn`), and what it says to people (`This would break an account's limit`); empty when there was none |
+| `ctx.may(Operation)` | `bool`: whether a call of `Operation` through this ctx would be let in, as the call itself is judged (the plugin's grants, the person it acts for): to offer only what may be done |
+| `try ctx.as_plugin()` | a `*publr.Ctx` whose calls run as the plugin itself with nobody behind them, held to its own grants and never narrowed to the person who made the request: a provider's callback marking an order paid, a job's follow-up |
 | `ctx.emit(Event, payload)` | emits an event declared with `publr.event.define`: its `after` hooks run now, inside the write (a refusal rolls it back); its `on` hooks hear it from the queue once the write commits |
 | `ctx.enqueue(Job, in)`, `ctx.enqueue_at(Job, in, at)` | queues a job declared with `publr.job.define` |
 | `ctx.make_file(type, filename)` | a file the plugin makes: `write(bytes)` as it goes (one 256 KiB piece held at a time, never the file), then `done()`, the file kept as a published file of one of the plugin's media types (`publr.record.define(..., .{ .kind = .media })`): `.id` (for a `reference` field, a signed link, an email's attachment), `.key`, `.size`. Its bytes must be what its name says (a PDF, a CSV, a PNG); past `.limits.file_mib` it fails `FileTooLarge`. A file of a private type opens to whoever may read the type; a link the plugin signed whose operation answers `{ "file": id }` downloads it for anyone holding the link |
@@ -1996,22 +1999,32 @@ page ([Plugins](plugins.md#writing-a-built-in-plugin)).
 
 `host.table(.{ .name, .schema })`: one `CREATE TABLE` (with its indexes), named under the
 plugin (`<plugin>` or `<plugin>_...`), made when the database opens. Operations read and
-write it with `ctx.database()`, inside the call's transaction:
-`try ctx.database().exec("INSERT INTO notes_seen (note, at) VALUES (?, ?)", .{ in.note,
-ctx.now() })`; `prepare(sql, values)` gives a `publr.Host.Statement` to step through.
+write it with `publr.Host.database(ctx)`, inside the call's transaction:
+`try publr.Host.database(ctx).exec("INSERT INTO notes_seen (note, at) VALUES (?, ?)",
+.{ in.note, ctx.now() })`; `prepare(sql, values)` gives a `publr.Host.Statement` to step through.
 Prefer records.
 
 ### State and the process
 
 `host.state(State)`, a struct with optional `init(state: *State, process:
-publr.Host.Process)` and `deinit`, reached with `ctx.state(@This())` (a route's
-`context.state(@This())`); `host.bootstrap` (`fn (*publr.Ctx) publr.Error!void`, every
+publr.Host.Process)` and `deinit`, reached with `publr.Host.state_of(ctx, @This())` (a
+route's `context.state(@This())`); `host.bootstrap` (`fn (*publr.Ctx) publr.Error!void`, every
 start, as the system); `host.before_command` (`fn (*publr.Host.Command) anyerror!void`);
 `host.serving` (`fn (publr.Host.Serving) anyerror!void`); `host.operator_command` (`{ name,
 handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key only).
 `Process` is `{ io, gpa, arena, db_path }` (`process.databases().open(memory, path)` opens
 another database), `Command` `{ io, arena, args, db_path }`, `Serving` `{ io, arena, port
 }` with `state(@This())` and `served()`. Never use a top-level `var`.
+
+### What only a built-in plugin does with its ctx
+
+On `publr.Host`, each taking the plugin's `ctx`; an installed build that names one does not
+compile: `publr.Host.as_system(ctx)` (a `*publr.Ctx` calling as Publr itself, past every
+role, for what no grant reaches; `ctx.as_plugin()` is the way for what the plugin's grants
+cover), `publr.Host.database(ctx)` (its tables), `publr.Host.state_of(ctx, Plugin)` (its
+state), `publr.Host.io(ctx)` (the process's I/O), `publr.Host.mark_copy(ctx)` (the call runs
+on a copy of the site) and `publr.Host.reload_plugins(ctx)` (the installed plugins' rows
+changed underneath them).
 
 ### The admin
 

@@ -1425,7 +1425,8 @@ and the admin for free. History goes into
 snapshots (`snapshot take/list/prune`, kinds of the plugin's own); parked
 copies of a document go into slots (`record get --slot`), like the core's
 `pending`. A plugin that truly needs its own table registers it with `host.table` in `.extend` and
-reads and writes it with `ctx.database()`; it runs only when the plugin is compiled in.
+reads and writes it with `publr.Host.database(ctx)`; it runs only when the plugin is compiled
+in.
 Publr makes the table when the database opens and runs no migrations on it: a change to
 its shape is the plugin's own to make.
 
@@ -1596,7 +1597,7 @@ A plugin can **keep state** for as long as the process runs: one `host.state(Sta
 struct, made when the server opens the project (with `pub fn init(state: *State, process:
 publr.Host.Process) !void` when its fields need more than defaults; `deinit` if it holds
 something to free) and never in a top-level `var`. An operation or a hook reaches it with
-`ctx.state(@This())`, a route with `context.state(@This())`.
+`publr.Host.state_of(ctx, @This())`, a route with `context.state(@This())`.
 
 A plugin can also act on the process around the operations:
 

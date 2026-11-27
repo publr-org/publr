@@ -1,7 +1,7 @@
 //! A built-in plugin's `bootstrap`, run as the plugin's own code, as its jobs run: its
 //! internal records are its to read and write, its calls are held to its grants, and
-//! `ctx.as_system()` and `ctx.as_person()` answer it. The caller stays Publr itself, the
-//! database opening with nobody behind it.
+//! `publr.Host.as_system(ctx)`, `ctx.as_plugin()` and `ctx.as_person()` answer it. The caller
+//! stays Publr itself, the database opening with nobody behind it.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const HostApi = @import("context.zig").HostApi;
@@ -40,7 +40,11 @@ test "a plugin's bootstrap runs as the plugin, and the database's context is put
             try std.testing.expectEqualStrings("hello", inner.plugin);
             try std.testing.expect(inner.plugin_code);
             try std.testing.expect(inner.caller == .system);
-            try std.testing.expect((try ctx.as_system()).caller().system);
+
+            const powers = @import("../../publr/extend/powers.zig");
+
+            try std.testing.expect((try powers.as_system(ctx)).caller().system);
+            try std.testing.expect(!(try ctx.as_plugin()).caller().system);
 
             const person = try ctx.as_person("u_1");
 

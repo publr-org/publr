@@ -1,5 +1,5 @@
 //! `publr.Database`: SQL on a built-in plugin's own tables (`host.table`), inside the call's
-//! transaction, from `ctx.database()`. What lies behind it is Publr's own connection.
+//! transaction, from `publr.Host.database(ctx)`. What lies behind it is Publr's own connection.
 const std = @import("std");
 const db = @import("../../lib/db.zig");
 const Error = @import("../operation.zig").Error;

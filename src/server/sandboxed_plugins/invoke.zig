@@ -12,8 +12,6 @@ const job_queue = @import("../../store/job_queue.zig");
 const model = @import("../../model.zig");
 pub const Loaded = @import("loaded.zig").Loaded;
 const HostApi = @import("../../sdk/plugin/context.zig").HostApi;
-const drawing = @import("drawing.zig");
-const drawing_page = @import("drawing_page.zig");
 const shaped_call = @import("shaped_call.zig");
 const shaped_entry = @import("shaped_entry.zig");
 const said_memory = @import("said_memory.zig");
@@ -21,105 +19,12 @@ const drawn = @import("../../ui/drawn.zig");
 const call_json = @import("../../sdk/call_json.zig");
 const held_module = @import("held.zig");
 const batched = @import("batched.zig");
-const host_calls = @import("host_calls.zig");
-const granted = @import("granted.zig");
 const acting_module = @import("acting.zig");
 
 const Acting = acting_module.Acting;
 const head_of = acting_module.head_of;
 
-pub const imports = [_]wasm.Import{
-    .{
-        .name = "publr_call_shaped",
-        .signature = "(ii)i",
-        .function = &shaped_call.publr_call_shaped,
-    },
-    .{
-        .name = "publr_answer",
-        .signature = "(iiiii)i",
-        .function = &shaped_call.publr_answer,
-    },
-    .{
-        .name = "publr_shaped_take",
-        .signature = "(ii)i",
-        .function = &shaped_call.publr_shaped_take,
-    },
-    .{
-        .name = "publr_item",
-        .signature = "(ii)",
-        .function = &batched.publr_item,
-    },
-    .{
-        .name = "publr_emit",
-        .signature = "(i)",
-        .function = &host_calls.publr_emit,
-    },
-    .{
-        .name = "publr_log",
-        .signature = "(ii)",
-        .function = &host_calls.publr_log,
-    },
-    .{
-        .name = "publr_undo",
-        .signature = "()",
-        .function = &host_calls.publr_undo,
-    },
-    .{
-        .name = "publr_fail",
-        .signature = "(iiii)",
-        .function = &host_calls.publr_fail,
-    },
-    .{
-        .name = "publr_granted",
-        .signature = "(ii)i",
-        .function = &granted.publr_granted,
-    },
-    .{
-        .name = "publr_grant_domains",
-        .signature = "(iii)i",
-        .function = &granted.publr_grant_domains,
-    },
-    .{
-        .name = "publr_log_at",
-        .signature = "(iii)",
-        .function = &host_calls.publr_log_at,
-    },
-    .{
-        .name = "publr_held",
-        .signature = "(iii)",
-        .function = &host_calls.publr_held,
-    },
-    .{
-        .name = "publr_refuse",
-        .signature = "(iiiii)",
-        .function = &host_calls.publr_refuse,
-    },
-    .{
-        .name = "publr_problem",
-        .signature = "(iiii)",
-        .function = &host_calls.publr_problem,
-    },
-    .{
-        .name = "publr_enqueue",
-        .signature = "(i)i",
-        .function = &host_calls.publr_enqueue,
-    },
-    .{
-        .name = "publr_frame",
-        .signature = "(iiii)i",
-        .function = &drawing.publr_frame,
-    },
-    .{
-        .name = "publr_draw",
-        .signature = "(ii)i",
-        .function = &drawing_page.publr_draw,
-    },
-    .{
-        .name = "publr_translate",
-        .signature = "(ii)i",
-        .function = &drawing.publr_translate,
-    },
-};
+pub const imports = @import("host_imports.zig").imports;
 
 /// What a host function finds through the call's user data.
 pub const Invocation = struct {

@@ -82,6 +82,7 @@ pub const HostApi = struct {
     pub const as_person = acting_for.as_person;
     pub const may = acting_for.may;
     pub const as_system = acting_for.as_system;
+    pub const as_plugin = acting_for.as_plugin;
     pub const io = host_powers.io;
     pub const start_session = host_powers.start_session;
     pub const mark_copy = host_powers.mark_copy;

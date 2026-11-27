@@ -28,10 +28,6 @@ fn behind(ctx: anytype) BehindOf(@TypeOf(ctx)) {
     return @ptrCast(@alignCast(ctx));
 }
 
-fn PluginState(comptime Plugin: type) type {
-    return @import("../server/plugin_states.zig").StateOf(Plugin);
-}
-
 /// Whether this build is compiled into Publr, not installed: `publr.compiled_in`.
 pub const compiled_in = guest.mode == .native;
 
@@ -73,12 +69,21 @@ pub const Ctx = opaque {
     pub const time_zone = calls.time_zone;
 
     pub const as_person = built_in.as_person;
-    pub const may = built_in.may;
-    pub const as_system = built_in.as_system;
-    pub const io = built_in.io;
     pub const start_session = built_in.start_session;
-    pub const mark_copy = built_in.mark_copy;
-    pub const reload_plugins = built_in.reload_plugins;
+
+    /// The same plugin, calling as itself with no person behind it: every call made through
+    /// the answer is held to the plugin's own grants, as an installed plugin's calls are,
+    /// never widened or narrowed by whoever made the request (a provider's callback marking
+    /// an order paid).
+    pub fn as_plugin(ctx: *Ctx) Error!*Ctx {
+        return behind(ctx).as_plugin() catch |err| return public_of(err);
+    }
+
+    /// Whether a call of `Operation` through this ctx would be let in, as the call itself
+    /// would be judged: to offer only what the caller may do.
+    pub fn may(ctx: *const Ctx, comptime Operation: type) bool {
+        return behind(ctx).may(Operation);
+    }
 
     /// Queues `Job` to run after this call, between requests, as the plugin. Inside a write,
     /// a rolled-back write queues nothing: `try ctx.enqueue(ReleaseHold, .{ .hold = ref })`.
@@ -89,31 +94,6 @@ pub const Ctx = opaque {
     /// `enqueue` with when it may run: never before `at`, about a minute after it at most.
     pub fn enqueue_at(ctx: *Ctx, comptime Job: type, in: Job.Input, at: words.Time) Error!void {
         return behind(ctx).enqueue_at(Job, in, at) catch |err| return public_of(err);
-    }
-
-    /// SQL on the plugin's own tables (`host.table`), inside the call's transaction. Only a
-    /// plugin with `.extend` has tables, so only a compiled-in one: an installed build that
-    /// asks for it does not compile.
-    pub fn database(ctx: *const Ctx) @import("extend/database.zig").Database {
-        if (comptime guest.mode == .sandboxed) {
-            @compileError("ctx.database() is for a built-in plugin's own tables (`.extend`)");
-        }
-
-        return behind(ctx).database();
-    }
-
-    /// The state a built-in plugin keeps for the life of the process (`host.state`); null
-    /// where the call runs with none made (a plugin's examples, a command with no server).
-    /// An installed build that asks for it does not compile.
-    pub fn state(ctx: *const Ctx, comptime Plugin: type) ?*PluginState(Plugin) {
-        if (comptime guest.mode == .sandboxed) {
-            @compileError("ctx.state() is for a built-in plugin's own state (`.extend`)");
-        }
-
-        const states = @import("../server/plugin_states.zig");
-        const held = behind(ctx).inner.plugin_states orelse return null;
-
-        return states.from(held, Plugin);
     }
 
     /// Memory freed when the call ends.
@@ -231,14 +211,8 @@ pub const Ctx = opaque {
     }
 
     /// What that refusal says to people, in the words it was made with (merging's "the
-    /// branch was kept"); empty when there was none. Compiled in only: an installed build
-    /// that asks for it does not compile.
+    /// branch was kept"); empty when there was none.
     pub fn failure_message(ctx: *const Ctx) []const u8 {
-        if (comptime guest.mode == .sandboxed) {
-            @compileError("ctx.failure_message() is for a built-in plugin; installed ones " ++
-                "read the name, `ctx.failure()`");
-        }
-
         return behind(ctx).failure_message();
     }
 
@@ -324,17 +298,12 @@ const LocaleOf = struct {
     }
 
     /// `text`, known only as the code runs (a message marked where it was written with
-    /// `publr.t`), in their language, each `{name}` filled from `values`. A built-in
-    /// plugin's: an installed build that asks for it does not compile.
+    /// `publr.t`), in their language, each `{name}` filled from `values`.
     pub fn say(
         self: LocaleOf,
         text: []const u8,
         values: []const Ctx.Said,
     ) error{OutOfMemory}![]const u8 {
-        if (comptime guest.mode == .sandboxed) {
-            @compileError("locale.say is for a built-in plugin");
-        }
-
         return behind(self.ctx).said_values(self.code, text, values);
     }
 };

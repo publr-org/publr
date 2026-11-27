@@ -33,8 +33,13 @@ fn bootstrap(ctx: *publr.Ctx) publr.Error!void {
 
     std.debug.assert(kept.len <= 1);
 
-    // A boot that cannot read its own records or act as Publr stops, for the smoke to see.
-    if (!(try ctx.as_system()).caller().system) {
+    // A boot that cannot read its own records, act as Publr or as itself alone stops, for the
+    // smoke to see.
+    if (!(try publr.Host.as_system(ctx)).caller().system) {
+        return error.Invalid;
+    }
+
+    if ((try ctx.as_plugin()).caller().system) {
         return error.Invalid;
     }
 }

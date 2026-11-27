@@ -32,7 +32,7 @@ pub const Error = @import("operation.zig").Error;
 pub const compiled_in = @import("ctx.zig").compiled_in;
 /// What a built-in plugin's `.extend` registers through: `fn extend(host: *publr.Host)`.
 pub const Host = @import("extend/host.zig").Host;
-/// SQL on a built-in plugin's own tables: `ctx.database()`.
+/// SQL on a built-in plugin's own tables: `publr.Host.database(ctx)`.
 pub const Database = @import("extend/database.zig").Database;
 /// `publr.operation.define(In, Out, .{ .name, .kind, .authorize, ... })`.
 pub const operation = struct {

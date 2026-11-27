@@ -11,6 +11,11 @@ const id_len_max = @import("../caller.zig").id_len_max;
 const HostApi = context.HostApi;
 const Error = sdk.Error;
 
+/// The grants of a compiled-in plugin that asked for none.
+const no_access: @import("../plugin_access.zig").Access = .{
+    .own_types = &.{},
+};
+
 /// The caller a `HostApi` made by `as_person` stands for, in place for one call and put back
 /// after it.
 pub const Acting = struct {
@@ -109,6 +114,34 @@ pub fn as_system(api: *HostApi) Error!*context.PluginCtx {
     return made.ctx();
 }
 
+/// The plugin calling as itself, with no person behind it: the caller an installed plugin's
+/// calls run as, its compiled grants deciding and no account's roles narrowing them.
+pub fn as_plugin(api: *HostApi) Error!*context.PluginCtx {
+    const inner = api.inner;
+
+    std.debug.assert(inner.now_ms >= 0);
+
+    // Core's own code is no plugin: it has no grants to act with.
+    if (inner.plugin.len == 0) {
+        return error.Denied;
+    }
+
+    const made = inner.arena.create(HostApi) catch return error.OutOfMemory;
+
+    made.* = .{
+        .inner = inner,
+        .reads = api.reads,
+        .person = .{
+            .plugin = .{
+                .name = inner.plugin,
+                .access = registry.SDK.compiled_access(inner.plugin) orelse &no_access,
+            },
+        },
+    };
+
+    return made.ctx();
+}
+
 pub fn may(api: *const HostApi, comptime Operation: type) bool {
     std.debug.assert(api.inner.now_ms >= 0);
 
@@ -152,4 +185,32 @@ test "a plugin calls for a person with its own grants, and its caller is put bac
 
     try std.testing.expect(system.caller().system);
     try std.testing.expect(!api.caller().system);
+}
+
+test "a plugin calls as itself with its own grants, no person behind them" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var inner = harness.ctx(.{
+        .user = .{
+            .id = "u_1",
+        },
+    });
+    var api: HostApi = .{
+        .inner = &inner,
+    };
+
+    try std.testing.expectError(error.Denied, api.as_plugin());
+
+    inner.plugin = "hello";
+
+    const alone = context.host_of(try api.as_plugin());
+    const seen = alone.caller();
+
+    try std.testing.expect(seen.user_id() == null);
+    try std.testing.expect(!seen.system);
+    try std.testing.expect(!seen.signed_in());
+    try std.testing.expect(!alone.may(@import("../../publr/operations/role.zig").List));
+    try std.testing.expect(inner.caller == .user);
 }

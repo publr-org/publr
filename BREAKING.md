@@ -27,28 +27,88 @@ const sent = try ctx.call(publr.operations.user.visitors.SignUp, in);
 const sent = try ctx.call(publr.operations.user.members.SignUp, in);
 ```
 
+### `sdk:Ctx.as_system`
+
+`ctx.as_system()` left `Ctx`: `publr.Ctx` is the same for built-in and installed plugins, and
+calling as Publr itself is a built-in plugin's alone. It is `publr.Host.as_system(ctx)`. Work
+the plugin's own grants cover is `ctx.as_plugin()`, open to every plugin: calls as the plugin
+with no person behind them, held to its grants.
+
+```zig
+// Before
+const system = try ctx.as_system();
+// After
+const system = try publr.Host.as_system(ctx);
+// Or, where the plugin's grants cover the calls
+const alone = try ctx.as_plugin();
+```
+
+### `sdk:Ctx.database`
+
+`ctx.database()` is `publr.Host.database(ctx)`.
+
+```zig
+// Before
+try ctx.database().exec("INSERT INTO notes_seen (note, at) VALUES (?, ?)", .{ note, at });
+// After
+try publr.Host.database(ctx).exec("INSERT INTO notes_seen (note, at) VALUES (?, ?)", .{ note, at });
+```
+
+### `sdk:Ctx.io`
+
+`ctx.io()` is `publr.Host.io(ctx)`. A route's `context.io()` is unchanged.
+
+```zig
+// Before
+ctx.io().random(&raw);
+// After
+publr.Host.io(ctx).random(&raw);
+```
+
+### `sdk:Ctx.mark_copy`
+
+`ctx.mark_copy()` is `publr.Host.mark_copy(ctx)`.
+
+### `sdk:Ctx.reload_plugins`
+
+`ctx.reload_plugins()` is `publr.Host.reload_plugins(ctx)`.
+
+### `sdk:Ctx.may`
+
+`ctx.may(Operation)` compiles in an installed plugin too, and a built-in plugin's answer is
+held to its grants as its call is: what a permission names and the plugin does not hold is
+false, whoever it runs for. Nothing to change unless a built-in plugin offered an action its
+grants never let it call.
+
+### `sdk:Ctx.failure_message`
+
+`ctx.failure_message()` compiles in an installed plugin too and answers the refusal's words,
+as compiled in. Nothing to change.
+
 ### `sdk:Ctx.state`
 
-`ctx.state(Plugin)` answers null where the call runs with no states made (a plugin's
-examples, a command with no server) instead of stopping the process; `publr.testing.Site`
-makes every plugin's state, so a test reaches it. A plugin answers what it did before it had
-a state: null, `error.Unavailable`, a default.
+`ctx.state(Plugin)` is `publr.Host.state_of(ctx, Plugin)` (`host.state(State)` still
+registers it; a route's `context.state(Plugin)` and `serve.state(Plugin)` are unchanged). It
+answers null where the call runs with no states made (a plugin's examples, a command with no
+server) instead of stopping the process; `publr.testing.Site` makes every plugin's state, so
+a test reaches it. A plugin answers what it did before it had a state: null,
+`error.Unavailable`, a default.
 
 ```zig
 // Before
 const port = ctx.state(Sampler).port;
 // After
-const state = ctx.state(Sampler) orelse return error.Unavailable;
+const state = publr.Host.state_of(ctx, Sampler) orelse return error.Unavailable;
 const port = state.port;
 ```
 
 ### `sdk:Host.bootstrap`
 
 A built-in plugin's `bootstrap` runs as the plugin's own code, as its jobs do: its internal
-records are its to read and write, its calls are held to its grants, and `ctx.as_system()`
-and `ctx.as_person()` answer it (they refused before). The caller is still Publr itself. A
-bootstrap that set `ctx.plugin` itself drops that; one that called something its grants do
-not reach calls it through `ctx.as_system()`.
+records are its to read and write, its calls are held to its grants, and
+`publr.Host.as_system(ctx)` and `ctx.as_person()` answer it (they refused before). The
+caller is still Publr itself. A bootstrap that set `ctx.plugin` itself drops that; one that
+called something its grants do not reach calls it through `publr.Host.as_system(ctx)`.
 
 ```zig
 // Before
@@ -58,7 +118,9 @@ fn bootstrap(ctx: *publr.sdk.Ctx) publr.sdk.Error!void {
 }
 // After
 fn bootstrap(ctx: *publr.Ctx) publr.Error!void {
-    _ = try (try ctx.as_system()).call(identity.Configure, .{ .open_sign_up = "customer" });
+    const system = try publr.Host.as_system(ctx);
+
+    _ = try system.call(identity.Configure, .{ .open_sign_up = "customer" });
 }
 ```
 
