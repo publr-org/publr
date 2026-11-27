@@ -17,7 +17,7 @@ pub const plugin = @import("sdk/plugin.zig");
 /// What a plugin is called and which version it is: `publr.plugin.define(manifest, options)`.
 pub const Manifest = @import("publr/plugin/define.zig").Manifest;
 /// What a plugin's code runs with, and how it fails.
-pub const Ctx = plugin.PluginCtx;
+pub const Ctx = @import("publr/ctx.zig").Ctx;
 pub const Error = sdk.Error;
 /// What a built-in plugin's `.extend` registers through: `fn extend(host: *publr.Host)`.
 pub const Host = @import("sdk/plugin/host.zig").Host;
@@ -225,10 +225,10 @@ pub const webhook = struct {
 };
 /// What queued work (a job) runs with: every call `Ctx` has, and `fetch`, queued work's
 /// alone. Record handles and queries take either.
-pub const QueueCtx = @import("sdk/plugin/queue.zig").Queue(Ctx);
+pub const QueueCtx = @import("publr/queue_ctx.zig").QueueCtx;
 /// What a sign-in provider's `exchange` runs with: `fetch` to its own domains, within a
 /// short time, and `log`; nothing else.
-pub const ExchangeCtx = @import("sdk/provider.zig").ExchangeCtx;
+pub const ExchangeCtx = @import("publr/exchange_ctx.zig").ExchangeCtx;
 /// A moment, as a `datetime` field holds it.
 pub const Time = @import("publr/plugin/words.zig").Time;
 /// A day on the calendar (`time.local_date(zone)`).

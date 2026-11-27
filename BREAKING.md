@@ -30,6 +30,66 @@ plugin naming it fails the build. Leave it out:
 .notes = .{ .visibility = .{ .restricted = true } },
 ```
 
+### `sdk:Ctx`
+
+`publr.Ctx` is declared once (`src/publr/ctx.zig`), the same type compiled in and installed,
+and it has no fields: Publr hands a plugin a `*publr.Ctx`, a plugin never makes or reads
+into one. Compiled in, `ctx.inner` (core's context) is gone; so is building a `publr.Ctx`
+from a core context. Every call a plugin makes is a method, the same either way it runs.
+`ctx.call_value(name, value)` now works compiled in too; `ctx.call_json`, `read_shaped` and
+`call_shaped` are Publr's own and no longer on `Ctx`. `ctx.database()` is still for a
+built-in plugin's tables: an installed build that calls it does not compile.
+`publr.plugin.PluginCtx`, `HostApi` and `SandboxApi` are not the plugin's to name: take
+`*publr.Ctx`.
+
+A built-in plugin reads the state it keeps (`host.state`) with `ctx.state(Plugin)`.
+
+```zig
+// Before
+const port = publr.plugin_states.of(ctx.inner, Sampler).port;
+const plugin_ctx: publr.Ctx = .{ .inner = ctx };
+try publr.sdk.stored_roles.exists(ctx.inner, role);
+fn complete(ctx: *publr.plugin.PluginCtx, request: ai.Request) publr.Error!ai.Response
+// After: take the `*publr.Ctx` Publr hands over; no core context behind it
+const port = ctx.state(Sampler).port;
+fn complete(ctx: *publr.Ctx, request: ai.Request) publr.Error!ai.Response
+```
+
+### `sdk:Ctx.caller`
+
+`ctx.caller()` no longer carries `raw` (core's caller). Read the account and roles from the
+view itself.
+
+```zig
+// Before
+const account = ctx.caller().raw.user_id() orelse "";
+const roles = view.raw.roles() orelse &.{};
+// After
+const account = ctx.caller().user_id() orelse "";
+const roles = view.roles() orelse &.{};
+```
+
+### `sdk:Ctx.scope`
+
+`ctx.scope()` answers `publr.Ctx.Scope`, the same type either way: `leave`, `keep` and `end`
+as before. Its fields are Publr's own (`outer`, and `held`, an opaque handle).
+
+### `sdk:QueueCtx`
+
+`publr.QueueCtx` is one struct (`src/publr/queue_ctx.zig`), no longer
+`Queue(Ctx)`; its `base` is the job's `*publr.Ctx`. Every method is as before;
+`call_value`, `refuse` and `translate` join them.
+
+### `sdk:ExchangeCtx`
+
+`publr.ExchangeCtx` has no fields (`inner` and `fetcher` were core's): `fetch`, `now`,
+`arena`, `print` and `log` as before.
+
+### `sdk:Request`
+
+An app middleware's `publr.Request` no longer has the fields `project`, `app`, `http` and
+`identity`; they are behind `seen`, Publr's own. Its methods are as before.
+
 ### `sdk:auth`
 
 `publr.auth` holds the sign-in events alone (`SignedIn` through `IdentityRefused`).

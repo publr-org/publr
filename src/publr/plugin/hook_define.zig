@@ -11,6 +11,7 @@ const public_operation = @import("../operation.zig");
 const sdk = @import("../../sdk.zig");
 const hooks = @import("../../sdk/hooks.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
+const HostApi = @import("../../sdk/plugin/context.zig").HostApi;
 const record_typed = @import("../../operations/record/typed.zig");
 const record_define = @import("record_define.zig");
 const modify_define = @import("modify_define.zig");
@@ -150,11 +151,11 @@ pub fn request(comptime run: anytype) type {
                 ctx: *sdk.Ctx,
                 page: *PageRequest.PageRequest,
             ) sdk.Error!PageRequest.Answered {
-                var plugin_ctx: PluginCtx = .{
+                var plugin_ctx: HostApi = .{
                     .inner = ctx,
                 };
 
-                return run(&plugin_ctx, page);
+                return run(plugin_ctx.ctx(), page);
             }
         };
     }
@@ -347,11 +348,11 @@ fn EventHook(
 fn queued(comptime given: anytype, ctx: *PluginCtx, value: anytype) sdk.Error!void {
     const First = @typeInfo(@TypeOf(given)).@"fn".param_types[0].?;
 
-    if (comptime First != *queue.Queue(PluginCtx)) {
+    if (comptime First != *queue.QueueCtx) {
         @compileError("an `on` hook is queued work: its run takes `*publr.QueueCtx`");
     }
 
-    var queue_ctx: queue.Queue(PluginCtx) = .{
+    var queue_ctx: queue.QueueCtx = .{
         .base = ctx,
     };
 

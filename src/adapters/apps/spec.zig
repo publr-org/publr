@@ -236,7 +236,7 @@ fn middleware_of(comptime Module: type) ?middleware.Middleware {
 
         return &struct {
             fn run(request: *middleware.Request) anyerror!?middleware.Response {
-                std.debug.assert(request.http.path().len > 0);
+                std.debug.assert(request.inside.len > 0);
 
                 return Module.middleware(request);
             }

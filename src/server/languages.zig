@@ -539,7 +539,7 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
     const sdk = @import("../sdk.zig");
     const job_define = @import("../publr/plugin/job_define.zig");
     const HostApi = @import("../sdk/plugin/context.zig").HostApi;
-    const QueueCtx = @import("../sdk/plugin/queue.zig").Queue(HostApi);
+    const QueueCtx = @import("../sdk/plugin/queue.zig").QueueCtx;
     const Probe = struct {
         const In = struct {
             title: []const u8,
@@ -600,7 +600,7 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
         .inner = &request,
     };
 
-    try asking.enqueue(Announce, .{
+    try asking.ctx().enqueue(Announce, .{
         .title = "Zamówienie",
     });
 
@@ -618,7 +618,7 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
     english.plugin = "probe";
     asking.inner = &english;
 
-    try asking.enqueue(Announce, .{
+    try asking.ctx().enqueue(Announce, .{
         .title = "Order",
     });
     try std.testing.expectEqual(1, try Runner.drain(&worker, 8));
@@ -629,7 +629,7 @@ test "queued work tells each in their own words: the admin in English, the visit
     const sdk = @import("../sdk.zig");
     const job_define = @import("../publr/plugin/job_define.zig");
     const HostApi = @import("../sdk/plugin/context.zig").HostApi;
-    const QueueCtx = @import("../sdk/plugin/queue.zig").Queue(HostApi);
+    const QueueCtx = @import("../sdk/plugin/queue.zig").QueueCtx;
     const Probe = struct {
         const In = struct {
             title: []const u8,
@@ -710,7 +710,7 @@ test "queued work tells each in their own words: the admin in English, the visit
         .inner = &request,
     };
 
-    try asking.enqueue(Tell, .{
+    try asking.ctx().enqueue(Tell, .{
         .title = "Zamówienie",
         .admin = "u_admin",
     });

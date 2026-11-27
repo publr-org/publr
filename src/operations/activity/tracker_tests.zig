@@ -1,6 +1,7 @@
 //! `publr.errors.Failed` heard by a compiled-in tracker: an error line and a crash raise it
 //! once each, kept outside the write; a refusal raises nothing.
 const std = @import("std");
+const plugin_host_of = @import("../../sdk/plugin/context.zig").host_of;
 const sdk = @import("../../sdk.zig");
 const plugin_module = @import("../../sdk/plugin.zig");
 const plugin_define = @import("../../publr/plugin/define.zig");
@@ -11,7 +12,7 @@ const activity = @import("../activity.zig");
 const store = @import("../../store.zig");
 
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
-const QueueCtx = @import("../../sdk/plugin/queue.zig").Queue(PluginCtx);
+const QueueCtx = @import("../../sdk/plugin/queue.zig").QueueCtx;
 
 /// Breaks on purpose, and records every error it hears of, as an error tracker would.
 const Tracker = struct {
@@ -39,7 +40,7 @@ const Tracker = struct {
         std.debug.assert(in.how.len > 0);
 
         if (std.mem.eql(u8, in.how, "refuse")) {
-            return ctx.inner.fail(.{
+            return plugin_host_of(ctx).inner.fail(.{
                 .name = "Nope",
                 .status = 409,
                 .message = "Not today",
@@ -58,7 +59,7 @@ const Tracker = struct {
     }
 
     fn track(ctx: *QueueCtx, failed: error_events.Failed.Payload) sdk.Error!void {
-        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
+        std.debug.assert(plugin_host_of(ctx.base).inner.db.transaction_depth == 0);
         std.debug.assert(failed.entry > 0);
 
         ctx.log(.info, "Tracked {s} {s}: {s} by {s}", .{

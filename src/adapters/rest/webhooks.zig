@@ -5,6 +5,7 @@
 //! both are kept, so the plugin's Webhooks tab shows them. The sender's address counts
 //! against the general rate limit before anything is read: past it, 429 and nothing kept.
 const std = @import("std");
+const plugin_host_of = @import("../../sdk/plugin/context.zig").host_of;
 const sdk = @import("../../sdk.zig");
 const http = @import("../../lib/http.zig");
 const store = @import("../../store.zig");
@@ -267,7 +268,7 @@ test "a signed delivery runs as queued work, a repeat is dropped, a forged one r
             std.debug.assert(paid.id.len > 0);
 
             ctx.log(.info, "Order {s} paid", .{paid.order});
-            ctx.base.inner.dependency_failure = std.mem.eql(u8, paid.order, "1042");
+            plugin_host_of(ctx.base).inner.dependency_failure = std.mem.eql(u8, paid.order, "1042");
         }
     };
     const Hook = webhook_define.define(Paid, .{

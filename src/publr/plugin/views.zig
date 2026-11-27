@@ -5,6 +5,7 @@
 //! design system it reaches, with its props. The host draws them all in one call
 //! (`publr_draw`, `view_wire.zig`), so no plugin carries the design system.
 const std = @import("std");
+const host_of = @import("../../sdk/plugin/context.zig").host_of;
 const guest = @import("../../sdk/plugin/guest.zig");
 const wire = @import("../../sdk/plugin/wire.zig");
 const view_wire = @import("../../sdk/plugin/view_wire.zig");
@@ -16,7 +17,7 @@ const Error = @import("../../sdk.zig").Error;
 /// The plugin's views, by name: the admin's generated set compiled in, the plugin's own
 /// installed.
 pub const all = if (guest.mode == .native)
-    @import("../../adapters/admin.zig").views
+    @import("views")
 else
     @import("plugin_views");
 
@@ -42,7 +43,7 @@ pub fn render(
     if (comptime guest.mode == .native) {
         const admin = @import("../../adapters/admin.zig");
         const request = admin.chrome.in_plugin_frame(ctx, base) catch return error.OutOfMemory;
-        const full = props_of(View.Props, props, ctx.inner.view, ctx.arena());
+        const full = props_of(View.Props, props, host_of(ctx).inner.view, ctx.arena());
 
         return admin.render.document(ctx.arena(), request, View, full) catch error.OutOfMemory;
     }

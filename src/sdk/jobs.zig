@@ -2,6 +2,7 @@
 //! claimed, each run as its plugin, then removed, or moved later when it fails, until its
 //! last attempt keeps it as failed and tells the job's `on_failure`.
 const std = @import("std");
+const host_of = @import("plugin/context.zig").host_of;
 const sdk = @import("../sdk.zig");
 const job_queue = @import("../store/job_queue.zig");
 const job_define = @import("../publr/plugin/job_define.zig");
@@ -16,8 +17,8 @@ const JobWrite = @import("job_write.zig").JobWrite;
 const plugin_memory = @import("plugin_memory.zig");
 
 const Ctx = sdk.Ctx;
-const PluginCtx = plugin_context.HostApi;
-const QueueCtx = @import("plugin/queue.zig").Queue(PluginCtx);
+const HostApi = plugin_context.HostApi;
+const QueueCtx = @import("plugin/queue.zig").QueueCtx;
 
 /// How long a run holds its job: longer than any job should take, short enough that one
 /// lost to a crash runs again soon.
@@ -612,10 +613,10 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             defer ctx.plugin = running;
             defer ctx.plugin_code = was_code;
 
-            var wrapped: PluginCtx = .{
+            var wrapped: HostApi = .{
                 .inner = ctx,
             };
-            const held = Job.Record.get(&wrapped, due.record, .{}) catch |err| {
+            const held = Job.Record.get(wrapped.ctx(), due.record, .{}) catch |err| {
                 return if (err == error.NotFound) "" else @errorName(err);
             };
 
@@ -642,11 +643,11 @@ pub fn Jobs(comptime SDK: type, comptime registry: sdk.Registry) type {
             ctx.plugin_code = true;
             defer ctx.plugin_code = was_code;
 
-            var wrapped: PluginCtx = .{
+            var wrapped: HostApi = .{
                 .inner = ctx,
             };
             var queued: QueueCtx = .{
-                .base = &wrapped,
+                .base = wrapped.ctx(),
             };
 
             ctx.failure = null;
@@ -790,7 +791,7 @@ test "a failing job runs again later, then is kept as failed and its on_failure 
         fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
             std.debug.assert(in.word.len > 0);
 
-            return ctx.base.inner.fail(.{
+            return host_of(ctx.base).inner.fail(.{
                 .name = "Busy",
                 .status = 409,
                 .message = "the other side is busy",
@@ -800,7 +801,7 @@ test "a failing job runs again later, then is kept as failed and its on_failure 
         fn gave_up(ctx: *QueueCtx, in: In, err: sdk.Error) void {
             std.debug.assert(in.word.len > 0);
 
-            ctx.base.inner.dependency_failure = err == error.Failed and
+            host_of(ctx.base).inner.dependency_failure = err == error.Failed and
                 std.mem.eql(u8, ctx.failure(), "Busy");
         }
     };
@@ -849,7 +850,7 @@ test "a job's run is one write: kept with its events when it ends well, undone w
         };
 
         fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
-            const inner = ctx.base.inner;
+            const inner = host_of(ctx.base).inner;
 
             std.debug.assert(in.key.len > 0);
             std.debug.assert(inner.parent != null);
@@ -902,9 +903,9 @@ test "a job's run is one write: kept with its events when it ends well, undone w
 test "a repeating job is queued once, runs at its moment, and is queued again for the next" {
     const Tidy = struct {
         fn run(ctx: *QueueCtx) sdk.Error!void {
-            std.debug.assert(ctx.base.inner.now_ms >= 0);
+            std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
 
-            ctx.base.inner.dependency_failure = true;
+            host_of(ctx.base).inner.dependency_failure = true;
         }
     };
     const Hourly = job_define.define_recurring(.{
@@ -952,7 +953,7 @@ test "a job ending in a conflict is heard by on_conflict, kept, and its run is t
             std.debug.assert(in.word.len > 0);
 
             // The run is the author of what it writes.
-            if (!std.mem.eql(u8, ctx.base.inner.job, "probe.sync")) {
+            if (!std.mem.eql(u8, host_of(ctx.base).inner.job, "probe.sync")) {
                 return error.Invalid;
             }
 
@@ -962,7 +963,7 @@ test "a job ending in a conflict is heard by on_conflict, kept, and its run is t
         fn kept(ctx: *QueueCtx, in: In) void {
             std.debug.assert(in.word.len > 0);
 
-            ctx.base.inner.dependency_failure = true;
+            host_of(ctx.base).inner.dependency_failure = true;
         }
     };
     const Syncing = job_define.define(Probe.In, .{
@@ -1008,11 +1009,11 @@ test "queued work fetches through the plugin's grant: an anonymous caller is ref
     defer harness.deinit();
 
     var ctx = harness.ctx(.anonymous);
-    var wrapped: PluginCtx = .{
+    var wrapped: HostApi = .{
         .inner = &ctx,
     };
     var queued: QueueCtx = .{
-        .base = &wrapped,
+        .base = wrapped.ctx(),
     };
 
     try std.testing.expectError(error.Denied, queued.fetch(.{
@@ -1026,11 +1027,11 @@ test "queued work applies a mod and calls an operation by name, as a request's c
     defer harness.deinit();
 
     var ctx = harness.ctx(.system);
-    var wrapped: PluginCtx = .{
+    var wrapped: HostApi = .{
         .inner = &ctx,
     };
     var queued: QueueCtx = .{
-        .base = &wrapped,
+        .base = wrapped.ctx(),
     };
 
     const greeting: []const u8 = "Hello";
@@ -1065,7 +1066,7 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
 
         fn run(ctx: *QueueCtx, event: Events.Held) sdk.Error!void {
             std.debug.assert(event.id.len > 0);
-            std.debug.assert(ctx.base.inner.now_ms >= 0);
+            std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
 
             heard = std.fmt.bufPrint(&heard_buffer, "{s}", .{event.value.title}) catch "";
         }
@@ -1169,7 +1170,7 @@ test "a yearly .due job runs on each return of its date, then follows the next o
     const Probe = struct {
         fn run(ctx: *QueueCtx, person: People.Held) sdk.Error!void {
             std.debug.assert(person.id.len > 0);
-            std.debug.assert(ctx.base.inner.now_ms >= 0);
+            std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
         }
     };
     const Greet = job_define.define(People, .{
@@ -1239,7 +1240,7 @@ test "a yearly .due job runs on each return of its date, then follows the next o
 test "a repeating job runs at its time on the site's clock; moved or paused by the administrator" {
     const Tidy = struct {
         fn run(ctx: *QueueCtx) sdk.Error!void {
-            std.debug.assert(ctx.base.inner.now_ms >= 0);
+            std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
         }
     };
     const Nightly = job_define.define_recurring(.{

@@ -13,6 +13,14 @@ pub const Request = public.Request;
 pub const Response = public.Response;
 pub const User = public.User;
 
+/// What a middleware's `Request` holds of the request besides its path.
+pub const Seen = struct {
+    project: *const Project,
+    app: *const App,
+    http: *const http.Request,
+    identity: @import("../rest/identity.zig").Identity,
+};
+
 pub const body_bytes_max: u32 = 1 << 20;
 
 /// Middleware as the site runs it.
@@ -50,13 +58,16 @@ pub fn answer(
     std.debug.assert(inside.len > 0);
 
     const run = app.middleware orelse return false;
-    var request: Request = .{
-        .arena = arena,
+    const seen: Seen = .{
         .project = project,
         .app = app,
-        .inside = inside,
         .http = incoming,
         .identity = context_module.identify(project, app, arena, incoming),
+    };
+    var request: Request = .{
+        .arena = arena,
+        .inside = inside,
+        .seen = &seen,
     };
     const given = try run(&request) orelse return false;
 

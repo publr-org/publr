@@ -4,6 +4,8 @@
 //! and, when it ends, gives back the walks opened inside it that are still open: a loop
 //! left with `break` or `return` holds its page only until the work around it ends.
 const std = @import("std");
+const host_of = @import("context.zig").host_of;
+const behind_of = @import("context.zig").behind_of;
 const guest = @import("guest.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
 
@@ -22,7 +24,11 @@ const sandboxed = if (guest.mode == .sandboxed) @import("walks/guest.zig") else 
 
 /// A new walk, innermost; refused past `depth_max` walks open at once.
 pub fn open(ctx: *PluginCtx) error{Invalid}!Handle {
-    return if (comptime guest.mode == .native) native.open(ctx.inner) else sandboxed.open();
+    if (comptime guest.mode == .sandboxed) {
+        return sandboxed.open();
+    }
+
+    return native.open(host_of(ctx).inner);
 }
 
 /// Whether `handle` is still open: not given back with the work around it.
@@ -30,7 +36,7 @@ pub fn alive(ctx: *PluginCtx, handle: Handle) bool {
     std.debug.assert(handle.number > 0);
 
     return if (comptime guest.mode == .native)
-        native.alive(ctx.inner, handle)
+        native.alive(host_of(ctx).inner, handle)
     else
         sandboxed.alive(handle);
 }
@@ -41,9 +47,9 @@ pub fn page_begin(ctx: *PluginCtx, handle: Handle) void {
     std.debug.assert(alive(ctx, handle));
 
     if (comptime guest.mode == .native) {
-        native.page_begin(ctx.inner, handle);
+        native.page_begin(host_of(ctx).inner, handle);
     } else {
-        sandboxed.page_begin(ctx, handle);
+        sandboxed.page_begin(behind_of(ctx), handle);
     }
 }
 
@@ -51,9 +57,9 @@ pub fn page_leave(ctx: *PluginCtx, handle: Handle) void {
     std.debug.assert(alive(ctx, handle));
 
     if (comptime guest.mode == .native) {
-        native.page_leave(ctx.inner, handle);
+        native.page_leave(host_of(ctx).inner, handle);
     } else {
-        sandboxed.page_leave(ctx, handle);
+        sandboxed.page_leave(behind_of(ctx), handle);
     }
 }
 
@@ -62,9 +68,9 @@ pub fn turn_begin(ctx: *PluginCtx, handle: Handle) void {
     std.debug.assert(alive(ctx, handle));
 
     if (comptime guest.mode == .native) {
-        native.turn_begin(ctx.inner, handle);
+        native.turn_begin(host_of(ctx).inner, handle);
     } else {
-        sandboxed.turn_begin(ctx, handle);
+        sandboxed.turn_begin(behind_of(ctx), handle);
     }
 }
 
@@ -73,9 +79,9 @@ pub fn turn_end(ctx: *PluginCtx, handle: Handle) void {
     std.debug.assert(alive(ctx, handle));
 
     if (comptime guest.mode == .native) {
-        native.turn_end(ctx.inner, handle);
+        native.turn_end(host_of(ctx).inner, handle);
     } else {
-        sandboxed.turn_end(ctx, handle);
+        sandboxed.turn_end(behind_of(ctx), handle);
     }
 }
 
@@ -86,9 +92,9 @@ pub fn close(ctx: *PluginCtx, handle: Handle) void {
     }
 
     if (comptime guest.mode == .native) {
-        native.end_above(ctx.inner, handle.index);
+        native.end_above(host_of(ctx).inner, handle.index);
     } else {
-        sandboxed.end_above(ctx, handle.index);
+        sandboxed.end_above(behind_of(ctx), handle.index);
     }
 
     std.debug.assert(!alive(ctx, handle));

@@ -12,17 +12,56 @@ const job_queue = @import("../../store/job_queue.zig");
 const permission_model = @import("../../model/permission.zig");
 const user_language = @import("../../operations/user/language.zig");
 const plugin_memory = @import("../plugin_memory.zig");
+const free_value = @import("../../publr/free_value.zig");
 
 pub const Caller = sdk.Caller;
 pub const Error = sdk.Error;
 
-/// What a plugin's operations and hooks take: `SandboxApi` when the plugin is loaded into
-/// the sandbox (every call proxied to the host), `HostApi` when it is built in (direct calls,
-/// full access). The same source compiles either way.
-pub const PluginCtx = switch (guest.mode) {
-    .sandboxed => guest.SandboxApi,
-    .native => HostApi,
-};
+/// What a plugin's operations and hooks take, declared in `publr/ctx.zig`: behind it the
+/// call's `HostApi` when the plugin is built in, its `SandboxApi` when installed.
+pub const PluginCtx = @import("../../publr/ctx.zig").Ctx;
+
+/// The compiled-in call behind a plugin's `ctx`: core's own way in, never the plugin's.
+pub fn host_of(ctx: anytype) HostOf(@TypeOf(ctx)) {
+    comptime std.debug.assert(guest.mode == .native);
+
+    if (comptime std.meta.Child(@TypeOf(ctx)) == HostApi) {
+        return ctx;
+    }
+
+    return @ptrCast(@alignCast(ctx));
+}
+
+/// The call behind a plugin's `ctx` in this build, compiled in or installed: the SDK's own
+/// way to what the plugin does not see (a modifier's batched reads, a read's memo).
+pub fn behind_of(ctx: anytype) BehindOf(@TypeOf(ctx)) {
+    if (comptime std.meta.Child(@TypeOf(ctx)) != PluginCtx) {
+        return ctx;
+    }
+
+    return @ptrCast(@alignCast(ctx));
+}
+
+fn BehindOf(comptime Pointer: type) type {
+    const Behind = switch (guest.mode) {
+        .sandboxed => guest.SandboxApi,
+        .native => HostApi,
+    };
+
+    if (std.meta.Child(Pointer) != PluginCtx) {
+        return Pointer;
+    }
+
+    return if (@typeInfo(Pointer).pointer.attrs.@"const") *const Behind else *Behind;
+}
+
+fn HostOf(comptime Pointer: type) type {
+    if (std.meta.Child(Pointer) == HostApi) {
+        return Pointer;
+    }
+
+    return if (@typeInfo(Pointer).pointer.attrs.@"const") *const HostApi else *HostApi;
+}
 
 pub const Mode = guest.Mode;
 
@@ -35,9 +74,14 @@ pub const HostApi = struct {
     /// Set while a modifier runs: its reads are noted and answered for the whole batch.
     reads: ?*mod_reads.Reads = null,
 
+    /// The plugin's `ctx` this call stands behind.
+    pub fn ctx(self: *HostApi) *PluginCtx {
+        return @ptrCast(self);
+    }
+
     /// Who is calling: where from, whether signed in, their roles, whether an
     /// administrator granted them this operation, the visitor's stable id.
-    pub fn caller(self: *const PluginCtx) caller_view.View {
+    pub fn caller(self: *const HostApi) caller_view.View {
         std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(self.inner.next_operation_id > 0);
 
@@ -51,13 +95,12 @@ pub const HostApi = struct {
             .plugin = self.inner.called_by,
         } else caller_view.from_of(raw, through_app, self.inner.over_api, self.inner.job);
 
-        return .{
+        return caller_view.view_of(raw, .{
             .from = from,
             .visitor = self.inner.visitor,
             .referer = self.inner.referer,
-            .raw = raw,
             .granted_here = granted_here,
-        };
+        });
     }
 
     fn granted_by_role(inner: *const sdk.Ctx, operation_name: []const u8) bool {
@@ -76,25 +119,13 @@ pub const HostApi = struct {
 
     /// What the plugin was given for a request: compiled in, exactly what its `.permissions`
     /// asked for, since whoever built the binary chose its plugins.
-    pub fn grant(self: *const PluginCtx, comptime key: []const u8) permission_define.Grant {
+    pub fn grant(self: *const HostApi, comptime key: []const u8) permission_define.Grant {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return permission_define.Grant.of(key, held_of_running(self.inner.plugin, key));
     }
 
-    /// The call's time, one value for the whole call.
-    /// Inside a computed field's function: the value it answers holds until `time`, and is
-    /// worked out again then whatever else happens (a sale ends). The earliest one counts.
-    pub fn holds_until(self: *PluginCtx, time: words.Time) sdk.Error!void {
-        std.debug.assert(self.inner.now_ms >= 0);
-        std.debug.assert(time.ms > 0);
-
-        _ = try self.call(@import("../../operations/internal.zig").HoldsUntil, .{
-            .until_ms = time.ms,
-        });
-    }
-
-    pub fn now(self: *const PluginCtx) words.Time {
+    pub fn now(self: *const HostApi) words.Time {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return .{
@@ -102,89 +133,9 @@ pub const HostApi = struct {
         };
     }
 
-    /// A link a person opens without signing in, for one purpose (`intent`, the plugin's
-    /// own word) and one subject, until `expires` (null: until revoked): its `token`, and
-    /// its `path` (`/_links/<token>`, which runs the plugin's operation named `intent`).
-    pub fn sign(
-        self: *PluginCtx,
-        intent: []const u8,
-        subject: []const u8,
-        expires: ?words.Time,
-    ) Error!@import("../../operations/link.zig").Sign.Out {
-        std.debug.assert(intent.len > 0);
-
-        return self.call(@import("../../operations/link.zig").Sign, .{
-            .intent = intent,
-            .subject = subject,
-            .expires_at = if (expires) |time| time.ms else 0,
-        });
-    }
-
-    /// A file the plugin makes, written in pieces (`write`) and kept with `done` as a file of
-    /// one of its own media types (`type_handle`, `kind` `media`): see `files_api.zig`.
-    pub fn make_file(
-        self: *PluginCtx,
-        type_handle: []const u8,
-        filename: []const u8,
-    ) @import("files_api.zig").Making(PluginCtx) {
-        std.debug.assert(type_handle.len > 0);
-
-        return @import("files_api.zig").Making(PluginCtx).begin(self, type_handle, filename);
-    }
-
-    /// The subject a link's token was signed for, when it is good for `intent`; not found
-    /// otherwise (another purpose, past its time, revoked).
-    pub fn verify(self: *PluginCtx, intent: []const u8, token: []const u8) Error![]const u8 {
-        std.debug.assert(intent.len > 0);
-
-        const read = try self.call(@import("../../operations/link.zig").Verify, .{
-            .intent = intent,
-            .token = token,
-        });
-
-        return read.subject;
-    }
-
-    /// Fills `buffer` (at most 64 bytes) from the host's cryptographic source: codes a person
-    /// must not guess. Never a hash of an id, which anyone who knows the id can work out.
-    pub fn random(self: *PluginCtx, buffer: []u8) Error!void {
-        std.debug.assert(buffer.len > 0);
-        std.debug.assert(self.inner.now_ms >= 0);
-
-        const random_operation = @import("../../operations/random.zig");
-        const answered = try self.call(random_operation.Random, .{
-            .bytes = @intCast(buffer.len),
-        });
-
-        return random_operation.fill(buffer, answered.hex);
-    }
-
-    /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
-    pub fn time_zone(self: *PluginCtx) Error!words.TimeZone {
-        std.debug.assert(self.inner.now_ms >= 0);
-
-        const answered = try self.call(@import("../../operations/job.zig").TimeZone, .{});
-
-        std.debug.assert(answered.rule.len > 0);
-
-        return .{
-            .name = answered.name,
-            .rule = answered.rule,
-        };
-    }
-
-    /// Queues `Job` to run after this call, between requests, as the plugin. Inside a write,
-    /// a rolled-back write queues nothing: `try ctx.enqueue(ReleaseHold, .{ .hold = ref })`.
-    pub fn enqueue(self: *PluginCtx, comptime Job: type, in: Job.Input) Error!void {
-        std.debug.assert(self.inner.now_ms >= 0);
-        comptime std.debug.assert(job_define.is_job(Job));
-
-        return self.enqueue_at(Job, in, self.now());
-    }
-
-    /// `enqueue` with when it may run: never before `at`, about a minute after it at most.
+    /// `ctx.enqueue_at`: in the queue's table, inside the call's transaction.
     pub fn enqueue_at(
-        self: *PluginCtx,
+        self: *HostApi,
         comptime Job: type,
         in: Job.Input,
         at: words.Time,
@@ -216,7 +167,7 @@ pub const HostApi = struct {
 
     /// SQL on the plugin's own tables (`host.table`), inside the call's transaction. Only a
     /// plugin with `.extend` has tables; an installed plugin's ctx has no `database`.
-    pub fn database(self: *const PluginCtx) @import("host.zig").Database {
+    pub fn database(self: *const HostApi) @import("host.zig").Database {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return .{
@@ -226,7 +177,7 @@ pub const HostApi = struct {
 
     /// Memory freed when the call ends.
     pub fn alloc(
-        self: *const PluginCtx,
+        self: *const HostApi,
         comptime Item: type,
         count: u32,
     ) error{OutOfMemory}![]Item {
@@ -237,7 +188,7 @@ pub const HostApi = struct {
 
     /// Formatted text in memory freed when the call ends.
     pub fn print(
-        self: *const PluginCtx,
+        self: *const HostApi,
         comptime format: []const u8,
         args: anytype,
     ) error{OutOfMemory}![]const u8 {
@@ -247,7 +198,7 @@ pub const HostApi = struct {
     }
 
     /// Text for people, in the caller's language, each `{name}` filled from `values`.
-    pub fn t(self: *const PluginCtx, comptime text: []const u8, values: anytype) []const u8 {
+    pub fn t(self: *const HostApi, comptime text: []const u8, values: anytype) []const u8 {
         comptime std.debug.assert(text.len > 0);
 
         return self.said(text, "", null, values);
@@ -255,7 +206,7 @@ pub const HostApi = struct {
 
     /// The same for a count: `ctx.tn("{count} item", "{count} items", count, .{ .count = count })`.
     pub fn tn(
-        self: *const PluginCtx,
+        self: *const HostApi,
         comptime one: []const u8,
         comptime many: []const u8,
         count: u64,
@@ -269,7 +220,7 @@ pub const HostApi = struct {
     /// Words marked where they were written (`publr.t`, `ctx.t`) and kept as written: a
     /// label another plugin registered or stored (a line's work, `To send`), in the
     /// caller's language when shown. The text itself where no language pack has it.
-    pub fn translate(self: *const PluginCtx, text: []const u8) []const u8 {
+    pub fn translate(self: *const HostApi, text: []const u8) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 
         if (text.len == 0) {
@@ -285,69 +236,35 @@ pub const HostApi = struct {
     }
 
     /// The language the call speaks (`pl`, `en`): what `t` answers in.
-    pub fn language(self: *const PluginCtx) []const u8 {
+    pub fn language(self: *const HostApi) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return self.speaks();
     }
 
-    /// Text for one person, in their own language, else the site's: a message composed in
-    /// its recipient's words, `const localize = ctx.locale(person); localize.t(…)`. `person`
-    /// is the account's id; empty (a guest with no account) keeps the call's language.
-    pub fn locale(self: *const PluginCtx, person: []const u8) Locale {
+    /// The language `person` (an account's id) speaks, else the call's: `ctx.locale`.
+    pub fn locale_code(self: *const HostApi, person: []const u8) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 
         if (person.len == 0) {
-            return .{
-                .ctx = self,
-                .locale = self.speaks(),
-            };
+            return self.speaks();
         }
 
-        const chosen = user_language.person_speaks(self.inner, person) catch |err| blk: {
+        return user_language.person_speaks(self.inner, person) catch |err| blk: {
             std.log.warn("ctx.locale: {s}'s language not read: {t}", .{ person, err });
             break :blk self.speaks();
         };
-
-        return .{
-            .ctx = self,
-            .locale = chosen,
-        };
     }
 
-    /// `ctx.locale(person)`: `t` and `tn` in one person's language.
-    pub const Locale = struct {
-        ctx: *const PluginCtx,
-        locale: []const u8,
-
-        pub fn t(self: Locale, comptime text: []const u8, values: anytype) []const u8 {
-            comptime std.debug.assert(text.len > 0);
-
-            return self.ctx.said_in(self.locale, text, "", null, values);
-        }
-
-        pub fn tn(
-            self: Locale,
-            comptime one: []const u8,
-            comptime many: []const u8,
-            count: u64,
-            values: anytype,
-        ) []const u8 {
-            comptime std.debug.assert(one.len > 0 and many.len > 0);
-
-            return self.ctx.said_in(self.locale, one, many, count, values);
-        }
-    };
-
     /// The language the call speaks: the person's, else the variant read.
-    fn speaks(self: *const PluginCtx) []const u8 {
+    fn speaks(self: *const HostApi) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return self.inner.speaks();
     }
 
     fn said(
-        self: *const PluginCtx,
+        self: *const HostApi,
         comptime text: []const u8,
         comptime plural: []const u8,
         count: ?u64,
@@ -356,9 +273,9 @@ pub const HostApi = struct {
         return self.said_in(self.speaks(), text, plural, count, values);
     }
 
-    fn said_in(
-        self: *const PluginCtx,
-        locale_code: []const u8,
+    pub fn said_in(
+        self: *const HostApi,
+        code: []const u8,
         comptime text: []const u8,
         comptime plural: []const u8,
         count: ?u64,
@@ -377,7 +294,7 @@ pub const HostApi = struct {
             };
         }
 
-        return self.inner.say(locale_code, .{
+        return self.inner.say(code, .{
             .id = text,
             .plural = plural,
             .count = if (count) |number| @floatFromInt(number) else null,
@@ -389,7 +306,7 @@ pub const HostApi = struct {
     /// here until `end`, everything the call allocates and reads is in the scope's memory
     /// (`sdk/plugin_memory.zig`), and `end` gives all of it back. Where the process set no
     /// plugin memory aside, or there is no room, the step works in the memory it began in.
-    pub fn scope(self: *PluginCtx) Scope {
+    pub fn scope(self: *HostApi) Scope {
         const outer = self.inner.arena;
 
         std.debug.assert(self.inner.now_ms >= 0);
@@ -442,7 +359,7 @@ pub const HostApi = struct {
         }
     };
 
-    pub fn arena(self: *const PluginCtx) std.mem.Allocator {
+    pub fn arena(self: *const HostApi) std.mem.Allocator {
         std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(self.inner.next_operation_id > 0);
 
@@ -450,7 +367,7 @@ pub const HostApi = struct {
     }
 
     /// Inside an operation, or at the top when an `on` hook hears a queued event.
-    pub fn call(self: *PluginCtx, comptime Operation: type, in: Operation.In) Error!Operation.Out {
+    pub fn call(self: *HostApi, comptime Operation: type, in: Operation.In) Error!Operation.Out {
         std.debug.assert(self.inner.now_ms >= 0);
         comptime std.debug.assert(registry.SDK.bound(Operation).name.len > 0);
 
@@ -562,7 +479,7 @@ pub const HostApi = struct {
 
     /// Which refusal the last `ctx.call` came back with as `error.Failed`, or the plugin's
     /// own `fail` named, by its `Fails:` name (`NotEnoughStock`); empty when there was none.
-    pub fn failure(self: *const PluginCtx) []const u8 {
+    pub fn failure(self: *const HostApi) []const u8 {
         std.debug.assert(self.inner.now_ms >= 0);
 
         const found = self.inner.failure orelse return "";
@@ -599,21 +516,11 @@ pub const HostApi = struct {
         }
     }
 
-    /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any
-    /// plugin) and answers what they made of it; with none, the value as it went.
-    pub fn mod(self: *PluginCtx, comptime name: []const u8, value: anytype) Error!@TypeOf(value) {
-        const changed = try self.mod_all(name, @TypeOf(value), &.{value});
-
-        std.debug.assert(changed.len == 1);
-
-        return changed[0];
-    }
-
     /// `mod` for many values at once: a cart's lines, an order's charges. Each modifier
     /// hears them in batches with its reads made together for all, so the cost is one call
     /// per batch, never one per value. Answers them in the same order.
     pub fn mod_all(
-        self: *PluginCtx,
+        self: *HostApi,
         comptime name: []const u8,
         comptime Value: type,
         values: []const Value,
@@ -645,7 +552,7 @@ pub const HostApi = struct {
     /// One batch through `mod.apply`: laid out once, held that way through every modifier
     /// (`server/sandboxed_plugins/applied.zig`), read back as `Value`s. No text is written.
     fn applied(
-        self: *PluginCtx,
+        self: *HostApi,
         comptime name: []const u8,
         comptime Value: type,
         batch: []const Value,
@@ -711,7 +618,7 @@ pub const HostApi = struct {
     /// Calls an operation by a name known only when it runs (a contract's provider), `in`
     /// any struct, the answer read as an `Out`.
     pub fn call_named(
-        self: *PluginCtx,
+        self: *HostApi,
         comptime Out: type,
         name: []const u8,
         in: anytype,
@@ -752,7 +659,7 @@ pub const HostApi = struct {
 
     /// Calls an operation by name, JSON in and out, through the same checks: core's own way,
     /// which an installed plugin's module does not have.
-    pub fn call_json(self: *PluginCtx, name: []const u8, input: []const u8) Error![]const u8 {
+    pub fn call_json(self: *HostApi, name: []const u8, input: []const u8) Error![]const u8 {
         std.debug.assert(name.len > 0);
         std.debug.assert(self.reads == null);
 
@@ -775,10 +682,28 @@ pub const HostApi = struct {
         return self.inner.arena.dupe(u8, output) catch error.OutOfMemory;
     }
 
+    /// `ctx.call_value`: the value written as JSON for `call_json`, its answer read back.
+    pub fn call_value(
+        self: *HostApi,
+        name: []const u8,
+        input: free_value.Value,
+    ) Error!free_value.Value {
+        const free_json = @import("../free_json.zig");
+        const memory = self.inner.arena;
+
+        std.debug.assert(name.len > 0);
+        std.debug.assert(self.reads == null);
+
+        const text = free_json.text_of(memory, input) catch |err| return err;
+        const output = try self.call_json(name, text);
+
+        return free_json.from_text(memory, output) catch |err| return err;
+    }
+
     /// Emits an event: `ctx.emit(OutOfStock, .{ .variant = ref })`, a type made with
     /// `publr.event.define`, its payload carried as JSON. `after` hooks on it run now, inside
     /// the write (a refusal rolls it back); `on` hooks hear it from the queue once it commits.
-    pub fn emit(self: *PluginCtx, comptime Event: type, payload: Event.Payload) void {
+    pub fn emit(self: *HostApi, comptime Event: type, payload: Event.Payload) void {
         comptime std.debug.assert(@hasDecl(Event, "publr_event_definition"));
         std.debug.assert(self.inner.now_ms >= 0);
 
@@ -828,7 +753,7 @@ pub const HostApi = struct {
     }
 
     /// An event that could not be written fails the write, as a refused one does.
-    fn refuse_emit(self: *PluginCtx) void {
+    fn refuse_emit(self: *HostApi) void {
         self.inner.event_refusal = self.inner.event_refusal orelse error.OutOfMemory;
     }
 
@@ -836,7 +761,7 @@ pub const HostApi = struct {
     /// {left} left", .{ .left = left })`. The name is what a form's redirect carries, the
     /// message what a person reads, its status the one the operation's `Fails:` gives.
     pub fn fail(
-        self: *PluginCtx,
+        self: *HostApi,
         comptime name: @TypeOf(.enum_literal),
         comptime text: []const u8,
         values: anytype,
@@ -855,7 +780,7 @@ pub const HostApi = struct {
 
     /// Refuses the input with every problem `.validate` found, each beside its field.
     pub fn refuse(
-        self: *PluginCtx,
+        self: *HostApi,
         problems: []const sdk.operation.Problem,
     ) error{ Invalid, OutOfMemory } {
         std.debug.assert(problems.len > 0);
@@ -869,7 +794,7 @@ pub const HostApi = struct {
     /// A line in the log, attributed to the plugin and the call: kept with the call's
     /// activity or error entry and on the plugin's Log tab; the server's output outside one.
     pub fn log(
-        self: *PluginCtx,
+        self: *HostApi,
         comptime level: words.Level,
         comptime format: []const u8,
         args: anytype,

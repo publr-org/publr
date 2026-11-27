@@ -24,8 +24,7 @@ const sdk = @import("../sdk.zig");
 const registry = @import("../server/registry.zig");
 const identity_module = @import("../adapters/rest/identity.zig");
 const context_module = @import("../adapters/apps/context.zig");
-const Project = @import("../server/project.zig").Project;
-const App = @import("../adapters/apps/state.zig").App;
+const Seen = @import("../adapters/apps/middleware.zig").Seen;
 
 /// The answer middleware gives in the site's place.
 pub const Response = struct {
@@ -71,18 +70,20 @@ pub const User = struct {
 /// lives as long as the request.
 pub const Request = struct {
     arena: std.mem.Allocator,
-    project: *const Project,
-    app: *const App,
     /// The path inside the app: `/issues` for `/newsletter/issues` under `/newsletter`.
     inside: []const u8,
-    http: *const http.Request,
-    identity: identity_module.Identity,
+    /// Publr's own: the site, the app, the request as it came and who sent it.
+    seen: *const anyopaque,
+
+    fn held(request: *const Request) *const Seen {
+        return @ptrCast(@alignCast(request.seen));
+    }
 
     /// `GET`, `POST`, …, as HTTP writes it.
     pub fn method(request: *const Request) []const u8 {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
-        const name = @tagName(request.http.method());
+        const name = @tagName(request.held().http.method());
         const upper = request.arena.alloc(u8, name.len) catch @panic("out of memory");
 
         return std.ascii.upperString(upper, name);
@@ -100,7 +101,7 @@ pub const Request = struct {
     pub fn base(request: *const Request) []const u8 {
         std.debug.assert(request.inside.len > 0);
 
-        return request.app.base();
+        return request.held().app.base();
     }
 
     pub fn starts_with(request: *const Request, prefix: []const u8) bool {
@@ -113,43 +114,43 @@ pub const Request = struct {
     pub fn query(request: *const Request, name: []const u8) ?[]const u8 {
         std.debug.assert(name.len > 0);
 
-        return http.Form.query_param(request.arena, request.http.query(), name);
+        return http.Form.query_param(request.arena, request.held().http.query(), name);
     }
 
     pub fn header(request: *const Request, name: []const u8) ?[]const u8 {
         std.debug.assert(name.len > 0);
 
-        return request.http.header(name);
+        return request.held().http.header(name);
     }
 
     pub fn cookie(request: *const Request, name: []const u8) ?[]const u8 {
         std.debug.assert(name.len > 0);
 
-        const text = request.http.header("cookie") orelse return null;
+        const text = request.held().http.header("cookie") orelse return null;
 
         return identity_module.cookie_value(text, name);
     }
 
     /// The host asked for, with its port when it has one.
     pub fn host(request: *const Request) []const u8 {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
-        return request.http.header("host") orelse "";
+        return request.held().http.header("host") orelse "";
     }
 
     /// The signed-in visitor; null for anyone else.
     pub fn user(request: *const Request) ?User {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
-        const signed_in = switch (request.identity.caller) {
+        const signed_in = switch (request.held().identity.caller) {
             .user => |found| found,
             else => return null,
         };
 
         return .{
             .id = signed_in.id,
-            .email = request.identity.email,
-            .display_name = request.identity.display_name,
+            .email = request.held().identity.email,
+            .display_name = request.held().identity.display_name,
             .roles = signed_in.roles,
         };
     }
@@ -161,7 +162,9 @@ pub const Request = struct {
 
         const signed_in = request.user() orelse return null;
 
-        return context_module.user_field_of(request.project, request.arena, signed_in.id, field);
+        const project = request.held().project;
+
+        return context_module.user_field_of(project, request.arena, signed_in.id, field);
     }
 
     /// Runs an operation as the visitor, through the same pipeline and policies as the API:
@@ -174,15 +177,15 @@ pub const Request = struct {
         comptime std.debug.assert(registry.SDK.bound(Operation).name.len > 0);
 
         var ctx = identity_module.request_context(
-            request.project,
-            request.http,
+            request.held().project,
+            request.held().http,
             request.arena,
-            request.identity.caller,
+            request.held().identity.caller,
         );
 
-        ctx.app = request.app.spec.name;
-        ctx.app_plugins = request.app.spec.plugins;
-        ctx.app_reach = request.app.spec.name;
+        ctx.app = request.held().app.spec.name;
+        ctx.app_plugins = request.held().app.spec.plugins;
+        ctx.app_reach = request.held().app.spec.name;
 
         return registry.SDK.dispatch(&ctx, Operation, in);
     }
@@ -196,7 +199,7 @@ pub const Request = struct {
 
     /// `303 See Other` to `location`: a path on this site or any URL.
     pub fn redirect(request: *const Request, location: []const u8) Response {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
         return .{
             .status = 303,
@@ -206,7 +209,7 @@ pub const Request = struct {
 
     /// This page instead, with this status.
     pub fn respond(request: *const Request, status: u16, body: []const u8) Response {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
         return .{
             .status = status,
@@ -216,21 +219,21 @@ pub const Request = struct {
 
     /// The request's body, as sent: empty for a request with none.
     pub fn posted(request: *const Request) []const u8 {
-        std.debug.assert(request.http.body.len <= 64 << 20);
+        std.debug.assert(request.held().http.body.len <= 64 << 20);
 
-        return request.http.body;
+        return request.held().http.body;
     }
 
     /// For calls to elsewhere (`std.http.Client`), made while the request waits.
     pub fn io(request: *const Request) std.Io {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
-        return request.project.io;
+        return request.held().project.io;
     }
 
     /// `value` as JSON, `200 OK`.
     pub fn json(request: *const Request, value: anytype) Response {
-        std.debug.assert(request.http.path().len > 0);
+        std.debug.assert(request.held().http.path().len > 0);
 
         const text = std.json.Stringify.valueAlloc(request.arena, value, .{}) catch
             @panic("out of memory");

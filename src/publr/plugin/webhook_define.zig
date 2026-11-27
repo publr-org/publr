@@ -8,6 +8,7 @@
 //! as it comes, and its run confirms it before acting (`secret.digest`, or the
 //! gateway asked back). Listed in `.webhooks`, by built-in and installed plugins.
 const std = @import("std");
+const host_of = @import("../../sdk/plugin/context.zig").host_of;
 const job_define = @import("job_define.zig");
 const queue = @import("../../sdk/plugin/queue.zig");
 const deliveries = @import("../../store/webhook_deliveries.zig");
@@ -113,7 +114,7 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
 
             // In an installed plugin's sandbox the host hands the delivery over and keeps
             // how it ended.
-            if (comptime !@hasField(std.meta.Child(@TypeOf(base)), "inner")) {
+            if (comptime @import("../../sdk/plugin/guest.zig").mode == .sandboxed) {
                 const event = read(Event, body, base.arena(), in.body, in.headers) catch {
                     return error.Invalid;
                 };
@@ -121,7 +122,7 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
                 return options.run(ctx, event);
             }
 
-            const inner = base.inner;
+            const inner = host_of(base).inner;
             const kept = try deliveries.get(inner.db, inner.arena, in.delivery) orelse {
                 return error.NotFound;
             };
@@ -146,11 +147,11 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
         pub fn on_failure(ctx: anytype, in: Queued, err: Error) void {
             const base = queue.base_of(ctx);
 
-            if (comptime !@hasField(std.meta.Child(@TypeOf(base)), "inner")) {
+            if (comptime @import("../../sdk/plugin/guest.zig").mode == .sandboxed) {
                 return;
             }
 
-            const inner = base.inner;
+            const inner = host_of(base).inner;
             const problem = if (inner.failure) |failure| failure.message else @errorName(err);
 
             std.debug.assert(problem.len > 0);

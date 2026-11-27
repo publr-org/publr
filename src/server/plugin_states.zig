@@ -93,6 +93,6 @@ fn index_of(comptime Plugin: type) u32 {
 }
 
 /// A plugin's `State`, whether it is passed as its module or as the type it is bound to.
-fn StateOf(comptime Plugin: type) type {
+pub fn StateOf(comptime Plugin: type) type {
     return plugin_define.get(stateful[index_of(Plugin)], "State");
 }

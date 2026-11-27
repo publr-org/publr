@@ -1,81 +1,40 @@
-//! Who is calling, as a plugin's code reads it: `ctx.caller()`. Where the call came from,
-//! whether someone is signed in, their roles, whether an administrator granted them this
-//! operation, and the visitor's stable id, signed in or not.
+//! `ctx.caller()` made from a caller as core knows it, and where a call came from.
 const std = @import("std");
 const Caller = @import("../caller.zig").Caller;
-const Account = @import("../../publr/account_ref.zig").Account;
 
-pub const From = union(enum) {
-    /// The admin, signed in.
-    admin,
-    /// The CLI or an agent, with a device token.
-    command_line,
-    /// REST (`/api/<plugin>.<verb>`): a device token or a machine key.
-    api,
-    /// A site's pages, through an app's address.
-    app,
-    /// A plugin's code, by the plugin's name: its queued work too. Publr's own work between
-    /// requests is `publr`.
-    plugin: []const u8,
-};
+const public = @import("../../publr/caller.zig");
 
-/// The name Publr's own work between requests calls by.
-pub const publr_name = "publr";
+pub const From = public.From;
+pub const View = public.View;
+pub const publr_name = public.publr_name;
 
-pub const View = struct {
+/// What a plugin's code reads of `raw`, a caller as core knows it.
+pub fn view_of(raw: Caller, seen: Seen) View {
+    const person = switch (raw) {
+        .user, .token => true,
+        .anonymous, .system, .plugin => false,
+    };
+
+    std.debug.assert(!person or raw.user_id() != null);
+    std.debug.assert(!(seen.granted_here and seen.from == .app));
+
+    return .{
+        .from = seen.from,
+        .visitor = seen.visitor,
+        .referer = seen.referer,
+        .person = person,
+        .account_id = raw.user_id(),
+        .held_roles = raw.roles(),
+        .granted_here = seen.granted_here,
+    };
+}
+
+/// What the call tells besides who: where it came from, the visitor, the referer.
+pub const Seen = struct {
     from: From,
-    /// The visitor's stable id when the call came through an app, signed in or not.
     visitor: []const u8 = "",
-    /// The page that sent the request when it is another site's; empty for the site's own
-    /// pages and a call no request made. It tells, never grants.
     referer: []const u8 = "",
-    raw: Caller,
-    /// Administrators, and roles an administrator granted this operation; false through an
-    /// app's address.
     granted_here: bool = false,
-
-    pub fn signed_in(view: View) bool {
-        const yes = switch (view.raw) {
-            .user, .token => true,
-            else => false,
-        };
-
-        std.debug.assert(!yes or view.raw.user_id() != null);
-
-        return yes;
-    }
-
-    pub fn has_role(view: View, name: []const u8) bool {
-        return view.raw.holds(name);
-    }
-
-    pub fn granted(view: View) bool {
-        std.debug.assert(!(view.granted_here and view.from == .app));
-
-        return view.granted_here;
-    }
-
-    /// The signed-in person's account (through the admin, an app's pages, or a device acting
-    /// for them), to keep in a `publr.Account` field; null when nobody is signed in.
-    pub fn account(view: View) ?Account {
-        const id = view.raw.user_id() orelse return null;
-
-        std.debug.assert(id.len > 0);
-        std.debug.assert(view.signed_in() or view.raw == .plugin);
-
-        return .{
-            .id = id,
-        };
-    }
-
-    /// Whether the caller is the person with this id: for "is it theirs?" checks.
-    pub fn is(view: View, id: []const u8) bool {
-        std.debug.assert(id.len > 0);
-
-        const own = view.raw.user_id() orelse return false;
-
-        return std.mem.eql(u8, own, id);
-    }
 };
 
 /// Where a call came from, from what the core knows of it. `over_api`: the request came to
@@ -168,11 +127,10 @@ test "where a call came from" {
     try std.testing.expectEqualStrings("cart", joined(.plugin, "cart").plugin);
     try std.testing.expect(joined(kind_of(.api), plugin_of(.api)) == .api);
 
-    const view: View = .{
+    const view = view_of(ada, .{
         .from = .admin,
-        .raw = ada,
         .granted_here = true,
-    };
+    });
 
     try std.testing.expect(view.signed_in() and view.is("ada") and view.has_role("admin"));
     try std.testing.expect(view.granted());

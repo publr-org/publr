@@ -326,7 +326,9 @@ pub const Reads = struct {
     /// Answers every noted read through `api`: the plain `record.get`s together in
     /// one `record.list`, anything else once each, and so is a get the list did not reach (a
     /// plugin's list reaches only the types its grant names).
-    pub fn settle(self: *Reads, api: anytype) Error!void {
+    pub fn settle(self: *Reads, ctx: anytype) Error!void {
+        const api = @import("context.zig").behind_of(ctx);
+
         std.debug.assert(self.entries.items.len <= entries_max);
 
         for (self.typed.items) |held| {

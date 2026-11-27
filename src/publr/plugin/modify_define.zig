@@ -5,6 +5,7 @@
 //! read as its type, or for which `run` answers an error of its own, stays as it was; a
 //! modifier that runs out of memory, calls or time refuses the whole apply.
 const std = @import("std");
+const behind_of = @import("../../sdk/plugin/context.zig").behind_of;
 const sdk = @import("../../sdk.zig");
 const mods = @import("../../sdk/mods.zig");
 const mod_reads = @import("../../sdk/plugin/mod_reads.zig");
@@ -74,7 +75,7 @@ pub fn run_all(
     items: []Value,
 ) sdk.Error!void {
     std.debug.assert(items.len <= mods.items_max);
-    std.debug.assert(ctx.reads == null);
+    std.debug.assert(behind_of(ctx).reads == null);
 
     if (items.len == 0) {
         return;
@@ -114,7 +115,7 @@ pub fn run_values(
     items: []Value,
 ) sdk.Error!void {
     std.debug.assert(items.len <= mods.items_max);
-    std.debug.assert(ctx.reads == null);
+    std.debug.assert(behind_of(ctx).reads == null);
 
     const memory = ctx.arena();
     var reads: mod_reads.Reads = .{
@@ -129,11 +130,11 @@ pub fn run_values(
     }
 
     for (0..mod_reads.rounds_max) |_| {
-        ctx.reads = &reads;
+        behind_of(ctx).reads = &reads;
 
         const passed = pass(Value, run, ctx, values, done);
 
-        ctx.reads = null;
+        behind_of(ctx).reads = null;
 
         const waiting = try passed;
 
@@ -218,7 +219,7 @@ test "values already of the modifier's type are changed where they lie; a failed
         fn run(ctx: *Fake, price: *Price) sdk.Error!void {
             std.debug.assert(price.id.len > 0);
 
-            _ = ctx.reads.?.answer(u8, "record.query", .{
+            _ = behind_of(ctx).reads.?.answer(u8, "record.query", .{
                 .id = price.id,
             }) catch |err| switch (err) {
                 error.NotFound => 0,

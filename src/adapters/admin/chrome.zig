@@ -116,9 +116,11 @@ pub fn in_plugin_frame(ctx: anytype, base: []const u8) admin.Error!*const Reques
 
     request.* = signed_out;
 
-    if (@hasField(@TypeOf(ctx.*), "inner")) {
-        const language = ctx.inner.language;
-        const person = ctx.inner.view.person;
+    // Drawn by the server alone: behind the ctx is a compiled-in call.
+    {
+        const inner = @import("../../sdk/plugin/context.zig").host_of(ctx).inner;
+        const language = inner.language;
+        const person = inner.view.person;
 
         request.admin.locale = if (language.locale.len > 0) language.locale else "en";
         request.publr_translations = language.translator;

@@ -95,6 +95,9 @@ const Lists = struct {
 };
 
 pub const Host = struct {
+    /// A built-in plugin's own request out that gives up after a time limit.
+    pub const timed = @import("../../publr/extend/timed.zig");
+
     tables: []const Table = &.{},
     routes: []const routing.Route = &.{},
     operator_commands: []const routing.OperatorCommand = &.{},

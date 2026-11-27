@@ -12,6 +12,8 @@ const groq = @import("../../lib/groq.zig");
 const guest = @import("../../sdk/plugin/guest.zig");
 const std = @import("std");
 const public_operation = @import("../operation.zig");
+const behind_of = @import("../../sdk/plugin/context.zig").behind_of;
+const host_of = @import("../../sdk/plugin/context.zig").host_of;
 const listed_in = @import("define.zig").listed_in;
 const sdk = @import("../../sdk.zig");
 const record = @import("../../operations/record.zig");
@@ -74,7 +76,7 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
                     public_operation.Json.of(arena, params) catch return error.OutOfMemory;
 
                 if (comptime guest.mode == .native) {
-                    ctx.inner.prepared = parsed();
+                    host_of(ctx).inner.prepared = parsed();
                 }
 
                 const asked: record.Query.In = .{
@@ -90,13 +92,15 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
                         result: Result,
                     };
 
-                    if (ctx.reads != null) {
+                    if (behind_of(ctx).reads != null) {
                         break :laid;
                     }
 
                     const Query = record.Query;
 
-                    return (try ctx.read_shaped(Query.In, Got, Query.name, &asked)).result;
+                    const api = behind_of(ctx);
+
+                    return (try api.read_shaped(Query.In, Got, Query.name, &asked)).result;
                 }
 
                 const answer = try ctx.call(record.Query, asked);

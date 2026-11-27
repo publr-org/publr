@@ -469,11 +469,11 @@ fn options_drawn(ctx: *sdk.Ctx, dimension: site_dimensions.Setting, base: []cons
     inline for (registry.dimensions) |native| {
         if (comptime native.api.field.drawn) {
             if (std.mem.eql(u8, native.setting.name, dimension.name)) {
-                var wrapped: plugin_context.PluginCtx = .{
+                var wrapped: plugin_context.HostApi = .{
                     .inner = ctx,
                 };
 
-                return views.render(&wrapped, base, native.api.field.view, .{}) catch null;
+                return views.render(wrapped.ctx(), base, native.api.field.view, .{}) catch null;
             }
         }
     }

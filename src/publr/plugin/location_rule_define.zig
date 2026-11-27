@@ -122,7 +122,7 @@ fn Ran(comptime plugin: []const u8, comptime given: anytype) type {
         fn values(ctx: *anyopaque, id: []const u8) []const []const u8 {
             const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
             const running = inner.plugin;
-            var wrapped: plugin_context.PluginCtx = .{
+            var wrapped: plugin_context.HostApi = .{
                 .inner = inner,
             };
 
@@ -130,13 +130,13 @@ fn Ran(comptime plugin: []const u8, comptime given: anytype) type {
             inner.plugin = plugin;
             defer inner.plugin = running;
 
-            return given.values(&wrapped) catch &.{};
+            return given.values(wrapped.ctx()) catch &.{};
         }
 
         fn matches(ctx: *anyopaque, target: Target, rule: conditions.Rule) bool {
             const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
             const running = inner.plugin;
-            var wrapped: plugin_context.PluginCtx = .{
+            var wrapped: plugin_context.HostApi = .{
                 .inner = inner,
             };
 
@@ -144,7 +144,7 @@ fn Ran(comptime plugin: []const u8, comptime given: anytype) type {
             inner.plugin = plugin;
             defer inner.plugin = running;
 
-            return given.matches(&wrapped, target, .{
+            return given.matches(wrapped.ctx(), target, .{
                 .operator = rule.operator,
                 .value = rule.value,
             }) catch false;

@@ -1462,7 +1462,7 @@ pub fn SDK(comptime registry: Registry) type {
                 .inner = ctx,
             };
 
-            try AnyRef.read_all(&host, input);
+            try AnyRef.read_all(host.ctx(), input);
 
             inline for (
                 comptime std.meta.fieldNames(Operation.In),
@@ -1553,7 +1553,7 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(ctx.parent != null);
 
             if (comptime plugin_context.takes_plugin_ctx(Operation.run)) {
-                var wrapped: PluginCtx = .{
+                var wrapped: HostApi = .{
                     .inner = ctx,
                 };
                 const was_destructive = ctx.destructive;
@@ -1565,18 +1565,22 @@ pub fn SDK(comptime registry: Registry) type {
                 // Called by a plugin's code, the whole call is in memory of its own already
                 // (`PluginCtx.call`); an answer that cannot be copied whole stays where made.
                 if (comptime !moved.plain(Operation.Out)) {
-                    return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
+                    const ran = Operation.run(wrapped.ctx(), in, granted);
+
+                    return ran catch |err| as_outcome(ctx.db, err);
                 }
 
                 if (plugin_memory.is_work(ctx.arena)) {
-                    return Operation.run(&wrapped, in, granted) catch |err| as_outcome(ctx.db, err);
+                    const ran = Operation.run(wrapped.ctx(), in, granted);
+
+                    return ran catch |err| as_outcome(ctx.db, err);
                 }
 
                 var work: plugin_memory.Work = undefined;
 
                 work.begin(ctx);
 
-                const result = Operation.run(&wrapped, in, granted);
+                const result = Operation.run(wrapped.ctx(), in, granted);
 
                 work.leave();
                 defer work.end();
@@ -1785,15 +1789,15 @@ pub fn SDK(comptime registry: Registry) type {
             defer ctx.handed_by = was_handed;
 
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
-                var wrapped: PluginCtx = .{
+                var wrapped: HostApi = .{
                     .inner = ctx,
                 };
 
                 if (comptime !hook_memory.settles(Middleware)) {
-                    return @call(.auto, Middleware.run, .{&wrapped} ++ args);
+                    return @call(.auto, Middleware.run, .{wrapped.ctx()} ++ args);
                 }
 
-                return hook_memory.run(ctx, Middleware, &wrapped, args);
+                return hook_memory.run(ctx, Middleware, wrapped.ctx(), args);
             }
 
             return @call(.auto, Middleware.run, .{ctx} ++ args);
@@ -2209,11 +2213,11 @@ pub fn SDK(comptime registry: Registry) type {
             try standing.init(memory, current);
 
             const taken = try applied.fitting(Middleware.Value, memory, &standing);
-            var wrapped: PluginCtx = .{
+            var wrapped: HostApi = .{
                 .inner = ctx,
             };
 
-            Middleware.run(&wrapped, taken.values) catch |err| {
+            Middleware.run(wrapped.ctx(), taken.values) catch |err| {
                 const owner = comptime tables.hook_owner(index);
                 const pattern = Middleware.pattern;
 
@@ -2553,10 +2557,10 @@ pub fn SDK(comptime registry: Registry) type {
                 };
 
                 if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
-                    var wrapped: PluginCtx = .{
+                    var wrapped: HostApi = .{
                         .inner = ctx,
                     };
-                    const ran = Middleware.run(&wrapped, payload);
+                    const ran = Middleware.run(wrapped.ctx(), payload);
 
                     return settle_listener(ctx, Middleware, event, ran);
                 }
@@ -2565,11 +2569,13 @@ pub fn SDK(comptime registry: Registry) type {
             }
 
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
-                var wrapped: PluginCtx = .{
+                var wrapped: HostApi = .{
                     .inner = ctx,
                 };
 
-                return settle_listener(ctx, Middleware, event, Middleware.run(&wrapped, event));
+                const ran = Middleware.run(wrapped.ctx(), event);
+
+                return settle_listener(ctx, Middleware, event, ran);
             }
 
             return settle_listener(ctx, Middleware, event, Middleware.run(ctx, event));
@@ -3692,7 +3698,7 @@ test "a compiled-in plugin's call names it to its callee, as an installed one's 
         pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
             std.debug.assert(ctx.plugin_code);
 
-            const view: @import("sdk/plugin/context.zig").HostApi = .{
+            var view: @import("sdk/plugin/context.zig").HostApi = .{
                 .inner = ctx,
             };
             const from = view.caller().from;

@@ -561,7 +561,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
 | `sdk/plugin/field_kinds.zig` | 327 | A plugin's `publr.field.kind` as core keeps it: the descriptor, its checks, text and editor, compiled in or installed |
-| `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host in the plugin's own structs, the exports generated for a plugin, its manifest among them |
+| `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `SandboxApi`, the installed call behind `publr.Ctx`, proxied to the host in the plugin's own structs, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/shape_wire.zig` | 260 | A struct's layout described at build time, so the host reads values where they lie and writes answers in the plugin's own memory; how a struct with its own JSON says how it lies (`publr_form`) |
 | `sdk/plugin/shape_said.zig` | 233 | How each kind of type is said in a description |
 | `sdk/plugin/shape_default.zig` | 212 | A field's default as JSON, said in the description at build time |
@@ -606,7 +606,11 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/sandboxed_plugins.zig` | 195 | The `Plugins` interface through which dispatch reaches installed plugins' operations and hooks |
 | `sdk/plugin_access.zig` | 188 | A plugin's granted permissions turned into the grant for one request |
 | `sdk/call_json.zig` | 600 | Calling an operation by name through the same steps: a built-in one with JSON in and out, an installed plugin's with its input and answer as they come (`sandboxed_plugins.Passed`), JSON written only for the log and a removal list. `Working`: the request's working memory taken for one piece of a plugin's work (an installed operation, a queued job or `on` run, core's apply of modifiers), each call into core given back as it answers; a call out of it fails, never runs twice |
-| `sdk/plugin/context.zig` | 56 | `PluginCtx`: the narrowed ctx a plugin operation receives |
+| `sdk/plugin/context.zig` | 978 | `HostApi`: the compiled-in call behind a plugin's `publr.Ctx`, and `host_of`/`behind_of`, the SDK's own way behind it |
+| `publr/ctx.zig` | 383 | `publr.Ctx`, declared once: an opaque type whose methods go to the call behind it, compiled in or installed; `Ctx.Scope`, `Ctx.Locale` |
+| `publr/caller.zig` | 130 | `ctx.caller()`: where a call came from, the account and roles, whether it was granted |
+| `publr/queue_ctx.zig` | 199 | `publr.QueueCtx`: queued work's `Ctx`, with `fetch` |
+| `publr/exchange_ctx.zig` | 59 | `publr.ExchangeCtx`: a sign-in provider's exchange step, `fetch` and `log` |
 | `sdk/plugin/types.zig` | 139 | Content types declared by plugins: create/update on bootstrap, lock declared fields, keep hand-added ones |
 | `lib/auth/password.zig` | 110 | Argon2id hashing and checking |
 | `lib/auth/csrf.zig` | 97 | CSRF token derive/verify, origin check |

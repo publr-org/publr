@@ -1,8 +1,5 @@
-//! `publr.ExchangeCtx`: what a sign-in provider's `exchange` runs with, the one step of a
-//! sign-in that waits on another server. It can send requests to the provider plugin's own
-//! `http.fetch` domains, through the same guard as `ctx.fetch` (secrets filled as they
-//! leave, every hop logged), within what is left of the step's time, and log; nothing else:
-//! no calls, no records, no session. Core runs it (`run`) and decides whose account it is.
+//! The step behind a sign-in provider's `publr.ExchangeCtx` (`publr/exchange_ctx.zig`).
+//! Core runs it (`run`) and decides whose account it is.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const words = @import("../../publr/plugin/words.zig");
@@ -17,7 +14,10 @@ const nothing_granted: plugin_access.Access = .{
     .own_types = &.{},
 };
 
-pub const ExchangeCtx = struct {
+pub const ExchangeCtx = @import("../../publr/exchange_ctx.zig").ExchangeCtx;
+
+/// One exchange as core runs it: the request's context, the plugin's fetch grant, the time.
+pub const Exchange = struct {
     inner: *sdk.Ctx,
     fetcher: http_operations.Fetcher,
     /// When the step's time runs out, on the awake clock.
@@ -26,7 +26,7 @@ pub const ExchangeCtx = struct {
     /// A request to the provider, as its plugin: only to its `http.fetch` domains,
     /// `{secret:NAME}` filled in as it leaves. `Unavailable` once the step's time is spent.
     pub fn fetch(
-        self: *ExchangeCtx,
+        self: *Exchange,
         request: http_operations.Fetch.In,
     ) Error!http_operations.Fetch.Out {
         std.debug.assert(request.url.len > 0);
@@ -45,7 +45,7 @@ pub const ExchangeCtx = struct {
     }
 
     /// The step's time, one value for the whole step.
-    pub fn now(self: *const ExchangeCtx) words.Time {
+    pub fn now(self: *const Exchange) words.Time {
         std.debug.assert(self.inner.now_ms >= 0);
 
         return .{
@@ -54,13 +54,13 @@ pub const ExchangeCtx = struct {
     }
 
     /// Memory freed when the request ends.
-    pub fn arena(self: *const ExchangeCtx) std.mem.Allocator {
+    pub fn arena(self: *const Exchange) std.mem.Allocator {
         return self.inner.arena;
     }
 
     /// Formatted text in memory freed when the request ends.
     pub fn print(
-        self: *const ExchangeCtx,
+        self: *const Exchange,
         comptime format: []const u8,
         args: anytype,
     ) error{OutOfMemory}![]const u8 {
@@ -71,7 +71,7 @@ pub const ExchangeCtx = struct {
 
     /// A line on the provider plugin's log, under `sign_in:<provider>`.
     pub fn log(
-        self: *ExchangeCtx,
+        self: *Exchange,
         comptime level: words.Level,
         comptime format: []const u8,
         args: anytype,
@@ -114,7 +114,7 @@ pub fn run(
     }
 
     const started = std.Io.Clock.awake.now(ctx.io);
-    var exchange: ExchangeCtx = .{
+    var exchange: Exchange = .{
         .inner = ctx,
         .fetcher = .{
             .name = plugin,
@@ -139,7 +139,7 @@ pub fn run(
 }
 
 fn answered(
-    exchange: *ExchangeCtx,
+    exchange: *Exchange,
     declared: *const provider.SignInProvider,
     callback: provider.Callback,
     limit_ms: u32,
@@ -147,7 +147,7 @@ fn answered(
     std.debug.assert(limit_ms > 0);
 
     const swap = declared.exchange orelse return error.Unavailable;
-    const claims = try swap(exchange, callback);
+    const claims = try swap(@ptrCast(exchange), callback);
     const finished = std.Io.Clock.awake.now(exchange.inner.io);
 
     // Its own work ran past the step's time: given up on all the same.

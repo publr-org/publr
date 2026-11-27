@@ -7,6 +7,7 @@ const queue = @import("../../sdk/plugin/queue.zig");
 const guest = @import("../../sdk/plugin/guest.zig");
 const std = @import("std");
 const public_operation = @import("../operation.zig");
+const behind_of = @import("../../sdk/plugin/context.zig").behind_of;
 const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const internal_record = @import("../../model/internal_record.zig");
@@ -634,7 +635,7 @@ pub fn Store(
                     .pairs = pairs,
                 },
             };
-            const got = try ctx.read_shaped(
+            const got = try behind_of(ctx).read_shaped(
                 record_operations.Get.In,
                 Got,
                 record_operations.Get.name,
@@ -675,7 +676,7 @@ pub fn Store(
                 .expand = false,
                 .purpose = purpose,
             };
-            const listed = try ctx.read_shaped(
+            const listed = try behind_of(ctx).read_shaped(
                 record_operations.List.In,
                 Listed,
                 record_operations.List.name,
@@ -779,10 +780,10 @@ pub fn Store(
             // A read of many is one call already: inside a modifier too it is made at
             // once and laid out, never noted to be answered later.
             if (comptime shaped) {
-                const noting = ctx.reads;
+                const noting = behind_of(ctx).reads;
 
-                ctx.reads = null;
-                defer ctx.reads = noting;
+                behind_of(ctx).reads = null;
+                defer behind_of(ctx).reads = noting;
 
                 return page_laid(ctx, Wanted, asked);
             }
@@ -823,7 +824,7 @@ pub fn Store(
                     document: Wanted,
                 },
             };
-            const page = try ctx.read_shaped(
+            const page = try behind_of(ctx).read_shaped(
                 internal_operations.Find.In,
                 Answered,
                 internal_operations.Find.name,
@@ -866,7 +867,7 @@ pub fn Store(
             if (comptime internal) {
                 if (comptime shaped) {
                     // A modifier's reads by id are noted and read together, laid out.
-                    if (ctx.reads) |reads| {
+                    if (behind_of(ctx).reads) |reads| {
                         return batched_get(ctx, reads, id);
                     }
 
@@ -875,7 +876,7 @@ pub fn Store(
                         .id = id,
                     };
 
-                    return shaped_item(ctx, try ctx.read_shaped(
+                    return shaped_item(ctx, try behind_of(ctx).read_shaped(
                         internal_operations.Get.In,
                         Shaped,
                         internal_operations.Get.name,
@@ -900,7 +901,7 @@ pub fn Store(
                 if (comptime shaped) laid: {
                     // A modifier's reads by id are noted and read together, laid out; one
                     // in a dimension's combination is noted and answered on its own.
-                    if (ctx.reads) |reads| {
+                    if (behind_of(ctx).reads) |reads| {
                         if (pairs.len > 0) {
                             break :laid;
                         }
@@ -968,12 +969,12 @@ pub fn Store(
         fn batch_settle(typed: *mod_reads.Typed, arena: std.mem.Allocator) sdk.Error!void {
             const ctx: *PluginCtx = @ptrCast(@alignCast(typed.reader.?));
             const list: *std.ArrayList(Item) = @ptrCast(@alignCast(typed.items.?));
-            const noting = ctx.reads;
+            const noting = behind_of(ctx).reads;
 
             std.debug.assert(typed.pending().len > 0);
 
-            ctx.reads = null;
-            defer ctx.reads = noting;
+            behind_of(ctx).reads = null;
+            defer behind_of(ctx).reads = noting;
 
             while (typed.pending().len > 0) {
                 const pending = typed.pending();
@@ -1038,7 +1039,7 @@ pub fn Store(
             id: []const u8,
         ) sdk.Error!void {
             std.debug.assert(id.len > 0);
-            std.debug.assert(ctx.reads == null);
+            std.debug.assert(behind_of(ctx).reads == null);
 
             const answer: mod_reads.Typed.Answer = if (comptime internal) .{
                 .failed = error.NotFound,
@@ -1065,7 +1066,7 @@ pub fn Store(
             if (comptime internal) {
                 if (comptime shaped) laid: {
                     // A modifier's reads are noted and answered together, as JSON.
-                    if (ctx.reads != null) {
+                    if (behind_of(ctx).reads != null) {
                         break :laid;
                     }
 
@@ -1077,7 +1078,7 @@ pub fn Store(
                     const One = struct {
                         record: ?Shaped = null,
                     };
-                    const one = try ctx.read_shaped(
+                    const one = try behind_of(ctx).read_shaped(
                         internal_operations.FindOne.In,
                         One,
                         internal_operations.FindOne.name,
@@ -1153,10 +1154,10 @@ pub fn Store(
             // A read of many is one call already: inside a modifier too it is made at
             // once and laid out, never noted to be answered later.
             if (comptime shaped) {
-                const noting = ctx.reads;
+                const noting = behind_of(ctx).reads;
 
-                ctx.reads = null;
-                defer ctx.reads = noting;
+                behind_of(ctx).reads = null;
+                defer behind_of(ctx).reads = noting;
 
                 return shaped_many(ctx, ids);
             }
@@ -1192,7 +1193,7 @@ pub fn Store(
         pub fn create(ctx: *PluginCtx, value: Document) sdk.Error![]const u8 {
             // An installed plugin hands the record over as it lies: the host writes its JSON.
             if (comptime guest.mode == .sandboxed) {
-                if (ctx.memo) |memo| {
+                if (behind_of(ctx).memo) |memo| {
                     memo.forget();
                 }
 
@@ -1203,7 +1204,7 @@ pub fn Store(
                     };
                     const Create = internal_operations.Create;
 
-                    break :made (try ctx.call_shaped(Sent, Create.Out, Create.name, &.{
+                    break :made (try behind_of(ctx).call_shaped(Sent, Create.Out, Create.name, &.{
                         .kind = name,
                         .document = value,
                     })).id;
@@ -1214,7 +1215,7 @@ pub fn Store(
                     };
                     const Create = record_operations.Create;
 
-                    break :made (try ctx.call_shaped(Sent, Create.Out, Create.name, &.{
+                    break :made (try behind_of(ctx).call_shaped(Sent, Create.Out, Create.name, &.{
                         .type = name,
                         .document = value,
                     })).id;
@@ -1263,7 +1264,7 @@ pub fn Store(
                         documents: []const Document,
                     };
 
-                    if (ctx.memo) |memo| {
+                    if (behind_of(ctx).memo) |memo| {
                         memo.forget();
                     }
 
@@ -1273,7 +1274,8 @@ pub fn Store(
                     defer step.end();
 
                     const CreateMany = internal_operations.CreateMany;
-                    const made = try ctx.call_shaped(Sent, CreateMany.Out, CreateMany.name, &.{
+                    const api = behind_of(ctx);
+                    const made = try api.call_shaped(Sent, CreateMany.Out, CreateMany.name, &.{
                         .kind = name,
                         .documents = values[start..end],
                     });
@@ -1368,11 +1370,11 @@ pub fn Store(
                         };
                     }
 
-                    if (ctx.memo) |memo| {
+                    if (behind_of(ctx).memo) |memo| {
                         memo.forget();
                     }
 
-                    _ = try ctx.call_shaped(Sent, SaveMany.Out, SaveMany.name, &.{
+                    _ = try behind_of(ctx).call_shaped(Sent, SaveMany.Out, SaveMany.name, &.{
                         .kind = name,
                         .records = records,
                     });
@@ -1422,7 +1424,7 @@ pub fn Store(
             // Fields given as values the compiler alone knows (`.{ .state = .placed }`) have no
             // layout to hand over: those are written as JSON here, as before.
             if (comptime guest.mode == .sandboxed and laid_out(@TypeOf(fields))) {
-                if (ctx.memo) |memo| {
+                if (behind_of(ctx).memo) |memo| {
                     memo.forget();
                 }
 
@@ -1434,7 +1436,7 @@ pub fn Store(
                     };
                     const Save = internal_operations.Save;
 
-                    _ = try ctx.call_shaped(Sent, Save.Out, Save.name, &.{
+                    _ = try behind_of(ctx).call_shaped(Sent, Save.Out, Save.name, &.{
                         .kind = name,
                         .id = id,
                         .document = fields,
@@ -1447,7 +1449,7 @@ pub fn Store(
                     };
                     const Save = record_operations.Save;
 
-                    _ = try ctx.call_shaped(Sent, Save.Out, Save.name, &.{
+                    _ = try behind_of(ctx).call_shaped(Sent, Save.Out, Save.name, &.{
                         .id = id,
                         .document = fields,
                         .type = name,
@@ -1489,7 +1491,7 @@ pub fn Store(
 
             // An installed plugin's reads are kept between calls: what it read is stale now.
             if (comptime guest.mode == .sandboxed) {
-                if (ctx.memo) |memo| {
+                if (behind_of(ctx).memo) |memo| {
                     memo.forget();
                 }
             }
@@ -1602,20 +1604,10 @@ fn laid_out(comptime Shape: type) bool {
 fn store_step(ctx: *PluginCtx, comptime Value: type) PluginCtx.Scope {
     std.debug.assert(ctx.now().ms >= 0);
 
-    if (comptime guest.mode == .sandboxed) {
-        return .{
-            .api = ctx,
-            .outer = ctx.arena(),
-            .memory = null,
-            // A step holding nothing gives back no walk.
-            .walks_mark = std.math.maxInt(u32),
-        };
-    }
-
-    if (comptime !sdk.moved.plain(Value)) {
+    if (comptime guest.mode == .sandboxed or !sdk.moved.plain(Value)) {
         return .{
             .outer = ctx.arena(),
-            .work = null,
+            .held = null,
         };
     }
 
@@ -1632,9 +1624,9 @@ fn carried(comptime Value: type, step: *PluginCtx.Scope, value: Value) sdk.Error
     }
 
     // Only a step whose answer can be copied whole holds memory of its own.
-    std.debug.assert(step.work == null or comptime sdk.moved.plain(Value));
+    std.debug.assert(step.held == null or comptime sdk.moved.plain(Value));
 
-    if (step.work == null) {
+    if (step.held == null) {
         return value;
     }
 
@@ -2929,7 +2921,7 @@ test "a record's references to any record read back as an input's: type, value, 
     });
     system.parent = system.allocate_operation_id();
 
-    var ctx: PluginCtx = .{
+    var host: @import("../../sdk/plugin/context.zig").HostApi = .{
         .inner = &system,
     };
     const Line = struct {
@@ -2942,7 +2934,7 @@ test "a record's references to any record read back as an input's: type, value, 
         .{ live.id, gone.id },
     ), .{});
 
-    try AnyRef.read_all(&ctx, &line);
+    try AnyRef.read_all(host.ctx(), &line);
     try std.testing.expectEqualStrings("post", line.item.type);
     const read = try line.item.value.?.read(system.arena);
 

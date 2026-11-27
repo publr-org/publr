@@ -4,6 +4,7 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
+const HostApi = @import("../../sdk/plugin/context.zig").HostApi;
 
 const Error = sdk.Error;
 
@@ -121,41 +122,41 @@ test "a record's reads and writes: create, get, save a field, find one" {
     try fixture.post_type(&system);
 
     system.parent = system.allocate_operation_id();
-    var ctx: PluginCtx = .{
+    var ctx: HostApi = .{
         .inner = &system,
     };
-    const first = try posts.create(&ctx, .{
+    const first = try posts.create(ctx.ctx(), .{
         .title = "One",
         .body = "first",
         .views = 1,
     });
-    _ = try posts.create(&ctx, .{
+    _ = try posts.create(ctx.ctx(), .{
         .title = "Two",
     });
 
-    const got = try posts.get(&ctx, first);
+    const got = try posts.get(ctx.ctx(), first);
     try std.testing.expectEqualStrings("One", got.value.title);
     try std.testing.expectEqualStrings("draft", got.status);
     try std.testing.expectEqual(@as(i64, 1), got.value.views);
 
-    try posts.save(&ctx, first, .{
+    try posts.save(ctx.ctx(), first, .{
         .views = 9,
     });
-    const saved = try posts.get(&ctx, first);
+    const saved = try posts.get(ctx.ctx(), first);
     try std.testing.expectEqual(@as(i64, 9), saved.value.views);
     try std.testing.expectEqualStrings("first", saved.value.body);
 
-    const found = (try posts.find_one(&ctx, "views", 9)).?;
+    const found = (try posts.find_one(ctx.ctx(), "views", 9)).?;
     try std.testing.expectEqualStrings(first, found.id);
-    try std.testing.expect(try posts.find_one(&ctx, "title", "Nobody") == null);
+    try std.testing.expect(try posts.find_one(ctx.ctx(), "title", "Nobody") == null);
 
-    _ = try posts.create(&ctx, .{
+    _ = try posts.create(ctx.ctx(), .{
         .title = "Two",
     });
-    try std.testing.expectError(error.Conflict, posts.find_one(&ctx, "title", "Two"));
+    try std.testing.expectError(error.Conflict, posts.find_one(ctx.ctx(), "title", "Two"));
 
     const pages = @import("../../publr/plugin/record_define.zig").Store(Post, "page", false);
-    try std.testing.expectError(error.NotFound, pages.get(&ctx, first));
+    try std.testing.expectError(error.NotFound, pages.get(ctx.ctx(), first));
 }
 
 const sdk_root = @import("../../sdk.zig");
@@ -208,16 +209,16 @@ test "references: core reads the record named, as the caller may see it" {
     try fixture.post_type(&system);
 
     system.parent = system.allocate_operation_id();
-    var ctx: PluginCtx = .{
+    var ctx: HostApi = .{
         .inner = &system,
     };
-    const live = try posts.create(&ctx, .{
+    const live = try posts.create(ctx.ctx(), .{
         .title = "Live",
     });
-    const other = try posts.create(&ctx, .{
+    const other = try posts.create(ctx.ctx(), .{
         .title = "Other",
     });
-    const draft = try posts.create(&ctx, .{
+    const draft = try posts.create(ctx.ctx(), .{
         .title = "Draft",
     });
 

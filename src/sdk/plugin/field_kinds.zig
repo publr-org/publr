@@ -116,13 +116,13 @@ fn Texted(comptime Definition: type) type {
             std.debug.assert(id.len > 0);
 
             const parsed = definer.decoded(Definition.Shape, inner.arena, value);
-            var wrapped: plugin_context.PluginCtx = .{
+            var wrapped: plugin_context.HostApi = .{
                 .inner = inner,
             };
 
             std.debug.assert(inner.now_ms >= 0);
 
-            return Definition.given.text(&wrapped, parsed catch return null) catch null;
+            return Definition.given.text(wrapped.ctx(), parsed catch return null) catch null;
         }
     };
 }
@@ -135,13 +135,13 @@ fn Edited(comptime Definition: type) type {
             const inner: *sdk.Ctx = @ptrCast(@alignCast(ctx));
 
             std.debug.assert(id.len > 0);
-            var wrapped: plugin_context.PluginCtx = .{
+            var wrapped: plugin_context.HostApi = .{
                 .inner = inner,
             };
 
             std.debug.assert(inner.view.editor != null);
 
-            return views.render(&wrapped, base, Definition.given.editor, .{}) catch
+            return views.render(wrapped.ctx(), base, Definition.given.editor, .{}) catch
                 null;
         }
     };

@@ -3,6 +3,7 @@
 //! the plugins' memory keeps it (`plugin_memory.zig`); installed, the host hears it
 //! (`publr_held`) whenever a collection grows past the largest so far.
 const std = @import("std");
+const host_of = @import("context.zig").host_of;
 const guest = @import("guest.zig");
 const plugin_memory = @import("../plugin_memory.zig");
 const PluginCtx = @import("context.zig").PluginCtx;
@@ -23,7 +24,9 @@ pub const Note = struct {
         std.debug.assert(ctx.now().ms >= 0);
 
         return .{
-            .memory = if (comptime guest.mode == .native) ctx.inner.plugins_set_aside else {},
+            .memory = if (comptime guest.mode == .native)
+                host_of(ctx).inner.plugins_set_aside
+            else {},
         };
     }
 

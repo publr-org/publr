@@ -1,4 +1,5 @@
 const std = @import("std");
+const host_of = @import("plugin/context.zig").host_of;
 const plugin_define = @import("../publr/plugin/define.zig");
 const taxonomy_define = @import("../publr/plugin/taxonomy_define.zig");
 const permission_model = @import("../model/permission.zig");
@@ -1400,7 +1401,7 @@ const teller = struct {
     }
 
     fn kept(ctx: *PluginCtx, told: Told.Payload) sdk.Error!void {
-        std.debug.assert(ctx.inner.db.transaction_depth >= 1);
+        std.debug.assert(host_of(ctx).inner.db.transaction_depth >= 1);
 
         if (std.mem.eql(u8, told.who, "nobody")) {
             return error.Conflict;
@@ -1410,23 +1411,24 @@ const teller = struct {
     }
 
     fn heard(ctx: *QueueCtx, told: Told.Payload) sdk.Error!void {
-        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
+        std.debug.assert(host_of(ctx.base).inner.db.transaction_depth == 0);
 
         try line(ctx.base, "heard", told.who);
     }
 
     fn answered(ctx: *QueueCtx, out: Tell.Out) sdk.Error!void {
-        std.debug.assert(ctx.base.inner.db.transaction_depth == 0);
+        std.debug.assert(host_of(ctx.base).inner.db.transaction_depth == 0);
 
         try line(ctx.base, "answered", out.told);
     }
 
-    const QueueCtx = @import("plugin/queue.zig").Queue(PluginCtx);
+    const QueueCtx = @import("plugin/queue.zig").QueueCtx;
 
     fn line(ctx: *PluginCtx, comptime what: []const u8, who: []const u8) sdk.Error!void {
         std.debug.assert(who.len > 0);
 
-        var insert = try ctx.inner.db.prepare("INSERT INTO told (what, who) VALUES (?1, ?2)");
+        const database = host_of(ctx).inner.db;
+        var insert = try database.prepare("INSERT INTO told (what, who) VALUES (?1, ?2)");
         defer insert.finalize();
 
         try insert.bind_text(1, what);

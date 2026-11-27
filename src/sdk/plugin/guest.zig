@@ -29,6 +29,19 @@ const operation_contract = @import("../operation.zig");
 
 pub const Error = wire.Error;
 
+const Ctx = @import("../../publr/ctx.zig").Ctx;
+
+/// The installed call behind a plugin's `ctx`: the SDK's own way to the wire.
+pub fn api_of(ctx: anytype) ApiOf(@TypeOf(ctx)) {
+    comptime std.debug.assert(mode == .sandboxed);
+
+    return @ptrCast(@alignCast(ctx));
+}
+
+fn ApiOf(comptime Pointer: type) type {
+    return if (@typeInfo(Pointer).pointer.attrs.@"const") *const SandboxApi else *SandboxApi;
+}
+
 /// How this build of a plugin is loaded: `sandboxed`, a Wasm module the host runs, or
 /// `native`, compiled into Publr.
 pub const mode: Mode = if (builtin.cpu.arch == .wasm32 and builtin.os.tag == .freestanding)
@@ -87,6 +100,11 @@ pub const SandboxApi = struct {
     /// Set while a read operation runs: the reads it made, answered again without the host.
     memo: ?*read_memo.Memo = null,
 
+    /// The plugin's `ctx` this call stands behind.
+    pub fn ctx(self: *SandboxApi) *Ctx {
+        return @ptrCast(self);
+    }
+
     /// The plugin itself, acting for the account that made the call when there is one.
     pub fn caller(self: *const SandboxApi) caller_view.View {
         std.debug.assert(self.now_at_ms >= 0);
@@ -105,22 +123,12 @@ pub const SandboxApi = struct {
             },
         };
 
-        return .{
+        return caller_view.view_of(raw, .{
             .from = caller_view.joined(self.facts.from, self.facts.plugin),
             .visitor = self.visitor_id,
             .referer = self.facts.referer,
-            .raw = raw,
             .granted_here = self.facts.granted,
-        };
-    }
-
-    /// Queues `Job` to run after this call, as the plugin; inside a write, a rolled-back
-    /// write queues nothing.
-    pub fn enqueue(self: *SandboxApi, comptime Job: type, in: Job.Input) Error!void {
-        std.debug.assert(self.now_at_ms >= 0);
-        comptime std.debug.assert(job_define.is_job(Job));
-
-        return self.enqueue_at(Job, in, self.now());
+        });
     }
 
     /// `enqueue` with when it may run: never before `at`.
@@ -225,91 +233,12 @@ pub const SandboxApi = struct {
         return domains.items;
     }
 
-    /// Inside a computed field's function: the value it answers holds until `time`, and is
-    /// worked out again then whatever else happens (a sale ends). The earliest one counts.
-    pub fn holds_until(self: *SandboxApi, time: words.Time) Error!void {
-        std.debug.assert(self.name.len > 0);
-        std.debug.assert(time.ms > 0);
-
-        _ = try self.call(@import("../../operations/internal.zig").HoldsUntil, .{
-            .until_ms = time.ms,
-        });
-    }
-
     pub fn now(self: *const SandboxApi) words.Time {
         std.debug.assert(self.now_at_ms >= 0);
         std.debug.assert(self.name.len > 0);
 
         return .{
             .ms = self.now_at_ms,
-        };
-    }
-
-    /// A link a person opens without signing in, for one purpose (`intent`, the plugin's
-    /// own word) and one subject, until `expires` (null: until revoked): its `token`, and
-    /// its `path` (`/_links/<token>`, which runs the plugin's operation named `intent`).
-    pub fn sign(
-        self: *SandboxApi,
-        intent: []const u8,
-        subject: []const u8,
-        expires: ?words.Time,
-    ) Error!@import("../../operations/link.zig").Sign.Out {
-        std.debug.assert(intent.len > 0);
-
-        return self.call(@import("../../operations/link.zig").Sign, .{
-            .intent = intent,
-            .subject = subject,
-            .expires_at = if (expires) |time| time.ms else 0,
-        });
-    }
-
-    /// A file the plugin makes, written in pieces (`write`) and kept with `done` as a file of
-    /// one of its own media types (`type_handle`, `kind` `media`): see `files_api.zig`.
-    pub fn make_file(
-        self: *SandboxApi,
-        type_handle: []const u8,
-        filename: []const u8,
-    ) @import("files_api.zig").Making(SandboxApi) {
-        std.debug.assert(type_handle.len > 0);
-
-        return @import("files_api.zig").Making(SandboxApi).begin(self, type_handle, filename);
-    }
-
-    /// The subject a link's token was signed for, when it is good for `intent`; not found
-    /// otherwise (another purpose, past its time, revoked).
-    pub fn verify(self: *SandboxApi, intent: []const u8, token: []const u8) Error![]const u8 {
-        std.debug.assert(intent.len > 0);
-
-        const read = try self.call(@import("../../operations/link.zig").Verify, .{
-            .intent = intent,
-            .token = token,
-        });
-
-        return read.subject;
-    }
-
-    /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
-    /// Fills `buffer` (at most 64 bytes) from the host's cryptographic source.
-    pub fn random(self: *SandboxApi, buffer: []u8) Error!void {
-        std.debug.assert(buffer.len > 0);
-        std.debug.assert(self.name.len > 0);
-
-        const random_operation = @import("../../operations/random.zig");
-        const answered = try self.call(random_operation.Random, .{
-            .bytes = @intCast(buffer.len),
-        });
-
-        return random_operation.fill(buffer, answered.hex);
-    }
-
-    pub fn time_zone(self: *SandboxApi) Error!words.TimeZone {
-        std.debug.assert(self.name.len > 0);
-
-        const answered = try self.call(@import("../../operations/job.zig").TimeZone, .{});
-
-        return .{
-            .name = answered.name,
-            .rule = answered.rule,
         };
     }
 
@@ -381,36 +310,34 @@ pub const SandboxApi = struct {
         return self.language_code;
     }
 
-    /// Text for one person, in their own language (`ctx.locale(person)`): the source text
-    /// until installed plugins' catalogues reach the host, as `t` and `tn`.
-    pub fn locale(self: *const SandboxApi, person: []const u8) Locale {
+    /// `ctx.locale(person)`: the call's language until installed plugins' catalogues reach
+    /// the host per person.
+    pub fn locale_code(self: *const SandboxApi, person: []const u8) []const u8 {
         std.debug.assert(self.name.len > 0);
         std.debug.assert(self.now_at_ms >= 0);
         _ = person;
 
-        return .{
-            .api = self,
-        };
+        return self.language_code;
     }
 
-    /// `ctx.locale(person)`: `t` and `tn` in one person's language.
-    pub const Locale = struct {
-        api: *const SandboxApi,
+    /// `t` and `tn` for `ctx.locale(…)`: in the call's language, as `locale_code` says.
+    pub fn said_in(
+        self: *const SandboxApi,
+        code: []const u8,
+        comptime text: []const u8,
+        comptime plural: []const u8,
+        count: ?u64,
+        values: anytype,
+    ) []const u8 {
+        std.debug.assert(self.name.len > 0);
+        _ = code;
 
-        pub fn t(self: Locale, comptime text: []const u8, values: anytype) []const u8 {
-            return self.api.t(text, values);
+        if (comptime plural.len == 0) {
+            return self.t(text, values);
         }
 
-        pub fn tn(
-            self: Locale,
-            comptime one: []const u8,
-            comptime many: []const u8,
-            count: u64,
-            values: anytype,
-        ) []const u8 {
-            return self.api.tn(one, many, count, values);
-        }
-    };
+        return self.tn(text, plural, count orelse 0, values);
+    }
 
     /// Memory of its own for one step of an operation. From here until `end`, everything the
     /// call allocates and reads (`ctx.arena()`, records, answers) is in the scope's memory, and
@@ -510,16 +437,6 @@ pub const SandboxApi = struct {
         std.debug.assert(self.name.len > 0);
 
         return self.arena_allocator;
-    }
-
-    /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any
-    /// plugin) and answers what they made of it; with none, the value as it went.
-    pub fn mod(self: *SandboxApi, comptime name: []const u8, value: anytype) Error!@TypeOf(value) {
-        const changed = try self.mod_all(name, @TypeOf(value), &.{value});
-
-        std.debug.assert(changed.len == 1);
-
-        return changed[0];
     }
 
     /// `mod` for many values at once: a cart's lines, an order's charges. Each modifier
@@ -1191,24 +1108,24 @@ pub fn Exports(comptime Plugin: type) type {
 
             switch (comptime item.stage) {
                 .before => {
-                    try item.declaration.run(&ctx, &envelope.in);
+                    try item.declaration.run(ctx.ctx(), &envelope.in);
                     try hand_back(@TypeOf(envelope.in), arena, &envelope.in);
                 },
                 .after => {
                     var out = envelope.out orelse return error.Invalid;
 
                     if (comptime !@hasField(@TypeOf(out), "extended")) {
-                        return item.declaration.run(&ctx, &envelope.in, &out);
+                        return item.declaration.run(ctx.ctx(), &envelope.in, &out);
                     }
 
                     const Extended = @import("../extended.zig").Extended;
 
                     out.extended = try Extended.start(arena, &plugin_name);
-                    try item.declaration.run(&ctx, &envelope.in, &out);
+                    try item.declaration.run(ctx.ctx(), &envelope.in, &out);
                     try out.extended.seal();
                     try hand_back(Extended, arena, &out.extended);
                 },
-                .event => try item.declaration.run(&ctx, envelope.in),
+                .event => try item.declaration.run(ctx.ctx(), envelope.in),
                 else => unreachable,
             }
         }
@@ -1227,9 +1144,9 @@ pub fn Exports(comptime Plugin: type) type {
             const items = envelope.in.items;
 
             if (comptime Modifier.whole) {
-                try modify_define.run_all(Modifier.Value, Modifier.run_one, &ctx, items);
+                try modify_define.run_all(Modifier.Value, Modifier.run_one, ctx.ctx(), items);
             } else {
-                try modify_define.run_values(Modifier.Value, Modifier.run_one, &ctx, items);
+                try modify_define.run_values(Modifier.Value, Modifier.run_one, ctx.ctx(), items);
             }
 
             try hand_back(@TypeOf(envelope.in), arena, &envelope.in);
@@ -1250,7 +1167,7 @@ pub fn Exports(comptime Plugin: type) type {
 
             try lists_fit(&ctx, Operation.In, &envelope.in, .input);
 
-            const out = try Operation.run(&ctx, envelope.in, &Grant.allow_all);
+            const out = try Operation.run(ctx.ctx(), envelope.in, &Grant.allow_all);
 
             try lists_fit(&ctx, Operation.Out, &out, .output);
             try hand_back(Operation.Out, arena, &out);
@@ -1290,12 +1207,12 @@ pub fn Exports(comptime Plugin: type) type {
             var ctx = context(arena, envelope.*);
 
             if (comptime item.stage == .rule_values) {
-                const values = try rule.values(&ctx);
+                const values = try rule.values(ctx.ctx());
 
                 return hand_back(@TypeOf(values), arena, &values);
             }
 
-            const matches: bool = try rule.matches(&ctx, envelope.in.target, envelope.in.rule);
+            const matches: bool = try rule.matches(ctx.ctx(), envelope.in.target, envelope.in.rule);
 
             return hand_back(bool, arena, &matches);
         }
@@ -1324,7 +1241,7 @@ pub fn Exports(comptime Plugin: type) type {
             const parsed = field_kind.stored_as(Definition.Shape, arena, envelope.in) catch {
                 return error.Invalid;
             };
-            const text: []const u8 = try Definition.given.text(&ctx, parsed);
+            const text: []const u8 = try Definition.given.text(ctx.ctx(), parsed);
 
             return hand_back([]const u8, arena, &text);
         }
@@ -1347,7 +1264,12 @@ pub fn Exports(comptime Plugin: type) type {
                     return error.NotFound;
                 }
 
-                const html: []const u8 = try views.render(&ctx, envelope.in.base, field.view, .{});
+                const html: []const u8 = try views.render(
+                    ctx.ctx(),
+                    envelope.in.base,
+                    field.view,
+                    .{},
+                );
 
                 return hand_back([]const u8, arena, &html);
             }
@@ -1357,7 +1279,7 @@ pub fn Exports(comptime Plugin: type) type {
             }
 
             const html: []const u8 = try views.render(
-                &ctx,
+                ctx.ctx(),
                 envelope.in.base,
                 declared.given.editor,
                 .{},
@@ -1390,8 +1312,8 @@ pub fn Exports(comptime Plugin: type) type {
         ) Error!void {
             const due = comptime Job.due_on != null;
             var base = context(arena, envelope);
-            var ctx: queue.Queue(SandboxApi) = .{
-                .base = &base,
+            var ctx: queue.QueueCtx = .{
+                .base = base.ctx(),
             };
             // A `.due` job gets its record as it is now; one gone or in the trash runs nothing.
             const in: Job.Input = if (comptime Job.Input == void) {} else if (due)

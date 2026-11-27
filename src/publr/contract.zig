@@ -5,6 +5,7 @@
 //! checks each against the part's shapes. The owner never names providers: it lists the
 //! enabled ones, in the administrator's order, with `publr.providers(ctx, Contract, .{})`.
 const std = @import("std");
+const behind_of = @import("../sdk/plugin/context.zig").behind_of;
 const wire_json = @import("../sdk/plugin/wire_json.zig");
 const guest = @import("../sdk/plugin/guest.zig");
 const sdk = @import("../sdk.zig");
@@ -312,11 +313,13 @@ pub fn Provider(comptime Contract: type) type {
                 };
 
                 // A modifier's reads are noted and answered together, as JSON.
-                if (base.reads != null) {
+                if (behind_of(base).reads != null) {
                     break :laid;
                 }
 
-                return (try base.read_shaped(Answers.In, Got, Answers.name, &asked)).answers;
+                const api = behind_of(base);
+
+                return (try api.read_shaped(Answers.In, Got, Answers.name, &asked)).answers;
             }
 
             const kept = if (core)
@@ -369,7 +372,7 @@ fn call_part(
     // An installed plugin hands the part its input as it lies and gets the answer laid out:
     // no text written or read in the plugin.
     if (comptime !core and @hasDecl(@typeInfo(@TypeOf(ctx)).pointer.child, "call_shaped")) {
-        return ctx.call_shaped(Shape.In, Shape.Out, operation, &in);
+        return behind_of(ctx).call_shaped(Shape.In, Shape.Out, operation, &in);
     }
 
     if (comptime !core) {

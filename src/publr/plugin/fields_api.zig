@@ -5,6 +5,7 @@
 //! save changes the group's fields only, every other group's values stay. Neither asks
 //! where the group is placed: a plugin's location rule may read its own group to decide.
 const std = @import("std");
+const behind_of = @import("../../sdk/plugin/context.zig").behind_of;
 const sdk = @import("../../sdk.zig");
 const json = @import("../../lib/json.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
@@ -30,11 +31,11 @@ pub fn get(ctx: *PluginCtx, comptime Fields: type, user: []const u8) Error!Field
         const Values = values_operations.Values;
 
         // A modifier's reads are noted and answered together, as JSON.
-        if (ctx.reads != null) {
+        if (behind_of(ctx).reads != null) {
             break :laid;
         }
 
-        return (try ctx.read_shaped(Values.In, Got, Values.name, &asked)).values;
+        return (try behind_of(ctx).read_shaped(Values.In, Got, Values.name, &asked)).values;
     }
 
     const got = try ctx.call(values_operations.Values, asked);
@@ -57,11 +58,11 @@ pub fn save(ctx: *PluginCtx, comptime Fields: type, user: []const u8, values: Fi
         };
 
         // A modifier's calls are noted and answered together, as JSON.
-        if (ctx.reads != null) {
+        if (behind_of(ctx).reads != null) {
             break :laid;
         }
 
-        _ = try ctx.call_shaped(Sent, struct {}, SaveValues.name, &.{
+        _ = try behind_of(ctx).call_shaped(Sent, struct {}, SaveValues.name, &.{
             .user = user,
             .group = comptime handle_of(Fields),
             .values = values,
