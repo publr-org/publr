@@ -7,6 +7,7 @@
 const queue = @import("../../sdk/plugin/queue.zig");
 const remote_fields = @import("../../sdk/plugin/remote_fields.zig");
 const std = @import("std");
+const public_operation = @import("../operation.zig");
 const sdk = @import("../../sdk.zig");
 const hooks = @import("../../sdk/hooks.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
@@ -385,7 +386,7 @@ pub fn event(comptime options: anytype) type {
             @compileError("only core names an event a `before` hook may refuse: " ++ name);
         }
 
-        const deprecated_: ?sdk.operation.Deprecated = if (@hasField(Options, "deprecated"))
+        const deprecated_: ?public_operation.Deprecated = if (@hasField(Options, "deprecated"))
             deprecation_of(name, options.deprecated)
         else
             null;
@@ -396,18 +397,18 @@ pub fn event(comptime options: anytype) type {
             pub const verb = name;
             pub const full_name = if (core) name else "";
             pub const refusable = refusable_;
-            /// On its way out, as an operation is (`sdk.operation.Deprecated`).
+            /// On its way out, as an operation is (`publr.Deprecated`).
             pub const deprecated = deprecated_;
         };
     }
 }
 
 /// An event's `.deprecated` as written, checked as an operation's is.
-fn deprecation_of(comptime name: []const u8, comptime given: anytype) sdk.operation.Deprecated {
+fn deprecation_of(comptime name: []const u8, comptime given: anytype) public_operation.Deprecated {
     comptime {
         std.debug.assert(name.len > 0);
 
-        var found: sdk.operation.Deprecated = .{
+        var found: public_operation.Deprecated = .{
             .since = given.since,
             .removed_on = given.removed_on,
             .migration = given.migration,

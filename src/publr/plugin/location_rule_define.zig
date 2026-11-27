@@ -8,11 +8,11 @@ const field_group = @import("../../model/field_group.zig");
 const conditions = @import("../../model/conditions.zig");
 const plugin_context = @import("../../sdk/plugin/context.zig");
 
-pub const Target = field_group.Target;
+pub const Target = @import("../model/field_group.zig").Target;
 
 /// The rule as the group writes it: its operator and value.
 pub const Rule = struct {
-    operator: conditions.Operator,
+    operator: @import("../model/conditions.zig").Operator,
     value: []const u8,
 
     /// The target's own value against the rule, by its operator.

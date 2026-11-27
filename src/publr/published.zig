@@ -5,7 +5,7 @@
 //! checked where its records name them. Compiled in, the module is made from the owner's
 //! declarations; installed, `plugin build` writes it from the owner's manifest.
 const std = @import("std");
-const model = @import("../model/published.zig");
+const model = @import("model/published.zig");
 const contract = @import("../sdk/contract.zig");
 
 pub const Interface = model.Interface;

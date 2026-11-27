@@ -9,9 +9,10 @@ const wire_json = @import("../sdk/plugin/wire_json.zig");
 const guest = @import("../sdk/plugin/guest.zig");
 const sdk = @import("../sdk.zig");
 const shapes = @import("../model/contract.zig");
+const public_shapes = @import("model/contract.zig");
 const private = @import("../sdk/contract.zig");
-const registered_model = @import("../model/provider.zig");
-const published_model = @import("../model/published.zig");
+const registered_model = @import("model/provider.zig");
+const published_model = @import("model/published.zig");
 
 const Registered = registered_model.Registered;
 const Answers = private.Answers;
@@ -110,7 +111,7 @@ pub fn define(comptime options: anytype) type {
             pub const component: Component = component_given;
             /// What the owner's slot hands the chosen provider's component, as data: each
             /// field an attribute of `<ProviderSlot>`; none when the contract leaves it open.
-            pub const with: []const shapes.Node = if (@hasField(Options, "with"))
+            pub const with: []const public_shapes.Node = if (@hasField(Options, "with"))
                 shapes.describe(options.with)
             else
                 &.{};

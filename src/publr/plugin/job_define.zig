@@ -28,7 +28,7 @@ pub const At = struct {
     minute: u8 = 0,
 };
 
-pub const Due = @import("../../model/sandboxed_plugin.zig").Due;
+pub const Due = @import("../model/sandboxed_plugin.zig").Due;
 
 /// What a `.due` job is queued with: the record it runs for.
 pub const DueInput = struct {

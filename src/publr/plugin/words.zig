@@ -3,6 +3,7 @@
 //! log lines with a level, and the call's time as `publr.Time`.
 const std = @import("std");
 const operation = @import("../../sdk/operation.zig");
+const public_operation = @import("../operation.zig");
 
 pub const Level = enum { info, warn, err };
 
@@ -13,7 +14,7 @@ const calendar = @import("../../model/calendar.zig");
 
 /// A day on the calendar: `time.local_date(zone)`, `date.add_months(1)`,
 /// `check_in.days_until(check_out)`.
-pub const Date = calendar.Date;
+pub const Date = @import("../model/calendar.zig").Date;
 
 /// The site's time zone, as `ctx.time_zone()` answers it: its name (`Europe/Warsaw`) and its
 /// rule, summer time included.
@@ -27,7 +28,7 @@ pub const Time = struct {
     ms: i64,
 
     /// Written as its milliseconds, in JSON and in an operation's shape.
-    pub const json_scalar: @import("../../model/contract.zig").Kind = .integer;
+    pub const json_scalar: @import("../model/contract.zig").Kind = .integer;
     pub const json_label = "milliseconds since 1970";
     /// Handed over as its milliseconds.
     pub const publr_form = .inner;
@@ -184,7 +185,7 @@ fn is_text(comptime Value: type) bool {
 }
 
 /// An operation's declared failures as a slice, whichever way it lists them.
-pub fn failures_of(comptime Operation: type) []const operation.Failure {
+pub fn failures_of(comptime Operation: type) []const public_operation.Failure {
     comptime {
         std.debug.assert(Operation.name.len > 0);
 
@@ -203,7 +204,7 @@ pub fn failures_of(comptime Operation: type) []const operation.Failure {
 }
 
 /// The status an operation's `Fails:` gives `name`; 409 when it gives none.
-pub fn status_of(failures: []const operation.Failure, name: []const u8) u16 {
+pub fn status_of(failures: []const public_operation.Failure, name: []const u8) u16 {
     std.debug.assert(name.len > 0);
     std.debug.assert(failures.len <= 64);
 
@@ -244,7 +245,7 @@ test "named values filled, statuses found" {
 
     try std.testing.expectEqualStrings("Only 2 of tea left", text);
 
-    const failures = [_]operation.Failure{.{
+    const failures = [_]public_operation.Failure{.{
         .name = "OfferEnded",
         .status = 410,
         .message = "the offer ended",

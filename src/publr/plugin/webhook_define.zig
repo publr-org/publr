@@ -20,7 +20,7 @@ pub const body_bytes_max: u32 = 256 << 10;
 /// How far a timestamped signature's time may be from now.
 pub const tolerance_ms: i64 = 5 * 60 * 1000;
 
-pub const wire = @import("../../model/sandboxed_plugin.zig");
+const wire = @import("../model/sandboxed_plugin.zig");
 
 pub const Signature = wire.Signature;
 pub const Encoding = wire.Encoding;

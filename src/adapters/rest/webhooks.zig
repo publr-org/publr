@@ -100,7 +100,7 @@ fn Readable(comptime Webhook: type) type {
 /// The webhook a delivery is for, wherever it is declared.
 const Target = struct {
     owner: []const u8,
-    webhook: webhook_define.wire.Webhook,
+    webhook: @import("../../model/sandboxed_plugin.zig").Webhook,
     readable: *const fn (webhook_define.Body, std.mem.Allocator, []const u8) bool,
 };
 

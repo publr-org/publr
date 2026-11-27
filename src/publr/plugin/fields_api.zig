@@ -73,7 +73,7 @@ pub fn save(ctx: *PluginCtx, comptime Fields: type, user: []const u8, values: Fi
     _ = try ctx.call(values_operations.SaveValues, .{
         .user = user,
         .group = comptime handle_of(Fields),
-        .values = @import("../../sdk/operation.zig").Json.of(ctx.arena(), values) catch {
+        .values = @import("../operation.zig").Json.of(ctx.arena(), values) catch {
             return error.OutOfMemory;
         },
     });

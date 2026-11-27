@@ -11,3 +11,10 @@ pub const Kind = enum {
         return kind == .asset or kind == .expense;
     }
 };
+
+/// The one limit an account may keep, holds counted.
+pub const Limit = enum {
+    none,
+    never_below_zero,
+    never_above_zero,
+};

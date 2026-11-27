@@ -8,6 +8,7 @@ const plugin_define = @import("define.zig");
 const record_define = @import("record_define.zig");
 const content_type = @import("../../model/content_type.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
+const public_plugin = @import("../model/sandboxed_plugin.zig");
 const Page = @import("../../sdk/plugin/admin_slots.zig").Page;
 
 pub const MenuItem = struct {
@@ -32,10 +33,10 @@ pub const Icon = struct {
 };
 
 /// The plugin's own icons, checked: names, sizes, and that each is a drawing.
-pub fn icons_of(comptime Plugin: type) []const sandboxed_plugin.PluginIcon {
+pub fn icons_of(comptime Plugin: type) []const public_plugin.PluginIcon {
     comptime {
         const plugin = Plugin.manifest.name;
-        var icons: []const sandboxed_plugin.PluginIcon = &.{};
+        var icons: []const public_plugin.PluginIcon = &.{};
 
         std.debug.assert(plugin.len > 0);
 
@@ -68,7 +69,7 @@ pub fn icons_of(comptime Plugin: type) []const sandboxed_plugin.PluginIcon {
                     "`<svg>` of at most 4 KiB");
             }
 
-            icons = icons ++ &[_]sandboxed_plugin.PluginIcon{.{
+            icons = icons ++ &[_]public_plugin.PluginIcon{.{
                 .name = name,
                 .svg = icon.svg,
             }};

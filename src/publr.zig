@@ -144,9 +144,9 @@ pub const FieldMarkers = struct {
     /// The dimensions the field varies by (`language`, a test's).
     varies_by: []const []const u8 = &.{},
     /// Each value it must hold before its record goes live: `language` at `pl`.
-    required: []const @import("model/dimension.zig").Pair = &.{},
+    required: []const @import("publr/model/dimension.zig").Pair = &.{},
     /// The whole record as the editor holds it, every value beside its field.
-    record: sdk.operation.Json = .object,
+    record: @import("publr/operation.zig").Json = .object,
     markers: []const Marker = &.{},
 };
 /// A marker beside a field's label: `PL`, `Variant B`. Markers of one `dimension` are drawn
@@ -202,6 +202,12 @@ pub const location = struct {
 };
 pub const field = struct {
     pub const kind = @import("publr/plugin/field_kind_define.zig").kind;
+    /// What one field of `record.define`'s `.fields` takes: `.{ .validation = .{ .max_len =
+    /// 80 }, .options = .{ ... }, .visibility = .{ .restricted = true } }`.
+    pub const Overrides = @import("publr/field_options.zig").Overrides;
+    pub const Validation = @import("publr/field_options.zig").Validation;
+    pub const Options = @import("publr/field_options.zig").Options;
+    pub const Visibility = @import("publr/field_options.zig").Visibility;
 };
 /// Queued work: `publr.job.define(In, .{ .name, .run })` for `ctx.enqueue`,
 /// `publr.job.define_recurring(.{ .name, .run, .every, .at })` for what repeats.

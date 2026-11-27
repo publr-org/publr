@@ -14,6 +14,22 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:field`
+
+A field's overrides in `record.define`'s `.fields` (and a `.register_fields` group's) are
+read in their own public shape, `publr.field.Overrides`, with its parts
+`publr.field.Validation`, `publr.field.Options` and `publr.field.Visibility`; core makes them
+into its stored field definition. What a plugin writes is the same, every option included,
+except `.visibility.plugin`: the plugin a restricted field belongs to is set by core, and a
+plugin naming it fails the build. Leave it out:
+
+```zig
+// Before
+.notes = .{ .visibility = .{ .restricted = true, .plugin = "quotes" } },
+// After
+.notes = .{ .visibility = .{ .restricted = true } },
+```
+
 ### `sdk:auth`
 
 `publr.auth` holds the sign-in events alone (`SignedIn` through `IdentityRefused`).

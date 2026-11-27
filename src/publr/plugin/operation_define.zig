@@ -4,13 +4,14 @@
 //! its doc comments: the description, details, `Fails:` and `Example:` from the comment
 //! above it (or its file's `//!`), each field's from the `///` on it.
 const std = @import("std");
+const public_operation = @import("../operation.zig");
 const sdk = @import("../../sdk.zig");
 const comptime_json = @import("../../model/comptime_json.zig");
 const plugin_define = @import("define.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const plugin_words = @import("words.zig");
 
-pub const Kind = sdk.operation.Kind;
+pub const Kind = public_operation.Kind;
 pub const verb_len_max: u32 = 48;
 
 const option_names = [_][]const u8{
@@ -20,7 +21,7 @@ const option_names = [_][]const u8{
 
 /// A ready answer to who may call, as data a site can read and override; the other kind of
 /// `.authorize` is a function of the plugin's own taking the context and the input.
-pub const Answer = @import("../../model/caller_answer.zig").Answer;
+pub const Answer = @import("../authorize.zig").Answer;
 
 pub const Limit = struct {
     per_minute: u32,
@@ -114,9 +115,9 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
             /// The example as written: what an installed plugin's build runs.
             pub const example_json = parsed.example_in;
             pub const example_out_json = parsed.example_out;
-            pub const field_docs: sdk.operation.Docs(In) = field_words(full_name, In, Docs);
-            pub const output_docs: sdk.operation.Docs(Out) = field_words(full_name, Out, Docs);
-            pub const failures: []const sdk.operation.Failure = parsed.failures;
+            pub const field_docs: public_operation.Docs(In) = field_words(full_name, In, Docs);
+            pub const output_docs: public_operation.Docs(Out) = field_words(full_name, Out, Docs);
+            pub const failures: []const public_operation.Failure = parsed.failures;
             pub const open = @hasField(Options, "authorize") or untrusted;
             pub const destroys = @hasField(Options, "destructive") and options.destructive;
             pub const untrusted_callers = untrusted;
@@ -126,7 +127,7 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
                 .per_minute = options.limit.per_minute,
             } else null;
             pub const secret: []const []const u8 = secret_names(options);
-            pub const deprecated: ?sdk.operation.Deprecated = deprecated_of(options);
+            pub const deprecated: ?public_operation.Deprecated = deprecated_of(options);
             /// The `.validate` function's `///`: what is checked, the "Checked" line.
             pub const checked: []const u8 = plugin_define.words(
                 Docs,
@@ -201,7 +202,7 @@ pub fn Problems(comptime In: type) type {
     return struct {
         const Self = @This();
 
-        items: [sdk.operation.problems_max]sdk.operation.Problem = undefined,
+        items: [sdk.operation.problems_max]public_operation.Problem = undefined,
         len: u32 = 0,
 
         pub fn add(self: *Self, comptime field: std.meta.FieldEnum(In), reason: []const u8) void {
@@ -219,7 +220,7 @@ pub fn Problems(comptime In: type) type {
             self.len += 1;
         }
 
-        pub fn slice(self: *const Self) []const sdk.operation.Problem {
+        pub fn slice(self: *const Self) []const public_operation.Problem {
             std.debug.assert(self.len <= sdk.operation.problems_max);
             std.debug.assert(self.items.len == sdk.operation.problems_max);
 
@@ -245,7 +246,7 @@ pub fn Problems(comptime In: type) type {
 const Sections = struct {
     description: []const u8,
     details: []const u8,
-    failures: []const sdk.operation.Failure,
+    failures: []const public_operation.Failure,
     example_in: []const u8,
     example_out: []const u8,
 };
@@ -259,7 +260,7 @@ fn sections(comptime full_name: []const u8, comptime words: []const u8) Sections
         var lines = std.mem.splitScalar(u8, words, '\n');
         const first = std.mem.trim(u8, lines.next().?, " ");
         var details: []const u8 = "";
-        var failures: []const sdk.operation.Failure = &.{};
+        var failures: []const public_operation.Failure = &.{};
         var example_in: []const u8 = "";
         var example_out: []const u8 = "";
         var section: enum { details, fails, example } = .details;
@@ -281,7 +282,7 @@ fn sections(comptime full_name: []const u8, comptime words: []const u8) Sections
             switch (section) {
                 .details => details = details ++ (if (details.len > 0) "\n" else "") ++ raw,
                 .fails => if (line.len > 0) {
-                    failures = failures ++ [_]sdk.operation.Failure{failure(full_name, line)};
+                    failures = failures ++ [_]public_operation.Failure{failure(full_name, line)};
                 },
                 .example => {
                     if (std.mem.startsWith(u8, line, "in:")) {
@@ -321,7 +322,7 @@ fn sections(comptime full_name: []const u8, comptime words: []const u8) Sections
 
 /// `- NotEnoughStock (409): fewer left than asked`; the status defaults to 409. 401 and 429
 /// keep core's meaning and no 5xx is a plugin's.
-fn failure(comptime full_name: []const u8, comptime line: []const u8) sdk.operation.Failure {
+fn failure(comptime full_name: []const u8, comptime line: []const u8) public_operation.Failure {
     comptime {
         const body = std.mem.trim(u8, std.mem.trimStart(u8, line, "-"), " ");
         const colon = std.mem.indexOfScalar(u8, body, ':') orelse
@@ -342,7 +343,7 @@ fn failure(comptime full_name: []const u8, comptime line: []const u8) sdk.operat
                 " takes a 4xx status other than 401 and 429");
         }
 
-        const found: sdk.operation.Failure = .{
+        const found: public_operation.Failure = .{
             .name = failure_name,
             .status = status,
             .message = message,
@@ -362,9 +363,9 @@ fn field_words(
     comptime full_name: []const u8,
     comptime Shape: type,
     comptime Docs: type,
-) sdk.operation.Docs(Shape) {
+) public_operation.Docs(Shape) {
     comptime {
-        var docs: sdk.operation.Docs(Shape) = .{};
+        var docs: public_operation.Docs(Shape) = .{};
 
         for (std.meta.fieldNames(Shape)) |field_name| {
             // A shape the SDK hands over (`publr.ai.Completion.In`) carries its own words.
@@ -440,14 +441,14 @@ fn who_of(
 }
 
 /// `.deprecated` as written: `.since`, `.removed_on`, `.migration`, and `.instead` when given.
-fn deprecated_of(comptime options: anytype) ?sdk.operation.Deprecated {
+fn deprecated_of(comptime options: anytype) ?public_operation.Deprecated {
     comptime {
         if (!@hasField(@TypeOf(options), "deprecated")) {
             return null;
         }
 
         const given = options.deprecated;
-        var found: sdk.operation.Deprecated = .{
+        var found: public_operation.Deprecated = .{
             .since = given.since,
             .removed_on = given.removed_on,
             .migration = given.migration,

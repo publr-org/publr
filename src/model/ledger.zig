@@ -5,13 +5,7 @@ const std = @import("std");
 const currency = @import("currency.zig");
 
 pub const Kind = @import("../publr/model/ledger.zig").Kind;
-
-/// The one limit an account may keep, holds counted.
-pub const Limit = enum {
-    none,
-    never_below_zero,
-    never_above_zero,
-};
+pub const Limit = @import("../publr/model/ledger.zig").Limit;
 
 /// Where a transfer stands. A hold is `pending` until a post, a void or its expiry settles it.
 pub const Status = enum {

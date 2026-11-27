@@ -13,8 +13,7 @@ pub const live = @import("dimension/live.zig");
 
 pub const code_len_max = public.code_len_max;
 pub const name_len_max = public.name_len_max;
-/// The dimensions one site has at most: a language and many A/B tests.
-pub const dimensions_max: u32 = 64;
+pub const dimensions_max = public.dimensions_max;
 pub const key_pairs_max = public.key_pairs_max;
 /// The codes one dimension falls back through: the code, each shorter prefix, its main.
 pub const order_max: u32 = 5;
@@ -23,67 +22,11 @@ pub const member_separator = public.member_separator;
 pub const every = public.every;
 pub const combination_len_max = public.combination_len_max;
 
-/// A dimension as data: what an installed plugin's manifest says of the one it declares, its
-/// list an operation by full name (`languages.list`), its wrapper as the owner words it.
-pub const Declared = struct {
-    name: []const u8,
-    /// Its key in an address's query (`lang`); empty: its name.
-    param: []const u8 = "",
-    list: []const u8,
-    /// Higher keeps its value longer when a combination falls back.
-    priority: i32 = 0,
-    /// Its values have pages of their own, under their addresses.
-    addresses: bool = false,
-    /// The plugin declaring it, set where the site gathers them.
-    plugin: []const u8 = "",
-    /// How a field says it holds values per this dimension (`.translatable = .required`).
-    field: FieldOption,
-    /// What a read names it by (`.language = "pl"`); empty: by its name.
-    read: ReadOption = .{},
-    /// A family: one dimension per thing its owner lists (`variation-hero`, each A/B test its
-    /// own), its list answering `dimensions`, each with its values. A field holding the
-    /// family holds each of them.
-    each: bool = false,
-    /// The owner's read telling, for one record, which of its fields each of the family's
-    /// dimensions shows on (`shown`); empty: every field holding it, on every record.
-    shown: []const u8 = "",
-    /// How a field that says nothing of it holds it; a field saying otherwise is kept in its
-    /// `not_in` (`one`) or `dimensions`.
-    default: Holds = .one,
-};
-
-/// The owner's field option: its name, words, and each value it takes with its `Holds`.
-pub const FieldOption = struct {
-    /// `translatable`.
-    name: []const u8,
-    /// The setting on the field panel: `Translate`.
-    label: []const u8,
-    /// What the setting means, under it.
-    help: []const u8 = "",
-    /// Each value in the order the owner declares it, no two holding the same way.
-    choices: []const Choice,
-    /// The owner draws the setting itself (`.options`); else the core lists the choices.
-    drawn: bool = false,
-};
-
-pub const Choice = struct {
-    /// `optional_with_fallback`.
-    value: []const u8,
-    holds: Holds,
-    /// The owner's words for it: a first line, then what it means.
-    title: []const u8,
-    description: []const u8 = "",
-};
-
-/// The owner's read option: its name and the editor picker's word.
-pub const ReadOption = struct {
-    /// `language`; empty: the dimension's name.
-    name: []const u8 = "",
-    /// The editor's picker: `Content language`; empty: the field option's label.
-    label: []const u8 = "",
-};
-
-pub const choices_max: u32 = 16;
+pub const Declared = public.Declared;
+pub const FieldOption = public.FieldOption;
+pub const Choice = public.Choice;
+pub const ReadOption = public.ReadOption;
+pub const choices_max = public.choices_max;
 
 /// The choice of `option` holding values `holds`, if it has one.
 pub fn choice_holding(option: FieldOption, holds: Holds) ?Choice {

@@ -9,6 +9,7 @@ pub const hint = @import("field/hint.zig");
 pub const conditions = @import("conditions.zig");
 pub const presets = @import("field/presets.zig");
 pub const pattern = @import("field/pattern.zig");
+pub const given = @import("field/given.zig");
 
 pub const name_len_max: u32 = 64;
 pub const label_len_max: u32 = 128;

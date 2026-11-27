@@ -496,8 +496,7 @@ pub const Webhook = struct {
 pub const Signature = public.Signature;
 pub const Encoding = public.Encoding;
 
-/// How a webhook's body is read: JSON, a form, or the bytes as they came.
-pub const Body = enum { json, form, raw };
+pub const Body = public.Body;
 
 pub const DeliveryId = public.DeliveryId;
 

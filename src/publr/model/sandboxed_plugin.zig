@@ -28,6 +28,9 @@ pub const Signature = union(enum) {
 
 pub const Encoding = enum { hex, base64 };
 
+/// How a webhook's body is read: JSON, a form, or the bytes as they came.
+pub const Body = enum { json, form, raw };
+
 /// Where a delivery's own id is, so a repeat is dropped: a header, or a top-level field.
 pub const DeliveryId = union(enum) {
     header: []const u8,

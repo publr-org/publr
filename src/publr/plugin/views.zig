@@ -82,7 +82,7 @@ pub fn render(
 }
 
 const Looking = @import("../../sdk/context.zig").View;
-const Laid = @import("../../sdk/operation/json.zig").Laid;
+const Laid = @import("../operation/json.zig").Laid;
 
 /// `Looking` as an installed plugin's module is handed it: an editor's value read where it
 /// lies, with what it reads as when it is kept as text holding JSON.

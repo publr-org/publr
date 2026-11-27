@@ -442,6 +442,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | File | Lines | What |
 |---|---|---|
 | `model/field.zig` | 299 | Field kinds, options, `Def`, validation of field definitions |
+| `model/field/given.zig` | 146 | A field's overrides as a plugin gives them (`publr/field_options.zig`) made into core's `Def` parts |
+| `publr/field_options.zig` | 256 | `publr.field.Overrides`: what one field of `record.define`'s `.fields` takes |
 | `model/content_type.zig` | 153 | A content type `Def`, its validation, JSON encode/decode, id from handle |
 | `model/validate.zig` | 416 | A JSON document against a type's fields: problems |
 | `model/key_page.zig` | 90 | A page of a list held in memory, in the order of its keys: the window after `after` and the next page's key |
@@ -558,6 +560,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin.zig` | 647 | What a plugin module may export; `Merged(plugins)`; compile-time validation |
 | `sdk/plugin/sandboxed.zig` | 320 | What a plugin declares to run in the sandbox (permissions, limits), its entries, what may not be sandboxed |
 | `sdk/plugin/manifest.zig` | 190 | The manifest written into a plugin's module, built from its declarations |
+| `sdk/plugin/field_kinds.zig` | 327 | A plugin's `publr.field.kind` as core keeps it: the descriptor, its checks, text and editor, compiled in or installed |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `PluginCtx` proxied to the host in the plugin's own structs, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/shape_wire.zig` | 260 | A struct's layout described at build time, so the host reads values where they lie and writes answers in the plugin's own memory; how a struct with its own JSON says how it lies (`publr_form`) |
 | `sdk/plugin/shape_said.zig` | 233 | How each kind of type is said in a description |

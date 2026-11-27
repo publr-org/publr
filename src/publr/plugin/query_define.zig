@@ -11,6 +11,7 @@ const queue = @import("../../sdk/plugin/queue.zig");
 const groq = @import("../../lib/groq.zig");
 const guest = @import("../../sdk/plugin/guest.zig");
 const std = @import("std");
+const public_operation = @import("../operation.zig");
 const listed_in = @import("define.zig").listed_in;
 const sdk = @import("../../sdk.zig");
 const record = @import("../../operations/record.zig");
@@ -65,12 +66,12 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
 
                 const arena = ctx.arena();
                 // `.{}` is an empty tuple, which is written as a list: no parameters are `{}`.
-                const bound: sdk.operation.Json = if (comptime std.meta.fieldNames(
+                const bound: public_operation.Json = if (comptime std.meta.fieldNames(
                     @TypeOf(params),
                 ).len == 0)
                     .object
                 else
-                    sdk.operation.Json.of(arena, params) catch return error.OutOfMemory;
+                    public_operation.Json.of(arena, params) catch return error.OutOfMemory;
 
                 if (comptime guest.mode == .native) {
                     ctx.inner.prepared = parsed();

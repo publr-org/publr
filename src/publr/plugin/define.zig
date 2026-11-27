@@ -493,14 +493,14 @@ fn declared_hooks(comptime Plugin: type) []const type {
 /// A bound plugin's field kinds: each `publr.field.kind` named under the plugin.
 fn declared_kinds(comptime Plugin: type) []const Kind {
     comptime {
-        const field_kind_define = @import("field_kind_define.zig");
+        const field_kinds = @import("../../sdk/plugin/field_kinds.zig");
         var list: []const Kind = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (Plugin.options.field_kinds) |Listed| {
             list = list ++ [_]Kind{
-                field_kind_define.described(Listed, Plugin.manifest.name, Plugin.docs),
+                field_kinds.described(Listed, Plugin.manifest.name, Plugin.docs),
             };
         }
 

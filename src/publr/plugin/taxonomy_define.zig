@@ -136,7 +136,7 @@ pub fn def_of(
 }
 
 /// `.register_taxonomies` entries: a taxonomy on other plugins' types, by name or pattern.
-pub const Registration = @import("../../model/taxonomy.zig").Registration;
+pub const Registration = @import("../model/taxonomy.zig").Registration;
 
 /// A registration as the site keeps it: whose it is.
 pub const Registered = struct {

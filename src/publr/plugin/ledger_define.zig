@@ -11,11 +11,11 @@ const plugin_define = @import("define.zig");
 const sdk = @import("../../sdk.zig");
 const AnyRef = @import("record_define.zig").AnyRef;
 const AccountRef = @import("../account_ref.zig").Account;
-const Contract = @import("../../model/contract.zig");
+const Contract = @import("../model/contract.zig");
 
 pub const Error = sdk.Error;
-pub const Kind = model.Kind;
-pub const Limit = model.Limit;
+pub const Kind = @import("../model/ledger.zig").Kind;
+pub const Limit = @import("../model/ledger.zig").Limit;
 
 pub const Limits = struct {
     never_below_zero: bool = false,
@@ -778,7 +778,7 @@ pub fn find(ctx: anytype, given: FindOptions) Error![]const operations.Shown {
             .account = if (given.account) |account| account.id else "",
             .name = given.name,
             .after = after,
-            .limit = sdk.operation.page_limit_max,
+            .limit = @import("../operation.zig").page_limit_max,
         });
 
         if (after.len == 0 and answered.next.len == 0) {

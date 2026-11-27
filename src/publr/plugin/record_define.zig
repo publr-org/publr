@@ -6,6 +6,7 @@
 const queue = @import("../../sdk/plugin/queue.zig");
 const guest = @import("../../sdk/plugin/guest.zig");
 const std = @import("std");
+const public_operation = @import("../operation.zig");
 const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const internal_record = @import("../../model/internal_record.zig");
@@ -29,7 +30,7 @@ pub const AnyRef = struct {
     id: []const u8,
     type: []const u8 = "",
     /// The record's fields, when the caller may read it: `ref.value.?.as(Tea, arena)`.
-    value: ?sdk.operation.Json = null,
+    value: ?public_operation.Json = null,
     /// The record it pointed at is gone; the reference stays, marked so.
     missing: bool = false,
 
@@ -40,7 +41,7 @@ pub const AnyRef = struct {
     const Resolved = struct {
         id: []const u8,
         type: []const u8 = "",
-        value: ?sdk.operation.Json = null,
+        value: ?public_operation.Json = null,
         missing: bool = false,
     };
 
@@ -198,16 +199,9 @@ const sdk = @import("../../sdk.zig");
 /// and validation (each a few dozen, nested once), its kind's checks.
 pub const field_branches_max: u32 = 600;
 
-const FieldOption = enum {
-    kind,
-    validation,
-    visibility,
-    searchable,
-    filterable,
-    sortable,
-    options,
-    fields,
-};
+/// What one field of `.fields` takes: `publr.field.Overrides`, a group or repeater's own
+/// `.fields`, and a dimension's field option by its owner's name.
+const Overrides = @import("../field_options.zig").Overrides;
 
 pub fn define(comptime Document: type, comptime options: anytype) type {
     comptime {
@@ -1300,7 +1294,7 @@ pub fn Store(
                 var step = ctx.scope();
                 defer step.end();
 
-                const documents = ctx.arena().alloc(sdk.operation.Json, end - start) catch {
+                const documents = ctx.arena().alloc(public_operation.Json, end - start) catch {
                     return error.OutOfMemory;
                 };
 
@@ -1526,14 +1520,14 @@ pub fn Store(
         }
 
         /// The stored document as it is kept, its references ids.
-        fn unread(ctx: *PluginCtx, document: sdk.operation.Json) sdk.Error!Document {
+        fn unread(ctx: *PluginCtx, document: public_operation.Json) sdk.Error!Document {
             std.debug.assert(name.len > 0);
 
             return document.as(Document, ctx.arena()) catch error.Invalid;
         }
 
         /// The stored document, each reference to any record read as an input's is.
-        fn decode(ctx: *PluginCtx, document: sdk.operation.Json) sdk.Error!Document {
+        fn decode(ctx: *PluginCtx, document: public_operation.Json) sdk.Error!Document {
             std.debug.assert(name.len > 0);
 
             var value = document.as(Document, ctx.arena()) catch return error.Invalid;
@@ -1649,10 +1643,10 @@ fn carried(comptime Value: type, step: *PluginCtx.Scope, value: Value) sdk.Error
 
 /// `value` as a record's document, a field holding nothing left out: JSON in Publr, bytes
 /// read where they lie in an installed plugin's module.
-fn encode(ctx: *PluginCtx, value: anytype) sdk.Error!sdk.operation.Json {
+fn encode(ctx: *PluginCtx, value: anytype) sdk.Error!public_operation.Json {
     std.debug.assert(ctx.now().ms >= 0);
 
-    return sdk.operation.Json.document(ctx.arena(), value) catch error.OutOfMemory;
+    return public_operation.Json.document(ctx.arena(), value) catch error.OutOfMemory;
 }
 
 /// A value as a lookup matches it: text as it is, integers in decimal, `true`/`false`, a
@@ -1748,7 +1742,7 @@ pub fn get_typed(
 pub const read_options_max: u32 = model_dimension.key_pairs_max;
 
 const Pair = model_dimension.Pair;
-const model_dimension = @import("../../model/dimension.zig");
+const model_dimension = @import("../model/dimension.zig");
 
 /// An internal record is bookkeeping, one value per field: `get` takes nothing after the id.
 fn check_internal_get(comptime record: []const u8, comptime Options: type) void {
@@ -1844,7 +1838,7 @@ fn cleared_names(
 /// Whether two values of a field are the same, as they are stored.
 fn same(ctx: anytype, left: anytype, right: anytype) sdk.Error!bool {
     const arena = ctx.arena();
-    const Json = sdk.operation.Json;
+    const Json = public_operation.Json;
     const left_written = (Json.of(arena, left) catch return error.OutOfMemory).written();
     const right_written = (Json.of(arena, right) catch return error.OutOfMemory).written();
 
@@ -2329,9 +2323,10 @@ fn apply(
         const Given = @TypeOf(given);
 
         // Any other name given a value of an enum is a dimension's field option, offered by
-        // the plugin owning the dimension (`.translatable = .required`).
+        // the plugin owning the dimension (`.translatable = .required`). A repeater's
+        // `fields` are its rows' overrides, taken where the rows are made.
         for (std.meta.fieldNames(Given)) |name| {
-            if (@hasField(FieldOption, name)) {
+            if (@hasField(Overrides, name) or std.mem.eql(u8, name, "fields")) {
                 continue;
             }
 
@@ -2346,33 +2341,48 @@ fn apply(
             }};
         }
 
-        for (std.meta.fieldNames(Given)) |name| {
-            if (!@hasField(FieldOption, name)) {
+        // A group sets what it names; the rest keeps what the struct field gave (a field
+        // that may be left out stays not required unless `.validation` says otherwise).
+        for (std.meta.fieldNames(Overrides), std.meta.fieldTypes(Overrides)) |name, Member| {
+            if (!@hasField(Given, name)) {
                 continue;
             }
 
-            // A repeater's `fields` are its rows' overrides, taken where the rows are made.
-            const grouped = std.mem.eql(u8, name, "options") or
-                std.mem.eql(u8, name, "validation") or std.mem.eql(u8, name, "fields") or
-                std.mem.eql(u8, name, "visibility");
+            if (@typeInfo(Member) == .@"struct") {
+                apply_group(record_name, def, name, @field(given, name));
+            } else {
+                const typed: Member = @field(given, name);
 
-            if (!grouped) {
-                @field(def, name) = @field(given, name);
+                @field(def, name) = typed;
             }
         }
+    }
+}
 
-        // A group sets what it names; the rest keeps what the struct field gave (a field
-        // that may be left out stays not required unless `.validation` says otherwise).
-        for ([_][]const u8{ "options", "validation", "visibility" }) |group| {
-            if (@hasField(@TypeOf(given), group)) {
-                const values = @field(given, group);
+/// The parts of `group` (`options`, `validation`, `visibility`) that `values` names, each
+/// read in the public shape and made into core's.
+fn apply_group(
+    comptime record_name: []const u8,
+    comptime def: *field_model.Def,
+    comptime group: []const u8,
+    comptime values: anytype,
+) void {
+    comptime {
+        const Public = @FieldType(Overrides, group);
 
-                for (std.meta.fieldNames(@TypeOf(values))) |part| {
-                    const Target = @TypeOf(@field(@field(def, group), part));
+        std.debug.assert(record_name.len > 0);
+        std.debug.assert(@hasField(field_model.Def, group));
 
-                    @field(@field(def, group), part) = coerced(Target, @field(values, part), 0);
-                }
+        for (std.meta.fieldNames(@TypeOf(values))) |part| {
+            if (!@hasField(Public, part)) {
+                @compileError("record " ++ record_name ++ ": field `" ++ def.name ++
+                    "` has no option `." ++ group ++ "." ++ part ++ "`");
             }
+
+            const Target = @TypeOf(@field(@field(def, group), part));
+            const typed = coerced(@FieldType(Public, part), @field(values, part), 0);
+
+            @field(@field(def, group), part) = field_model.given.converted(Target, typed, 0);
         }
     }
 }

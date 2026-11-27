@@ -6,7 +6,7 @@
 //! core stores, reads and picks values, and knows nothing else about what a dimension is.
 const std = @import("std");
 const plugin_define = @import("define.zig");
-const model_dimension = @import("../../model/dimension.zig");
+const model_dimension = @import("../model/dimension.zig");
 const field_model = @import("../../model/field.zig");
 
 /// What `publr.dimension.define` takes, and `.dimensions` lists.
@@ -360,6 +360,7 @@ pub fn declared_of(comptime Plugin: type) []const model_dimension.Declared {
 }
 
 test "a wrapper as data: the setting, its help, each choice and the picker from its words" {
+    const core_dimension = @import("../../model/dimension.zig");
     const Api = struct {
         pub const Translatable = enum { none, required, optional };
 
@@ -418,13 +419,13 @@ test "a wrapper as data: the setting, its help, each choice and the picker from 
         option.choices[0].description,
     );
     try std.testing.expectEqualStrings("Optional", option.choices[2].title);
-    try std.testing.expectEqual(Holds.required, model_dimension.holds_named(option, "required").?);
-    try std.testing.expect(model_dimension.holds_named(option, "sometimes") == null);
+    try std.testing.expectEqual(Holds.required, core_dimension.holds_named(option, "required").?);
+    try std.testing.expect(core_dimension.holds_named(option, "sometimes") == null);
     try std.testing.expectEqualStrings(
         "optional",
-        model_dimension.choice_holding(option, .fallback).?.value,
+        core_dimension.choice_holding(option, .fallback).?.value,
     );
-    try std.testing.expect(model_dimension.choice_holding(option, .empty) == null);
+    try std.testing.expect(core_dimension.choice_holding(option, .empty) == null);
     try std.testing.expectEqualStrings("language", setting.read.name);
     try std.testing.expectEqualStrings("Content language", setting.read.label);
 }

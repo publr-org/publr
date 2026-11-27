@@ -1,7 +1,7 @@
 //! A field naming a person's account: `owner: publr.Account`, a `user` field, kept and sent
 //! as the account's id. `ctx.caller().account()` is the signed-in person's.
 const std = @import("std");
-const Kind = @import("../model/contract.zig").Kind;
+const Kind = @import("model/contract.zig").Kind;
 
 pub const kind_id = "user";
 pub const id_len_max: u32 = 64;

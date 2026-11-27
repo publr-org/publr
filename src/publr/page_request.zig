@@ -7,7 +7,7 @@
 //! read.
 
 const std = @import("std");
-const model_dimension = @import("../model/dimension.zig");
+const model_dimension = @import("model/dimension.zig");
 
 const Pair = model_dimension.Pair;
 

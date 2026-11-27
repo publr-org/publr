@@ -8,7 +8,7 @@ const listed_in = @import("define.zig").listed_in;
 const content_type = @import("../../model/content_type.zig");
 const flow_model = @import("../../model/flow.zig");
 const status_module = @import("../../model/status.zig");
-const caller_answer = @import("../../model/caller_answer.zig");
+const caller_answer = @import("../authorize.zig");
 
 /// Core's statuses: any record lists them by name and they keep core's meaning.
 pub const core_status_ids = std.meta.fieldNames(CoreStatus);
@@ -94,7 +94,7 @@ fn EventPoint(comptime name: []const u8) type {
 
     return struct {
         pub const publr_event_definition = true;
-        pub const Payload = flow_model.Transitioned;
+        pub const Payload = @import("../model/flow.zig").Transitioned;
         pub const verb = name;
         pub const full_name = verb;
         pub const refusable = true;

@@ -575,7 +575,7 @@ pub fn with_kinds(
                 continue;
             }
 
-            try list.append(arena, field_kind_define.installed(id, declared));
+            try list.append(arena, field_kinds.installed(id, declared));
         }
     }
 
@@ -583,7 +583,7 @@ pub fn with_kinds(
 }
 
 const model_sandboxed_plugin = @import("../model/sandboxed_plugin.zig");
-const field_kind_define = @import("../publr/plugin/field_kind_define.zig");
+const field_kinds = @import("../sdk/plugin/field_kinds.zig");
 /// The location rules compiled-in plugins bring (`loyalty.tier`).
 pub const location_rules = native_plugins.merged_location_rules;
 

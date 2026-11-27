@@ -24,6 +24,7 @@
 const std = @import("std");
 const publr_ai = @import("publr_ai");
 const operation = @import("../sdk/operation.zig");
+const public_operation = @import("operation.zig");
 const Grant = @import("../sdk/grant.zig").Grant;
 const PluginCtx = @import("../sdk/plugin/context.zig").PluginCtx;
 const ProgressCtx = @import("../sdk/context.zig").Ctx;
@@ -120,7 +121,7 @@ pub const Progress = struct {
         \\the `ai.model` contract: only a provider answering `complete` reaches it, and
         \\nothing happens where no turn listens.
     ;
-    pub const kind: operation.Kind = .read;
+    pub const kind: public_operation.Kind = .read;
     pub const In = struct {
         words: []const u8,
     };
@@ -129,7 +130,7 @@ pub const Progress = struct {
         .words = "I'll start with the home page",
     };
     pub const example_out: Out = .{};
-    pub const field_docs: operation.Docs(In) = .{
+    pub const field_docs: public_operation.Docs(In) = .{
         .words = "The words since the last call",
     };
 
@@ -369,14 +370,14 @@ pub fn describe(comptime about: Description) fn (*PluginCtx, Nothing) operation.
 /// The JSON `complete` takes and answers.
 pub const Completion = struct {
     pub const In = struct {
-        request: operation.Json,
+        request: public_operation.Json,
 
         pub const field_docs = .{
             .request = "The request",
         };
     };
     pub const Out = struct {
-        response: operation.Json,
+        response: public_operation.Json,
 
         pub const field_docs = .{
             .response = "The model's response",
@@ -406,7 +407,7 @@ pub fn complete(
             std.debug.assert(response.parts.len > 0 or response.stop != .tool_calls);
 
             return .{
-                .response = operation.Json.document(arena, response) catch {
+                .response = public_operation.Json.document(arena, response) catch {
                     return error.OutOfMemory;
                 },
             };

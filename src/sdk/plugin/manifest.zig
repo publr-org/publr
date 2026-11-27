@@ -181,7 +181,7 @@ fn field_kinds_of(comptime Plugin: type) []const sandboxed_plugin.FieldKind {
 
         for (field_kind_define.definitions_of(Plugin)) |Definition| {
             list = list ++ &[_]sandboxed_plugin.FieldKind{
-                field_kind_define.manifested(Definition, Plugin.docs),
+                @import("field_kinds.zig").manifested(Definition, Plugin.docs),
             };
         }
 

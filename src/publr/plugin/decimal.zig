@@ -3,7 +3,7 @@
 //! as text in JSON and in a `decimal` field; read from text or a whole number.
 const std = @import("std");
 const decimal = @import("../../model/decimal.zig");
-const contract = @import("../../model/contract.zig");
+const contract = @import("../model/contract.zig");
 
 pub fn Decimal(comptime places: u8) type {
     comptime {

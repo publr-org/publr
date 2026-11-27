@@ -8,6 +8,7 @@
 //! provider gives.
 
 const std = @import("std");
+const public = @import("../publr/model/contract.zig");
 
 pub const nodes_max: u32 = 256;
 pub const depth_max: u32 = 16;
@@ -16,30 +17,8 @@ pub const values_max: u32 = 64;
 /// turns as a child in its parent's two walks over its fields (listed, then queued).
 const branches_per_node: u32 = 24;
 
-pub const Kind = enum { string, integer, number, boolean, enumeration, list, object, reference };
-
-pub const Node = struct {
-    /// The node it sits in; the root's is -1.
-    parent: i32,
-    /// Its field name inside an object; `[]` for a list's items; empty for the root.
-    name: []const u8 = "",
-    kind: Kind,
-    /// Whether it may be null.
-    optional: bool = false,
-    /// Whether the object it sits in requires it: no default, not optional.
-    required: bool = true,
-    /// An enumeration's values.
-    values: []const []const u8 = &.{},
-    /// A reference's content type: the caller sends an id, the operation gets the record.
-    to: []const u8 = "",
-
-    pub const publr_form = .fields;
-
-    /// Written without its defaults: a manifest holds thousands.
-    pub fn jsonStringify(node: Node, writer: anytype) @TypeOf(writer.*).Error!void {
-        return @import("compact_json.zig").write(node, writer);
-    }
-};
+pub const Kind = public.Kind;
+pub const Node = public.Node;
 
 pub const Reason = enum { missing, unknown, kind, nullable, value, extra };
 
