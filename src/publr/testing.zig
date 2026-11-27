@@ -19,6 +19,7 @@ const messaging = @import("messaging.zig");
 const database = @import("extend/database.zig");
 
 const SDK = registry.SDK;
+const Problem = @import("operation.zig").Problem;
 const PluginStates = @import("../server/plugin_states.zig").States;
 const Error = @import("operation.zig").Error;
 const public_of = @import("../sdk/operation.zig").public_of;
@@ -79,6 +80,8 @@ pub const Site = struct {
     development: bool = false,
     /// The refusal the last call came back with as `error.Failed`, by its `Fails:` name.
     failure: []const u8 = "",
+    /// What the last call's `error.Invalid` found wrong (`problems`).
+    refused: []const Problem = &.{},
     /// Every built-in plugin's `State`, made as `serve` makes them, for the calls made here.
     states: PluginStates,
 
@@ -97,6 +100,7 @@ pub const Site = struct {
         site.now_ms = 1_800_000_000_000;
         site.development = false;
         site.failure = "";
+        site.refused = &.{};
 
         var system = site.harness.ctx(.system);
 
@@ -247,6 +251,7 @@ pub const Site = struct {
     fn context(site: *Site, who: Who) sdk.Ctx {
         site.harness.fixed.reset();
         site.failure = "";
+        site.refused = &.{};
 
         var made = site.harness.ctx(caller_of(who));
 
@@ -271,8 +276,24 @@ pub const Site = struct {
         return made;
     }
 
+    /// What was wrong with the input when the last call came back with `error.Invalid`,
+    /// beside each field (a record's `validate`, a field's limits); empty for any other end.
+    /// It lives until `deinit`.
+    pub fn problems(site: *const Site) []const Problem {
+        std.debug.assert(site.refused.len <= sdk.operation.problems_max);
+
+        return site.refused;
+    }
+
     fn note(site: *Site, inner: *const sdk.Ctx, err: anyerror) void {
         std.debug.assert(site.failure.len == 0);
+        std.debug.assert(site.refused.len == 0);
+
+        if (err == error.Invalid) {
+            site.refused = site.kept_problems(inner.problems) catch &.{};
+
+            return;
+        }
 
         if (err != error.Failed) {
             return;
@@ -281,6 +302,22 @@ pub const Site = struct {
         const failure = inner.failure orelse return;
 
         site.failure = site.keep.allocator().dupe(u8, failure.name) catch "";
+    }
+
+    fn kept_problems(site: *Site, given: []const Problem) error{OutOfMemory}![]const Problem {
+        std.debug.assert(given.len <= sdk.operation.problems_max);
+
+        const memory = site.keep.allocator();
+        const kept = try memory.alloc(Problem, given.len);
+
+        for (given, kept) |problem, *one| {
+            one.* = .{
+                .field = try memory.dupe(u8, problem.field),
+                .message = try memory.dupe(u8, problem.message),
+            };
+        }
+
+        return kept;
     }
 };
 
@@ -419,4 +456,32 @@ test "a site answers each caller as it would, runs its queue and opens other dat
     try std.testing.expectEqualStrings("a", read.text.text);
     try std.testing.expect(read.nothing == .null);
     try std.testing.expect(!opened.in_transaction());
+}
+
+test "a refused input's problems reach the test, each beside its field" {
+    const internal = @import("operations/internal.zig");
+
+    var site: Site = undefined;
+    try site.init();
+    defer site.deinit();
+
+    const Json = @import("operation.zig").Json;
+    const blank: Json = .{
+        .text = "{}",
+    };
+    const empty: [internal.many_max + 1]Json = @splat(blank);
+    const keeper: Who = .{
+        .plugin = .{
+            .name = "keeper",
+        },
+    };
+
+    try std.testing.expectError(error.Invalid, site.call(internal.CreateMany, keeper, .{
+        .kind = "note",
+        .documents = &empty,
+    }));
+    try std.testing.expectEqualStrings("documents", site.problems()[0].field);
+    try std.testing.expect(site.problems()[0].message.len > 0);
+    _ = try site.call(@import("operations/role.zig").List, .admin, .{});
+    try std.testing.expectEqual(@as(usize, 0), site.problems().len);
 }
