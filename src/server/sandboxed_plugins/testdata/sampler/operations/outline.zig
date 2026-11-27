@@ -6,7 +6,7 @@
 //!
 //! Example:
 //!   in: {}
-//!   out: { "fields": 2, "required": ["note"], "printed": "own", "taxonomies": 2 }
+//!   out: { "fields": 4, "required": ["note"], "printed": "own", "taxonomies": 2 }
 const publr = @import("publr");
 const std = @import("std");
 
