@@ -62,7 +62,7 @@ pub fn random(ctx: *Ctx, buffer: []u8) Error!void {
     std.debug.assert(buffer.len > 0);
 
     const random_operation = @import("../../operations/random.zig");
-    const answered = try ctx.call(random_operation.Random, .{
+    const answered = try ctx.call(@import("../operations/random.zig").Random, .{
         .bytes = @intCast(buffer.len),
     });
 
@@ -71,7 +71,7 @@ pub fn random(ctx: *Ctx, buffer: []u8) Error!void {
 
 /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
 pub fn time_zone(ctx: *Ctx) Error!words.TimeZone {
-    const answered = try ctx.call(@import("../../operations/job.zig").TimeZone, .{});
+    const answered = try ctx.call(@import("../operations/job.zig").TimeZone, .{});
 
     std.debug.assert(answered.rule.len > 0);
 
