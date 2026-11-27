@@ -742,8 +742,8 @@ no middleware.
 
 ## Delivery gates
 
-Plugins decide who sees the apps. A plugin declares `delivery_gates`, functions
-from `sdk.delivery`, and before a page, a not-found page or an island goes out, each is
+Plugins decide who sees the apps. A built-in plugin declares a gate with
+`host.delivery_gate` (a `publr.Host.Gate`), and before a page, a not-found page or an island goes out, each is
 asked about it with the system's context, the visitor and the path. A gate stays silent
 (`.open`), lets it through for this visitor only (`.private`: sent
 `Cache-Control: private, no-store`, never from a built file a shared cache might hold), or

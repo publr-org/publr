@@ -198,13 +198,13 @@ plugin lists its failures in the operation's `Fails:` words and refuses with
 them as values:
 
 ```zig
-pub const unverified: sdk.operation.Failure = .{
+pub const unverified: publr.operation.Failure = .{
     .name = "Unverified",
     .status = 403,
     .message = "Verify your email to create more sites",
 };
 
-pub const failures = [_]sdk.operation.Failure{unverified};   // in the operation: for --help
+pub const failures = [_]publr.operation.Failure{unverified};   // in the operation: for --help
 
 return ctx.fail(unverified);                                   // in run
 ```
@@ -268,11 +268,11 @@ Anything else that changed is the operation that changed it, never a second name
 plugin enabled is `plugin.enable` finishing, a type changed is `content_type.update`.
 Core's own readers (the activity log, a plugin recording deployments) hook those
 operations `after`, as any plugin would, and read what changed from their input and
-answer (`sdk.changed_units`: a record's or term's id, a type's or taxonomy's handle, a field
+answer (`publr.changed_units`: a record's or term's id, a type's or taxonomy's handle, a field
 group's, a plugin's name, a view, an account, each unit `project.put` put), and a move over
 many from each record's transition event. The site-changes index hears records the same way. `apps.loaded` (an app's name, each time
 `serve` loads the apps from the folder, at start, when its files change, and on `publr apps load`) is emitted by
-the server itself, as the system, outside any operation (`SDK.announce`).
+the server itself, as the system, outside any operation.
 
 Beyond hooks, a plugin registers its own **operations**, **records** (content types and
 internal records, with their statuses and moves; created when the database opens, kept in

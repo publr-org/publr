@@ -423,7 +423,7 @@ What a struct handed over may hold:
 | `publr.Time`, `publr.Account`, a ledger account, `publr.ProviderRef` | its milliseconds, its id, its name |
 | `publr.Decimal(n)` | its exact text, `"1.250"` |
 | a reference (`publr.record.AnyRef`, a typed one) | its id |
-| `publr.sdk.operation.Json` | any JSON |
+| `publr.operation.Json` | any JSON |
 
 Not a `std.json.Value`, a hash map, a fixed array, an int over 64 bits or an untagged
 union: the build says so. A struct of your own that reads its own JSON says how it lies
@@ -432,7 +432,7 @@ first alone; `.keyed`: its list of pairs is an object keyed by each pair's first
 `.fields`: its fields, whatever JSON it reads). A field named in `pub const publr_local`
 never crosses and comes zeroed.
 
-`publr.sdk.operation.Json` is a value whose shape comes with the data: a record's document,
+`publr.operation.Json` is a value whose shape comes with the data: a record's document,
 a query's result. In an installed plugin it is bytes read where they lie, not text:
 
 ```zig
@@ -479,7 +479,7 @@ view seeds for the browser, written as JSON where the view runs; a file's bytes,
 in a text; and the plugin's manifest, read once when it is built. Inside Publr, an
 operation's input is still written as JSON to read the records it takes by reference, and
 where one side of a move or a merge is a value whose shape comes with the data (a record's
-document, a `publr.sdk.operation.Json` field, the values `mod apply` got as JSON) or a
+document, a `publr.operation.Json` field, the values `mod apply` got as JSON) or a
 union, that part is read as the tree it stands for, once.
 
 An event is JSON only in the queue. Each `on` hook waits with the fields its own type
@@ -1202,13 +1202,12 @@ plugin frame in the sheet: an `<iframe sandbox>` with an opaque origin. The fram
 document is the `html` the read answers, run as the person looking at it, with the
 address's query string as `query` and the path the project is served under as `base`.
 
-A compiled-in plugin draws the page with the admin's own layouts, so it looks like any
-other Settings page: its view (an `IndexPage`, a `FormPage`) rendered whole with
-`publr.admin.render.document(arena, publr.admin.chrome.in_plugin_frame(ctx, in.base),
-View, props)`, which leaves out the rail, the sidebar and the crumbs the admin already
-draws around the frame, and speaks the person's language: `Publr.t` in the view reads
-their catalogue. An installed plugin gets the same once the design system is drawn
-for it by the host; until then it answers its own markup. It gets the admin's stylesheet and a small bridge, and
+The plugin draws the page with the admin's own layouts, so it looks like any other
+Settings page: its view (an `IndexPage`, a `FormPage`) rendered whole with
+`publr.views.render(ctx, in.base, publr.views.all.<View>, props)` ([Core draws the
+page](#core-draws-the-page)), which leaves out the rail, the sidebar and the crumbs the
+admin already draws around the frame, and speaks the person's language: `Publr.t` in the
+view reads their catalogue. The frame gets the admin's stylesheet and a small bridge, and
 nothing else: no session, no network (`connect-src 'none'`), and it can be framed only
 by the admin. Its response carries the same policy, so it stays sandboxed even when
 opened on its own.
@@ -1488,28 +1487,31 @@ role, or the roles an administrator chose on the plugin's own settings. A site h
 provider; while it is available the admin signs in through it alone and checks it on every
 request ([Auth](auth.md#behind-an-identity-aware-proxy)).
 
-A plugin can answer **HTTP routes** (`host.route`, each a `publr.plugin.Route`): a
-method (`get` or `post`), a path and a handler, `fn (request, response, ctx)` like the
-core's. Every path lives under a prefix the plugin owns, `/admin/<own>`, `/api/<own>` or
-`/auth/<own>`, where `<own>` is its name or one of its namespaces; after the prefix a
-segment may be a parameter (`/api/shop/orders/:id`). A plugin has at most 16. Its routes
-come before the core's, and the server refuses to start when a prefix covers a core route
-(a plugin named `content` would take `/admin/content`). A handler that calls operations
-does it as whoever sent the request: `publr.plugin_routes.caller_context` gives the SDK
-context, refusing a write that does not come from this site with the session's CSRF
-token, as the REST API does. A route that signs someone in its own way (a token another
-server made, say) gets a session from an operation and hands it to
-`publr.plugin_routes.set_session`, which sets this site's session cookie as the core's
-sign-in does. A `post` route may take `.stream` instead of `.handler` (a
-`publr.plugin.route.Stream`: `open`, `write`, `finish`, `abort`): its body is handed over a
-piece at a time as it arrives, up to the stream's own `bytes_max`, for an upload larger than
-a request may be. Routes run only compiled in; an installed build leaves them
-out and says so.
+A plugin can answer **HTTP routes** (`host.route`, each a `publr.Host.Route`): a method
+(`.get` or `.post`), a path and a handler, `fn (request: *publr.Host.Request, response:
+*publr.Host.Response, context: *publr.Host.Context) publr.Host.HttpError!void`. Every path
+lives under a prefix the plugin owns, `/admin/<own>`, `/api/<own>` or `/auth/<own>`, where
+`<own>` is its name or one of its namespaces; after the prefix a segment may be a parameter
+(`/api/shop/orders/:id`, read with `request.param("id")`). A plugin has at most 16. Its
+routes come before the core's, and the server refuses to start when a prefix covers a core
+route (a plugin named `content` would take `/admin/content`). The request gives
+`method()`, `path()`, `query_param(arena, name)`, `form_field(arena, name)`, `header` and
+`body()`; the response `text`, `html`, `json`, `redirect` and its headers. A handler that
+calls operations does it as whoever sent the request: `try context.caller(request,
+response)` gives a `*publr.Ctx`, refusing a write that does not come from this site with the
+session's CSRF token, as the REST API does (null: the refusal is already written). A route
+that signs someone in its own way (a token another server made, say) gets a session from an
+operation and hands it to `context.set_session(request, response, token, expires_at_ms)`,
+which sets this site's session cookie as the core's sign-in does. A `post` route may take
+`.stream` instead of `.handler` (a `publr.Host.Stream`: `open`, `write`, `finish`,
+`abort`): its body is handed over a piece at a time as it arrives, up to the stream's own
+`bytes_max`, for an upload larger than a request may be. Routes run only compiled in; an
+installed build leaves them out and says so.
 
 A plugin can show in the **admin**. Its views are PTSX files in `ui/` beside its
 `main.zig`, lowered with the admin's own when it is compiled in: they import the design
 system as `@publr/ui/<Name>.ptsx` and the admin's views as `@publr/admin/<Name>.ptsx`, and
-are rendered as `publr.admin.views.<Name>`. A view's name may not be one the admin or the
+are rendered as `publr.views.all.<Name>`. A view's name may not be one the admin or the
 design system has, so name it after the plugin. An icon it names only at runtime goes in
 its `ui/icons.txt`, one per line, as the admin's do.
 
@@ -1519,8 +1521,8 @@ A plugin's page is drawn like the core's: its view returns one of the admin's la
 (title, parents for the crumbs, description, actions, meta, tabs, notice, filters, the
 list, empty, footer; for a form the column, the aside and the danger zone, where
 `ConfirmAction` asks before anything is undone). Two versions of something compare on
-`CompareSides` and `CompareField`, their values shaped by `publr.admin.compare` (see
-`admin.md`). The layout draws the chrome, the
+`CompareSides` and `CompareField`, their values shaped by
+`publr.Host.admin_pages.compare` (see `admin.md`). The layout draws the chrome, the
 sidebar, the crumbs and every gutter; the view sets no spacing of its own, and the build
 refuses a page drawn otherwise. Who is signed in and the CSRF token are read where they
 are needed as `Publr.request.session` (`name`, `email`, `csrf`); no view forwards them.
@@ -1541,51 +1543,75 @@ export function GuestbookEntries({ entries }: GuestbookEntriesProps) {
 }
 ```
 
-The route's handler renders it with `publr.admin.screen(&session, .ok, View, props, .{})`,
-the view's own data only, after `publr.admin.require` for the signed-in session.
+The route's handler draws it through `publr.Host.admin_pages`: `require(request, response,
+context)` answers the signed-in `*Page` (null after sending the person to the login), and
+`page.screen(.ok, View, props, .{})` draws the view with its own data only. A POST from
+the admin's own page is `accept(request, response, context, back)`: a `Post` with the
+`page` and the `form` it sent, checked for the session's token. On the page, `page.ctx()`
+calls operations as the person, `page.param(name, back)` and `page.query_param(name)` read
+the address, `page.fail(err, back)` and `page.message(heading, text, back)` answer with a
+way back, `page.csrf_token()` is for a form, and `page.translated(id)` is the admin's text
+in the person's language.
 
-- A segment joined to the app picker (`host.app_picker_segment`, a `fn (session: *const
-  publr.admin.Session, attached: bool, apps: ?publr.admin.render.Node)
-  publr.admin.Error!?publr.admin.render.Node`): drawn after the picker as one control where
-  the project has apps (`attached` true: draw it as the control's end, `StatusButton
-  attach="end"`), on its own in the top bar where it has none. Null shows nothing. On a
+```zig
+fn entries(
+    request: *publr.Host.Request,
+    response: *publr.Host.Response,
+    context: *publr.Host.Context,
+) publr.Host.HttpError!void {
+    const admin = publr.Host.admin_pages;
+    const page = try admin.require(request, response, context) orelse return;
+    const listed = page.ctx().call(List, .{}) catch |err| return page.fail(err, "/admin");
+
+    try page.screen(.ok, publr.views.all.GuestbookEntries, .{
+        .entries = listed.entries,
+    }, .{});
+}
+```
+
+- A segment joined to the app picker (`host.app_picker_segment(View, props)`: one of the
+  plugin's views and a `fn (ctx: *publr.Ctx, attached: bool) anyerror!?View.Props` answering
+  its props for the person signed in): drawn after the picker as one control where the
+  project has apps (`attached` true: draw it as the control's end, `StatusButton
+  attach="end"`), on its own in the top bar where it has none. Null shows nothing. Core
+  fills the props it knows when `View.Props` has them: `attached`, `apps` and `csrf`. On a
   phone the first segment drawn stands for the whole picker: it shows only its icon
   (`StatusButton compact`), and the drawer it opens lists `apps` first (on phones only),
   the apps the picker would have offered. Only that segment is given them.
-- Where someone who must sign in goes (`host.sign_in_at`, a `fn (session: *const
-  publr.admin.Session) anyerror!?[]const u8`): asked on the login page before the form and
-  before a trusted issuer; the first plugin that names an address sends the browser there.
-  Null leaves the login as it is. The page they asked for is the login's `return`
-  (`publr.admin.query_param(session, "return")`), a path on the site; carry it on with
-  `publr.admin.query_value` so they land there once signed in.
+- Where someone who must sign in goes (`host.sign_in_at`, a `fn (ctx: *publr.Ctx, wanted:
+  []const u8) anyerror!?[]const u8`): asked on the login page before the form and before a
+  trusted issuer; the first plugin that names an address sends the browser there. Null
+  leaves the login as it is. `wanted` is the page they asked for (the login's `return`), a
+  path on the site; carry it on with `publr.Host.admin_pages.query_value` so they land there
+  once signed in.
 - Actions on the rows of another plugin's page (`.row_actions`, each a
   `publr.plugin.RowAction`): the page's slot as its owner names it, a label, a path
   where `{name}` stands for the row's name, a row kind (every row when empty) and the
   operation whoever sees it may call. The page's owner reads them for each row with
-  `publr.admin.row_actions(session, slot, kind, name)`; neither plugin knows the other's
-  code. An installed plugin's actions count too, when they lead into the admin
+  `publr.Host.admin_pages.row_actions(ctx, slot, kind, name)`; neither plugin knows the
+  other's code. An installed plugin's actions count too, when they lead into the admin
   (`/admin/...`) through an operation of its own.
 
-A plugin can **keep state** for as long as the process runs: one `host.state(State)` struct, made when the server opens the project (with `pub fn init(state: *State,
-process: publr.plugin.Process) !void` when its fields need more than defaults; `deinit`
-if it holds something to free) and never in a top-level `var`. An operation, a route or a
-hook reaches it with `publr.plugin_states.of(ctx, @This())` from a context, or
-`publr.plugin_states.from(project.plugin_states.?, @This())` from the project.
+A plugin can **keep state** for as long as the process runs: one `host.state(State)`
+struct, made when the server opens the project (with `pub fn init(state: *State, process:
+publr.Host.Process) !void` when its fields need more than defaults; `deinit` if it holds
+something to free) and never in a top-level `var`. An operation or a hook reaches it with
+`ctx.state(@This())`, a route with `context.state(@This())`.
 
 A plugin can also act on the process around the operations:
 
-- `host.before_command`, a `fn (command: *publr.plugin_hooks.Command) !void`, runs before any
+- `host.before_command`, a `fn (command: *publr.Host.Command) !void`, runs before any
   command, in name order: it may move the process into another folder
   (`std.process.setCurrentDir`) and take its own arguments off `command.args`, or change
   `command.db_path`. What is left runs as the command.
-- `host.serving`, a `fn (serve: publr.plugin_hooks.Serving) !void`, runs once `serve` listens, with
-  the project and the port it got, before the first request. It may name the session
-  cookie (`serve.project.session_cookie`), so two servers on one host keep their sign-ins
-  apart. One that fails stops `serve`.
-- `host.operator_command`, each a `publr.plugin.OperatorCommand`: a name and a
-  handler, answered at `POST /_publr/<plugin>/<name>` only with the running server's
-  operator key, which only processes of the same user on the machine can read
-  (`<db>.serve`). `publr.operator.find` and `publr.operator.post` send one.
+- `host.serving`, a `fn (serve: publr.Host.Serving) !void`, runs once `serve` listens, with
+  the port it got, before the first request; `serve.state(@This())` is the plugin's state.
+  It may name the session cookie (`serve.served().set_session_cookie(name)`), so two servers
+  on one host keep their sign-ins apart. One that fails stops `serve`.
+- `host.operator_command`, each a `publr.Host.OperatorCommand`: a name and a handler,
+  answered at `POST /_publr/<plugin>/<name>` only with the running server's operator key,
+  which only processes of the same user on the machine can read (`<db>.serve`).
+  `publr.Host.processes.find_running` and `publr.Host.processes.post` send one.
 
 A plugin can **build on another**. It names what it depends on, each another plugin and,
 after `@`, the versions it works with (exact, `1.2.3`, or caret, `^0.2`: the same leftmost

@@ -60,7 +60,7 @@ Two versions of something are compared side by side: `CompareSides` heads the tw
 (any content: the copies merged, Before and After), then one `CompareField` per field, each
 version's values drawn by `CompareValues` (a document pointed at as its card, a field of a
 content type, a plugin or a request it makes as its `DefinitionCard`, anything else as text) with what that version changed
-read beside the field's label. `publr.admin.compare` turns values into what they draw and
+read beside the field's label. `publr.Host.admin_pages.compare` (core's own `admin.compare`) turns values into what they draw and
 works out what changed: a text word by word, a field's definition line by line, a list
 item by item, nothing for a value new whole.
 

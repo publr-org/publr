@@ -165,7 +165,7 @@ other than slices, no functions. Defaults make a field optional for the caller. 
 `price.single()`, `price.put`, `price.add`; JSON writes it `{ "PLN": 12300 }`).
 
 A record, a list or a map in `In` or `Out` is a value: a struct or a slice, or
-`publr.sdk.operation.Json` where its shape comes with the data. Text holding JSON does not
+`publr.operation.Json` where its shape comes with the data. Text holding JSON does not
 compile: a text field whose example is a JSON object or array, or whose words say JSON, is
 refused with the operation and the field named. Core's operations follow the same rule
 (`record.get` answers `document` as an object), and an installed plugin's typed reads
@@ -175,7 +175,7 @@ input, `publr.fields.save`, an event's payload (`ctx.emit`) and a queued job's i
 (`ctx.enqueue`) are handed over as they lie, and a call to another installed plugin's
 operation reaches it with no JSON in between
 ([how values cross](plugins.md#how-values-cross)). An optional holding nothing arrives as
-`null`. A `publr.sdk.operation.Json` is read with `json.as(Shape, arena)` or part by part
+`null`. A `publr.operation.Json` is read with `json.as(Shape, arena)` or part by part
 with `json.read(arena)`, and made with `Json.of(arena, value)`: a plugin never touches JSON
 text to talk to Publr. An operation named only when the plugin runs is called with
 `ctx.call_named(Out, name, in)`.
@@ -1778,9 +1778,9 @@ const entries: publr.plugin.Page = .{
 The answered `html` runs in a sandboxed `<iframe>` with the admin's stylesheet and a
 bridge: the view's `ctx.query("<own read>")`, `ctx.call("<own write>")` and
 `ctx.navigate("<own page>?q=1")`. No
-network, no session. Compiled in, a page can render the admin's own layouts with
-`publr.admin.render.document(arena, publr.admin.chrome.in_plugin_frame(ctx, in.base),
-View, props)`, in the person's language.
+network, no session. A page renders the admin's own layouts with `publr.views.render(ctx,
+in.base, publr.views.all.<View>, props)`, in the person's language, compiled in or
+installed.
 
 A page by declaration needs no markup; the admin draws the form:
 
@@ -1982,12 +1982,15 @@ pub const plugin = publr.plugin.define(manifest, .{
 ### Routes
 
 `host.route(.{ .method, .path, .handler })`: `.get` or `.post`, under `/admin/<own>`,
-`/api/<own>` or `/auth/<own>` (`:id` segments are parameters), a `handler` of `fn
-(*publr.http.Request, *publr.http.Response, *publr.http.Context) publr.http.Error!void`, or
-a `stream` for a large POST body. At most 16 routes. `publr.admin.require` gives the
-signed-in session, `publr.admin.screen` draws an admin page;
-`publr.plugin_routes.caller_context` gives an SDK context as whoever sent the request (CSRF
-checked on writes); `publr.plugin_routes.set_session` signs someone in.
+`/api/<own>` or `/auth/<own>` (`:id` segments are parameters, `request.param("id")`), a
+`handler` of `fn (*publr.Host.Request, *publr.Host.Response, *publr.Host.Context)
+publr.Host.HttpError!void`, or a `stream` (`publr.Host.Stream`) for a large POST body. At
+most 16 routes. `context.caller(request, response)` gives a `*publr.Ctx` as whoever sent
+the request (CSRF checked on writes); `context.set_session(request, response, token,
+expires_at_ms)` signs someone in. `publr.Host.admin_pages.require(request, response,
+context)` gives the signed-in admin `*Page`, `page.screen(.ok, View, props, .{})` draws an
+admin page, and `accept(request, response, context, back)` takes a POST from the admin's own
+page ([Plugins](plugins.md#writing-a-built-in-plugin)).
 
 ### Tables
 
@@ -1995,34 +1998,39 @@ checked on writes); `publr.plugin_routes.set_session` signs someone in.
 plugin (`<plugin>` or `<plugin>_...`), made when the database opens. Operations read and
 write it with `ctx.database()`, inside the call's transaction:
 `try ctx.database().exec("INSERT INTO notes_seen (note, at) VALUES (?, ?)", .{ in.note,
-ctx.now() })`; `prepare(sql, values)` gives a statement to step through. Prefer records.
+ctx.now() })`; `prepare(sql, values)` gives a `publr.Host.Statement` to step through.
+Prefer records.
 
 ### State and the process
 
 `host.state(State)`, a struct with optional `init(state: *State, process:
-publr.plugin.Process)` and `deinit`, reached with `publr.plugin_states.of(ctx, @This())`;
-`host.bootstrap` (`fn (*publr.Ctx) publr.Error!void`, every start, as the system);
-`host.before_command` (`fn (*publr.plugin_hooks.Command) anyerror!void`); `host.serving`
-(`fn (publr.plugin_hooks.Serving) anyerror!void`); `host.operator_command` (`{ name,
+publr.Host.Process)` and `deinit`, reached with `ctx.state(@This())` (a route's
+`context.state(@This())`); `host.bootstrap` (`fn (*publr.Ctx) publr.Error!void`, every
+start, as the system); `host.before_command` (`fn (*publr.Host.Command) anyerror!void`);
+`host.serving` (`fn (publr.Host.Serving) anyerror!void`); `host.operator_command` (`{ name,
 handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key only).
-`Process` is `{ io, gpa, arena, db_path, runtime }`, `Command` `{ io, arena, args, db_path
-}`, `Serving` `{ io, arena, project, port }`. Never use a top-level `var`.
+`Process` is `{ io, gpa, arena, db_path }` (`process.databases().open(memory, path)` opens
+another database), `Command` `{ io, arena, args, db_path }`, `Serving` `{ io, arena, port
+}` with `state(@This())` and `served()`. Never use a top-level `var`.
 
 ### The admin
 
-`host.app_picker_segment` (`fn (*const publr.admin.Session, bool,
-?publr.admin.render.Node) publr.admin.Error!?publr.admin.render.Node`), `host.sign_in_at`
-(`fn (*const publr.admin.Session) anyerror!?[]const u8`), `host.admin_brand` (whose admin
-it is: its name and mark), `host.copies` (see [Plugins](plugins.md#copies-of-a-site)).
+`host.app_picker_segment(View, props)` (one of `publr.views.all` and a `fn (*publr.Ctx,
+attached: bool) anyerror!?View.Props`), `host.sign_in_at` (`fn (*publr.Ctx, wanted: []const
+u8) anyerror!?[]const u8`), `host.admin_brand` (`fn (*publr.Ctx)
+publr.Error!publr.Host.AdminBrand`: whose admin it is, its name and mark), `host.copies`
+(see [Plugins](plugins.md#copies-of-a-site)).
 
 ### The server
 
 `host.sign_in_provider` (see [Plugins](plugins.md#writing-a-built-in-plugin)),
-`host.policy`, `host.delivery_gate` ([Apps](apps.md#delivery-gates)), `host.hosted()` (the
-site runs on Publr Cloud). `host.middleware` takes only the two hooks `publr.before/after/on`
-don't say: on every operation before it runs (`stage = .pre`) and on every event inside the
-write (`stage = .on` with no `event`). An operation whose `run` takes `*sdk.Ctx` has full
-access to the host and runs only built-in.
+`host.policy` (`fn (who: publr.Host.PolicyView, request: publr.Host.PolicyRequest)
+publr.Host.PolicyGrant`, pure: it only takes away), `host.delivery_gate`
+([Apps](apps.md#delivery-gates)), `host.hosted()` (the site runs on Publr Cloud).
+`host.middleware` takes only the two hooks `publr.before/after/on` don't say: on every
+operation before it runs (`stage = .pre`, `fn run(ctx, name, kind) publr.Error!void`, a
+failure refuses it) and on every operation's end inside the write (`stage = .on` with no
+`event`, `fn run(ctx, event: publr.Host.Event) void`).
 
 ## Contracts and providers
 
