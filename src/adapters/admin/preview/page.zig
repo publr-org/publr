@@ -16,6 +16,7 @@ const http = @import("../../../lib/http.zig");
 const identity_module = @import("../../rest/identity.zig");
 const pages = @import("../../apps/pages.zig");
 const fields = @import("../fields.zig");
+const editor = @import("../editor.zig");
 const files = @import("../design/files.zig");
 const App = @import("../../apps/state.zig").App;
 const PageContext = @import("../../apps/context.zig").Context;
@@ -222,7 +223,7 @@ fn own_entry(
 
     const known = registry.kinds(ctx);
     const document = if (visit.form) |form|
-        try overlaid(visit.arena, known, base, def, form)
+        try overlaid(visit.arena, known, editor.zone_in(ctx, visit.arena).rule, base, def, form)
     else
         base;
     const own_slug = slug_of(def, document) orelse saved_slug orelse "new";
@@ -334,6 +335,7 @@ fn parsed(arena: std.mem.Allocator, text: []const u8) !Value {
 fn overlaid(
     arena: std.mem.Allocator,
     known: []const model.kinds.Kind,
+    zone: []const u8,
     base: Value,
     def: Def,
     form: *const admin.Form,
@@ -341,7 +343,7 @@ fn overlaid(
     std.debug.assert(def.handle.len > 0);
     std.debug.assert(base == .object);
 
-    const text = fields.decode.document_of(arena, known, def.fields, form) orelse {
+    const text = fields.decode.document_of(arena, known, zone, def.fields, form) orelse {
         return error.Invalid;
     };
     const posted = try parsed(arena, text);

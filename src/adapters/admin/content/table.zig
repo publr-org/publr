@@ -322,7 +322,7 @@ fn cells_of(
     workflow.extra = if (record.changed) try page.session.translated("changed", .{}) else "";
     workflow.extra_tone = "warning";
     try cells.append(arena, workflow);
-    var updated = cell("updated", admin.time_text(arena, record.updated_at));
+    var updated = cell("updated", admin.time_text(arena, page.session.local_ms(record.updated_at)));
     updated.kind = "numeric";
     try cells.append(arena, updated);
     var open = cell("open", try page.session.translated("Open", .{}));

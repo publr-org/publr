@@ -82,6 +82,7 @@ pub fn library(
         .unreviewed = @floatFromInt(listed.unreviewed),
         .unreviewed_href = sides.unreviewed_href,
         .on_server = on_server(&session),
+        .time_zone = session.zone.name,
         .folders = sides.folders,
         .tag_list = sides.tags,
         .periods = sides.periods,

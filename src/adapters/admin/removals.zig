@@ -57,7 +57,7 @@ pub fn lists(request: *Request, response: *Response, ctx: *Context) Error!void {
                 if (list.conversation_id.len > 0) "a conversation" else "your agent",
             }),
             .waiting = waiting,
-            .created = time.datetime_text(arena, list.created_at) catch "",
+            .created = time.datetime_text(arena, session.local_ms(list.created_at)) catch "",
         };
     }
 

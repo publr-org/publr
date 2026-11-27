@@ -424,6 +424,8 @@ fn register_assets(router: *http.Router) void {
 }
 
 const editor_files = @import("editor_files").files;
+const editor_module = @import("admin/editor.zig");
+const zone_module = @import("../lib/zone.zig");
 
 /// The block editor's own files (ES modules on the admin's runtime, its canvas stylesheet,
 /// the jit engine the canvas compiles live classes with), embedded at build.
@@ -520,6 +522,8 @@ pub const Session = struct {
     csrf: [auth.csrf.token_len]u8 = undefined,
     /// The language the admin speaks to the person (`language.zig`).
     language: language_module.Language = .{},
+    /// The site's time zone: every time the admin shows or takes is on its clock.
+    zone: editor_module.SiteZone = editor_module.utc_zone,
 
     pub fn open(request: *Request, response: *Response, ctx: *Context) Session {
         std.debug.assert(ctx.user_data != null);
@@ -558,8 +562,25 @@ pub const Session = struct {
             .translator = session.language.translator,
             .catalogue = session.language.script,
         };
+        session.zone = editor_module.zone_in(&session.ctx, ctx.arena);
 
         return session;
+    }
+
+    /// A stored moment (UTC) as the site's clock reads it, for showing; zero and below
+    /// (never happened) are kept as they are.
+    pub fn local_ms(session: *const Session, utc_ms: i64) i64 {
+        std.debug.assert(session.zone.rule.len > 0);
+
+        if (utc_ms <= 0) {
+            return utc_ms;
+        }
+
+        const local = utc_ms + zone_module.offset_ms(session.zone.rule, utc_ms);
+
+        std.debug.assert(local > utc_ms - std.time.ms_per_day);
+
+        return @max(local, 0);
     }
 
     pub const TranslatedOptions = struct {

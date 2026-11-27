@@ -9,6 +9,7 @@ const registry = @import("../../server/registry.zig");
 const slugs = @import("../../lib/text.zig");
 const site_dimensions = @import("../dimensions.zig");
 const store = @import("../../store.zig");
+const jobs = @import("../../sdk/jobs.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
@@ -56,7 +57,10 @@ pub fn Of(comptime Domain: type) type {
             }
 
             if (fresh and parsed == .object) {
-                try model.defaults.apply(known, def.fields, ctx.arena, &parsed.object, ctx.now_ms);
+                try model.defaults.apply(known, def.fields, ctx.arena, &parsed.object, .{
+                    .now_ms = ctx.now_ms,
+                    .zone = jobs.zone_rule(ctx) catch "UTC0",
+                });
             }
 
             try refuse_problems(ctx, def, parsed, drafting);

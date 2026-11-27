@@ -259,7 +259,7 @@ pub fn cell(
         return out;
     }
 
-    out.text = try text_of(page, field.kind, value);
+    out.text = try text_of(page, field.kind, value, field.day_only);
     out.kind = if (std.mem.eql(u8, field.kind, "money") or std.mem.eql(u8, field.kind, "integer") or
         std.mem.eql(u8, field.kind, "number")) "amount" else "text";
 
@@ -268,11 +268,15 @@ pub fn cell(
 
 /// A value with no ids in it as text: an excerpt of long text, a count of items, what a
 /// link or a place says, several plain values joined.
-fn text_of(page: *const Page, kind: []const u8, value: Value) Error![]const u8 {
+fn text_of(page: *const Page, kind: []const u8, value: Value, day_only: bool) Error![]const u8 {
     std.debug.assert(kind.len > 0);
 
     const session = page.session;
     const arena = session.arena;
+    const shown: view_columns.TextOptions = .{
+        .zone = session.zone.rule,
+        .day_only = day_only,
+    };
 
     // A plugin's kind reads as its `.text` says.
     if (model.kinds.lookup(registry.kinds(&session.ctx), kind).text) |text| {
@@ -293,7 +297,7 @@ fn text_of(page: *const Page, kind: []const u8, value: Value) Error![]const u8 {
         var parts: std.ArrayList([]const u8) = .empty;
 
         for (value.array.items) |item| {
-            const text = try view_columns.text_of(arena, kind, item);
+            const text = try view_columns.text_of(arena, kind, item, shown);
 
             if (text.len > 0) {
                 parts.append(arena, text) catch return error.OutOfMemory;
@@ -307,7 +311,7 @@ fn text_of(page: *const Page, kind: []const u8, value: Value) Error![]const u8 {
         return excerpt(arena, value.string);
     }
 
-    return view_columns.text_of(arena, kind, value);
+    return view_columns.text_of(arena, kind, value, shown);
 }
 
 /// A link's label or address, a place's address, a group's first words, money.
@@ -315,7 +319,7 @@ fn object_text(arena: std.mem.Allocator, kind: []const u8, value: Value) Error![
     std.debug.assert(value == .object);
 
     if (std.mem.eql(u8, kind, "money")) {
-        return view_columns.text_of(arena, kind, value);
+        return view_columns.text_of(arena, kind, value, .{});
     }
 
     for ([_][]const u8{ "label", "address", "title", "name", "url" }) |key| {

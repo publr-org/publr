@@ -9,6 +9,8 @@ const records = @import("../../../operations/record.zig");
 const types = @import("../../../operations/content_type.zig");
 const query = @import("../../../operations/record/query.zig");
 const list = @import("list.zig");
+const time = @import("../../../lib/time.zig");
+const zone = @import("../../../lib/zone.zig");
 
 const Error = admin.Error;
 const Value = std.json.Value;
@@ -37,6 +39,8 @@ pub const Field = struct {
     kind: []const u8,
     /// A column a plugin adds (`.register_columns`), not a field of the type.
     added: bool = false,
+    /// A date and time field that shows days alone.
+    day_only: bool = false,
 };
 
 pub const Columns = struct {
@@ -101,6 +105,7 @@ fn fields_of(
                     .name = field.name,
                     .label = field.label,
                     .kind = field.kind,
+                    .day_only = field.options.date.format == .date,
                 });
             }
         }
@@ -232,8 +237,20 @@ fn position_of(found: []const records.Record, id: []const u8) ?u32 {
     return null;
 }
 
+pub const TextOptions = struct {
+    /// The site's time zone rule: a moment is shown on its clock.
+    zone: []const u8 = "UTC0",
+    /// A day has no time to move: shown as the day it is.
+    day_only: bool = false,
+};
+
 /// A field's value as a cell shows it.
-pub fn text_of(arena: std.mem.Allocator, kind: []const u8, value: ?Value) Error![]const u8 {
+pub fn text_of(
+    arena: std.mem.Allocator,
+    kind: []const u8,
+    value: ?Value,
+    options: TextOptions,
+) Error![]const u8 {
     std.debug.assert(kind.len > 0);
 
     const present = value orelse return "";
@@ -246,7 +263,17 @@ pub fn text_of(arena: std.mem.Allocator, kind: []const u8, value: ?Value) Error!
     if (std.mem.eql(u8, kind, "datetime")) {
         const ok = present == .integer and present.integer >= 0 and present.integer < 1 << 50;
 
-        return if (ok) admin.time_text(arena, present.integer) else "";
+        if (!ok) {
+            return "";
+        }
+
+        if (options.day_only) {
+            return time.date_text(arena, present.integer) catch error.OutOfMemory;
+        }
+
+        const local = present.integer + zone.offset_ms(options.zone, present.integer);
+
+        return admin.time_text(arena, @max(local, 0));
     }
 
     if (std.mem.eql(u8, kind, "money")) {
@@ -317,14 +344,32 @@ test "a cell shows a field's value by its kind" {
 
     const money = try text_of(arena, "money", .{
         .object = amounts,
-    });
+    }, .{});
 
     try std.testing.expectEqualStrings("8.50 GBP", money);
     try std.testing.expectEqualStrings("Yes", try text_of(arena, "boolean", .{
         .bool = true,
-    }));
+    }, .{}));
     try std.testing.expectEqualStrings("12", try text_of(arena, "integer", .{
         .integer = 12,
-    }));
-    try std.testing.expectEqualStrings("", try text_of(arena, "string", null));
+    }, .{}));
+    try std.testing.expectEqualStrings("", try text_of(arena, "string", null, .{}));
+
+    const warsaw = zone.rule_of("Europe/Warsaw").?;
+    const moment: Value = .{
+        .integer = 1_795_785_000_000,
+    };
+
+    const in_utc = try text_of(arena, "datetime", moment, .{});
+    const in_warsaw = try text_of(arena, "datetime", moment, .{
+        .zone = warsaw,
+    });
+    const day = try text_of(arena, "datetime", moment, .{
+        .zone = warsaw,
+        .day_only = true,
+    });
+
+    try std.testing.expectEqualStrings("2026-11-27 13:10", in_utc);
+    try std.testing.expectEqualStrings("2026-11-27 14:10", in_warsaw);
+    try std.testing.expectEqualStrings("2026-11-27", day);
 }

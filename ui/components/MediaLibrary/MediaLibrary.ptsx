@@ -124,6 +124,8 @@ export const state = Publr.reactive({
   /** The files live in a folder on a server, which people can put files into by hand. */
   on_server: false,
   server_busy: false,
+  /** The site's time zone: times are shown on its clock. */
+  time_zone: "UTC",
   /** What the last check of that folder found, or the hint before one. */
   server_note: Publr.t("Pick up files put into the media folder outside the admin."),
   server_new: 0,
@@ -444,7 +446,7 @@ const open_file = async () => {
     state.file_title = item.title;
     state.file_name = item.filename;
     state.file_facts = facts_of(item);
-    state.file_uploaded = new Date(item.created_at).toLocaleString();
+    state.file_uploaded = new Date(item.created_at).toLocaleString(undefined, { timeZone: state.time_zone });
     state.file_src = item.url;
     state.file_image = item.family === "image" && !item.missing;
     state.file_preview = state.file_image ? `${item.url}?w=1600` : "";
@@ -971,6 +973,7 @@ export type MediaLibraryProps = {
   unsorted_href?: string;
   unreviewed_href?: string;
   on_server?: boolean;
+  time_zone?: string;
   folders?: Array<{
     id: string;
     name: string;
@@ -1044,6 +1047,7 @@ export function MediaLibrary({
   unsorted_href = "?folder=unsorted",
   unreviewed_href = "?folder=unreviewed",
   on_server = false,
+  time_zone = "UTC",
   folders = [],
   tag_list = [],
   periods = [],
@@ -1089,6 +1093,7 @@ export function MediaLibrary({
   state.unreviewed_shown = unreviewed > 0 || folder === "unreviewed";
   state.unreviewed_href = unreviewed_href;
   state.on_server = on_server;
+  state.time_zone = time_zone;
   state.folders = folders;
   state.tag_list = tag_list;
   state.periods = periods;

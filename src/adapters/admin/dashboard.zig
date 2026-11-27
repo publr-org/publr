@@ -314,7 +314,7 @@ fn ago_of(session: *const admin.Session, at: i64) admin.Error![]const u8 {
         );
     }
 
-    return admin.time_text(session.arena, at)[0.."YYYY-MM-DD".len];
+    return admin.time_text(session.arena, session.local_ms(at))[0.."YYYY-MM-DD".len];
 }
 
 /// The tool picked to connect, its setup shown; none unless `?tool=` names one.

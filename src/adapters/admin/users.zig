@@ -74,7 +74,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .roles = try labels_of(arena, roles, user.roles),
             .active = user.active,
             .me = std.mem.eql(u8, user.id, me),
-            .cells = try cells_of(arena, all_columns, listed.extended, user.id),
+            .cells = try cells_of(arena, session.zone.rule, all_columns, listed.extended, user.id),
         };
     }
 
@@ -160,6 +160,7 @@ fn columns_of(
 /// where nothing extended the row.
 fn cells_of(
     arena: std.mem.Allocator,
+    zone: []const u8,
     all_columns: []const registry.Column,
     extended: Extended,
     id: []const u8,
@@ -179,7 +180,9 @@ fn cells_of(
         };
 
         try cells.append(arena, .{
-            .text = try view_columns.text_of(arena, kind, extended.get(id, column.field)),
+            .text = try view_columns.text_of(arena, kind, extended.get(id, column.field), .{
+                .zone = zone,
+            }),
         });
     }
 
@@ -290,6 +293,7 @@ pub fn update(request: *Request, response: *Response, ctx: *Context) Error!void 
     const document = fields.decode.document_of(
         session.arena,
         admin.kinds_of(session),
+        session.zone.rule,
         form_defs,
         form,
     ) orelse {
@@ -395,6 +399,7 @@ fn reshaped(session: *Session, shape: *Shape, form: *const admin.Form) Error!boo
     const posted = fields.decode.value_of(
         session.arena,
         admin.kinds_of(session),
+        session.zone.rule,
         form_defs,
         form,
     ) catch {
@@ -462,6 +467,7 @@ fn field_rows(session: *Session, shape: Shape) Error!?admin.render.Node {
         .title_field = "",
         .fields = shape.defs,
     };
+    const clock = session.zone;
     const context: fields.Context = .{
         .arena = session.arena,
         .session = session,
@@ -471,6 +477,8 @@ fn field_rows(session: *Session, shape: Shape) Error!?admin.render.Node {
         .terms = try editor.terms_of(session, def),
         .slug_prefix = "",
         .files = try fields.media.files_of(session, def.fields, shape.document),
+        .zone_name = clock.name,
+        .zone_rule = clock.rule,
     };
     const form_defs = try editor.varied(session, shape.defs, .{
         .document = shape.document,

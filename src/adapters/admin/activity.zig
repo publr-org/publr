@@ -35,8 +35,8 @@ pub fn show_activity(
 
     for (listed.entries, entries) |item, *entry| {
         entry.* = .{
-            .date = (try when_of(session.arena, item.at)).date,
-            .time = (try when_of(session.arena, item.at)).time,
+            .date = (try when_of(session.arena, session.local_ms(item.at))).date,
+            .time = (try when_of(session.arena, session.local_ms(item.at))).time,
             .who = try who_of(session.arena, item.actor, known),
             .operation = item.operation,
             .what = try changed_text(session.arena, item.units, item.calls),
@@ -77,8 +77,8 @@ pub fn show_errors(
             "";
 
         entry.* = .{
-            .date = (try when_of(session.arena, item.at)).date,
-            .time = (try when_of(session.arena, item.at)).time,
+            .date = (try when_of(session.arena, session.local_ms(item.at))).date,
+            .time = (try when_of(session.arena, session.local_ms(item.at))).time,
             .who = item.actor,
             .operation = item.operation,
             .what = try std.fmt.allocPrint(session.arena, "{s}{s}{s}", .{

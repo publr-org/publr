@@ -48,7 +48,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .seq = std.fmt.allocPrint(arena, "{d}", .{item.seq}) catch return error.OutOfMemory,
             .kind = item.kind,
             .title = item.title,
-            .at = admin.time_text(arena, item.at),
+            .at = admin.time_text(arena, session.local_ms(item.at)),
             .by = item.by orelse "",
         }) catch return error.OutOfMemory;
     }
@@ -72,7 +72,7 @@ pub fn list(request: *Request, response: *Response, ctx: *Context) Error!void {
             .status = full.record.status,
             .status_label = try status_label(&session, full.record.status),
             .changed = full.record.changed,
-            .updated = admin.time_text(arena, full.record.updated_at),
+            .updated = admin.time_text(arena, session.local_ms(full.record.updated_at)),
             .updated_by = full.record.updated_by orelse "",
             .rows = rows.items,
             .older_href = if (listed.next_before == 0)
@@ -153,7 +153,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             }) catch return error.OutOfMemory,
             .record_href = try record_href(arena, full.record.id),
             .kind = item.kind,
-            .at = admin.time_text(arena, item.at),
+            .at = admin.time_text(arena, session.local_ms(item.at)),
             .by = item.by orelse try session.translated("nobody", .{}),
             .fields = fields,
             .restore_action = std.fmt.allocPrint(arena, "/admin/content/{s}/restore", .{

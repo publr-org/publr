@@ -49,7 +49,7 @@ pub fn show(
         .title = item.title,
         .filename = item.filename,
         .facts = try explorer.facts_of(arena, item),
-        .uploaded = admin.time_text(arena, item.created_at),
+        .uploaded = admin.time_text(arena, session.local_ms(item.created_at)),
         .url = item.url,
         .preview = if (image) try preview_of(arena, item) else "",
         .image = image,
@@ -73,6 +73,7 @@ pub fn show(
         .unsorted = @floatFromInt(listed.unsorted),
         .unreviewed = @floatFromInt(listed.unreviewed),
         .on_server = library.on_server(&session),
+        .time_zone = session.zone.name,
         .languages = try editor.languages_of(views.MediaFile.LanguagesItem, &session),
         .translations = try translations_shown(arena, detail.translations),
     }, .{});

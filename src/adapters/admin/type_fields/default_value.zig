@@ -76,7 +76,10 @@ fn text_of(arena: std.mem.Allocator, kind: Kind, field: FieldDef) Error![]const 
         return "";
     }
 
-    const value = model.defaults.value_of(kind, field, 0) orelse return field.default;
+    // Read and written back on the same clock: the input shows the default as it was typed.
+    const value = model.defaults.value_of(kind, field, .{
+        .now_ms = 0,
+    }) orelse return field.default;
     const ms = value.integer;
 
     return switch (field.options.date.format) {

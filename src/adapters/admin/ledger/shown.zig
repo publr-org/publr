@@ -237,7 +237,7 @@ pub fn lines(
     std.debug.assert(listed.len <= 200);
 
     for (listed, items) |line, *item| {
-        const when = try activity_page.when_of(session.arena, line.happened_at);
+        const when = try activity_page.when_of(session.arena, session.local_ms(line.happened_at));
         const other_label = @import("../../../operations/ledger/declared.zig").account_label(
             &session.ctx,
             line.other_owner,
@@ -372,8 +372,9 @@ const Facts = struct {
             try facts.add("Other leg", transfer.pair, "");
         }
 
-        const happened = try activity_page.when_of(arena, transfer.happened_at);
-        const posted = try activity_page.when_of(arena, transfer.posted_at);
+        const session = facts.session;
+        const happened = try activity_page.when_of(arena, session.local_ms(transfer.happened_at));
+        const posted = try activity_page.when_of(arena, session.local_ms(transfer.posted_at));
 
         try facts.add("Happened", try std.fmt.allocPrint(arena, "{s} {s}", .{
             happened.date,

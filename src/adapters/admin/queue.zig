@@ -51,7 +51,7 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) Erro
     const rows = try arena.alloc(views.Queue.JobsItem, listed.jobs.len);
 
     for (listed.jobs, rows) |item, *row| {
-        const when = try activity_page.when_of(arena, item.due_at);
+        const when = try activity_page.when_of(arena, session.local_ms(item.due_at));
 
         row.* = .{
             .plugin = item.plugin,

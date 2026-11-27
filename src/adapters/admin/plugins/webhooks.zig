@@ -80,7 +80,7 @@ fn screen(session: *admin.Session, notice: []const u8, problem: []const u8) admi
     }
 
     for (listed.deliveries, deliveries) |item, *delivery| {
-        const when = try activity_page.when_of(arena, item.received_at);
+        const when = try activity_page.when_of(arena, session.local_ms(item.received_at));
 
         delivery.* = .{
             .name = item.name,

@@ -11,6 +11,7 @@ const model = @import("../../model.zig");
 const statuses = @import("../../operations/status.zig");
 const record_operations = @import("../../operations/record.zig");
 const time = @import("../../lib/time.zig");
+const zone_lib = @import("../../lib/zone.zig");
 
 pub const decode = @import("fields/decode.zig");
 pub const reshape = @import("fields/reshape.zig");
@@ -116,6 +117,9 @@ pub const Context = struct {
     open: []const []const u8 = &.{},
     /// Past the fold, stop: the rest is not drawn at all (a preview of a long type).
     cut: bool = false,
+    /// The site's time zone (`Session.zone`): moments are shown on its clock, named.
+    zone_name: []const u8,
+    zone_rule: []const u8,
 };
 
 /// `https://site/pl/posts/`: where a page in one language lives.
@@ -1066,9 +1070,9 @@ fn instance_of(
             const day_only = def.options.date.format == .date;
 
             instance.control = if (day_only) "date" else "datetime";
-            instance.value = try datetime_text(context.arena, current, day_only);
-            // Moments are kept and shown in UTC; the editor says so beside the time.
-            instance.suffix = if (day_only) "" else "UTC";
+            instance.value = try datetime_text(context.arena, context.zone_rule, current, day_only);
+            // Moments are kept in UTC and shown on the site's clock, named beside the time.
+            instance.suffix = if (day_only) "" else context.zone_name;
         },
         .input => try fill_input(context, &instance, def, kind, path, current, in_list),
         .json => {
@@ -1936,8 +1940,14 @@ fn text_of(arena: std.mem.Allocator, current: ?Value) Error![]const u8 {
     };
 }
 
-/// What a `datetime-local` input holds, or a `date` input for a field that shows days.
-fn datetime_text(arena: std.mem.Allocator, current: ?Value, day_only: bool) Error![]const u8 {
+/// What a `datetime-local` input holds, the moment on the site's clock (`zone`, its rule),
+/// or a `date` input for a field that shows days, which has no time to move.
+fn datetime_text(
+    arena: std.mem.Allocator,
+    zone: []const u8,
+    current: ?Value,
+    day_only: bool,
+) Error![]const u8 {
     std.debug.assert(time.ms_max > 0);
 
     const value = current orelse return "";
@@ -1950,7 +1960,9 @@ fn datetime_text(arena: std.mem.Allocator, current: ?Value, day_only: bool) Erro
         return time.date_text(arena, value.integer) catch error.OutOfMemory;
     }
 
-    return time.datetime_local_text(arena, value.integer) catch error.OutOfMemory;
+    const local = value.integer + zone_lib.offset_ms(zone, value.integer);
+
+    return time.datetime_local_text(arena, local) catch error.OutOfMemory;
 }
 
 fn number_text(arena: std.mem.Allocator, number: ?f64) Error![]const u8 {

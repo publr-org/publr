@@ -48,6 +48,7 @@ export type MediaProps = {
   unreviewed: number;
   unreviewed_href: string;
   on_server: boolean;
+  time_zone: string;
   folders: Array<{
     id: string;
     name: string;
@@ -105,6 +106,7 @@ export function Media({
   unreviewed,
   unreviewed_href,
   on_server,
+  time_zone,
   folders,
   tag_list,
   periods,
@@ -147,6 +149,7 @@ export function Media({
         unreviewed={unreviewed}
         unreviewed_href={unreviewed_href}
         on_server={on_server}
+        time_zone={time_zone}
         folders={folders}
         tag_list={tag_list}
         periods={periods}

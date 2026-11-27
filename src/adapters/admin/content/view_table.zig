@@ -306,7 +306,7 @@ fn cell_of(
     }
 
     const at = if (created) record.created_at else record.updated_at;
-    var moment = cell(name, admin.time_text(arena, at));
+    var moment = cell(name, admin.time_text(arena, session.local_ms(at)));
 
     moment.kind = "numeric";
 

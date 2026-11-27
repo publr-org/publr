@@ -133,7 +133,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             var session = try admin.require(request, response, ctx) orelse return;
             const shape = try load_definition(&session) orelse return;
-            const document = try seeded(session.arena, shape.def, session.ctx.now_ms);
+            const document = try seeded(session.arena, shape.def, clock_of(&session));
 
             try answer(&session, shape, document, &.{}, .page);
         }
@@ -144,7 +144,7 @@ pub fn Editor(comptime domain: Domain) type {
 
             var session = try admin.require(request, response, ctx) orelse return;
             const shape = try load_definition(&session) orelse return;
-            const plain = try seeded(session.arena, shape.def, session.ctx.now_ms);
+            const plain = try seeded(session.arena, shape.def, clock_of(&session));
             const document = try pointed(&session, shape.def, plain);
 
             try answer(&session, shape, document, &.{}, .fragment);
@@ -164,7 +164,7 @@ pub fn Editor(comptime domain: Domain) type {
                 .preview = true,
                 .cut = !all,
             };
-            const document = try seeded(session.arena, def, session.ctx.now_ms);
+            const document = try seeded(session.arena, def, clock_of(session));
 
             return editor_node(session, shape, document, &.{});
         }
@@ -227,6 +227,7 @@ pub fn Editor(comptime domain: Domain) type {
             const document = fields.decode.document_of(
                 session.arena,
                 admin.kinds_of(session),
+                session.zone.rule,
                 form_defs,
                 form,
             ) orelse {
@@ -268,6 +269,7 @@ pub fn Editor(comptime domain: Domain) type {
             const document = fields.decode.document_of(
                 session.arena,
                 admin.kinds_of(session),
+                session.zone.rule,
                 defs,
                 form,
             ) orelse {
@@ -443,7 +445,7 @@ pub fn Editor(comptime domain: Domain) type {
                 const made = registry.SDK.dispatch(&session.ctx, operations.TransitionAt, .{
                     .id = id,
                     .transition = transition,
-                    .at = zone.utc_of((try site_zone(session)).rule, local),
+                    .at = zone.utc_of(session.zone.rule, local),
                     .base = base,
                 }) catch |err| return move_refused(session, id, err, location);
                 const opens = std.mem.eql(u8, transition, "publish") and made.entry > 0;
@@ -514,7 +516,7 @@ pub fn Editor(comptime domain: Domain) type {
                 _ = SDK.dispatch(&session.ctx, operations.Reschedule, .{
                     .id = id,
                     .entry = entry,
-                    .at = zone.utc_of((try site_zone(session)).rule, local),
+                    .at = zone.utc_of(session.zone.rule, local),
                 }) catch |err| return admin.fail(session, err, shown);
                 stays = true;
             } else {
@@ -713,7 +715,7 @@ pub fn Editor(comptime domain: Domain) type {
             const document = if (shape.loaded) |full|
                 parse(session.arena, full.document)
             else
-                try seeded(session.arena, def, session.ctx.now_ms);
+                try seeded(session.arena, def, clock_of(&session));
             try answer(&session, shape, document, &.{}, .page);
         }
 
@@ -881,6 +883,7 @@ pub fn Editor(comptime domain: Domain) type {
             const posted = fields.decode.value_of(
                 session.arena,
                 admin.kinds_of(session),
+                session.zone.rule,
                 defs,
                 form,
             ) catch {
@@ -1177,6 +1180,7 @@ pub fn Editor(comptime domain: Domain) type {
             const def = shape.def;
             const status_now = if (shape.loaded) |full| full.row.status else "";
             const live = shape.loaded != null and model.flow.is_live(def.flow, status_now);
+            const clock = session.zone;
 
             return .{
                 .arena = session.arena,
@@ -1198,6 +1202,8 @@ pub fn Editor(comptime domain: Domain) type {
                 .fold = fold,
                 .open = shape.open,
                 .cut = shape.cut,
+                .zone_name = clock.name,
+                .zone_rule = clock.rule,
             };
         }
 
@@ -1217,6 +1223,7 @@ pub fn Editor(comptime domain: Domain) type {
             const document = fields.decode.document_of(
                 session.arena,
                 admin.kinds_of(session),
+                session.zone.rule,
                 defs,
                 form,
             ) orelse {
@@ -1588,7 +1595,7 @@ pub fn Editor(comptime domain: Domain) type {
                         try std.mem.replaceOwned(u8, arena, one.item.when, " ", "T")
                     else
                         "",
-                    .time_zone = (try site_zone(session)).name,
+                    .time_zone = session.zone.name,
                 });
             }
 
@@ -2160,7 +2167,7 @@ fn compare_of(session: *Session, def: Def, row: Record, version: i64) Error!Comp
         });
     }
 
-    const rule = (try site_zone(session)).rule;
+    const rule = session.zone.rule;
     const local = entry.due_at + zone.offset_ms(rule, entry.due_at);
     const when = model_time.datetime_local_text(arena, local) catch "";
 
@@ -2194,7 +2201,7 @@ fn base_label_of(
         }
     } else null;
     const on = at orelse return session.translated("Live", .{});
-    const rule = (try site_zone(session)).rule;
+    const rule = session.zone.rule;
     const local = on.due_at + zone.offset_ms(rule, on.due_at);
     const text = model_time.datetime_local_text(session.arena, local) catch "";
 
@@ -2506,7 +2513,7 @@ fn scheduled_of(
     std.debug.assert(session.signed_in());
 
     const arena = session.arena;
-    const site = try site_zone(session);
+    const site = session.zone;
     const items = try arena.alloc(ScheduledItem, scheduled.len);
 
     for (scheduled, items) |kept, *item| {
@@ -2591,13 +2598,14 @@ fn codes_of(arena: std.mem.Allocator, combination: []const u8) Error![]const u8 
     return std.mem.join(arena, ", ", codes.items);
 }
 
-/// The site's time zone, its name and rule: what schedules are typed and shown in.
-pub fn site_zone(session: *Session) Error!SiteZone {
-    std.debug.assert(session.signed_in());
+/// The site's time zone, its name and rule: what the admin's times are typed and shown
+/// in (`Session.zone`, read once a request), and the preview's, drawn without a session.
+pub fn zone_in(ctx: *const sdk.Ctx, arena: std.mem.Allocator) SiteZone {
     std.debug.assert(jobs.zone_key.len > 0);
+    std.debug.assert(ctx.now_ms >= 0);
 
     // Unread, the site's clock is UTC, as it is with none chosen.
-    const kept = store.settings.get(session.ctx.db, session.arena, jobs.zone_key) catch null;
+    const kept = store.settings.get(ctx.db, arena, jobs.zone_key) catch null;
     const name = kept orelse "UTC";
 
     return .{
@@ -2611,8 +2619,14 @@ pub const SiteZone = struct {
     rule: []const u8,
 };
 
+pub const utc_zone: SiteZone = .{
+    .name = "UTC",
+    .rule = "UTC0",
+};
+
 const zone = @import("../../lib/zone.zig");
 const jobs = @import("../../sdk/jobs.zig");
+const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 
 /// The bar over a document someone asked a transition for: who, what, and what the person
@@ -2830,15 +2844,26 @@ fn pointed(session: *Session, def: Def, document: ?Value) Error!?Value {
     };
 }
 
+/// The moment a new record is made, on the site's clock: what its defaults read as.
+fn clock_of(session: *const Session) model.defaults.Clock {
+    std.debug.assert(session.ctx.now_ms > 0);
+    std.debug.assert(session.zone.rule.len > 0);
+
+    return .{
+        .now_ms = session.ctx.now_ms,
+        .zone = session.zone.rule,
+    };
+}
+
 /// What a new document starts with: the defaults of the definition's fields, or nothing
 /// when no field has one.
-fn seeded(arena: std.mem.Allocator, def: Def, now: i64) Error!?Value {
+fn seeded(arena: std.mem.Allocator, def: Def, clock: model.defaults.Clock) Error!?Value {
     std.debug.assert(def.fields.len <= model.field.fields_max);
     std.debug.assert(def.handle.len > 0);
 
     var object: std.json.ObjectMap = .empty;
 
-    try model.defaults.apply(registry.Kinds.all, def.fields, arena, &object, now);
+    try model.defaults.apply(registry.Kinds.all, def.fields, arena, &object, clock);
 
     if (object.count() == 0) {
         return null;

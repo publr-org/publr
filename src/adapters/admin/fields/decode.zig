@@ -7,6 +7,7 @@ const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
 const model = @import("../../../model.zig");
 const time = @import("../../../lib/time.zig");
+const zone_lib = @import("../../../lib/zone.zig");
 
 const Form = admin.Form;
 const Def = model.field.Def;
@@ -18,17 +19,19 @@ pub const json_bytes_max: u32 = 1 << 20;
 pub const items_max: u32 = model.document.items_max;
 
 /// The form as the JSON text the record operations take; null when it does not parse.
-/// `known` is the kinds the project knows (`admin.kinds_of`).
+/// `known` is the kinds the project knows (`admin.kinds_of`); `zone` is the rule of the
+/// site's time zone (`Session.zone`), the clock date and time inputs are typed on.
 pub fn document_of(
     arena: std.mem.Allocator,
     known: []const Kind,
+    zone: []const u8,
     fields: []const Def,
     form: *const Form,
 ) ?[]const u8 {
     std.debug.assert(fields.len <= model.field.fields_max);
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    const value = value_of(arena, known, fields, form) catch return null;
+    const value = value_of(arena, known, zone, fields, form) catch return null;
 
     return std.json.Stringify.valueAlloc(arena, value, .{}) catch null;
 }
@@ -37,18 +40,20 @@ pub fn document_of(
 pub fn value_of(
     arena: std.mem.Allocator,
     known: []const Kind,
+    zone: []const u8,
     fields: []const Def,
     form: *const Form,
 ) Error!Value {
     std.debug.assert(fields.len <= model.field.fields_max);
     std.debug.assert(form.len <= admin.form_pairs_max);
 
-    return object_of(arena, known, fields, form, "");
+    return object_of(arena, known, zone, fields, form, "");
 }
 
 fn object_of(
     arena: std.mem.Allocator,
     known: []const Kind,
+    zone: []const u8,
     fields: []const Def,
     form: *const Form,
     prefix: []const u8,
@@ -65,7 +70,7 @@ fn object_of(
         // Saving keeps a field the document leaves out, so a top-level field the form
         // posted blank (a list under its bare name) is written as null: cleared.
         const posted_blank = prefix.len == 0 and form.get(def.name) != null;
-        const value = (try field_value(arena, known, def, form, prefix)) orelse
+        const value = (try field_value(arena, known, zone, def, form, prefix)) orelse
             if (posted_blank) Value.null else continue;
 
         object.put(arena, def.name, value) catch return error.OutOfMemory;
@@ -80,6 +85,7 @@ fn object_of(
 fn field_value(
     arena: std.mem.Allocator,
     known: []const Kind,
+    zone: []const u8,
     def: Def,
     form: *const Form,
     prefix: []const u8,
@@ -97,7 +103,7 @@ fn field_value(
 
     if (model.field.is_group(def.kind)) {
         const child_prefix = try print(arena, "{s}.", .{name});
-        const object = try object_of(arena, known, def.fields, form, child_prefix);
+        const object = try object_of(arena, known, zone, def.fields, form, child_prefix);
 
         return if (filled(object)) object else null;
     }
@@ -108,7 +114,7 @@ fn field_value(
     }
 
     if (model.field.is_repeater(def.kind)) {
-        return entries_value(arena, known, def, form, name);
+        return entries_value(arena, known, zone, def, form, name);
     }
 
     if (model.field.is_money(def.kind) and !has_exact(form, name)) {
@@ -141,10 +147,10 @@ fn field_value(
     }
 
     if (def.many) {
-        return list_value(arena, def, kind, form, name);
+        return list_value(arena, def, kind, zone, form, name);
     }
 
-    return leaf_value(def, kind, form, name);
+    return leaf_value(def, kind, zone, form, name);
 }
 
 /// Whether a group was filled in: an unticked checkbox still posts `false`, so a group
@@ -166,6 +172,7 @@ fn filled(object: Value) bool {
 fn entries_value(
     arena: std.mem.Allocator,
     known: []const Kind,
+    zone: []const u8,
     def: Def,
     form: *const Form,
     name: []const u8,
@@ -212,7 +219,7 @@ fn entries_value(
             break;
         }
 
-        const item = try object_of(arena, known, def.fields, form, item_prefix);
+        const item = try object_of(arena, known, zone, def.fields, form, item_prefix);
 
         array.append(item) catch return error.OutOfMemory;
         index += 1;
@@ -229,6 +236,7 @@ fn list_value(
     arena: std.mem.Allocator,
     def: Def,
     kind: Kind,
+    zone: []const u8,
     form: *const Form,
     name: []const u8,
 ) Error!?Value {
@@ -253,7 +261,7 @@ fn list_value(
             break;
         }
 
-        const value = (try leaf_value(def, kind, form, item_name)) orelse continue;
+        const value = (try leaf_value(def, kind, zone, form, item_name)) orelse continue;
 
         array.append(value) catch return error.OutOfMemory;
     }
@@ -356,7 +364,13 @@ fn closed_value(arena: std.mem.Allocator, form: *const Form, name: []const u8) E
     return value;
 }
 
-fn leaf_value(def: Def, kind: Kind, form: *const Form, name: []const u8) Error!?Value {
+fn leaf_value(
+    def: Def,
+    kind: Kind,
+    zone: []const u8,
+    form: *const Form,
+    name: []const u8,
+) Error!?Value {
     std.debug.assert(name.len > 0);
     std.debug.assert(kind.storage != .none);
 
@@ -375,7 +389,7 @@ fn leaf_value(def: Def, kind: Kind, form: *const Form, name: []const u8) Error!?
     return switch (kind.storage) {
         .int => if (kind.control == .datetime)
             .{
-                .integer = moment_of(def, text) orelse return error.Invalid,
+                .integer = moment_of(def, zone, text) orelse return error.Invalid,
             }
         else
             .{
@@ -390,13 +404,18 @@ fn leaf_value(def: Def, kind: Kind, form: *const Form, name: []const u8) Error!?
     };
 }
 
-/// A date and time field posts what its control holds: a moment, or a day when the
-/// field shows days alone; either is taken whatever the format says.
-fn moment_of(def: Def, text: []const u8) ?i64 {
+/// A date and time field posts what its control holds: a moment on the site's clock
+/// (`zone`, its rule), kept in UTC, or a day when the field shows days alone, which has
+/// no time to move; either is taken whatever the format says.
+fn moment_of(def: Def, zone: []const u8, text: []const u8) ?i64 {
     std.debug.assert(text.len > 0);
     std.debug.assert(def.name.len > 0);
 
-    return time.parse_datetime_local(text) orelse time.parse_date(text);
+    if (time.parse_datetime_local(text)) |local| {
+        return zone_lib.utc_of(zone, local);
+    }
+
+    return time.parse_date(text);
 }
 
 /// A money field's inputs, `price.GBP`, as `{ "GBP": 850 }`: each amount in the currency's
@@ -555,7 +574,7 @@ test "items and groups drawn closed past the fold come back whole from their JSO
         "%7B%22question%22%3A%22Who%22%7D%5D&" ++
         "seo=%7B%22description%22%3A%22About%22%7D";
     const form = Form.parse(arena, body).?;
-    const text = document_of(arena, registry.Kinds.all, &test_fields, &form).?;
+    const text = document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &form).?;
 
     try std.testing.expectEqualStrings(
         "{\"live\":true,\"seo\":{\"description\":\"About\"}," ++
@@ -568,11 +587,12 @@ test "items and groups drawn closed past the fold come back whole from their JSO
     const empty = Form.parse(arena, "live=1&seo=").?;
     try std.testing.expectEqualStrings(
         "{\"live\":true,\"seo\":null}",
-        document_of(arena, registry.Kinds.all, &test_fields, &empty).?,
+        document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &empty).?,
     );
 
     const broken = Form.parse(arena, "faq%5B0%2B%5D=%5B%5D").?;
-    try std.testing.expect(document_of(arena, registry.Kinds.all, &test_fields, &broken) == null);
+    const refused = document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &broken);
+    try std.testing.expect(refused == null);
 }
 
 test "the form's paths become the document: lists, groups, repeaters, JSON inside" {
@@ -584,7 +604,7 @@ test "the form's paths become the document: lists, groups, repeaters, JSON insid
         "tags%5B2%5D=t3&seo.description=About&seo.keywords=%5B%22a%22%2C%22b%22%5D&" ++
         "faq%5B0%5D.question=Why&faq%5B1%5D.question=";
     const form = Form.parse(arena, body).?;
-    const text = document_of(arena, registry.Kinds.all, &test_fields, &form).?;
+    const text = document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &form).?;
 
     try std.testing.expectEqualStrings(
         "{\"title\":\"Hello\",\"live\":true,\"at\":1788437100000,\"views\":3," ++
@@ -595,18 +615,19 @@ test "the form's paths become the document: lists, groups, repeaters, JSON insid
     );
 
     const blank = Form.parse(arena, "live=1").?;
-    const only_live = document_of(arena, registry.Kinds.all, &test_fields, &blank).?;
+    const only_live = document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &blank).?;
     try std.testing.expectEqualStrings("{\"live\":true}", only_live);
 
     const filed = Form.parse(arena, "live=1&topics=t1&topics=&topics=t2&section=s1&section=s2").?;
-    const with_terms = document_of(arena, registry.Kinds.all, &test_fields, &filed).?;
+    const with_terms = document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &filed).?;
     try std.testing.expectEqualStrings(
         "{\"live\":true,\"topics\":[\"t1\",\"t2\"],\"section\":\"s1\"}",
         with_terms,
     );
 
     const bad = Form.parse(arena, "views=x").?;
-    try std.testing.expect(document_of(arena, registry.Kinds.all, &test_fields, &bad) == null);
+    const refused = document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &bad);
+    try std.testing.expect(refused == null);
 }
 
 test "a repeater inside a group comes back whole from its JSON" {
@@ -641,11 +662,12 @@ test "a repeater inside a group comes back whole from its JSON" {
 
     try std.testing.expectEqualStrings(
         "{\"footer\":{\"heading\":\"Shop\",\"links\":[{\"url\":\"/a\"}]}}",
-        document_of(arena, registry.Kinds.all, &fields, &form).?,
+        document_of(arena, registry.Kinds.all, "UTC0", &fields, &form).?,
     );
 
     const broken = Form.parse(arena, "footer.links=%5B").?;
-    try std.testing.expect(document_of(arena, registry.Kinds.all, &fields, &broken) == null);
+    const refused = document_of(arena, registry.Kinds.all, "UTC0", &fields, &broken);
+    try std.testing.expect(refused == null);
 }
 
 test "a field the form posted blank is cleared; one it left out is kept" {
@@ -657,7 +679,7 @@ test "a field the form posted blank is cleared; one it left out is kept" {
 
     try std.testing.expectEqualStrings(
         "{\"title\":null,\"live\":true,\"tags\":null}",
-        document_of(arena, registry.Kinds.all, &test_fields, &cleared).?,
+        document_of(arena, registry.Kinds.all, "UTC0", &test_fields, &cleared).?,
     );
 }
 
@@ -692,11 +714,31 @@ test "a group left empty but for an unticked checkbox is left out" {
     const untouched = Form.parse(arena, "link.url=").?;
     const ticked = Form.parse(arena, "link.url=&link.new_window=1").?;
 
-    const empty = document_of(arena, registry.Kinds.all, &link, &untouched).?;
+    const empty = document_of(arena, registry.Kinds.all, "UTC0", &link, &untouched).?;
 
     try std.testing.expectEqualStrings("{}", empty);
     try std.testing.expectEqualStrings(
         "{\"link\":{\"new_window\":true}}",
-        document_of(arena, registry.Kinds.all, &link, &ticked).?,
+        document_of(arena, registry.Kinds.all, "UTC0", &link, &ticked).?,
+    );
+}
+
+test "a moment is typed on the site's clock and kept in UTC" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const warsaw = zone_lib.rule_of("Europe/Warsaw").?;
+    const winter = Form.parse(arena, "at=2026-11-27T14%3A10").?;
+    const summer = Form.parse(arena, "at=2026-09-03T14%3A05").?;
+
+    // 14:10 in Warsaw in November is 13:10 UTC; 14:05 in September is 12:05 UTC.
+    try std.testing.expectEqualStrings(
+        "{\"at\":1795785000000}",
+        document_of(arena, registry.Kinds.all, warsaw, test_fields[2..3], &winter).?,
+    );
+    try std.testing.expectEqualStrings(
+        "{\"at\":1788437100000}",
+        document_of(arena, registry.Kinds.all, warsaw, test_fields[2..3], &summer).?,
     );
 }

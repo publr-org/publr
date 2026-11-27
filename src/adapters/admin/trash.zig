@@ -105,8 +105,8 @@ fn row_of(
     std.debug.assert(session.signed_in());
 
     const arena = session.arena;
-    const at = time.datetime_text(arena, entry.removed_at) catch "";
-    const until = time.datetime_text(arena, entry.keep_until) catch "";
+    const at = time.datetime_text(arena, session.local_ms(entry.removed_at)) catch "";
+    const until = time.datetime_text(arena, session.local_ms(entry.keep_until)) catch "";
     const when: []const admin.Placeholder = &.{.{
         .name = "when",
         .value = at,

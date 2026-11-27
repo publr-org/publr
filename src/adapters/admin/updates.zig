@@ -41,7 +41,7 @@ pub fn show(request: *Request, response: *Response, ctx: *Context) Error!void {
             else
                 backup.from,
             .to = backup.to,
-            .at = time.datetime_text(arena, backup.at_ms) catch "",
+            .at = time.datetime_text(arena, session.local_ms(backup.at_ms)) catch "",
         };
     }
 

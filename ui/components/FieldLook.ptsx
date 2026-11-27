@@ -164,7 +164,7 @@ export function FieldLook({
                 {Publr.t("Date only")}
               </option>
             </NativeSelect>
-            <FieldDescription>{Publr.t("Times are entered and shown in UTC.")}</FieldDescription>
+            <FieldDescription>{Publr.t("Times are entered and shown in the site's time zone, set under Settings.")}</FieldDescription>
           </Field>
         )}
         <BooleanAppearance

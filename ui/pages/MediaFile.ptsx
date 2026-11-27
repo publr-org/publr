@@ -63,6 +63,7 @@ export type MediaFileProps = {
   unsorted: number;
   unreviewed: number;
   on_server: boolean;
+  time_zone: string;
 };
 
 /** One file of the library: its preview with the focal point, what people wrote about it,
@@ -98,6 +99,7 @@ export function MediaFile({
   unsorted,
   unreviewed,
   on_server,
+  time_zone,
 }: MediaFileProps) {
   return (
     <ListDetailPage title={title}>
@@ -122,6 +124,7 @@ export function MediaFile({
         unsorted_href="/admin/media?folder=unsorted"
         unreviewed={unreviewed}
         on_server={on_server}
+        time_zone={time_zone}
         folders={folders}
         tag_list={tag_list}
         periods={periods}
