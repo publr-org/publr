@@ -9,23 +9,10 @@ const operator = @import("operator.zig");
 const route = @import("../sdk/plugin/route.zig");
 const Project = @import("project.zig").Project;
 
-/// A command before it runs. A hook may move the process into another folder and take its
-/// own arguments off `args`; what is left runs as the command, against `db_path`.
-pub const Command = struct {
-    io: std.Io,
-    arena: std.mem.Allocator,
-    args: []const []const u8,
-    db_path: [:0]const u8,
-};
+const process = @import("../publr/extend/process.zig");
 
-/// `serve`, listening: the project it serves, the port it got, and every plugin's state.
-pub const Serving = struct {
-    io: std.Io,
-    /// Lives as long as the server.
-    arena: std.mem.Allocator,
-    project: *Project,
-    port: u16,
-};
+pub const Command = process.Command;
+pub const Serving = process.Serving;
 
 /// Every plugin's `before_command`, in name order, each seeing what the one before left.
 pub fn before_command(command: *Command) !void {
@@ -36,7 +23,7 @@ pub fn before_command(command: *Command) !void {
 
         comptime if (Hook != fn (*Command) anyerror!void) {
             @compileError("plugin " ++ Plugin.manifest.name ++ ": `before_command` is " ++
-                "`pub fn before_command(command: *publr.plugin_hooks.Command) !void`");
+                "`pub fn before_command(command: *publr.Host.Command) !void`");
         };
 
         try plugin_define.get(Plugin, "before_command")(command);
@@ -55,7 +42,7 @@ pub fn serving(serve: Serving) !void {
 
         comptime if (Hook != fn (Serving) anyerror!void) {
             @compileError("plugin " ++ Plugin.manifest.name ++ ": `serving` is " ++
-                "`pub fn serving(serve: publr.plugin_hooks.Serving) !void`");
+                "`pub fn serving(serve: publr.Host.Serving) !void`");
         };
 
         try plugin_define.get(Plugin, "serving")(serve);
@@ -94,7 +81,7 @@ fn Guarded(comptime handler: route.Handler) type {
                 return response.text(.forbidden, "Forbidden");
             }
 
-            return handler(request, response, ctx);
+            return handler(@ptrCast(request), @ptrCast(response), @ptrCast(ctx));
         }
     };
 }

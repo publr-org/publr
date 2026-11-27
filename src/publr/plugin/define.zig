@@ -586,7 +586,7 @@ const Page = @import("../../sdk/plugin/admin_slots.zig").Page;
 const Panel = @import("../../sdk/plugin/admin_slots.zig").Panel;
 const RowAction = @import("../../sdk/plugin/admin_slots.zig").RowAction;
 const admin_described = @import("../../sdk/plugin/admin_described.zig");
-const host_define = @import("../../sdk/plugin/host.zig");
+const host_define = @import("../extend/host.zig");
 
 /// Whether a bound plugin has `.extend`.
 fn extends(comptime Plugin: type) bool {

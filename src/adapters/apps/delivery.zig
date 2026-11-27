@@ -36,9 +36,15 @@ pub fn door(
     }
 
     var ctx = identity_module.context(project, arena, .system);
+    var system: @import("../../sdk/plugin/context.zig").HostApi = .{
+        .inner = &ctx,
+    };
+    const visitor = visitor_of(project, arena, request);
     const delivery: sdk.delivery.Delivery = .{
-        .ctx = &ctx,
-        .visitor = visitor_of(project, arena, request),
+        .ctx = system.ctx(),
+        .visitor = @import("../../sdk/plugin/caller_view.zig").view_of(visitor, .{
+            .from = .app,
+        }),
         .path = request.path(),
     };
 

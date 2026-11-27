@@ -9,9 +9,8 @@ const permission_define = @import("../sdk/plugin/permission_define.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
 const Error = @import("../sdk/operation.zig").Error;
-// The link operations' shapes are core's until their public file is made.
 const http_operations = @import("operations/http.zig");
-const link = @import("../operations/link.zig");
+const link = @import("operations/link.zig");
 
 pub const QueueCtx = struct {
     /// The plugin's `ctx`: what the SDK's own calls (record handles, queries) take.

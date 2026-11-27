@@ -245,8 +245,15 @@ fn sign_in_elsewhere(session: *const Session) Error!?[]const u8 {
     std.debug.assert(!session.signed_in());
     comptime std.debug.assert(registry.sign_in_at.len <= 64);
 
+    const wanted = @import("../admin.zig").query_param(session, "return") orelse "/admin";
+
     inline for (registry.sign_in_at) |Plugin| {
-        const location = plugin_define.get(Plugin, "sign_in_at")(session) catch |err| blk: {
+        var inner = session.ctx;
+        var asking: @import("../../sdk/plugin/context.zig").HostApi = .{
+            .inner = &inner,
+        };
+        const run = plugin_define.get(Plugin, "sign_in_at");
+        const location = run(asking.ctx(), wanted) catch |err| blk: {
             std.log.warn("plugin {s}: sign-in: {t}", .{ Plugin.manifest.name, err });
             break :blk null;
         };

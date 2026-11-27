@@ -23,6 +23,7 @@ pub fn view_of(raw: Caller, seen: Seen) View {
         .visitor = seen.visitor,
         .referer = seen.referer,
         .person = person,
+        .device = raw == .token,
         .account_id = raw.user_id(),
         .held_roles = raw.roles(),
         .granted_here = seen.granted_here,

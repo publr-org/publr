@@ -28,7 +28,44 @@ pub const Request = struct {
     plugin_access: ?*const plugin_access.Access = null,
 };
 
-pub const Policy = *const fn (ctx: *const Ctx, request: Request) Grant;
+pub const Policy = public.Policy;
+
+const public = @import("../publr/extend/policy.zig");
+
+/// What a plugin's policy is told of `request` and its caller, and its answer as core's.
+fn asked(ctx: *const Ctx, request: Request, policy: Policy) Grant {
+    std.debug.assert(request.operation_name.len > 0);
+
+    const caller_view = @import("plugin/caller_view.zig");
+    const through_app = ctx.app_plugins != null;
+    const who = caller_view.view_of(ctx.caller, .{
+        .from = caller_view.from_of(ctx.caller, through_app, ctx.over_api, ctx.job),
+    });
+    const answer = policy(who, .{
+        .operation_name = request.operation_name,
+        .kind = request.kind,
+        .type_id = request.type_id,
+        .open = request.open,
+        .own_type = request.own_types.len > 0,
+        .nested = ctx.within.len > 0,
+        .delivery = ctx.delivery,
+    });
+
+    std.debug.assert(answer.decision == .allow or answer.decision == .deny);
+
+    return .{
+        .decision = if (answer.decision == .allow) .allow else .deny,
+        .read_only = answer.read_only,
+        .types = answer.types,
+        .record_filter = .{
+            .flags = .{
+                .own_only = answer.own_only,
+                .live_only = answer.live_only,
+                .public_types_only = answer.public_types_only,
+            },
+        },
+    };
+}
 
 pub const admin_namespaces = [_][]const u8{
     "user",
@@ -280,7 +317,7 @@ pub fn authorize(
         if (!result.allows()) {
             break;
         }
-        result = try Grant.intersect(result, policy(ctx, request), ctx.arena);
+        result = try Grant.intersect(result, asked(ctx, request, policy), ctx.arena);
     }
 
     if (ctx.delivery and result.allows()) {
@@ -669,12 +706,12 @@ test "plugin policies intersect and can deny" {
     try std.testing.expectError(error.Denied, denied);
 }
 
-fn only_posts(_: *const Ctx, _: Request) Grant {
+fn only_posts(_: public.View, _: public.Request) public.Grant {
     return .{
         .types = &.{"post"},
     };
 }
 
-fn deny_all(_: *const Ctx, _: Request) Grant {
-    return Grant.deny;
+fn deny_all(_: public.View, _: public.Request) public.Grant {
+    return public.Grant.deny;
 }

@@ -1,8 +1,5 @@
-//! The sign-in provider contract: what a plugin declares to put a "Continue with X" button
-//! on the login pages. The core makes the state and the PKCE pair, keeps the callback, runs
-//! the provider's `exchange` as a fixed step of it, and decides whose account it is; the
-//! plugin only knows how to talk to its provider. A provider of the other kind reads who
-//! someone is from a header a proxy in front puts on every request (`from_request`).
+//! Sign-in providers as core keeps them: the contract is `publr/extend/sign_in.zig`; here
+//! are its checks and the lookups the login pages make.
 
 const std = @import("std");
 const operation = @import("operation.zig");
@@ -10,89 +7,20 @@ const model = @import("../model/identity.zig");
 const exchange_module = @import("plugin/exchange.zig");
 
 pub const ExchangeCtx = exchange_module.ExchangeCtx;
-pub const Ctx = @import("context.zig").Ctx;
+const PluginCtx = @import("plugin/context.zig").PluginCtx;
 pub const Error = operation.Error;
-pub const providers_max: u32 = 16;
-pub const label_len_max: u32 = 32;
-pub const icon_len_max: u32 = 4096;
-/// How long the exchange may take, all its requests together: the visitor waits on it.
-pub const exchange_ms_max: u32 = 10_000;
+const public = @import("../publr/extend/sign_in.zig");
 
-/// What the core gives `authorize_url`: where the provider must send the browser back, and
-/// the two values it must carry.
-pub const Authorize = struct {
-    callback_url: []const u8,
-    state: []const u8,
-    /// `base64url(sha256(verifier))`; the plugin passes it as `code_challenge`, `S256`.
-    code_challenge: []const u8,
-};
-
-/// What the core gives `exchange`: the provider's `code` and the verifier the challenge was
-/// made from, to swap for who the person is.
-pub const Callback = struct {
-    callback_url: []const u8,
-    code: []const u8,
-    code_verifier: []const u8,
-};
-
-/// Who the person is, as the provider says: core maps it to an account.
-pub const Claims = struct {
-    /// The provider's `name`; anything else is refused.
-    provider: []const u8,
-    /// The person's stable id at the provider.
-    subject: []const u8,
-    email: ?[]const u8 = null,
-    /// Whether the provider verified `email`.
-    verified: bool = false,
-    name: ?[]const u8 = null,
-    /// A picture's address, when the provider has one.
-    avatar: ?[]const u8 = null,
-};
-
-pub const SignInProvider = struct {
-    /// In URLs and identity rows: `github`, `google`; `[a-z][a-z0-9_]*`, at most 32.
-    name: []const u8,
-    /// "Continue with <label>".
-    label: []const u8,
-    /// The provider's mark: the `d` of one path on a 24 by 24 canvas, filled with the
-    /// button's text colour. Brand marks are the plugin's to ship, never the icon set's.
-    icon: []const u8,
-    /// Whether the provider can be offered now: its client id is in the environment. Core
-    /// also waits for every secret the plugin declares to be set.
-    available: *const fn () bool,
-    /// Where to send the browser to sign in with the provider. Set together with
-    /// `exchange`, or neither when the provider reads `from_request`.
-    authorize_url: ?*const fn (arena: std.mem.Allocator, request: Authorize) Error![]const u8 =
-        null,
-    /// Swaps the callback's code for who the person is: the one step of a sign-in that waits
-    /// on another server. Its ctx sends only to the plugin's own `http.fetch` domains, its
-    /// secrets filled as they leave, within `exchange_ms_max`. `BadCredentials` when the
-    /// provider refused the code; any error fails the sign-in ("Try again").
-    exchange: ?*const fn (ctx: *ExchangeCtx, callback: Callback) Error!Claims = null,
-    /// Who the person is, read from a header a proxy in front of the site puts on every
-    /// request (an identity-aware proxy), in place of a redirect and an exchange.
-    from_request: ?FromRequest = null,
-    /// The plugin that declares it: set by core.
-    plugin: []const u8 = "",
-};
-
-/// A provider that a proxy in front of the site answers for: every request carries who the
-/// person is, signed. While one is available the admin signs in through it alone and checks
-/// it on every request.
-pub const FromRequest = struct {
-    /// The request header it reads, lower case: `x-goog-iap-jwt-assertion`.
-    header: []const u8,
-    /// The person the header's value names, when it checks out; null when it does not. A
-    /// deciding step: no outside calls, only the plugin's own stored data.
-    read: *const fn (ctx: *Ctx, value: []const u8) Error!?Claims,
-    /// What someone the proxy let through gets when no account holds them: the roles for a
-    /// new account (empty: an account with none, waiting for an administrator), or null for
-    /// none, as today. What an administrator chose for new members; a deciding step like
-    /// `read`. Left out: accounts are only ever made by an administrator.
-    new_member: ?*const fn (ctx: *Ctx, claims: Claims) Error!?[]const []const u8 = null,
-};
-
-pub const header_len_max: u32 = 64;
+pub const providers_max = public.providers_max;
+pub const label_len_max = public.label_len_max;
+pub const icon_len_max = public.icon_len_max;
+pub const exchange_ms_max = public.exchange_ms_max;
+pub const header_len_max = public.header_len_max;
+pub const Authorize = public.Authorize;
+pub const Callback = public.Callback;
+pub const Claims = public.Claims;
+pub const SignInProvider = public.SignInProvider;
+pub const FromRequest = public.FromRequest;
 
 /// The declaration is well-formed; the message names what is not.
 pub fn problem(provider: SignInProvider) ?[]const u8 {
@@ -216,8 +144,8 @@ pub const testing = struct {
         return false;
     }
 
-    fn read_forwarded(ctx: *Ctx, value: []const u8) Error!?Claims {
-        std.debug.assert(ctx.now_ms >= 0);
+    fn read_forwarded(ctx: *PluginCtx, value: []const u8) Error!?Claims {
+        std.debug.assert(ctx.now().ms >= 0);
         std.debug.assert(value.len <= 64 << 10);
 
         const colon = std.mem.indexOfScalar(u8, value, ':') orelse return null;

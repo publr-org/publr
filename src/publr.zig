@@ -20,9 +20,9 @@ pub const Manifest = @import("publr/plugin/define.zig").Manifest;
 pub const Ctx = @import("publr/ctx.zig").Ctx;
 pub const Error = sdk.Error;
 /// What a built-in plugin's `.extend` registers through: `fn extend(host: *publr.Host)`.
-pub const Host = @import("sdk/plugin/host.zig").Host;
+pub const Host = @import("publr/extend/host.zig").Host;
 /// SQL on a built-in plugin's own tables: `ctx.database()`.
-pub const Database = @import("sdk/plugin/host.zig").Database;
+pub const Database = @import("publr/extend/database.zig").Database;
 /// `publr.operation.define(In, Out, .{ .name, .kind, .authorize, ... })`.
 pub const operation = struct {
     pub const define = @import("publr/plugin/operation_define.zig").define;

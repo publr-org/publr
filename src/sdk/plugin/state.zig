@@ -7,14 +7,7 @@ const db = @import("../../lib/db.zig");
 
 /// What a plugin's `State.init` is given: the process's allocator for what lives as long as
 /// it, the database's path, and the runtime every connection to it opens through.
-pub const Process = struct {
-    io: std.Io,
-    gpa: std.mem.Allocator,
-    /// Freed when the process ends; for what the state keeps.
-    arena: std.mem.Allocator,
-    db_path: [:0]const u8,
-    runtime: *db.Runtime,
-};
+pub const Process = @import("../../publr/extend/process.zig").Process;
 
 /// The plugins that keep a `State`, each checked: a struct, with `init` and `deinit` of the
 /// shapes the server calls when it has them.
@@ -52,7 +45,7 @@ fn check(comptime Plugin: type) void {
 
         if (@hasDecl(State, "init") and @TypeOf(State.init) != init_shape) {
             @compileError("plugin " ++ name ++ ": `State.init` is " ++
-                "`pub fn init(state: *State, process: publr.plugin.Process) !void`");
+                "`pub fn init(state: *State, process: publr.Host.Process) !void`");
         }
 
         if (@hasDecl(State, "deinit") and @TypeOf(State.deinit) != fn (*State) void) {

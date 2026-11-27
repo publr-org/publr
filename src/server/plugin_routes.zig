@@ -36,10 +36,14 @@ pub fn Routes(comptime declared: []const route.Declared) type {
 
             inline for (declared) |one| {
                 if (one.route.stream) |stream| {
-                    router.stream(.post, one.route.path, stream);
-                } else switch (one.route.method) {
-                    .get => router.get(one.route.path, one.route.handler.?),
-                    .post => router.post(one.route.path, one.route.handler.?),
+                    router.stream(.post, one.route.path, public.streamed(stream));
+                } else {
+                    const handle = &public.Adapted(one.route.handler.?).handle;
+
+                    switch (one.route.method) {
+                        .get => router.get(one.route.path, handle),
+                        .post => router.post(one.route.path, handle),
+                    }
                 }
             }
 
@@ -127,6 +131,115 @@ pub fn set_session(
         now_ms,
     );
 }
+
+const session_set = set_session;
+
+/// What a public route's `Context` does, on the server's own request, response and context.
+pub const public = struct {
+    const extend = @import("../publr/extend/route.zig");
+    const HostApi = @import("../sdk/plugin/context.zig").HostApi;
+    const PluginCtx = @import("../sdk/plugin/context.zig").PluginCtx;
+
+    fn core(comptime Core: type, given: anytype) *Core {
+        return @ptrCast(@alignCast(@constCast(given)));
+    }
+
+    pub fn caller(
+        context: *extend.Context,
+        request: *const extend.Request,
+        response: *extend.Response,
+    ) extend.Error!?*PluginCtx {
+        const ctx = core(http.Context, context);
+        const found = try caller_context(
+            core(http.Request, request),
+            core(http.Response, response),
+            ctx,
+        ) orelse return null;
+        const inner = try ctx.arena.create(sdk.Ctx);
+        const host = try ctx.arena.create(HostApi);
+
+        std.debug.assert(found.now_ms >= 0);
+
+        inner.* = found;
+        host.* = .{
+            .inner = inner,
+        };
+
+        return host.ctx();
+    }
+
+    pub fn state(
+        context: *const extend.Context,
+        comptime Plugin: type,
+    ) *@import("plugin_states.zig").StateOf(Plugin) {
+        const project = Project.of(core(http.Context, context));
+        const states = project.plugin_states orelse @panic("no plugin states in this server");
+
+        return @import("plugin_states.zig").from(states, Plugin);
+    }
+
+    pub fn set_session(
+        context: *extend.Context,
+        request: *const extend.Request,
+        response: *extend.Response,
+        token: []const u8,
+        expires_at_ms: i64,
+    ) extend.Error!void {
+        return session_set(
+            core(http.Request, request),
+            core(http.Response, response),
+            core(http.Context, context),
+            token,
+            expires_at_ms,
+        );
+    }
+
+    /// A public handler as the router calls it.
+    pub fn Adapted(comptime handler: extend.Handler) type {
+        return struct {
+            pub fn handle(
+                request: *http.Request,
+                response: *http.Response,
+                ctx: *http.Context,
+            ) http.Error!void {
+                return handler(@ptrCast(request), @ptrCast(response), @ptrCast(ctx));
+            }
+        };
+    }
+
+    /// A public stream as the router takes it.
+    pub fn streamed(comptime given: *const extend.Stream) *const http.Router.Stream {
+        const Adapter = struct {
+            fn open(
+                request: *http.Request,
+                response: *http.Response,
+                ctx: *http.Context,
+            ) anyerror!?*anyopaque {
+                std.debug.assert(ctx.user_data != null);
+
+                return given.open(@ptrCast(request), @ptrCast(response), @ptrCast(ctx));
+            }
+
+            fn finish(
+                state_given: *anyopaque,
+                response: *http.Response,
+                ctx: *http.Context,
+            ) anyerror!void {
+                return given.finish(state_given, @ptrCast(response), @ptrCast(ctx));
+            }
+
+            const made: http.Router.Stream = .{
+                .bytes_max = given.bytes_max,
+                .open = &open,
+                .write = given.write,
+                .finish = &finish,
+                .abort = given.abort,
+            };
+        };
+
+        return &Adapter.made;
+    }
+};
 
 const Testing = @import("../sdk/plugin.zig").testing;
 const TestRoutes = Routes(@import("../sdk/plugin.zig").Merged(.{Testing.Hello}).merged_routes);

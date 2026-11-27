@@ -14,6 +14,51 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:Host`
+
+`publr.Host` is defined in `src/publr/extend/`, with every type its seams take and give:
+`publr.Host.Route`, `OperatorCommand`, `Handler`, `Stream`, `Request`, `Response`,
+`Context`, `Status`, `HttpError`, `Policy`, `PolicyRequest`, `PolicyGrant`, `Gate`,
+`Delivery`, `Verdict`, `Refusal`, `SignInProvider`, `Claims`, `Callback`, `Authorize`,
+`FromRequest`, `Command`, `Serving`, `Process`, `Database`, `Statement`, `AdminBrand`,
+`timed`. Nothing a seam hands over is core's any more:
+
+- A route's or operator command's handler takes `*publr.Host.Request`,
+  `*publr.Host.Response` and `*publr.Host.Context` (no longer `publr.http`'s). Who sent the
+  request is `try context.caller(request, response)`, a `*publr.Ctx` (it replaces
+  `publr.plugin_routes.caller_context`); the plugin's state is `context.state(Plugin)`
+  (it replaces `publr.plugin_states.of`/`from`); `context.set_session(...)` replaces
+  `publr.plugin_routes.set_session`. A query or form field is `request.query_param(arena,
+  name)` / `request.form_field(arena, name)`. `request.method()` answers `std.http.Method`
+  (`.POST`); statuses are `std.http.Status`.
+- `bootstrap` runs with `*publr.Ctx`, as the system.
+- A sign-in provider's `from_request.read` and `new_member` take `*publr.Ctx`.
+- A delivery gate's `Delivery.ctx` is `*publr.Ctx`, `visitor` is a caller view
+  (`visitor.user_id()`, `visitor.signed_in()`).
+- A policy is `fn (who: publr.Host.PolicyView, request: publr.Host.PolicyRequest) publr.Host.PolicyGrant`: the
+  caller's view (`has_role`, `device`, `signed_in`), the call (`operation_name`, `kind`,
+  `type_id`, `open`, `own_type`, `nested`, `delivery`), and its answer (`decision`,
+  `read_only`, `types`, `own_only`, `live_only`, `public_types_only`).
+- `before_command` takes `*publr.Host.Command`; `serving` takes `publr.Host.Serving`,
+  whose `state(Plugin)` replaces `serve.project.plugin_states`.
+- A `State`'s `init` takes `publr.Host.Process`; its `runtime` is Publr's own.
+- `admin_brand` is `fn (ctx: *publr.Ctx) publr.Error!publr.Host.AdminBrand`; `sign_in_at`
+  is `fn (ctx: *publr.Ctx, wanted: []const u8) anyerror!?[]const u8`, `wanted` being the
+  admin page asked for.
+- `publr.Database` has no `*db.Db` field and `prepare` answers a `publr.Host.Statement`
+  (`bind_*`, `step`, `read`, `read_int`, `exec`, `reset`, `finalize`).
+
+```zig
+// Before
+fn ping(request: *publr.http.Request, response: *publr.http.Response, ctx: *publr.http.Context) publr.http.Error!void {
+    const found = try publr.plugin_routes.caller_context(request, response, ctx) orelse return;
+    const state = publr.plugin_states.from(publr.project.Project.of(ctx).plugin_states.?, Plugin);
+// After
+fn ping(request: *publr.Host.Request, response: *publr.Host.Response, ctx: *publr.Host.Context) publr.Host.HttpError!void {
+    const found = try ctx.caller(request, response) orelse return; // *publr.Ctx
+    const state = ctx.state(Plugin);
+```
+
 ### `sdk:field`
 
 A field's overrides in `record.define`'s `.fields` (and a `.register_fields` group's) are

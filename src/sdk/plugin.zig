@@ -133,11 +133,7 @@ pub const plugins_max: u32 = 64;
 
 /// Whose admin it is, as a plugin's `admin_brand(ctx)` says: its name in the window's title
 /// and its mark in the rail. Empty is Publr's.
-pub const AdminBrand = struct {
-    name: []const u8 = "",
-    /// The mark's address, an image any page may load.
-    mark: []const u8 = "",
-};
+pub const AdminBrand = @import("../publr/extend/admin.zig").AdminBrand;
 
 pub fn validate(comptime Plugin: type) void {
     comptime {
@@ -225,11 +221,11 @@ fn validate_entries(comptime Plugin: type, comptime name: []const u8) void {
 
         if (plugin_define.has(Plugin, "bootstrap")) {
             const Bootstrap = @TypeOf(plugin_define.get(Plugin, "bootstrap"));
-            const expected = fn (*sdk.Ctx) sdk.Error!void;
+            const expected = fn (*PluginCtx) sdk.Error!void;
 
             if (Bootstrap != expected) {
                 @compileError("plugin " ++ name ++ ": `bootstrap` is " ++
-                    "`pub fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void`");
+                    "`pub fn bootstrap(ctx: *publr.Ctx) publr.Error!void`");
             }
         }
 
@@ -1074,7 +1070,7 @@ pub const testing = struct {
     const hello = struct {
         const record_define = @import("../publr/plugin/record_define.zig");
         const field_kind_define = @import("../publr/plugin/field_kind_define.zig");
-        const host_module = @import("plugin/host.zig");
+        const host_module = @import("../publr/extend/host.zig");
 
         pub const plugin = plugin_define.define(.{
             .name = "hello",
@@ -1130,11 +1126,11 @@ pub const testing = struct {
         };
 
         fn upload_open(
-            request: *route.http.Request,
-            _: *route.http.Response,
-            _: *route.http.Context,
+            request: *route.Request,
+            _: *route.Response,
+            _: *route.Context,
         ) anyerror!?*anyopaque {
-            std.debug.assert(request.method() == .post);
+            std.debug.assert(request.method() == .POST);
 
             const received = try std.heap.page_allocator.create(u64);
 
@@ -1153,8 +1149,8 @@ pub const testing = struct {
 
         fn upload_finish(
             upload: *anyopaque,
-            response: *route.http.Response,
-            _: *route.http.Context,
+            response: *route.Response,
+            _: *route.Context,
         ) anyerror!void {
             const received: *u64 = @ptrCast(@alignCast(upload));
             defer std.heap.page_allocator.destroy(received);
@@ -1175,17 +1171,17 @@ pub const testing = struct {
 
         /// Who is asking, as the route sees them.
         fn greeting(
-            request: *route.http.Request,
-            response: *route.http.Response,
-            ctx: *route.http.Context,
-        ) route.http.Error!void {
-            const plugin_routes = @import("../server/plugin_routes.zig");
-            const found = try plugin_routes.caller_context(request, response, ctx) orelse return;
+            request: *route.Request,
+            response: *route.Response,
+            ctx: *route.Context,
+        ) route.Error!void {
+            const found = try ctx.caller(request, response) orelse return;
+            const view = found.caller();
 
             std.debug.assert(request.path().len > 0);
 
             try response.json(.ok, .{
-                .caller = @tagName(found.caller),
+                .caller = if (view.signed_in()) "user" else "anonymous",
             });
         }
         const roles = [_]Role{
@@ -1258,7 +1254,9 @@ pub const testing = struct {
             },
         });
 
-        fn no_shouting(_: *const sdk.Ctx, request: sdk.authorize.Request) sdk.Grant {
+        const policy = @import("../publr/extend/policy.zig");
+
+        fn no_shouting(_: policy.View, request: policy.Request) policy.Grant {
             std.debug.assert(request.operation_name.len > 0);
 
             return .{};
@@ -1341,7 +1339,7 @@ test {
     _ = @import("plugin/admin_described.zig");
     _ = @import("plugin/doc_imports.zig");
     _ = @import("plugin/view_wire.zig");
-    _ = @import("plugin/host.zig");
+    _ = @import("../publr/extend/host.zig");
 }
 
 /// A plugin that emits its own event: an `after` hook keeps it inside the write and refuses

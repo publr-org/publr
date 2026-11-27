@@ -233,8 +233,11 @@ fn brand_of(session: *const Session) AdminBrand {
     comptime std.debug.assert(registry.admin_brand.len <= 64);
 
     inline for (registry.admin_brand) |Plugin| {
-        var asking = session.ctx;
-        const named = plugin_define.get(Plugin, "admin_brand")(&asking) catch |err| blk: {
+        var inner = session.ctx;
+        var asking: @import("../../sdk/plugin/context.zig").HostApi = .{
+            .inner = &inner,
+        };
+        const named = plugin_define.get(Plugin, "admin_brand")(asking.ctx()) catch |err| blk: {
             std.log.warn("plugin {s}: admin brand: {t}", .{ Plugin.manifest.name, err });
             break :blk AdminBrand{};
         };

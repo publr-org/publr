@@ -1,44 +1,19 @@
-//! Delivery gates: plugins deciding who may see the public site. Before a page, a not-found
-//! page or an island is delivered, every gate the plugins declare (`delivery_gates`) is
-//! asked about it, in plugin order. A gate may stay silent, keep what it lets through out
-//! of shared caches, or answer in the page's place: a paywall, a members-only area, a site
-//! still being built. The theme's assets are never gated: they show nothing of the content.
+//! Delivery gates as core asks them (`publr/extend/delivery.zig` is the contract): every
+//! gate in plugin order, the first refusal winning.
 
 const std = @import("std");
 const context = @import("context.zig");
 const caller_module = @import("caller.zig");
 const operation = @import("operation.zig");
 
-pub const gates_max: u32 = 16;
-pub const body_bytes_max: u32 = 64 << 10;
+const public = @import("../publr/extend/delivery.zig");
 
-/// What a gate is asked about.
-pub const Delivery = struct {
-    /// The system's context: what the gate needs to decide (its own settings, the
-    /// visitor's account) it reads through operations, as the system.
-    ctx: *context.Ctx,
-    /// Who asks: anonymous when nobody is signed in.
-    visitor: caller_module.Caller,
-    /// The path asked for, `/` and on; an island's is its `/_islands/…` path.
-    path: []const u8,
-};
-
-/// What the visitor gets instead: a status from 400 to 599 and a page, HTML.
-pub const Refusal = struct {
-    status: u16,
-    body: []const u8,
-};
-
-pub const Verdict = union(enum) {
-    /// Nothing to say: deliver as usual.
-    open,
-    /// Deliver, but never from or into a shared cache: the answer is for this visitor.
-    private,
-    /// Answer this instead.
-    refuse: Refusal,
-};
-
-pub const Gate = *const fn (delivery: *const Delivery) operation.Error!Verdict;
+pub const gates_max = public.gates_max;
+pub const body_bytes_max = public.body_bytes_max;
+pub const Delivery = public.Delivery;
+pub const Refusal = public.Refusal;
+pub const Verdict = public.Verdict;
+pub const Gate = public.Gate;
 
 /// Every gate's say: the first refusal wins, any `private` keeps the answer private. A
 /// gate that fails refuses nothing on its own; its error ends the request.
@@ -106,18 +81,20 @@ const testing = struct {
 };
 
 test "the first refusal wins, a private say keeps it private, silence changes nothing" {
-    var ctx: context.Ctx = undefined;
+    var host: @import("plugin/context.zig").HostApi = undefined;
     const anonymous: Delivery = .{
-        .ctx = &ctx,
-        .visitor = .anonymous,
+        .ctx = host.ctx(),
+        .visitor = .{
+            .from = .app,
+        },
         .path = "/",
     };
     var member = anonymous;
     member.visitor = .{
-        .user = .{
-            .id = "ada",
-            .roles = &.{"editor"},
-        },
+        .from = .app,
+        .person = true,
+        .account_id = "ada",
+        .held_roles = &.{"editor"},
     };
 
     try std.testing.expectEqual(Verdict.open, try decide(&.{}, &anonymous));

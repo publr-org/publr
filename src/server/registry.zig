@@ -755,7 +755,11 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
 
     inline for (native_plugins.all) |Plugin| {
         if (comptime plugin_define.has(Plugin, "bootstrap")) {
-            try plugin_define.get(Plugin, "bootstrap")(ctx);
+            var host: @import("../sdk/plugin/context.zig").HostApi = .{
+                .inner = ctx,
+            };
+
+            try plugin_define.get(Plugin, "bootstrap")(host.ctx());
         }
     }
 }

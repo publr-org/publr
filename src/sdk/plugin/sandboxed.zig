@@ -442,7 +442,7 @@ fn asks_for(comptime Plugin: type, comptime key: []const u8) bool {
 
 test "what the sandbox cannot run is left out and named, never refused" {
     const Plugin = plugin_define.Bind(struct {
-        fn extend(_: *@import("host.zig").Host) sdk_operation.Error!void {}
+        fn extend(_: *@import("../../publr/extend/host.zig").Host) sdk_operation.Error!void {}
 
         pub const plugin = plugin_define.define(.{
             .name = "tables",

@@ -3,27 +3,20 @@
 //! namespaces, so no two plugins, and no plugin and the core, answer the same path.
 const std = @import("std");
 const plugin_define = @import("../../publr/plugin/define.zig");
-pub const http = @import("../../lib/http.zig");
 
 pub const routes_max: u32 = 16;
 pub const areas = [_][]const u8{ "/admin/", "/api/", "/auth/" };
 
-pub const Method = enum { get, post };
-pub const Handler = *const fn (*http.Request, *http.Response, *http.Context) http.Error!void;
-/// A POST whose body is taken as it arrives, a piece at a time, so a body larger than a
-/// request may be (an upload) never sits in memory: `open` once the head is in, `write`
-/// for each piece, then `finish` to answer, or `abort` when the client goes away.
-pub const Stream = http.Router.Stream;
+const public = @import("../../publr/extend/route.zig");
 
-pub const Route = struct {
-    method: Method = .get,
-    /// `/api/<own>/...`; `:name` segments after the prefix are parameters.
-    path: []const u8,
-    /// Answers once the whole body is in, at most a request's size.
-    handler: ?Handler = null,
-    /// Or, for a POST: takes the body as it arrives. A route has one or the other.
-    stream: ?*const Stream = null,
-};
+pub const Method = public.Method;
+pub const Handler = public.Handler;
+pub const Stream = public.Stream;
+pub const Route = public.Route;
+pub const Request = public.Request;
+pub const Response = public.Response;
+pub const Context = public.Context;
+pub const Error = public.Error;
 
 /// A route with the plugin that declares it and the prefix it owns (`/api/sampler`).
 pub const Declared = struct {
@@ -103,12 +96,7 @@ pub fn assert_distinct(comptime declared: []const Declared) void {
 
 pub const operator_commands_max: u32 = 8;
 
-/// What the CLI next to a running server asks it, with the server's operator key:
-/// `POST /_publr/<plugin>/<name>`. Only a process of this user on this machine has the key.
-pub const OperatorCommand = struct {
-    name: []const u8,
-    handler: Handler,
-};
+pub const OperatorCommand = public.OperatorCommand;
 
 /// An operator command at its path.
 pub const DeclaredCommand = struct {

@@ -12,7 +12,8 @@ const content_type = @import("../../model/content_type.zig");
 const field_model = @import("../../model/field.zig");
 const internal_record = @import("../../model/internal_record.zig");
 const record_typed = @import("../../operations/record/typed.zig");
-const internal_operations = @import("../../operations/internal.zig");
+const internal_operations = @import("../operations/internal.zig");
+const many_max = @import("../../operations/internal.zig").many_max;
 const plugin_define = @import("define.zig");
 const words = @import("words.zig");
 const conditions = @import("../../model/conditions.zig");
@@ -753,7 +754,7 @@ pub fn Store(
             const ctx: *PluginCtx = queue.base_of(any_ctx);
 
             comptime std.debug.assert(internal);
-            std.debug.assert(ids.len <= internal_operations.many_max);
+            std.debug.assert(ids.len <= many_max);
 
             if (ids.len == 0) {
                 return &.{};
@@ -1255,7 +1256,7 @@ pub fn Store(
             var start: usize = 0;
 
             while (start < values.len) {
-                const end = @min(values.len, start + internal_operations.many_max);
+                const end = @min(values.len, start + many_max);
 
                 // An installed plugin sends the records as they lie: the host writes their JSON.
                 if (comptime guest.mode == .sandboxed) {
@@ -1338,7 +1339,7 @@ pub fn Store(
             var start: usize = 0;
 
             while (start < ids.len) {
-                const end = @min(ids.len, start + internal_operations.many_max);
+                const end = @min(ids.len, start + many_max);
 
                 if (comptime guest.mode == .sandboxed) {
                     const One = struct {

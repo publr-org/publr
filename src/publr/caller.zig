@@ -30,6 +30,8 @@ pub const View = struct {
     referer: []const u8 = "",
     /// A person signed in (the admin, an app's pages) or a device acting for one.
     person: bool = false,
+    /// A device (the CLI, an agent, an app signed in to the account) acting for the person.
+    device: bool = false,
     /// The account the call is made for: the person's, or the one a plugin acts for.
     account_id: ?[]const u8 = null,
     /// The roles the person holds; null when no person makes the call.

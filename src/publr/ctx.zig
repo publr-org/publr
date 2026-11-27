@@ -13,8 +13,7 @@ const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
 // Until `publr.Error` is the public set: an operation's errors, database ones among them.
 const Error = @import("../sdk/operation.zig").Error;
-// The link operations' shapes are core's until their public file is made.
-const link = @import("../operations/link.zig");
+const link = @import("operations/link.zig");
 
 /// What lies behind a `Ctx` in this build: the call's state in the host, or in the module.
 const Behind = switch (guest.mode) {
@@ -60,7 +59,7 @@ pub const Ctx = opaque {
     pub fn holds_until(ctx: *Ctx, time: words.Time) Error!void {
         std.debug.assert(time.ms > 0);
 
-        _ = try ctx.call(@import("../operations/internal.zig").HoldsUntil, .{
+        _ = try ctx.call(@import("operations/internal.zig").HoldsUntil, .{
             .until_ms = time.ms,
         });
     }
@@ -147,7 +146,7 @@ pub const Ctx = opaque {
     /// SQL on the plugin's own tables (`host.table`), inside the call's transaction. Only a
     /// plugin with `.extend` has tables, so only a compiled-in one: an installed build that
     /// asks for it does not compile.
-    pub fn database(ctx: *const Ctx) @import("../sdk/plugin/host.zig").Database {
+    pub fn database(ctx: *const Ctx) @import("extend/database.zig").Database {
         if (comptime guest.mode == .sandboxed) {
             @compileError("ctx.database() is for a built-in plugin's own tables (`.extend`)");
         }

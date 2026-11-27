@@ -22,7 +22,7 @@ pub fn extend(host: *publr.Host) publr.Error!void {
     try host.before_command(before_command);
 }
 
-const routes = [_]publr.plugin.Route{.{
+const routes = [_]publr.Host.Route{.{
     .path = "/api/sampler/port",
     .handler = &port,
 }};
@@ -33,7 +33,7 @@ pub const State = struct {
     port: u16 = 0,
     pings: u32 = 0,
 
-    pub fn init(state: *State, process: publr.plugin.Process) anyerror!void {
+    pub fn init(state: *State, process: publr.Host.Process) anyerror!void {
         std.debug.assert(process.db_path.len > 0);
 
         state.* = .{
@@ -42,7 +42,7 @@ pub const State = struct {
     }
 };
 
-const operator_commands = [_]publr.plugin.OperatorCommand{
+const operator_commands = [_]publr.Host.OperatorCommand{
     .{
         .name = "ping",
         .handler = &ping,
@@ -50,7 +50,7 @@ const operator_commands = [_]publr.plugin.OperatorCommand{
 };
 
 /// `publr --sampler-in <folder> <command>`: the command runs in that folder.
-pub fn before_command(command: *publr.plugin_hooks.Command) anyerror!void {
+pub fn before_command(command: *publr.Host.Command) anyerror!void {
     std.debug.assert(command.db_path.len > 0);
 
     const args = command.args;
@@ -67,25 +67,23 @@ pub fn before_command(command: *publr.plugin_hooks.Command) anyerror!void {
 }
 
 /// `serve` listening: the sampler notes where.
-pub fn serving(serve: publr.plugin_hooks.Serving) anyerror!void {
+pub fn serving(serve: publr.Host.Serving) anyerror!void {
     std.debug.assert(serve.port > 0);
 
-    const states = serve.project.plugin_states orelse return;
+    const state = serve.state(Sampler) orelse return;
 
-    publr.plugin_states.from(states, Sampler).port = serve.port;
+    state.port = serve.port;
 }
 
 /// `POST /_publr/sampler/ping`: the port `serve` noted, the database, and how many pings.
 fn ping(
-    request: *publr.http.Request,
-    response: *publr.http.Response,
-    ctx: *publr.http.Context,
-) publr.http.Error!void {
+    request: *publr.Host.Request,
+    response: *publr.Host.Response,
+    ctx: *publr.Host.Context,
+) publr.Host.HttpError!void {
     std.debug.assert(request.path().len > 0);
 
-    const project = publr.project.Project.of(ctx);
-    const states = project.plugin_states orelse return response.text(.not_found, "Not Found");
-    const state = publr.plugin_states.from(states, Sampler);
+    const state = ctx.state(Sampler);
 
     state.pings += 1;
 
@@ -101,15 +99,19 @@ fn ping(
 
 /// `GET /api/sampler/port`: the port `serve` noted, for a signed-in administrator.
 fn port(
-    request: *publr.http.Request,
-    response: *publr.http.Response,
-    ctx: *publr.http.Context,
-) publr.http.Error!void {
+    request: *publr.Host.Request,
+    response: *publr.Host.Response,
+    ctx: *publr.Host.Context,
+) publr.Host.HttpError!void {
     std.debug.assert(request.path().len > 0);
 
-    var session = try publr.admin.require(request, response, ctx) orelse return;
+    const asking = try ctx.caller(request, response) orelse return;
+
+    if (!asking.caller().has_role("admin")) {
+        return response.text(.forbidden, "Forbidden");
+    }
 
     try response.json(.ok, .{
-        .port = publr.plugin_states.of(&session.ctx, Sampler).port,
+        .port = ctx.state(Sampler).port,
     });
 }

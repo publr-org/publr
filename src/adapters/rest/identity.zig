@@ -128,8 +128,11 @@ pub fn vouched_by_proxy(
     const provider = proxy_for(providers, request, arena, project) orelse return identity;
     const reading = provider.from_request.?;
     var system = context(project, arena, .system);
+    var asking: @import("../../sdk/plugin/context.zig").HostApi = .{
+        .inner = &system,
+    };
     const value = request.header(reading.header) orelse return .{};
-    const read = reading.read(&system, value) catch return .{};
+    const read = reading.read(asking.ctx(), value) catch return .{};
     const claims = read orelse return .{};
 
     if (claims.subject.len == 0 or claims.subject.len > identity_store.id_len_max) {

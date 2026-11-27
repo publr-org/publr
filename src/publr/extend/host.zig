@@ -6,64 +6,14 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const routing = @import("route.zig");
-const provider = @import("../provider.zig");
-const db = @import("../../lib/db.zig");
+const Ctx = @import("../ctx.zig").Ctx;
+const policy_module = @import("policy.zig");
+const delivery = @import("delivery.zig");
+const sign_in = @import("sign_in.zig");
+const admin = @import("admin.zig");
 
+// Until `publr.Error` is the public set.
 pub const Error = sdk.Error;
-
-/// SQL on the plugin's own tables, inside the call's transaction: `ctx.database()`.
-pub const Database = struct {
-    connection: *db.Db,
-
-    /// Runs `sql` with each `?` taken from `values` in order: text, an integer, a bool, a
-    /// `publr.Time`, or null.
-    pub fn exec(database: Database, comptime sql: []const u8, values: anytype) Error!void {
-        comptime std.debug.assert(sql.len > 0);
-
-        var statement = try database.prepare(sql, values);
-        defer statement.finalize();
-
-        try statement.exec();
-    }
-
-    /// `sql` ready to step through, its `?` filled from `values`.
-    pub fn prepare(
-        database: Database,
-        comptime sql: []const u8,
-        values: anytype,
-    ) Error!db.Statement {
-        comptime std.debug.assert(sql.len > 0);
-        comptime std.debug.assert(values.len < 1 << 15);
-
-        var statement = try database.connection.prepare(sql);
-        errdefer statement.finalize();
-
-        inline for (values, 1..) |value, index| {
-            try bind(&statement, index, value);
-        }
-
-        return statement;
-    }
-
-    fn bind(statement: *db.Statement, index: u31, value: anytype) Error!void {
-        std.debug.assert(index > 0);
-
-        const Value = @TypeOf(value);
-
-        switch (@typeInfo(Value)) {
-            .int, .comptime_int => try statement.bind_int(index, @intCast(value)),
-            .bool => try statement.bind_int(index, @intFromBool(value)),
-            .null => try statement.bind_null(index),
-            .optional => if (value) |given| {
-                try bind(statement, index, given);
-            } else {
-                try statement.bind_null(index);
-            },
-            .@"struct" => try statement.bind_int(index, value.ms),
-            else => try statement.bind_text(index, value),
-        }
-    }
-};
 
 /// A table of the plugin's own, named under it (`shipping_shipments`): `schema` is the one
 /// `CREATE TABLE` making it, with its indexes. Read and written with `ctx.database()`.
@@ -96,13 +46,46 @@ const Lists = struct {
 
 pub const Host = struct {
     /// A built-in plugin's own request out that gives up after a time limit.
-    pub const timed = @import("../../publr/extend/timed.zig");
+    pub const timed = @import("timed.zig");
+    /// What `before_command` and `serving` are given.
+    pub const Command = @import("process.zig").Command;
+    pub const Serving = @import("process.zig").Serving;
+    pub const Process = @import("process.zig").Process;
+    /// What `route` and `operator_command` take, and what their handlers are given.
+    pub const Route = routing.Route;
+    pub const OperatorCommand = routing.OperatorCommand;
+    pub const Handler = routing.Handler;
+    pub const Stream = routing.Stream;
+    pub const Request = routing.Request;
+    pub const Response = routing.Response;
+    pub const Context = routing.Context;
+    pub const Status = routing.Status;
+    pub const HttpError = routing.Error;
+    /// What `policy`, `delivery_gate` and `sign_in_provider` take.
+    pub const Policy = policy_module.Policy;
+    pub const PolicyView = policy_module.View;
+    pub const PolicyRequest = policy_module.Request;
+    pub const PolicyGrant = policy_module.Grant;
+    pub const Gate = delivery.Gate;
+    pub const Delivery = delivery.Delivery;
+    pub const Verdict = delivery.Verdict;
+    pub const Refusal = delivery.Refusal;
+    pub const SignInProvider = sign_in.SignInProvider;
+    pub const Claims = sign_in.Claims;
+    pub const Callback = sign_in.Callback;
+    pub const Authorize = sign_in.Authorize;
+    pub const FromRequest = sign_in.FromRequest;
+    /// `ctx.database()`: SQL on the plugin's own tables.
+    pub const Database = @import("database.zig").Database;
+    pub const Statement = @import("database.zig").Statement;
+    /// What `admin_brand` answers.
+    pub const AdminBrand = admin.AdminBrand;
 
     tables: []const Table = &.{},
     routes: []const routing.Route = &.{},
     operator_commands: []const routing.OperatorCommand = &.{},
-    policies: []const sdk.Policy = &.{},
-    delivery_gates: []const sdk.delivery.Gate = &.{},
+    policies: []const policy_module.Policy = &.{},
+    delivery_gates: []const delivery.Gate = &.{},
     middlewares: []const type = &.{},
     given: Given = .{},
 
@@ -139,32 +122,32 @@ pub const Host = struct {
     }
 
     /// Runs once, as the system, when the database opens.
-    pub fn bootstrap(host: *Host, comptime run: fn (*sdk.Ctx) sdk.Error!void) Error!void {
+    pub fn bootstrap(host: *Host, comptime run: fn (*Ctx) Error!void) Error!void {
         host.give("bootstrap", run);
     }
 
-    /// Runs as `serve` starts listening: `fn (publr.plugin_hooks.Serving) anyerror!void`.
+    /// Runs as `serve` starts listening: `fn (publr.Host.Serving) anyerror!void`.
     pub fn serving(host: *Host, comptime run: anytype) Error!void {
         host.give("serving", run);
     }
 
-    /// Runs before every command: `fn (*publr.plugin_hooks.Command) anyerror!void`.
+    /// Runs before every command: `fn (*publr.Host.Command) anyerror!void`.
     pub fn before_command(host: *Host, comptime run: anytype) Error!void {
         host.give("before_command", run);
     }
 
     /// A "Continue with X" button on the login pages.
-    pub fn sign_in_provider(host: *Host, comptime declared: provider.SignInProvider) Error!void {
+    pub fn sign_in_provider(host: *Host, comptime declared: sign_in.SignInProvider) Error!void {
         host.give("sign_in_provider", declared);
     }
 
     /// Where someone who must sign in is sent instead of the form.
-    pub fn sign_in_at(host: *Host, comptime run: anytype) Error!void {
+    pub fn sign_in_at(host: *Host, comptime run: admin.SignInAt) Error!void {
         host.give("sign_in_at", run);
     }
 
     /// Whose admin it is: its name and mark.
-    pub fn admin_brand(host: *Host, comptime run: anytype) Error!void {
+    pub fn admin_brand(host: *Host, comptime run: admin.Brand) Error!void {
         host.give("admin_brand", run);
     }
 
@@ -184,13 +167,13 @@ pub const Host = struct {
     }
 
     /// A gate every page and asset passes before it is served.
-    pub fn delivery_gate(host: *Host, comptime gate: sdk.delivery.Gate) Error!void {
-        host.delivery_gates = host.delivery_gates ++ &[_]sdk.delivery.Gate{gate};
+    pub fn delivery_gate(host: *Host, comptime gate: delivery.Gate) Error!void {
+        host.delivery_gates = host.delivery_gates ++ &[_]delivery.Gate{gate};
     }
 
     /// A rule on who may call operations, beside each operation's own.
-    pub fn policy(host: *Host, comptime given: sdk.Policy) Error!void {
-        host.policies = host.policies ++ &[_]sdk.Policy{given};
+    pub fn policy(host: *Host, comptime given: policy_module.Policy) Error!void {
+        host.policies = host.policies ++ &[_]policy_module.Policy{given};
     }
 
     /// What no hook says: a hook on every operation before it runs (`.pre`), or on every
@@ -340,6 +323,7 @@ test "what extend registers is read under the server's names" {
 }
 
 test "ctx.database() runs SQL on the plugin's own table, values bound in order" {
+    const Database = @import("database.zig").Database;
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();

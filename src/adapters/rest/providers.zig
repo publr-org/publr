@@ -213,7 +213,10 @@ fn from_request(
         return refuse(response, cleared, "the proxy's header is missing", null);
     };
     var system = identity_module.context(project, arena, .system);
-    const found = reading.read(&system, value) catch |err| {
+    var asking: @import("../../sdk/plugin/context.zig").HostApi = .{
+        .inner = &system,
+    };
+    const found = reading.read(asking.ctx(), value) catch |err| {
         return refuse(response, cleared, "reading the proxy's header", err);
     };
     const claims = found orelse {
@@ -225,7 +228,7 @@ fn from_request(
     }
 
     const decide = reading.new_member orelse &null_member;
-    const new_account_roles = decide(&system, claims) catch |err| {
+    const new_account_roles = decide(asking.ctx(), claims) catch |err| {
         return refuse(response, cleared, "deciding what a new member gets", err);
     };
 
@@ -241,7 +244,10 @@ fn from_request(
 }
 
 /// A provider without a rule for new members: nobody gets an account by arriving.
-fn null_member(_: *sdk.Ctx, claims: sdk.provider.Claims) sdk.Error!?[]const []const u8 {
+fn null_member(
+    _: *@import("../../publr/ctx.zig").Ctx,
+    claims: sdk.provider.Claims,
+) sdk.Error!?[]const []const u8 {
     std.debug.assert(claims.provider.len > 0);
     std.debug.assert(claims.subject.len > 0);
 

@@ -284,8 +284,8 @@ fn started(init: std.process.Init, project: *routes.Project, port: u16) !void {
     try plugin_hooks.serving(.{
         .io = init.io,
         .arena = arena,
-        .project = project,
         .port = port,
+        .states = project.plugin_states,
     });
 }
 

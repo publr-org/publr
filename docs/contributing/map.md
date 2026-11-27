@@ -611,6 +611,15 @@ Grouped by kind. Lines are the whole file, tests included.
 | `publr/caller.zig` | 130 | `ctx.caller()`: where a call came from, the account and roles, whether it was granted |
 | `publr/queue_ctx.zig` | 199 | `publr.QueueCtx`: queued work's `Ctx`, with `fetch` |
 | `publr/exchange_ctx.zig` | 59 | `publr.ExchangeCtx`: a sign-in provider's exchange step, `fetch` and `log` |
+| `publr/extend/host.zig` | 350 | `publr.Host`: what a built-in plugin's `.extend` registers, and every type its seams take |
+| `publr/extend/route.zig` | 217 | A built-in plugin's routes and operator commands: `Route`, `Request`, `Response`, `Context` over the server's own |
+| `publr/extend/database.zig` | 167 | `publr.Database` and `Statement`: SQL on a built-in plugin's own tables |
+| `publr/extend/policy.zig` | 46 | `host.policy`: the caller's view and the call in, a narrowing grant out |
+| `publr/extend/delivery.zig` | 40 | `host.delivery_gate`: what a gate is asked about and what it says |
+| `publr/extend/sign_in.zig` | 93 | `host.sign_in_provider`: the sign-in provider contract |
+| `publr/extend/process.zig` | 45 | `Process`, `Command`, `Serving`: what a plugin's state and process hooks are given |
+| `publr/extend/admin.zig` | 21 | `host.admin_brand` and `host.sign_in_at` |
+| `publr/extend/timed.zig` | 51 | `publr.Host.timed`: a built-in plugin's own request out with a time limit |
 | `sdk/plugin/types.zig` | 139 | Content types declared by plugins: create/update on bootstrap, lock declared fields, keep hand-added ones |
 | `lib/auth/password.zig` | 110 | Argon2id hashing and checking |
 | `lib/auth/csrf.zig` | 97 | CSRF token derive/verify, origin check |
