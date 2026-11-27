@@ -113,26 +113,22 @@ fn list_child(comptime Field: type) ?type {
 
 /// What is wrong with the `limits` of `Type` or of a struct inside it, as `lines: 300`, or
 /// null: a limit past a page, of none, or naming no list.
-pub fn misdeclared_in(comptime Type: type, comptime depth: u32) ?[]const u8 {
+pub fn misdeclared_in(comptime Type: type) ?[]const u8 {
     comptime {
-        std.debug.assert(depth <= depth_max + 1);
-
-        if (depth > depth_max) {
-            return null;
-        }
+        std.debug.assert(@typeInfo(Type) != .type);
 
         switch (@typeInfo(Type)) {
-            .optional => |optional| return misdeclared_in(optional.child, depth + 1),
+            .optional => |optional| return misdeclared_in(optional.child),
             .pointer => |pointer| {
                 if (pointer.size != .slice or is_text(Type)) {
                     return null;
                 }
 
-                return misdeclared_in(pointer.child, depth + 1);
+                return misdeclared_in(pointer.child);
             },
             .@"union" => |choice| {
                 for (choice.field_types) |Field| {
-                    if (misdeclared_in(Field, depth + 1)) |found| {
+                    if (misdeclared_in(Field)) |found| {
                         return found;
                     }
                 }
@@ -140,9 +136,6 @@ pub fn misdeclared_in(comptime Type: type, comptime depth: u32) ?[]const u8 {
                 return null;
             },
             .@"struct" => |structure| {
-                // Each field costs a few branches, and so does each field of what it holds.
-                @setEvalBranchQuota(1000 + 100 * structure.field_names.len * (depth_max + 1));
-
                 if (opaque_struct(Type)) {
                     return null;
                 }
@@ -182,7 +175,7 @@ pub fn misdeclared_in(comptime Type: type, comptime depth: u32) ?[]const u8 {
                         continue;
                     }
 
-                    if (misdeclared_in(Field, depth + 1)) |found| {
+                    if (misdeclared_in(Field)) |found| {
                         return found;
                     }
                 }
@@ -204,8 +197,8 @@ pub fn problem(comptime Operation: type) ?[]const u8 {
                 "`after: []const u8 = \"\"` and answers `next: []const u8`, both or neither";
         }
 
-        const in = misdeclared_in(Operation.In, 0);
-        const out = misdeclared_in(Operation.Out, 0);
+        const in = misdeclared_in(Operation.In);
+        const out = misdeclared_in(Operation.Out);
         const side = if (in != null) "input" else "output";
         const either: ?[]const u8 = if (in != null) in else out;
         const found = either orelse return null;
@@ -400,10 +393,10 @@ test "a limit names a list and is 1 to 200" {
         };
     };
 
-    try std.testing.expectEqualStrings("ids: 201", comptime misdeclared_in(Past, 0).?);
-    try std.testing.expectEqualStrings("name: 20", comptime misdeclared_in(Text, 0).?);
-    try std.testing.expectEqualStrings("ids: 0", comptime misdeclared_in(Inner, 0).?);
-    try std.testing.expect(comptime misdeclared_in(Fine, 0) == null);
+    try std.testing.expectEqualStrings("ids: 201", comptime misdeclared_in(Past).?);
+    try std.testing.expectEqualStrings("name: 20", comptime misdeclared_in(Text).?);
+    try std.testing.expectEqualStrings("ids: 0", comptime misdeclared_in(Inner).?);
+    try std.testing.expect(comptime misdeclared_in(Fine) == null);
 
     const Moved = struct {
         units: []const []const u8,
@@ -421,8 +414,8 @@ test "a limit names a list and is 1 to 200" {
     };
     const units: [300][]const u8 = @splat("x");
 
-    try std.testing.expect(comptime misdeclared_in(Moved, 0) == null);
-    try std.testing.expectEqualStrings("units: 100", comptime misdeclared_in(Small, 0).?);
+    try std.testing.expect(comptime misdeclared_in(Moved) == null);
+    try std.testing.expectEqualStrings("units: 100", comptime misdeclared_in(Small).?);
     try std.testing.expect(over_limit(Moved, &.{
         .units = &units,
     }) == null);

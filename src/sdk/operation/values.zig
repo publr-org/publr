@@ -12,6 +12,11 @@ pub const doc_len_max: u32 = 200;
 const depth_max: u32 = 8;
 /// The items of one list of an example the rule reads.
 const items_max: u32 = 8;
+/// Branches reading one value of an example takes: the value looked into, its text read for
+/// JSON at its ends.
+const branches_per_value: u32 = 64;
+/// Branches reading one byte of an example written as JSON takes.
+const branches_per_byte: u32 = 8;
 
 /// Whether `text` is a JSON object or array, told by its ends: `{` then a key or `}`, or `[`
 /// then a value or `]`. `{secret:NAME}` and `[a-z]+` are neither.
@@ -100,14 +105,19 @@ fn verbatim(comptime Operation: type, comptime name: []const u8) bool {
 }
 
 /// The field of `value` holding JSON as text, as `items.document`, or null. `value` is an
-/// operation's `example` or `example_out`.
-pub fn json_text_in(
+/// operation's `example` or `example_out`; `spent` is the quota so far, raised by each value
+/// read, so the walk spends what the example holds.
+fn json_text_in(
     comptime Operation: type,
     comptime value: anytype,
     comptime depth: u32,
+    spent: *u32,
 ) ?[]const u8 {
     comptime {
         const Type = @TypeOf(value);
+
+        spent.* +|= branches_per_value;
+        @setEvalBranchQuota(spent.*);
 
         if (depth > depth_max) {
             return null;
@@ -117,7 +127,7 @@ pub fn json_text_in(
             .optional => {
                 const inner = value orelse return null;
 
-                return json_text_in(Operation, inner, depth + 1);
+                return json_text_in(Operation, inner, depth + 1, spent);
             },
             .pointer => |pointer| {
                 if (pointer.size != .slice or pointer.child == u8) {
@@ -125,7 +135,7 @@ pub fn json_text_in(
                 }
 
                 for (value[0..@min(value.len, items_max)]) |item| {
-                    if (json_text_in(Operation, item, depth + 1)) |found| {
+                    if (json_text_in(Operation, item, depth + 1, spent)) |found| {
                         return found;
                     }
                 }
@@ -136,6 +146,9 @@ pub fn json_text_in(
                 if (@hasDecl(Type, "reference") or @hasDecl(Type, "json_object")) {
                     return null;
                 }
+
+                spent.* +|= structure.field_names.len * branches_per_value;
+                @setEvalBranchQuota(spent.*);
 
                 for (structure.field_names, structure.field_types) |name, Field| {
                     const field = @field(value, name);
@@ -150,7 +163,7 @@ pub fn json_text_in(
                         if (text != null and holds_json(text.?)) {
                             return name;
                         }
-                    } else if (json_text_in(Operation, field, depth + 1)) |found| {
+                    } else if (json_text_in(Operation, field, depth + 1, spent)) |found| {
                         return name ++ "." ++ found;
                     }
                 }
@@ -213,6 +226,42 @@ pub fn json_text_said(
     }
 }
 
+/// The text holding JSON in an operation's example and in its answer's, each read in an
+/// evaluation of its own that spends what the example holds.
+fn Examples(comptime Operation: type) type {
+    return struct {
+        const in: ?[]const u8 = example_text(Operation, "example_json", "example");
+        const out: ?[]const u8 = example_text(Operation, "example_out_json", "example_out");
+    };
+}
+
+/// A plugin's operation writes its examples as JSON: read as written, a byte at a time,
+/// never built. Core's are values, read a value at a time.
+fn example_text(
+    comptime Operation: type,
+    comptime written_name: []const u8,
+    comptime value_name: []const u8,
+) ?[]const u8 {
+    comptime {
+        std.debug.assert(written_name.len > value_name.len);
+
+        if (@hasDecl(Operation, "example_json")) {
+            const written: []const u8 = @field(Operation, written_name);
+
+            @setEvalBranchQuota(1000 + written.len * branches_per_byte);
+
+            return json_text_written(written);
+        }
+
+        var spent: u32 = 1000;
+        const found = json_text_in(Operation, @field(Operation, value_name), 0, &spent);
+
+        std.debug.assert(spent > 1000);
+
+        return found;
+    }
+}
+
 /// What breaks the rule in `Operation`, for the compiler to say, or null.
 pub fn problem(comptime Operation: type) ?[]const u8 {
     comptime {
@@ -226,16 +275,8 @@ pub fn problem(comptime Operation: type) ?[]const u8 {
             json_text_said(Operation, Operation.Out, Operation.output_docs)
         else
             null;
-        // A plugin's operation writes its examples as JSON: read as written, never built.
-        const written = @hasDecl(Operation, "example_json");
-        const held_in: ?[]const u8 = if (written)
-            json_text_written(Operation.example_json)
-        else
-            json_text_in(Operation, Operation.example, 0);
-        const held_out: ?[]const u8 = if (written)
-            json_text_written(Operation.example_out_json)
-        else
-            json_text_in(Operation, Operation.example_out, 0);
+        const held_in: ?[]const u8 = Examples(Operation).in;
+        const held_out: ?[]const u8 = Examples(Operation).out;
         const in: ?[]const u8 = held_in orelse said_in;
         const out: ?[]const u8 = held_out orelse said_out;
         const side = if (in != null) "input" else "output";

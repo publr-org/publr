@@ -557,7 +557,7 @@ Grouped by kind. Lines are the whole file, tests included.
 | File | Lines | What |
 |---|---|---|
 | `sdk.zig` | 700 | `Registry`, `SDK(registry)`: `dispatch`, `admit`, `run` in a tx, one error boundary (`as_outcome`), hooks, events; `may` (whether a caller may call an operation) and `reaches_admin` (whether it may use the admin) |
-| `sdk/operation.zig` | 330 | What an operation type must declare; `resource_of(in)`; `Docs(In)`; name helpers (`namespace.verb`, `app.<feature>.verb`) |
+| `sdk/operation.zig` | 290 | What an operation type must declare; `resource_of(in)`; `Docs(In)`; name helpers (`namespace.verb`, `app.<feature>.verb`) |
 | `sdk/operation/values.zig` | 290 | The rule that `In` and `Out` hold values: a text field whose example is a JSON object or array, or whose doc line says JSON, is a compile error naming the operation and the field; `verbatim` names another system's text passed through (an HTTP body) |
 | `sdk/context.zig` | 104 | `Ctx`: caller, db, io, arena, auth, clock, events |
 | `sdk/caller.zig` | 174 | `Caller` union (anonymous, user with its roles, system, token, machine, plugin) |
@@ -589,6 +589,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/free_comptime.zig` | 244 | An example's JSON read into such a value at build time |
 | `sdk/operation/json.zig` | 301 | `operation.Json`: JSON text in Publr, bytes read where they lie in an installed plugin's module, one way to work with it in both |
 | `sdk/operation/json_fields.zig` | 149 | The rule that an operation of Publr's holds `operation.Json` only under a name saying its shape comes with the data (`document`, `values`, `query`); a shape of Publr's own is its type |
+| `sdk/operation/checked.zig` | 175 | Each operation's compile-time checks (what it declares, its shapes, examples, deprecation, failures), run once per operation in an evaluation of its own |
+| `sdk/operation/budget.zig` | 125 | What one operation's checks may spend at compile time, from what it declares: the fields its shapes hold, its doc lines, failures and declarations |
 | `sdk/operation/lists.zig` | 330 | The rule that every list of an operation's input or answer holds a page (200) unless its struct's `limits` says fewer, checked as the operation runs; what answering a page at a time (`after` in, `next` out) is |
 | `publr/money.zig` | 201 | `publr.Money`: a list of amounts by currency, handed over as it lies, `{ "PLN": 12300 }` in JSON |
 | `sdk/extended_laid.zig` | 179 | The fields plugins add to a list read's rows, as an installed plugin's module holds them |

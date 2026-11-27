@@ -6,10 +6,9 @@ pub const values = @import("operation/values.zig");
 pub const lists = @import("operation/lists.zig");
 pub const shaped = @import("operation/shaped.zig");
 pub const json_fields = @import("operation/json_fields.zig");
-const held = @import("operation/held.zig");
+const checked = @import("operation/checked.zig");
 
 pub const name_len_max = public.name_len_max;
-pub const type_depth_max: u32 = 8;
 pub const fields_max = public.fields_max;
 
 pub const Error = db.Error || public.Error;
@@ -153,16 +152,6 @@ pub fn valid_day(text: []const u8) bool {
     return month >= 1 and month <= 12 and day >= 1 and day <= 31;
 }
 
-fn validate_deprecated(comptime Operation: type) void {
-    comptime {
-        std.debug.assert(Operation.name.len > 0);
-
-        const found = deprecation(Operation) orelse return;
-
-        check_deprecated(Operation.name, found);
-    }
-}
-
 /// What every deprecation must say, whatever it is on (an operation, an event, a mod): the
 /// release, the day, what to change, and an `instead` other than itself.
 pub fn check_deprecated(comptime name: []const u8, comptime found: Deprecated) void {
@@ -186,84 +175,7 @@ pub fn check_deprecated(comptime name: []const u8, comptime found: Deprecated) v
     }
 }
 
-pub fn validate(comptime Operation: type) void {
-    comptime {
-        assert_decl(Operation, "name", []const u8);
-        assert_decl(Operation, "description", []const u8);
-        assert_decl(Operation, "kind", Kind);
-        assert_decl(Operation, "In", type);
-        assert_decl(Operation, "Out", type);
-        assert_name(Operation.name);
-        assert_serialisable(Operation.In, 0);
-        assert_serialisable(Operation.Out, 0);
-
-        if (!@hasDecl(Operation, "run")) {
-            @compileError(Operation.name ++ ": missing `run`");
-        }
-
-        if (!@hasDecl(Operation, "example")) {
-            @compileError(Operation.name ++ ": missing `example: In`");
-        }
-
-        if (@TypeOf(Operation.example) != Operation.In) {
-            @compileError(Operation.name ++ ": `example` must be an `In`");
-        }
-
-        if (!@hasDecl(Operation, "example_out")) {
-            @compileError(Operation.name ++ ": missing `example_out: Out`");
-        }
-
-        assert_decl(Operation, "example_out", Operation.Out);
-
-        if (@hasDecl(Operation, "field_docs")) {
-            assert_decl(Operation, "field_docs", Docs(Operation.In));
-        }
-
-        if (@hasDecl(Operation, "output_docs")) {
-            assert_decl(Operation, "output_docs", Docs(Operation.Out));
-        }
-
-        if (@hasDecl(Operation, "details")) {
-            assert_decl(Operation, "details", []const u8);
-        }
-
-        if (@hasDecl(Operation, "destroys")) {
-            assert_decl(Operation, "destroys", bool);
-
-            if (Operation.destroys and Operation.kind != .write) {
-                @compileError(Operation.name ++ ": only a write destroys");
-            }
-        }
-
-        validate_deprecated(Operation);
-
-        if (values.problem(Operation)) |message| {
-            @compileError(message);
-        }
-
-        if (lists.problem(Operation)) |message| {
-            @compileError(message);
-        }
-
-        if (shaped.problem(Operation)) |message| {
-            @compileError(message);
-        }
-
-        if (json_fields.problem(Operation)) |message| {
-            @compileError(message);
-        }
-
-        if (@hasDecl(Operation, "failures")) {
-            for (Operation.failures) |failure| {
-                if (!valid_failure(failure)) {
-                    @compileError(Operation.name ++ ": failure `" ++ failure.name ++ "` needs " ++
-                        "a name of letters starting upper-case, a 4xx or 5xx status and a " ++
-                        "message of 1 to 200 characters");
-                }
-            }
-        }
-    }
-}
+pub const validate = checked.validate;
 
 /// The content type an operation is about, read from its input by convention: `type`.
 pub fn type_of(in: anytype) ?[]const u8 {
@@ -307,59 +219,6 @@ pub fn assert_name(comptime name: []const u8) void {
 
 pub const Json = public.Json;
 
-pub fn assert_serialisable(comptime Type: type, comptime depth: u32) void {
-    comptime {
-        if (depth > type_depth_max) {
-            return;
-        }
-
-        switch (@typeInfo(Type)) {
-            .bool, .int, .float, .void => {},
-            .@"enum" => {},
-            .optional => |optional| assert_serialisable(optional.child, depth + 1),
-            .pointer => |pointer| {
-                if (pointer.size != .slice) {
-                    @compileError("only slices: " ++ @typeName(Type));
-                }
-                assert_serialisable(pointer.child, depth + 1);
-            },
-            .array => |array| assert_serialisable(array.child, depth + 1),
-            .@"struct" => |structure| {
-                // A reference is written as its id, whatever its record holds; an object
-                // whose keys come with the data writes its own JSON.
-                if (@hasDecl(Type, "reference") or @hasDecl(Type, "json_object")) {
-                    return;
-                }
-
-                if (structure.field_names.len > fields_max) {
-                    @compileError("too many fields: " ++ @typeName(Type));
-                }
-
-                // A tree's node inside itself (a field's `fields`) is the node already read.
-                for (structure.field_types) |Field| {
-                    if (held.inner_of(Field) != Type) {
-                        assert_serialisable(Field, depth + 1);
-                    }
-                }
-            },
-            else => @compileError("not serialisable: " ++ @typeName(Type)),
-        }
-    }
-}
-
-fn assert_decl(comptime Operation: type, comptime decl: []const u8, comptime Type: type) void {
-    if (!@hasDecl(Operation, decl)) {
-        @compileError(@typeName(Operation) ++ ": missing `" ++ decl ++ "`");
-    }
-
-    const actual = @TypeOf(@field(Operation, decl));
-    const ok = actual == Type or (Type == []const u8 and @typeInfo(actual) == .pointer);
-
-    if (!ok) {
-        @compileError(@typeName(Operation) ++ "." ++ decl ++ ": wrong type");
-    }
-}
-
 /// The comptime branches `namespace` or `verb` takes at most: a caller splitting every
 /// operation's name raises its quota by this for each.
 pub const split_branches: u32 = name_len_max + 8;
@@ -371,18 +230,6 @@ test "namespace and verb split" {
     try std.testing.expectEqualStrings("record", namespace("record.create"));
     try std.testing.expectEqualStrings("create", verb("record.create"));
     comptime assert_name("newsletter.subscribe");
-}
-
-test "serialisable types are accepted, pointers to single items rejected at comptime" {
-    const Good = struct {
-        id: []const u8,
-        count: u32,
-        ratio: ?f64,
-        tags: []const []const u8,
-        on: bool,
-    };
-    comptime assert_serialisable(Good, 0);
-    comptime assert_name("hello.record");
 }
 
 test "a failure is a name of letters, a 4xx or 5xx status and a short message" {

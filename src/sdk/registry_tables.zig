@@ -1,7 +1,7 @@
 //! What the core looks up in a registry's lists at compile time, built once per registry:
 //! an operation's position and owner by its name, a hook's owner by its position, the hooks
-//! on an operation, the hooks of each stage. A lookup costs the same however long the lists
-//! grow; nothing walks a list per call site.
+//! on an operation, the hooks of each stage, whether a namespace is documented. A lookup costs
+//! the same however long the lists grow; nothing walks a list per call site.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
 
@@ -76,6 +76,27 @@ pub fn Tables(comptime registry: sdk.Registry) type {
 
             break :positions Table(&done_names, u32, &done_at);
         };
+
+        /// Every documented namespace under its name.
+        const Namespaces = namespaces: {
+            @setEvalBranchQuota(1000 + registry.namespaces.len * branches_per_item);
+
+            var names: [registry.namespaces.len][]const u8 = undefined;
+
+            for (registry.namespaces, &names) |namespace, *name| {
+                name.* = namespace.name;
+            }
+
+            const done_names = names;
+            const truths: [done_names.len]bool = @splat(true);
+
+            break :namespaces Table(&done_names, bool, &truths);
+        };
+
+        /// Whether the registry documents the namespace `name`.
+        pub fn documented(comptime name: []const u8) bool {
+            return comptime @hasField(Namespaces, name);
+        }
 
         /// The position of the operation named `name`; null when none is registered.
         pub fn operation_position(comptime name: []const u8) ?u32 {

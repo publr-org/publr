@@ -2821,18 +2821,24 @@ fn hears_ends(comptime Middleware: type) bool {
     return Middleware.stage == .on and !@hasDecl(Middleware, "event");
 }
 
-/// Branches the registry's own checks take (roles, namespaces, policies), whatever its size.
-const validation_branches_base: u32 = 100_000;
-/// Branches one operation's checks add at most: its shapes and examples walked once (an
-/// example holding a definition walks each of its fields' options and rules), the doc lines
-/// of its text fields read once (`operation.values`), its name compared with every other's.
-const validation_branches_per_operation: u32 = 800;
+/// Branches the registry's own checks take for each operation: its name split for its
+/// namespace, which is looked up, and its position looked up. Its own checks run apart and
+/// spend what it declares (`sdk/operation/budget.zig`).
+const validation_branches_per_operation: u32 = operation.split_branches + 16;
+/// For each hook: the operation it names read (`operation.assert_name`), split and looked up.
+const validation_branches_per_hook: u32 = 4 * operation.name_len_max + operation.split_branches;
+/// For each namespace: its docs read.
+const validation_branches_per_namespace: u32 = 16;
 
 fn validate_registry(comptime registry: Registry) void {
     comptime {
-        @setEvalBranchQuota(validation_branches_base +
+        @setEvalBranchQuota(1000 +
             registry.operations.len * validation_branches_per_operation +
-            registry.operations.len * registry.operations.len);
+            registry.hooks.len * validation_branches_per_hook +
+            registry.namespaces.len * validation_branches_per_namespace);
+
+        // The tables refuse a name given twice, an operation's or a namespace's, saying it.
+        const tables = registry_tables.Tables(registry);
 
         const owned_operations = registry.operation_owners.len;
         const owned_hooks = registry.hook_owners.len;
@@ -2873,14 +2879,11 @@ fn validate_registry(comptime registry: Registry) void {
 
             const namespace_name = operation.namespace(Operation.name);
 
-            if (registry.namespaces.len > 0 and !has_namespace(registry, namespace_name)) {
+            if (registry.namespaces.len > 0 and !tables.documented(namespace_name)) {
                 @compileError("operation without a documented namespace: " ++ Operation.name);
             }
-            for (registry.operations[index + 1 ..]) |Other| {
-                if (std.mem.eql(u8, Operation.name, Other.name)) {
-                    @compileError("duplicate operation: " ++ Operation.name);
-                }
-            }
+
+            std.debug.assert(tables.operation_position(Operation.name).? == index);
         }
 
         for (registry.hooks) |Middleware| {
@@ -2888,7 +2891,6 @@ fn validate_registry(comptime registry: Registry) void {
             // A hook on an event (`auth.signed_in`) is named for it, not for an operation.
             const targets_operation = (Middleware.stage == .before or
                 Middleware.stage == .after) and !@hasDecl(Middleware, "event");
-            const tables = registry_tables.Tables(registry);
             const unknown = targets_operation and
                 tables.operation_position(Middleware.operation) == null;
 
@@ -2897,24 +2899,6 @@ fn validate_registry(comptime registry: Registry) void {
             }
         }
     }
-}
-
-fn has_namespace(comptime registry: Registry, comptime name: []const u8) bool {
-    if (name.len == 0) {
-        @compileError("empty namespace");
-    }
-
-    if (registry.namespaces.len == 0) {
-        @compileError("registry has no namespaces");
-    }
-
-    for (registry.namespaces) |namespace| {
-        if (std.mem.eql(u8, namespace.name, name)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 /// Whether operation `name` belongs to a plugin this build does not compile in: a hook on
@@ -3430,6 +3414,8 @@ test {
     _ = @import("publr/plugin/decimal.zig");
     _ = @import("publr/provider_ref.zig");
     _ = @import("sdk/hook_runs.zig");
+    _ = @import("sdk/operation/checked.zig");
+    _ = @import("sdk/operation/budget.zig");
     _ = @import("sdk/plugin/checks.zig");
     _ = @import("sdk/plugin/secret_define.zig");
     _ = @import("sdk/plugin/written_secrets.zig");
