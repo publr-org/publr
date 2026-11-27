@@ -183,6 +183,9 @@ pub const Transaction = struct {
 
 /// Databases besides the call's own, opened by path: another copy of the site's, a file the
 /// plugin keeps. From `process.databases()`, kept by a plugin's `State` for the process.
+/// Only a built-in plugin opens one: an installed build that does not compile. What it runs
+/// there is the plugin's to answer for, Publr's own tables included (Cloud's environments
+/// copy a copy's people from production's, its one allowed exception).
 pub const Databases = struct {
     /// Publr's own: the database library's process-wide state.
     runtime: *anyopaque,
@@ -193,6 +196,10 @@ pub const Databases = struct {
         memory: std.mem.Allocator,
         path: [:0]const u8,
     ) Error!Database {
+        if (comptime @import("../../sdk/plugin/guest.zig").mode == .sandboxed) {
+            @compileError("publr.Host.Databases is for a built-in plugin");
+        }
+
         std.debug.assert(path.len > 0);
 
         const connection = try memory.create(db.Db);

@@ -28,6 +28,12 @@ Before: /_publr/member?pass=<pass>&path=<address>   cookie publr_member_<mark>
 After:  /_publr/staff?pass=<pass>&path=<address>    cookie publr_staff_<mark>
 ```
 
+### `sdk:Host.Databases`
+
+`publr.Host.Databases.open` is a built-in plugin's alone: an installed build that calls it no
+longer compiles (it was never handed a `Databases` to open one with). Built-in plugins call it
+as before.
+
 ### `sdk:Host.FromRequest`
 
 A proxy sign-in provider's rule for someone the proxy lets through with no account is
