@@ -134,6 +134,20 @@ pub const Page = opaque {
         return preview.record_path(session.project, session.arena, null, handle, slug) catch
             error.OutOfMemory;
     }
+
+    /// The route of the app `app_name` that draws `path` (`/posts/:slug` for `/posts/hello`),
+    /// as it is written in the app: what the pages of one template share. Null when the app
+    /// is not loaded or no route of it draws the path.
+    pub fn route_of(page: *const Page, app_name: []const u8, path: []const u8) ?[]const u8 {
+        std.debug.assert(app_name.len > 0);
+        std.debug.assert(path.len > 0);
+
+        const app = session_of(page).project.find(app_name) orelse return null;
+        const program = app.program orelse return null;
+        const matched = program.match(path) orelse return null;
+
+        return matched.route.pattern;
+    }
 };
 
 /// The actions plugins put on the rows of `slot` (`.row_actions`), for a row named `name` of
@@ -282,4 +296,19 @@ pub fn query_value(arena: std.mem.Allocator, text: []const u8) Error![]const u8 
 /// Unix milliseconds as `YYYY-MM-DD HH:MM`, UTC.
 pub fn time_text(arena: std.mem.Allocator, ms: i64) []const u8 {
     return admin.time_text(arena, ms);
+}
+
+test "a page names the route of an app that draws a path" {
+    var harness: @import("../../adapters/apps.zig").Harness = undefined;
+    try harness.init(.{});
+    defer harness.deinit();
+
+    var session: admin.Session = undefined;
+
+    session.project = &harness.flow.project;
+
+    const page: *const Page = @ptrCast(&session);
+
+    try std.testing.expectEqualStrings("/", page.route_of("www", "/").?);
+    try std.testing.expect(page.route_of("nowhere", "/") == null);
 }

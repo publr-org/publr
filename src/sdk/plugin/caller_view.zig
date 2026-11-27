@@ -33,6 +33,7 @@ pub fn view_of(raw: Caller, seen: Seen) View {
         .system = raw == .system,
         .nested = seen.nested,
         .device_scope = if (raw == .token) raw.token.scope else null,
+        .device_name = if (raw == .token) raw.token.name else "",
     };
 }
 

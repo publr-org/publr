@@ -510,6 +510,18 @@ pub const HostApi = struct {
         return found.name;
     }
 
+    /// What that refusal says to people, in the words it was made with; empty when there
+    /// was none.
+    pub fn failure_message(self: *const HostApi) []const u8 {
+        std.debug.assert(self.inner.now_ms >= 0);
+
+        const found = self.inner.failure orelse return "";
+
+        std.debug.assert(found.name.len > 0);
+
+        return found.message;
+    }
+
     /// A remote operation answers `Unavailable` while it is off: its plugin is not there,
     /// or it does not fit what that plugin is now.
     fn remote_reachable(inner: *const sdk.Ctx, comptime name: []const u8) Error!void {
@@ -786,7 +798,8 @@ pub const HostApi = struct {
 
     /// Refuses the call in the plugin's own words: `return ctx.fail(.NotEnoughStock, "Only
     /// {left} left", .{ .left = left })`. The name is what a form's redirect carries, the
-    /// message what a person reads, its status the one the operation's `Fails:` gives.
+    /// message what a person reads, its status the one the operation's `Fails:` gives (a
+    /// middleware's own `failures`, for a refusal it declares).
     pub fn fail(
         self: *HostApi,
         comptime name: @TypeOf(.enum_literal),
@@ -800,7 +813,7 @@ pub const HostApi = struct {
 
         return self.inner.fail(.{
             .name = @tagName(name),
-            .status = words.status_of(running_failures(self.inner.within), @tagName(name)),
+            .status = words.status_of(failures_for(self.inner, @tagName(name)), @tagName(name)),
             .message = words.kept(message),
         });
     }
@@ -932,6 +945,21 @@ test "a compiled-in plugin's http.fetch grant answers its domains as asked" {
     try std.testing.expectEqual(@as(usize, 0), permission_define.Grant.off.domains.len);
 }
 
+/// The refusals `name` is found among: the running middleware's own, when it declares it;
+/// else the running operation's.
+fn failures_for(inner: *const sdk.Ctx, name: []const u8) []const sdk.operation.Failure {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(inner.middleware_failures.len <= 64);
+
+    for (inner.middleware_failures) |failure| {
+        if (std.mem.eql(u8, failure.name, name)) {
+            return inner.middleware_failures;
+        }
+    }
+
+    return running_failures(inner.within);
+}
+
 /// The `Fails:` of the compiled-in operation running now; none for any other.
 fn running_failures(operation_name: []const u8) []const sdk.operation.Failure {
     std.debug.assert(operation_name.len <= sdk.operation.name_len_max * 2);
@@ -1002,4 +1030,34 @@ test "ctx.failure() names the refusal a call came back with" {
 
     try std.testing.expectError(error.Failed, refused);
     try std.testing.expectEqualStrings("NotEnoughStock", ctx.failure());
+    try std.testing.expectEqualStrings("Only 2 left", ctx.failure_message());
+}
+
+test "a middleware's own refusal keeps the status it declares" {
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var inner = harness.ctx(.system);
+    var ctx: HostApi = .{
+        .inner = &inner,
+    };
+    const declared = [_]sdk.operation.Failure{.{
+        .name = "WorksOnCopies",
+        .status = 403,
+        .message = "",
+    }};
+
+    const plain: error{Failed}!void = ctx.fail(.WorksOnCopies, "Copies only", .{});
+
+    try std.testing.expectError(error.Failed, plain);
+    try std.testing.expectEqual(@as(u16, 409), inner.failure.?.status);
+
+    inner.middleware_failures = &declared;
+
+    const own: error{Failed}!void = ctx.fail(.WorksOnCopies, "Copies only", .{});
+
+    try std.testing.expectError(error.Failed, own);
+    try std.testing.expectEqual(@as(u16, 403), inner.failure.?.status);
+    try std.testing.expectEqualStrings("Copies only", ctx.failure_message());
 }

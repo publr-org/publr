@@ -102,16 +102,18 @@ pub const Ctx = opaque {
         return behind(ctx).database();
     }
 
-    /// The state a built-in plugin keeps for the life of the process (`host.state`): an
-    /// installed build that asks for it does not compile.
-    pub fn state(ctx: *const Ctx, comptime Plugin: type) *PluginState(Plugin) {
+    /// The state a built-in plugin keeps for the life of the process (`host.state`); null
+    /// where the call runs with none made (a plugin's examples, a command with no server).
+    /// An installed build that asks for it does not compile.
+    pub fn state(ctx: *const Ctx, comptime Plugin: type) ?*PluginState(Plugin) {
         if (comptime guest.mode == .sandboxed) {
             @compileError("ctx.state() is for a built-in plugin's own state (`.extend`)");
         }
 
         const states = @import("../server/plugin_states.zig");
+        const held = behind(ctx).inner.plugin_states orelse return null;
 
-        return states.of(behind(ctx).inner, Plugin);
+        return states.from(held, Plugin);
     }
 
     /// Memory freed when the call ends.
@@ -226,6 +228,18 @@ pub const Ctx = opaque {
     /// `fail` named, by its `Fails:` name (`NotEnoughStock`); empty when there was none.
     pub fn failure(ctx: *const Ctx) []const u8 {
         return behind(ctx).failure();
+    }
+
+    /// What that refusal says to people, in the words it was made with (merging's "the
+    /// branch was kept"); empty when there was none. Compiled in only: an installed build
+    /// that asks for it does not compile.
+    pub fn failure_message(ctx: *const Ctx) []const u8 {
+        if (comptime guest.mode == .sandboxed) {
+            @compileError("ctx.failure_message() is for a built-in plugin; installed ones " ++
+                "read the name, `ctx.failure()`");
+        }
+
+        return behind(ctx).failure_message();
     }
 
     /// Passes `value` through every modifier of `name` (`publr.modify(name, …)` in any

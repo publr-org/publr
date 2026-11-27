@@ -213,7 +213,9 @@ pub const Host = struct {
 
     /// What no hook says: a hook on every operation before it runs (`.pre`), or on every
     /// operation's end, nested ones too, in the process that ran it (`.on` naming no
-    /// `event`: a deployment closes once the write committed).
+    /// `event`: a deployment closes once the write committed). A refusal of its own
+    /// (`ctx.fail`) keeps the status it declares in `pub const failures`
+    /// (`[_]publr.operation.Failure`).
     pub fn middleware(host: *Host, comptime Middleware: type) Error!void {
         const every_operation = Middleware.stage == .pre;
         const every_end = Middleware.stage == .on and !@hasDecl(Middleware, "event");

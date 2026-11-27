@@ -19,6 +19,7 @@ const messaging = @import("messaging.zig");
 const database = @import("extend/database.zig");
 
 const SDK = registry.SDK;
+const PluginStates = @import("../server/plugin_states.zig").States;
 const Error = @import("operation.zig").Error;
 const public_of = @import("../sdk/operation.zig").public_of;
 
@@ -78,6 +79,8 @@ pub const Site = struct {
     development: bool = false,
     /// The refusal the last call came back with as `error.Failed`, by its `Fails:` name.
     failure: []const u8 = "",
+    /// Every built-in plugin's `State`, made as `serve` makes them, for the calls made here.
+    states: PluginStates,
 
     /// An empty site with every plugin of the build: its tables and what each sets up.
     pub fn init(site: *Site) Error!void {
@@ -89,6 +92,8 @@ pub const Site = struct {
         errdefer site.harness.deinit();
 
         site.keep = .init(std.testing.allocator);
+        errdefer site.keep.deinit();
+
         site.now_ms = 1_800_000_000_000;
         site.development = false;
         site.failure = "";
@@ -99,12 +104,25 @@ pub const Site = struct {
         SDK.bootstrap(&system) catch |err| return public_of(err);
         site.harness.fixed.reset();
 
+        // A state that cannot be made here is one the test cannot run with.
+        site.states.init(.{
+            .io = std.testing.io,
+            .gpa = std.testing.allocator,
+            .arena = site.keep.allocator(),
+            .db_path = ":memory:",
+            .runtime = @ptrCast(&site.harness.fixture.runtime),
+        }) catch |err| return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.Unavailable,
+        };
+
         std.debug.assert(site.harness.fixture.connection.transaction_depth == 0);
     }
 
     pub fn deinit(site: *Site) void {
         std.debug.assert(site.harness.fixture.connection.transaction_depth == 0);
 
+        site.states.deinit();
         site.keep.deinit();
         site.harness.deinit();
     }
@@ -244,6 +262,7 @@ pub const Site = struct {
             .system, .admin => {},
         }
 
+        made.plugin_states = &site.states;
         made.now_ms = site.now_ms;
         made.test_clock = site.development;
 
@@ -347,12 +366,14 @@ test "a site answers each caller as it would, runs its queue and opens other dat
                 .roles = &.{"admin"},
             },
             .scope = .publish,
+            .name = "laptop",
         },
     };
     const seen = (try site.ctx(computer)).caller();
 
     try std.testing.expect(seen.device);
     try std.testing.expect(seen.device_scope.? == .publish);
+    try std.testing.expectEqualStrings("laptop", seen.device_name);
     try std.testing.expectEqualStrings("u_admin", seen.user_id().?);
     try std.testing.expect((try site.call(roles.List, computer, .{})).roles.len > 0);
     _ = try site.drain();

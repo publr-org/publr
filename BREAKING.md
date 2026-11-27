@@ -14,6 +14,21 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:Ctx.state`
+
+`ctx.state(Plugin)` answers null where the call runs with no states made (a plugin's
+examples, a command with no server) instead of stopping the process; `publr.testing.Site`
+makes every plugin's state, so a test reaches it. A plugin answers what it did before it had
+a state: null, `error.Unavailable`, a default.
+
+```zig
+// Before
+const port = ctx.state(Sampler).port;
+// After
+const state = ctx.state(Sampler) orelse return error.Unavailable;
+const port = state.port;
+```
+
 ### `sdk:Host.bootstrap`
 
 A built-in plugin's `bootstrap` runs as the plugin's own code, as its jobs do: its internal

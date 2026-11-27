@@ -54,6 +54,24 @@ pub const Database = struct {
         return depth > 0;
     }
 
+    /// A write of the plugin's own, all or nothing: outside a call's transaction (an `.on`
+    /// middleware once the call committed) it begins one; inside, a savepoint within it.
+    /// `commit` keeps the writes, `rollback` (deferred) undoes them unless committed.
+    pub fn transaction(database: Database) Error!Transaction {
+        const connection = database.core();
+
+        std.debug.assert(connection.transaction_depth < 1 << 8);
+
+        const begun = connection.transaction() catch |err| return public_of(err);
+
+        std.debug.assert(begun.depth == connection.transaction_depth);
+
+        return .{
+            .connection = database.connection,
+            .depth = begun.depth,
+        };
+    }
+
     /// The whole database written to a new file at `path`, as it stands: a copy of the site.
     pub fn copy_to(database: Database, path: []const u8) Error!void {
         std.debug.assert(path.len > 0);
@@ -121,6 +139,45 @@ pub const Database = struct {
             .@"struct" => try statement.bind_int(index, value.ms),
             else => try statement.bind_text(index, value),
         }
+    }
+};
+
+/// A write `Database.transaction` began: `commit` once, `rollback` deferred.
+pub const Transaction = struct {
+    /// Publr's own: the connection it runs on.
+    connection: *anyopaque,
+    /// Its nesting level: 1 the outermost, deeper ones savepoints.
+    depth: u32,
+    finished: bool = false,
+
+    fn core(transaction: *const Transaction) db.Transaction {
+        return .{
+            .db = @ptrCast(@alignCast(transaction.connection)),
+            .depth = transaction.depth,
+            .finished = transaction.finished,
+        };
+    }
+
+    /// Keeps the writes: committed when outermost, released into the enclosing write when
+    /// nested. Refused, the write stays open for the deferred `rollback`.
+    pub fn commit(transaction: *Transaction) Error!void {
+        std.debug.assert(!transaction.finished);
+        std.debug.assert(transaction.depth > 0);
+
+        var held = transaction.core();
+
+        held.commit() catch |err| return public_of(err);
+        transaction.finished = held.finished;
+    }
+
+    /// Undoes the writes unless `commit` kept them; safe to defer.
+    pub fn rollback(transaction: *Transaction) void {
+        std.debug.assert(transaction.depth > 0);
+
+        var held = transaction.core();
+
+        held.rollback();
+        transaction.finished = true;
     }
 };
 
@@ -261,3 +318,34 @@ pub const Statement = struct {
         return prepared.read_int();
     }
 };
+
+test "a plugin's transaction keeps its writes when committed and undoes them when not" {
+    var harness: @import("../../sdk.zig").testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    const database: Database = .{
+        .connection = &harness.fixture.connection,
+    };
+    var undone = try database.transaction();
+
+    try std.testing.expect(database.in_transaction());
+    try database.run("CREATE TABLE dropped (word TEXT)");
+    undone.rollback();
+
+    var kept = try database.transaction();
+    defer kept.rollback();
+
+    try database.run("CREATE TABLE kept (word TEXT)");
+    try kept.commit();
+    try std.testing.expect(!database.in_transaction());
+
+    var tables = try database.prepare(
+        "SELECT count(*) FROM sqlite_master WHERE name IN ('kept', 'dropped')",
+        .{},
+    );
+    defer tables.finalize();
+
+    try std.testing.expect(try tables.step());
+    try std.testing.expectEqual(@as(i64, 1), tables.read_int());
+}

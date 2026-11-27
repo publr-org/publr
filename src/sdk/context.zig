@@ -221,6 +221,9 @@ pub const Ctx = struct {
 
     /// Why the last operation ended with `error.Failed`: set by `fail`, read by adapters.
     failure: ?@import("operation.zig").Failure = null,
+    /// The refusals the middleware running now declares (`pub const failures`): a `fail` of
+    /// its own keeps the status it gives there, not the running operation's.
+    middleware_failures: []const @import("operation.zig").Failure = &.{},
     /// What was wrong with the input when it ended with `error.Invalid`, every field at
     /// once: set by `refuse`, answered as `problems`.
     problems: []const @import("operation.zig").Problem = &.{},

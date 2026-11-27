@@ -45,6 +45,9 @@ pub const View = struct {
     nested: bool = false,
     /// A device's scope, what it may do with its account; null for any other caller.
     device_scope: ?@import("model/device.zig").Scope = null,
+    /// What the person approved the device as (`Ada's laptop`) when a device makes the call;
+    /// empty for any other caller.
+    device_name: []const u8 = "",
 
     pub fn signed_in(view: View) bool {
         std.debug.assert(!view.person or view.account_id != null);

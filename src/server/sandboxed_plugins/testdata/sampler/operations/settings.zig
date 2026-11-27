@@ -28,7 +28,7 @@ fn run(ctx: *publr.Ctx, in: In) publr.Error!Out {
     std.debug.assert(in.query.len <= 4096);
 
     const lines = try Logs.lines_of(ctx);
-    const port = ctx.state(Sampler).port;
+    const port = if (ctx.state(Sampler)) |state| state.port else 0;
 
     std.debug.assert(lines.len <= 200);
 

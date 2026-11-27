@@ -1784,6 +1784,11 @@ pub fn SDK(comptime registry: Registry) type {
             ctx.handed_by = "";
             defer ctx.handed_by = was_handed;
 
+            const was_failing = ctx.middleware_failures;
+
+            ctx.middleware_failures = comptime middleware_failures(Middleware);
+            defer ctx.middleware_failures = was_failing;
+
             if (comptime plugin_context.takes_plugin_ctx(Middleware.run)) {
                 var wrapped: HostApi = .{
                     .inner = ctx,
@@ -2737,6 +2742,29 @@ pub fn stringify(arena: std.mem.Allocator, value: anytype) Error![]const u8 {
     std.debug.assert(text.len > 0);
 
     return text;
+}
+
+/// The refusals a middleware declares (`pub const failures`), none when it declares none.
+fn middleware_failures(comptime Middleware: type) []const operation.Failure {
+    comptime {
+        std.debug.assert(@hasDecl(Middleware, "run"));
+
+        if (!@hasDecl(Middleware, "failures")) {
+            return &.{};
+        }
+
+        const list = Middleware.failures;
+        const declared: []const operation.Failure = if (@typeInfo(@TypeOf(list)) == .array)
+            &list
+        else
+            list;
+
+        for (declared) |failure| {
+            std.debug.assert(failure.status >= 400 and failure.status <= 599);
+        }
+
+        return declared;
+    }
 }
 
 /// The plugin `Item` belongs to, from a list and its owners by position; empty for the core's.
