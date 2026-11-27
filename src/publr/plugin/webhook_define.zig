@@ -226,7 +226,7 @@ pub const Queued = struct {
 };
 
 /// The delivery's result and what its run logged.
-pub fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8) CoreError!void {
+pub fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8) Error!void {
     std.debug.assert(id > 0);
     std.debug.assert(result.len > 0);
 
@@ -238,7 +238,9 @@ pub fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8)
         }
     }
 
-    try deliveries.settle(inner.db, id, result, problem, logged.items);
+    deliveries.settle(inner.db, id, result, problem, logged.items) catch |err| {
+        return public_of(err);
+    };
 }
 
 pub fn is_webhook(comptime Candidate: type) bool {

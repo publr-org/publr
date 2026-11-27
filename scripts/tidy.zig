@@ -6,6 +6,7 @@ const prose = @import("tidy/prose.zig");
 const lines_module = @import("tidy/lines.zig");
 const literals = @import("tidy/literals.zig");
 const options = @import("tidy/options.zig");
+const public_errors = @import("tidy/public_errors.zig");
 
 const limits = @import("tidy/limits.zig");
 
@@ -137,6 +138,7 @@ fn check_file(
 
     violations += functions.check_assertion_density(text, path, hint, true, singles);
     violations += kinds.check(text, path, hint, true);
+    violations += public_errors.check(text, path, hint, true);
     violations += try control_flow.check(init.gpa, text, path, hint, true);
     violations += try check_literals(init.gpa, text, path, hint);
     violations += try check_options(init.gpa, text, path, hint);
@@ -214,4 +216,5 @@ test {
     _ = lines_module;
     _ = literals;
     _ = options;
+    _ = public_errors;
 }

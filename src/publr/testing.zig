@@ -66,8 +66,12 @@ pub const Site = struct {
     failure: []const u8 = "",
 
     /// An empty site with every plugin of the build: its tables and what each sets up.
-    pub fn init(site: *Site) !void {
-        try site.harness.init();
+    pub fn init(site: *Site) Error!void {
+        // A site that cannot be made in memory is one the test cannot run on.
+        site.harness.init() catch |err| return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.Unavailable,
+        };
         errdefer site.harness.deinit();
 
         site.keep = .init(std.testing.allocator);
@@ -77,8 +81,8 @@ pub const Site = struct {
 
         var system = site.harness.ctx(.system);
 
-        try SDK.apply_schemas(system.db);
-        try SDK.bootstrap(&system);
+        SDK.apply_schemas(system.db) catch |err| return public_of(err);
+        SDK.bootstrap(&system) catch |err| return public_of(err);
         site.harness.fixed.reset();
 
         std.debug.assert(site.harness.fixture.connection.transaction_depth == 0);
@@ -97,13 +101,7 @@ pub const Site = struct {
         std.debug.assert(name.len > 0);
         _ = site;
 
-        inline for (registry.registry.operations) |Operation| {
-            if (comptime std.mem.eql(u8, Operation.name, name)) {
-                return true;
-            }
-        }
-
-        return false;
+        return comptime SDK.find(name) != null;
     }
 
     /// Runs `Operation` as `who`; its answer lives until the next call.
@@ -172,7 +170,7 @@ pub const Site = struct {
 
     /// A `publr.Ctx` calling as `who`, for a plugin's own functions; it lives until the next
     /// call.
-    pub fn ctx(site: *Site, who: Who) !*Ctx {
+    pub fn ctx(site: *Site, who: Who) Error!*Ctx {
         const memory = site.keep.allocator();
         const inner = try memory.create(sdk.Ctx);
         const api = try memory.create(HostApi);

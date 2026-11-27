@@ -23,7 +23,6 @@
 
 const std = @import("std");
 const publr_ai = @import("publr_ai");
-const operation = @import("../sdk/operation.zig");
 const public_operation = @import("operation.zig");
 const PluginCtx = @import("../sdk/plugin/context.zig").PluginCtx;
 const speech = @import("ai/speech.zig");
@@ -86,7 +85,7 @@ pub const Page = struct {
 /// `read_page`'s run: a web page a conversation's agent was asked to look at, read through
 /// `http.fetch` (so only where the plugin may send requests: an AI provider asks for any
 /// address, `*`) and turned into text. A plain GET: no secret is ever filled in.
-pub fn read_page(ctx: *PluginCtx, in: Page.In) operation.Error!Page.Out {
+pub fn read_page(ctx: *PluginCtx, in: Page.In) public_operation.Error!Page.Out {
     std.debug.assert(in.url.len > 0);
     std.debug.assert(page_text_len_max > 0);
 
@@ -335,11 +334,13 @@ pub const Nothing = struct {
 
 /// `describe`'s run: who the provider is, what models it offers, how its key is made. It
 /// holds nothing secret.
-pub fn describe(comptime about: Description) fn (*PluginCtx, Nothing) operation.Error!Description {
+pub fn describe(
+    comptime about: Description,
+) fn (*PluginCtx, Nothing) public_operation.Error!Description {
     comptime std.debug.assert(about.id.len > 0);
 
     return struct {
-        fn run(ctx: *PluginCtx, in: Nothing) operation.Error!Description {
+        fn run(ctx: *PluginCtx, in: Nothing) public_operation.Error!Description {
             std.debug.assert(ctx.now().ms >= 0);
             std.debug.assert(@sizeOf(Nothing) == 0);
 
@@ -372,10 +373,10 @@ pub const Completion = struct {
 /// model's reply into a response. A provider refuses with `KeyRejected`, `Limited` or
 /// `Unavailable` alone, which core's agent tells apart (`server/agent/plugin_provider.zig`).
 pub fn complete(
-    comptime answer: fn (ctx: *PluginCtx, request: Request) operation.Error!Response,
-) fn (*PluginCtx, Completion.In) operation.Error!Completion.Out {
+    comptime answer: fn (ctx: *PluginCtx, request: Request) public_operation.Error!Response,
+) fn (*PluginCtx, Completion.In) public_operation.Error!Completion.Out {
     return struct {
-        fn run(ctx: *PluginCtx, in: Completion.In) operation.Error!Completion.Out {
+        fn run(ctx: *PluginCtx, in: Completion.In) public_operation.Error!Completion.Out {
             std.debug.assert(ctx.now().ms >= 0);
 
             const arena = ctx.arena();

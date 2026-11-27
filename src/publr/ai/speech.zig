@@ -3,7 +3,7 @@
 //! `ai.transcribe` asks the one chosen, else the first connected one that hears.
 
 const std = @import("std");
-const operation = @import("../../sdk/operation.zig");
+const operation = @import("../operation.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 
 /// A recording, at most two minutes of the browser's compressed speech.

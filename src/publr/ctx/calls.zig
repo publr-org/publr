@@ -5,6 +5,7 @@ const words = @import("../plugin/words.zig");
 const files = @import("../files.zig");
 const link = @import("../operations/link.zig");
 const Error = @import("../operation.zig").Error;
+const public_of = @import("../../sdk/operation.zig").public_of;
 
 /// Inside a computed field's function: the value it answers holds until `time`, and is
 /// worked out again then whatever else happens (a sale ends). The earliest one counts.
@@ -65,7 +66,7 @@ pub fn random(ctx: *Ctx, buffer: []u8) Error!void {
         .bytes = @intCast(buffer.len),
     });
 
-    return random_operation.fill(buffer, answered.hex);
+    return random_operation.fill(buffer, answered.hex) catch |err| return public_of(err);
 }
 
 /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
