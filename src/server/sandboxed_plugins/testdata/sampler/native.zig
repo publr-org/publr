@@ -105,11 +105,9 @@ fn port(
 ) publr.Host.HttpError!void {
     std.debug.assert(request.path().len > 0);
 
-    const asking = try ctx.caller(request, response) orelse return;
+    const page = try publr.Host.admin_pages.require(request, response, ctx) orelse return;
 
-    if (!asking.caller().has_role("admin")) {
-        return response.text(.forbidden, "Forbidden");
-    }
+    std.debug.assert(page.ctx().caller().signed_in());
 
     try response.json(.ok, .{
         .port = ctx.state(Sampler).port,

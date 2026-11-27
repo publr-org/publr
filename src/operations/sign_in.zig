@@ -137,7 +137,52 @@ pub const SignOut = struct {
     }
 };
 
-pub const operations = [_]type{ SignIn, SignOut };
+pub const EndSessions = struct {
+    pub const shape = public.EndSessions;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
+
+    pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
+        std.debug.assert(ctx.db.transaction_depth >= 1);
+
+        const named = @as(u8, @intFromBool(in.user_id.len > 0)) +
+            @intFromBool(in.email.len > 0) + @intFromBool(in.everyone);
+
+        if (named != 1) {
+            return error.Invalid;
+        }
+
+        if (in.everyone) {
+            return .{
+                .ended = try store.sessions.destroy_every(ctx.db),
+            };
+        }
+
+        const user_id = if (in.user_id.len > 0) in.user_id else found: {
+            const credentials = try store.users.find_by_email(ctx.db, ctx.arena, in.email);
+
+            break :found if (credentials) |found| found.user.id else return .{
+                .ended = 0,
+            };
+        };
+
+        std.debug.assert(user_id.len > 0);
+
+        return .{
+            .ended = try store.sessions.destroy_all(ctx.db, user_id),
+        };
+    }
+};
+
+pub const operations = [_]type{ SignIn, SignOut, EndSessions };
 
 const TestSDK = sdk.SDK(.{
     .operations = &operations,

@@ -51,6 +51,7 @@ pub const Host = struct {
     pub const Command = @import("process.zig").Command;
     pub const Serving = @import("process.zig").Serving;
     pub const Process = @import("process.zig").Process;
+    pub const Server = @import("process.zig").Server;
     /// What `route` and `operator_command` take, and what their handlers are given.
     pub const Route = routing.Route;
     pub const OperatorCommand = routing.OperatorCommand;
@@ -78,6 +79,9 @@ pub const Host = struct {
     /// `ctx.database()`: SQL on the plugin's own tables.
     pub const Database = @import("database.zig").Database;
     pub const Statement = @import("database.zig").Statement;
+    pub const Databases = @import("database.zig").Databases;
+    /// A built-in plugin's own admin screens, in the admin's chrome.
+    pub const admin_pages = @import("admin_page.zig");
     /// What `admin_brand` answers.
     pub const AdminBrand = admin.AdminBrand;
 
@@ -151,9 +155,22 @@ pub const Host = struct {
         host.give("admin_brand", run);
     }
 
-    /// A segment of the admin's app picker.
-    pub fn app_picker_segment(host: *Host, comptime run: anytype) Error!void {
-        host.give("app_picker_segment", run);
+    /// A segment of the admin's app picker: the plugin's view `View` (one of
+    /// `publr.views.all`), drawn with what `props` answers for the person signed in (null:
+    /// no segment for them). Core fills what the picker knows itself, when `View.Props` has
+    /// it: `attached` (joined to the app picker), `apps` (on a phone, the list of apps the
+    /// segment stands in for) and `csrf` (the session's token for a form it posts).
+    pub fn app_picker_segment(
+        host: *Host,
+        comptime View: type,
+        comptime props: fn (ctx: *Ctx, attached: bool) anyerror!?View.Props,
+    ) Error!void {
+        comptime std.debug.assert(@hasDecl(View, "render"));
+
+        host.give("app_picker_segment", struct {
+            pub const Drawn = View;
+            pub const props_of = props;
+        });
     }
 
     /// This site keeps copies of itself, listed by this operation of the plugin's own.
@@ -347,4 +364,29 @@ test "ctx.database() runs SQL on the plugin's own table, values bound in order" 
 
     try std.testing.expect(try select.step());
     try std.testing.expectEqual(@as(i64, 42), select.read_int());
+}
+
+test "every admin page call compiles" {
+    const pages = Host.admin_pages;
+
+    _ = &pages.require;
+    _ = &pages.accept;
+    _ = &pages.query_value;
+    _ = &pages.time_text;
+    _ = &pages.Page.ctx;
+    _ = &pages.Page.arena;
+    _ = &pages.Page.csrf_token;
+    _ = &pages.Page.param;
+    _ = &pages.Page.query_param;
+    _ = &pages.Page.fail;
+    _ = &pages.Page.message;
+    _ = &pages.Form.text;
+    _ = &Host.Server.system;
+    _ = &Host.Server.reload_apps;
+    _ = &Host.Server.set_session_cookie;
+    _ = &Host.Databases.open;
+    _ = &Host.Database.close;
+    _ = &Host.Database.run;
+
+    try std.testing.expect(@hasDecl(pages, "require"));
 }

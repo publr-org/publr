@@ -617,8 +617,9 @@ Grouped by kind. Lines are the whole file, tests included.
 | `publr/extend/policy.zig` | 46 | `host.policy`: the caller's view and the call in, a narrowing grant out |
 | `publr/extend/delivery.zig` | 40 | `host.delivery_gate`: what a gate is asked about and what it says |
 | `publr/extend/sign_in.zig` | 93 | `host.sign_in_provider`: the sign-in provider contract |
-| `publr/extend/process.zig` | 45 | `Process`, `Command`, `Serving`: what a plugin's state and process hooks are given |
+| `publr/extend/process.zig` | 106 | `Process`, `Command`, `Serving`, `Server`: what a plugin's state and process hooks are given |
 | `publr/extend/admin.zig` | 21 | `host.admin_brand` and `host.sign_in_at` |
+| `publr/extend/admin_page.zig` | 222 | `publr.Host.admin_pages`: a built-in plugin's own admin screens over the admin's session |
 | `publr/extend/timed.zig` | 51 | `publr.Host.timed`: a built-in plugin's own request out with a time limit |
 | `sdk/plugin/types.zig` | 139 | Content types declared by plugins: create/update on bootstrap, lock declared fields, keep hand-added ones |
 | `lib/auth/password.zig` | 110 | Argon2id hashing and checking |

@@ -13,6 +13,19 @@ pub const Database = struct {
         return @ptrCast(@alignCast(database.connection));
     }
 
+    /// Closes a database `Databases.open` opened, given back to `memory`.
+    pub fn close(database: Database, memory: std.mem.Allocator) void {
+        const connection = database.core();
+
+        connection.close();
+        memory.destroy(connection);
+    }
+
+    /// Runs `sql`, no values, no rows: a schema, a pragma, `BEGIN` / `COMMIT`.
+    pub fn run(database: Database, comptime sql: [*:0]const u8) Error!void {
+        return database.core().exec(sql);
+    }
+
     /// Runs `sql` with each `?` taken from `values` in order: text, an integer, a bool, a
     /// `publr.Time`, or null.
     pub fn exec(database: Database, comptime sql: []const u8, values: anytype) Error!void {
@@ -60,6 +73,31 @@ pub const Database = struct {
             .@"struct" => try statement.bind_int(index, value.ms),
             else => try statement.bind_text(index, value),
         }
+    }
+};
+
+/// Databases besides the call's own, opened by path: another copy of the site's, a file the
+/// plugin keeps. From `process.databases()`, kept by a plugin's `State` for the process.
+pub const Databases = struct {
+    /// Publr's own: the database library's process-wide state.
+    runtime: *anyopaque,
+
+    /// The database at `path`, its connection in `memory` until `close`.
+    pub fn open(
+        databases: Databases,
+        memory: std.mem.Allocator,
+        path: [:0]const u8,
+    ) Error!Database {
+        std.debug.assert(path.len > 0);
+
+        const connection = try memory.create(db.Db);
+        errdefer memory.destroy(connection);
+
+        connection.* = try db.open(@ptrCast(@alignCast(databases.runtime)), path);
+
+        return .{
+            .connection = connection,
+        };
     }
 };
 

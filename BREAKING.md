@@ -14,6 +14,39 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:Host.app_picker_segment`
+
+`host.app_picker_segment` takes the plugin's view and a function answering its props, no
+longer a function given core's admin session that draws a node itself. Core draws the view
+and fills `attached`, `apps` and `csrf` when its props have them.
+
+```zig
+// Before
+try host.app_picker_segment(admin.app_picker_segment); // fn (*const Session, bool, ?Node) !?Node
+// After
+try host.app_picker_segment(views.EnvironmentSwitcher, switcher_props); // fn (*publr.Ctx, bool) !?Props
+```
+
+### `sdk:Host.Serving`
+
+`publr.Host.Serving` has no `project`. What a plugin did with it is on `serve.served()`, a
+`publr.Host.Server` a `State` may keep: `system(arena)` (the system's `*publr.Ctx`),
+`reload_apps()`, `set_session_cookie(name)`. Every session ends with
+`ctx.call(publr.operations.sign_in.EndSessions, .{ .everyone = true })` (new,
+`user.end_sessions`), replacing `publr.store.sessions.destroy_every`/`destroy_all`.
+Another copy's database opens with `process.databases().open(memory, path)`, a
+`publr.Host.Database` (`close(memory)` when done), replacing `publr.db.open(runtime, path)`.
+
+### `sdk:Host.admin_pages`
+
+A built-in plugin's own admin screens draw through `publr.Host.admin_pages`: `require`,
+`accept` (a `Post` with `page` and `form`), and on the `*Page`: `ctx()`, `arena()`,
+`param`, `query_param`, `screen(status, View, props, .{ .settings_path, .section_page })`,
+`fail`, `message`, `csrf_token`, `translated`; `query_value` and `time_text` beside them.
+They replace `publr.admin.require`/`accept`/`screen`/`fail`/`param`/`query_param`/
+`message`/`query_value`/`time_text`, and `registry.SDK.dispatch(&session.ctx, …)` becomes
+`page.ctx().call(…)`.
+
 ### `sdk:Host`
 
 `publr.Host` is defined in `src/publr/extend/`, with every type its seams take and give:

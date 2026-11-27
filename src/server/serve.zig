@@ -286,6 +286,7 @@ fn started(init: std.process.Init, project: *routes.Project, port: u16) !void {
         .arena = arena,
         .port = port,
         .states = project.plugin_states,
+        .server = project,
     });
 }
 

@@ -1,4 +1,5 @@
-//! Signing in with an email and a password, and out: `user.sign_in`, `user.sign_out`.
+//! Signing in with an email and a password, and out: `user.sign_in`, `user.sign_out`,
+//! `user.end_sessions`.
 const operation = @import("../operation.zig");
 
 pub const SignIn = struct {
@@ -81,5 +82,39 @@ pub const SignOut = struct {
     };
     pub const output_docs: operation.Docs(Out) = .{
         .destroyed = "True when a live session was revoked",
+    };
+};
+
+pub const EndSessions = struct {
+    pub const name = "user.end_sessions";
+    pub const description = "Sign an account out everywhere, or everyone";
+    pub const details =
+        \\Administrators only. Ends every session of the account named by `user_id` or
+        \\`email`, or with `everyone` every session on the site: whoever held one signs in
+        \\again. Device tokens are left alone. Exactly one of the three; an unknown account
+        \\ends nothing.
+    ;
+    pub const kind: operation.Kind = .write;
+    pub const In = struct {
+        user_id: []const u8 = "",
+        email: []const u8 = "",
+        everyone: bool = false,
+    };
+    pub const Out = struct {
+        ended: u32,
+    };
+    pub const example: In = .{
+        .email = "editor@example.com",
+    };
+    pub const example_out: Out = .{
+        .ended = 2,
+    };
+    pub const field_docs: operation.Docs(In) = .{
+        .user_id = "The account whose sessions end",
+        .email = "Or: the account's email",
+        .everyone = "Or: every session on the site",
+    };
+    pub const output_docs: operation.Docs(Out) = .{
+        .ended = "How many sessions ended",
     };
 };

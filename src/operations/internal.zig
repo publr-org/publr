@@ -97,8 +97,7 @@ pub const Create = struct {
     }
 };
 
-/// The most records one `create_many` or `save_many` call takes: a page, as `find` reads.
-pub const many_max: u32 = sdk.operation.page_limit_max;
+pub const many_max = public.many_max;
 
 pub const CreateMany = struct {
     pub const shape = public.CreateMany;

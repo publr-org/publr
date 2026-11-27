@@ -101,8 +101,7 @@ fn segments_of(session: *const Session, attached: bool, apps: ?Node, into: []Nod
 
     inline for (registry.app_picker_segment) |Plugin| {
         const given = if (count == 0) apps else null;
-        const draw = plugin_define.get(Plugin, "app_picker_segment");
-        const segment = draw(session, attached, given) catch |err| blk: {
+        const segment = segment_of(Plugin, session, attached, given) catch |err| blk: {
             std.log.warn("plugin {s}: app picker segment: {t}", .{ Plugin.manifest.name, err });
             break :blk null;
         };
@@ -114,4 +113,37 @@ fn segments_of(session: *const Session, attached: bool, apps: ?Node, into: []Nod
     }
 
     return session.arena.dupe(Node, into[0..count]) catch &.{};
+}
+
+/// One plugin's segment: its view drawn with its props, and what the picker knows filled in.
+fn segment_of(
+    comptime Plugin: type,
+    session: *const Session,
+    attached: bool,
+    apps: ?Node,
+) !?Node {
+    const Segment = plugin_define.get(Plugin, "app_picker_segment");
+    const Props = Segment.Drawn.Props;
+    var inner = session.ctx;
+    var asking: @import("../../sdk/plugin/context.zig").HostApi = .{
+        .inner = &inner,
+    };
+
+    std.debug.assert(session.signed_in());
+
+    var props = try Segment.props_of(asking.ctx(), attached) orelse return null;
+
+    if (comptime @hasField(Props, "attached")) {
+        props.attached = attached;
+    }
+
+    if (comptime @hasField(Props, "apps")) {
+        props.apps = apps;
+    }
+
+    if (comptime @hasField(Props, "csrf")) {
+        props.csrf = session.csrf_token();
+    }
+
+    return try admin.render.view(session.arena, Segment.Drawn, props);
 }

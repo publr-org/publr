@@ -175,6 +175,19 @@ Sign out: revoke a session token. Anyone holding the token may call it.
 
 Output: `{ "destroyed" }` (false when the token was unknown or already expired).
 
+## `user end_sessions`
+
+Sign an account out everywhere, or everyone. Administrators only; device tokens are left
+alone. Name exactly one of the three.
+
+| Field | Type | Default |
+|---|---|---|
+| `--user_id` | text | "" |
+| `--email` | text | "" |
+| `--everyone` | bool | false |
+
+Output: `{ "ended" }`, how many sessions ended.
+
 ## `user language` and `user set_language`
 
 The language the admin speaks to the caller: `chosen` (empty: the site's), `site`, `shown`,

@@ -47,6 +47,9 @@ pub const example_item: Item = .{
     .updated_at = 1767225600000,
 };
 
+/// The most records one `create_many` or `save_many` call takes: a page, as `find` reads.
+pub const many_max: u32 = operation.page_limit_max;
+
 pub const Create = writes.Create;
 pub const CreateMany = writes.CreateMany;
 pub const Save = writes.Save;
