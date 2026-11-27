@@ -23,7 +23,7 @@ export type SettingsSystemProps = {
   /** The languages the admin speaks, the site's default selected; empty while it speaks
    * English alone. */
   languages?: Array<{ locale: string; label: string; selected: boolean }>;
-  /** Every time zone, the site's selected: the clock repeating work runs by. */
+  /** Every time zone, the site's selected: the admin's times and repeating work follow it. */
   time_zones?: Array<{ name: string; selected: boolean }>;
   /** Shown after a save. */
   notice?: string;
@@ -96,7 +96,7 @@ export function SettingsSystem({
                 ))}
               </NativeSelect>
               <FieldDescription>
-                {Publr.t("The clock the site's repeating work runs by, summer time included.")}
+                {Publr.t("Times in the admin and repeating work follow this clock, summer time included.")}
               </FieldDescription>
             </Field>
             <div>
