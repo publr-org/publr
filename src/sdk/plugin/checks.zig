@@ -311,6 +311,9 @@ pub const Failures = struct {
     used: std.ArrayList(Mention) = .empty,
     /// Names of `sdk.operation.Failure` values: used, not checked against a list.
     defined: std.ArrayList(Mention) = .empty,
+    /// What a middleware's `pub const failures` lists: a `Failure` value by its name
+    /// (`ident`) or a literal by its own (`name`). Its `ctx.fail` names need no `Fails:` line.
+    declared: std.ArrayList(Mention) = .empty,
     /// A file did not parse (`check` reports it): no `Fails:` line is called unused.
     unparsed: bool = false,
 
@@ -318,6 +321,8 @@ pub const Failures = struct {
         path: []const u8,
         line: u32,
         name: []const u8,
+        /// The constant a `Failure` value is kept in, or a declared list names; empty if none.
+        ident: []const u8 = "",
     };
 
     pub const Placed = struct {
@@ -441,11 +446,24 @@ pub const Failures = struct {
             if (value) {
                 const quoted = tree.tokenSlice(token + 7);
 
+                const kept = index >= 2 and tags[index - 1] == .colon and
+                    tags[index - 2] == .identifier;
+
                 try failures.defined.append(arena, .{
                     .path = path,
                     .line = line_of(&tree, token + 7),
                     .name = quoted[1 .. quoted.len - 1],
+                    .ident = if (kept) tree.tokenSlice(token - 2) else "",
                 });
+            }
+
+            const listing = index > 0 and tags[index - 1] == .keyword_const and
+                tags[index] == .identifier and
+                (tags[index + 1] == .equal or tags[index + 1] == .colon) and
+                std.mem.eql(u8, tree.tokenSlice(token), "failures");
+
+            if (listing) {
+                try failures.read_declared(arena, path, &tree, token + 2);
             }
         }
     }
@@ -457,7 +475,7 @@ pub const Failures = struct {
 
         for (failures.used.items) |use| {
             const own_list = failures.lists_in(use.path);
-            const found = if (own_list)
+            const found = failures.is_declared(use.name, use.path) or if (own_list)
                 failures.is_listed(use.name, use.path)
             else
                 failures.is_listed(use.name, null);
@@ -497,6 +515,71 @@ pub const Failures = struct {
         }
 
         return out.items;
+    }
+
+    /// Each `Failure` a middleware's `failures = [_]Failure{ ... };` names, from `start` to
+    /// its `;`: a constant by its name, a literal by its `.name`.
+    fn read_declared(
+        failures: *Failures,
+        arena: std.mem.Allocator,
+        path: []const u8,
+        tree: *const Ast,
+        start: Ast.TokenIndex,
+    ) !void {
+        std.debug.assert(path.len > 0);
+
+        const tags = tree.tokens.items(.tag);
+        var index: u32 = start;
+
+        std.debug.assert(start <= tags.len);
+
+        while (index + 2 < tags.len and tags[index] != .semicolon) : (index += 1) {
+            const before = tags[index - 1];
+            const constant = tags[index] == .identifier and before != .period and
+                tags[index + 1] != .period and tags[index + 1] != .l_paren and
+                !std.mem.eql(u8, tree.tokenSlice(index), "Failure");
+            const literal = tags[index] == .identifier and before == .period and
+                std.mem.eql(u8, tree.tokenSlice(index), "name") and
+                tags[index + 1] == .equal and tags[index + 2] == .string_literal;
+
+            if (constant or literal) {
+                const quoted = tree.tokenSlice(index + 2);
+
+                try failures.declared.append(arena, .{
+                    .path = path,
+                    .line = line_of(tree, index),
+                    .name = if (literal) quoted[1 .. quoted.len - 1] else "",
+                    .ident = if (constant) tree.tokenSlice(index) else "",
+                });
+            }
+        }
+    }
+
+    /// Whether `name` is a refusal `path`'s middleware declares in its `failures`.
+    fn is_declared(failures: *const Failures, name: []const u8, path: []const u8) bool {
+        std.debug.assert(name.len > 0);
+        std.debug.assert(path.len > 0);
+
+        for (failures.declared.items) |declared| {
+            if (!std.mem.eql(u8, declared.path, path)) {
+                continue;
+            }
+
+            if (std.mem.eql(u8, declared.name, name)) {
+                return true;
+            }
+
+            for (failures.defined.items) |value| {
+                const kept = declared.ident.len > 0 and std.mem.eql(u8, value.path, path) and
+                    std.mem.eql(u8, value.ident, declared.ident);
+
+                if (kept and std.mem.eql(u8, value.name, name)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     fn lists_in(failures: *const Failures, path: []const u8) bool {
@@ -710,6 +793,52 @@ test "a ctx.fail name and its Fails: line agree both ways" {
     try std.testing.expectEqual(3, unused.len);
     try std.testing.expectEqual(6, unused[1].problem.line);
     try std.testing.expectEqual(7, unused[2].problem.line);
+}
+
+test "a middleware's declared failures stand for its Fails: lines" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const middleware =
+        \\const works_on_copies: Failure = .{
+        \\    .name = "WorksOnCopies",
+        \\    .status = 403,
+        \\    .message = "Work on a copy",
+        \\};
+        \\
+        \\pub const OnProduction = struct {
+        \\    pub const failures = [_]Failure{ works_on_copies, .{
+        \\        .name = "Closed",
+        \\        .status = 409,
+        \\        .message = "Closed",
+        \\    } };
+        \\
+        \\    pub fn run(ctx: *publr.Ctx) publr.Error!void {
+        \\        if (ctx.now() > 0) return ctx.fail(.WorksOnCopies, "Work on a copy", .{});
+        \\        if (ctx.now() > 1) return ctx.fail(.Closed, "Closed", .{});
+        \\        return ctx.fail(.Undeclared, "No.", .{});
+        \\    }
+        \\};
+        \\
+    ;
+    var failures: Failures = .{};
+
+    try failures.read(arena, "middleware.zig", middleware);
+
+    const found = try failures.problems(arena);
+
+    try std.testing.expectEqual(1, found.len);
+    try std.testing.expectEqual(17, found[0].problem.line);
+    try std.testing.expect(std.mem.indexOf(u8, found[0].problem.message, "Undeclared") != null);
+
+    var elsewhere: Failures = .{};
+
+    try elsewhere.read(arena, "middleware.zig", middleware);
+    // Another file's `ctx.fail` is not the middleware's own refusal.
+    try elsewhere.read(arena, "helper.zig", "fn close(ctx: anytype) void {\n" ++
+        "    ctx.fail(.Closed, \"x\", .{});\n}\n");
+
+    try std.testing.expectEqual(2, (try elsewhere.problems(arena)).len);
 }
 
 test "a file that does not parse says so, and its Fails: lines are not called unused" {
