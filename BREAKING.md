@@ -363,4 +363,59 @@ After: `ctx.call(publr.operations.internal.Find, .{ .kind = "cart" })`.
 and `ExpiredPayload` come. Gone from it: the `operations` list, each `run` and
 `expire_job`, core's job voiding a hold at its expiry.
 
+### `sdk:operations.device`
+
+`publr.operations.device` is the public file of the device operations' shapes. `Start`,
+`Offer`, `approve_path`, `example_device_code`, `namespace` and the `people` (`Request`,
+`Approve`, `Deny`, `List`, `Update`, `Revoke`, `Item`) and `oauth` (`Authorize`, `Exchange`)
+sub-namespaces stay; `Poll`, `Claim` and `Redeem` come. Calls are unchanged. Gone from it:
+the `operations` lists, each `run`, and core's `device_code_bytes`, `device_code_len`,
+`hash_of`, `Stored`, `insert`, `people.recently_used`, `oauth.sent_back` and
+`offer.offered_name`.
+
+Before: `publr.operations.device.people.recently_used(ctx, 5)`.
+After: `ctx.call(publr.operations.device.people.List, .{ .all = true })`.
+
+### `sdk:operations.ai`
+
+`publr.operations.ai` is the public file of the conversation operations' shapes. `Ask`,
+`Reply`, `Get`, `List`, `Stop`, `Conversation`, `Step`, `Pointed`, `steps_page`,
+`example_id`, `example_prompt`, `example_conversation` and `namespace` stay; the agent's,
+the providers', the set-up's, the browser's and speech's operations (`Begin`, `Record`,
+`Finish`, `Providers`, `Choose`, `Catalog`, `SetUp`, `Test`, `Ready`, `Browse`, `Browsed`,
+`Answer`, `Progress`, `Draft`, `Doing`, `Transcribe`) and what they answer (`Said`,
+`Listed`, `Offered`, `Pending`) come. Gone from it: the `operations` list, each `run`, the
+`live` module, and core's `bootstrap`, `connected`, `person_of`, `own` and
+`conversation_of`.
+
+Before: `publr.operations.ai.live.Draft`. After: `publr.operations.ai.Draft`.
+
+### `sdk:ai.Progress`
+
+`publr.ai.Progress` is the shape of `ai.progress` alone; its `run`, core's, is gone from it.
+A provider calls it as before: `ctx.call(publr.ai.Progress, .{ .words = words })`.
+
+### `sdk:operations.plugin`
+
+`publr.operations.plugin` is the public file of the plugin operations' shapes. Every
+operation (`List`, `Upload`, `Add`, `Enable`, `Get`, `Disable`, `Update`, `CancelUpdate`,
+`Rollback`, `GrantRequest`, `Revoke`, `Deny`, `SetGrant`, `Remove`, `Data`, `EraseData`,
+`RestoreData`, `LeftBehind`, `Interfaces`, `Labels`, `Surface`, `Fits`), `Choice`,
+`Request`, `Summary`, `Detail`, `Added`, `Piece`, `Fate` and `namespace` stay; `Mode`,
+`Left`, `Log`, `Scaffold`, `Find` and `Install` come. Calls are unchanged. Gone from it:
+the `operations` list, each `run` and `contracts`, core's reading of the plugins' remotes.
+
+### `sdk:operations.http`
+
+`publr.operations.http` is the public file of the outgoing-request operations' shapes, no
+longer core's whole `operations/http.zig`. `Fetch`, `stream` (`Stream`, `Read`), `Header`,
+`Basic`, `FormPart`, `headers_max`, `body_bytes_max`, `answer_bytes_max`, `form_parts_max`
+and `namespace` stay; calls are unchanged. Gone from it: the `operations` list, each `run`,
+`timed` (now `publr.Host.timed`), `stream.Streams` and `stream.streams_max`, and core's
+`Fetcher`, `fetch_as`, `fetcher_of`, `guard_of`, `Filling`, the failures `not_allowed`,
+`not_queued` and `unreachable_failure`, and the download helpers `Downloaded`, `download`,
+`public_host` and `not_public`.
+
+Before: `const timed = publr.operations.http.timed;`. After: `const timed = publr.Host.timed;`.
+
 ## 0.8.4 (2026-11-26)

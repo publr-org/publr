@@ -26,22 +26,11 @@ pub const pieces_max: u32 = 96;
 /// The trash entries of plugins' data are this kind, keyed `<plugin>/<piece>`.
 pub const trash_kind = "plugin_data";
 
-pub const Kind = enum { type, taxonomy, internal, fields, role };
+const public = @import("../../publr/operations/plugin/data.zig");
 
-pub const Piece = struct {
-    key: []const u8,
-    kind: Kind,
-    /// As the admin names it: the type's or group's name, the collection's.
-    label: []const u8,
-    /// Records, terms or internal records it holds, the accounts holding a role; 0 for a
-    /// field group.
-    count: u32,
-    /// Its trash entry when it is in the trash; empty when it is kept where it is.
-    trash: []const u8 = "",
-};
-
-/// What happens to a piece when its plugin is uninstalled.
-pub const Fate = enum { keep, trash, erase };
+pub const Kind = public.Kind;
+pub const Piece = public.Piece;
+pub const Fate = public.Fate;
 
 /// The plugin's pieces where they are, then those in the trash.
 pub fn pieces_of(ctx: *Ctx, name: []const u8) Error![]Piece {

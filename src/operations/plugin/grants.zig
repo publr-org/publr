@@ -11,18 +11,7 @@ const permission = model.permission;
 const outside = model.outside;
 const sandboxed_plugin = model.sandboxed_plugin;
 
-/// One request as a person left it: the key on or off, and the flags it asked for, each on
-/// or off (one not given stays as it is).
-pub const Choice = struct {
-    key: []const u8,
-    on: ?bool = null,
-    drafts: ?bool = null,
-    private: ?bool = null,
-    internal: ?bool = null,
-    publish: ?bool = null,
-    /// `http.fetch`'s domains as the person left them, replacing the list; null: as it is.
-    domains: ?[]const []const u8 = null,
-};
+pub const Choice = @import("../../publr/operations/plugin/grants.zig").Choice;
 
 pub const choices_max: u32 = sandboxed_plugin.requests_max;
 

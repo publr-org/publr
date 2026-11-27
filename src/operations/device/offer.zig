@@ -8,6 +8,7 @@ const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const model = @import("../../model/device.zig");
 const device = @import("../device.zig");
+const public = @import("../../publr/operations/device/offer.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -17,37 +18,18 @@ const Error = sdk.Error;
 pub const offered_name = "A computer set up from the Overview";
 
 pub const Offer = struct {
-    /// Its example runs as a signed-in account (`--as`).
-    pub const example_signed_in = true;
-    pub const name = "device.offer";
-    pub const description = "Offer this account's sign-in to a computer, as a one-time code";
-    pub const details =
-        \\Signed-in people only (not a device). Makes a device request already approved for
-        \\the caller's account under `scope`, and answers its code: whoever holds it takes
-        \\the token once with `device claim --device_code <code>`, within ten minutes. Treat
-        \\the code like a password until it is used or lapses.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        scope: []const u8 = "publish",
-    };
-    pub const Out = struct {
-        code: []const u8,
-        expires_at: i64,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .code = "k7q2xm4pw9tz3hbd",
-        .expires_at = 1792232000000,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .scope = "What the computer may do: `read`, `write`, `production` or `publish` " ++
-            "(the default)",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .code = "The one-time code, for `device claim`",
-        .expires_at = "When it lapses, Unix milliseconds",
-    };
+    pub const shape = public.Offer;
+    pub const example_signed_in = shape.example_signed_in;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);

@@ -4,22 +4,12 @@
 
 const std = @import("std");
 
-pub const blocks_max: u32 = 256;
-pub const runs_max: u32 = 1024;
+const public = @import("../publr/model/ai_markdown.zig");
 
-pub const Run = struct {
-    text: []const u8,
-    /// `plain`, `bold`, `italic` or `code`.
-    style: []const u8,
-};
-
-pub const Block = struct {
-    /// `paragraph`, `heading`, `bullet` or `numbered`.
-    kind: []const u8,
-    /// A numbered item's number; 0 for any other block.
-    number: u32 = 0,
-    runs: []const Run,
-};
+pub const blocks_max = public.blocks_max;
+pub const runs_max = public.runs_max;
+pub const Run = public.Run;
+pub const Block = public.Block;
 
 /// `text` read into blocks. A line starting `- ` or `* ` is a bulleted item, `1. ` a
 /// numbered one, `# ` a heading; lines run together into a paragraph until a blank line.

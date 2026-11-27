@@ -3,11 +3,11 @@
 
 const std = @import("std");
 
-pub const name_len_max: u32 = 80;
-/// How long a person has to approve a device once it asked.
-pub const request_lifetime_ms: i64 = 10 * std.time.ms_per_min;
-/// How often a waiting device asks again.
-pub const poll_interval_s: u32 = 3;
+const public = @import("../publr/model/device.zig");
+
+pub const name_len_max = public.name_len_max;
+pub const request_lifetime_ms = public.request_lifetime_ms;
+pub const poll_interval_s = public.poll_interval_s;
 /// `WXYZ-1234`: two groups of four, letters a person cannot misread for another.
 pub const user_code_len: u32 = 9;
 pub const user_code_alphabet = "BCDFGHJKLMNPQRSTVWXZ";

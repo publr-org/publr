@@ -169,11 +169,7 @@ pub fn check_update(ctx: *Ctx, replacing: *const Manifest) Error!void {
     }
 }
 
-/// A remote switched off, and why, in plain words.
-pub const Off = struct {
-    name: []const u8,
-    why: []const u8,
-};
+pub const Off = @import("../../publr/operations/plugin/detail.zig").Off;
 
 /// Where the plugin's remotes stand now: what keeps it from being enabled, and which are off.
 pub const Standing = struct {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const public = @import("../publr/model/permission.zig");
 
 pub const key_len_max: u32 = 64;
 pub const sentence_len_max: u32 = 120;
@@ -6,13 +7,12 @@ pub const operations_max: u32 = 32;
 
 /// How much a permission can do: low and medium are granted when a plugin is installed,
 /// high waits for an administrator.
-pub const Tier = enum { low, medium, high };
+pub const Tier = public.Tier;
 
 /// What a key's request may name to narrow it: content types, taxonomies, or domains.
 pub const Narrowing = enum { none, records, taxonomies, domains, plugins };
 
-/// A yes/no option on a grant, each a switch in the admin.
-pub const Flag = enum { drafts, private, internal, publish };
+pub const Flag = public.Flag;
 
 pub const flag_tiers = [_]Tier{ .medium, .high, .high, .medium };
 

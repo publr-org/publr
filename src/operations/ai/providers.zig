@@ -3,6 +3,7 @@
 //! with which model, is a setting an administrator chooses under Settings › AI.
 
 const std = @import("std");
+const public = @import("../../publr/operations/ai/providers.zig");
 const sdk = @import("../../sdk.zig");
 const store = @import("../../store.zig");
 const environment = @import("../../lib/environment.zig");
@@ -24,36 +25,18 @@ pub const script_variable = "PUBLR_AI_SCRIPT";
 pub const scripted = "scripted";
 const listed_max: u32 = 32;
 
-pub const Listed = struct {
-    /// The provider's name: what a conversation names as its provider.
-    plugin: []const u8,
-    description: lib_ai.Description,
-    /// Whether its key is set, in the environment or kept; true for one with no key.
-    key_set: bool,
-    chosen: bool,
-};
+pub const Listed = public.Listed;
 
 pub const Providers = struct {
-    pub const name = "ai.providers";
-    pub const description = "List the model providers installed, and the one chosen";
-    pub const details =
-        \\Every plugin that registers a provider, with its models and whether its key is
-        \\set; `model` is the model chosen, empty for the provider's default. Administrators
-        \\only.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        providers: []const Listed,
-        provider: []const u8,
-        model: []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .providers = &.{},
-        .provider = "",
-        .model = "",
-    };
+    pub const shape = public.Providers;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -81,33 +64,16 @@ pub const Providers = struct {
 };
 
 pub const Choose = struct {
-    pub const name = "ai.choose";
-    pub const description = "Choose the model provider conversations use, and its model";
-    pub const details =
-        \\`provider` is a plugin that registers one; `model` one of its models, empty for its
-        \\default. Administrators only.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        provider: []const u8,
-        model: []const u8 = "",
-    };
-    pub const Out = struct {
-        provider: []const u8,
-        model: []const u8,
-    };
-    pub const example: In = .{
-        .provider = "ai_example",
-        .model = "small",
-    };
-    pub const example_out: Out = .{
-        .provider = "ai_example",
-        .model = "small",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .provider = "The plugin that provides it",
-        .model = "One of its models; empty for its default",
-    };
+    pub const shape = public.Choose;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

@@ -3,6 +3,7 @@
 //! writes nothing: its files go into `plugins/<name>/` of a site's folder on a computer,
 //! where the `publr` command builds them (`publr plugin build --name <name>`).
 const std = @import("std");
+const public = @import("../../publr/operations/plugin/scaffold.zig");
 const sdk = @import("../../sdk.zig");
 const plugin_model = @import("../../model/sandboxed_plugin.zig");
 
@@ -12,52 +13,24 @@ const Error = sdk.Error;
 
 pub const operations = [_]type{Scaffold};
 
-pub const Shape = enum { list, form };
+pub const Shape = public.Shape;
 
-/// One file of the plugin, its path inside the plugin's folder.
-pub const Source = struct {
-    path: []const u8,
-    content: []const u8,
-};
+pub const Source = public.Source;
 
 const icons_list = "x-close\nchevron-up\nchevron-down\nlist-unordered\n";
 
 pub const Scaffold = struct {
-    pub const name = "plugin.scaffold";
-    pub const description = "The files of a new plugin with a page of its own, to build";
-    pub const details =
-        \\Anyone signed in to the admin; writes nothing. `--page list` gives entries people
-        \\add and remove, drawn in the plugin frame with the design system's composites,
-        \\`call` and `query`; `--page form` one set of settings people edit, a page by
-        \\declaration the admin draws itself, compiled in or installed alike. Write the
-        \\files into `plugins/<name>/` of the site's folder on a computer and run
-        \\`publr plugin build --name <name>` there: building needs a computer.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        name: []const u8,
-        page: Shape = .list,
-    };
-    pub const Out = struct {
-        files: []const Source,
-    };
-    pub const example: In = .{
-        .name = "notes",
-        .page = .list,
-    };
-    pub const example_out: Out = .{
-        .files = &.{.{
-            .path = "main.zig",
-            .content = "//! Notes: entries people add and remove…",
-        }},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "The plugin's name, `[a-z][a-z0-9_]*`",
-        .page = "`list` (entries added and removed) or `form` (one set of settings)",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .files = "Every file of the plugin as `{ path, content }`, paths inside its folder",
-    };
+    pub const shape = public.Scaffold;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);

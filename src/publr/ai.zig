@@ -25,9 +25,7 @@ const std = @import("std");
 const publr_ai = @import("publr_ai");
 const operation = @import("../sdk/operation.zig");
 const public_operation = @import("operation.zig");
-const Grant = @import("../sdk/grant.zig").Grant;
 const PluginCtx = @import("../sdk/plugin/context.zig").PluginCtx;
-const ProgressCtx = @import("../sdk/context.zig").Ctx;
 const speech = @import("ai/speech.zig");
 
 pub const Part = publr_ai.Part;
@@ -96,7 +94,7 @@ pub fn read_page(ctx: *PluginCtx, in: Page.In) operation.Error!Page.Out {
         return error.Invalid;
     }
 
-    const Fetch = @import("../operations/http.zig").Fetch;
+    const Fetch = @import("operations/http.zig").Fetch;
     const answer = try ctx.call(Fetch, .{
         .url = in.url,
         .headers = &.{.{
@@ -133,21 +131,6 @@ pub const Progress = struct {
     pub const field_docs: public_operation.Docs(In) = .{
         .words = "The words since the last call",
     };
-
-    pub fn run(ctx: *ProgressCtx, in: In, granted: *const Grant) operation.Error!Out {
-        std.debug.assert(granted.allows());
-        std.debug.assert(in.words.len <= std.math.maxInt(u32));
-
-        if (ctx.caller != .plugin) {
-            return error.Denied;
-        }
-
-        const progress = ctx.progress orelse return .{};
-
-        progress.said(progress.context, in.words);
-
-        return .{};
-    }
 };
 
 /// A stream of server-sent events, fed as it arrives: each whole `data:` line handed on,

@@ -5,36 +5,14 @@ const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const json = @import("../../lib/json.zig");
+const public = @import("../../publr/operations/plugin/detail.zig");
 
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 const sandboxed_plugin = model.sandboxed_plugin;
 const permission = model.permission;
 
-/// One request as the install page and the plugin's page show it.
-pub const Request = struct {
-    key: []const u8,
-    sentence: []const u8,
-    reason: []const u8,
-    /// Its risk with the flags on now.
-    tier: permission.Tier,
-    state: State,
-    /// The content types or taxonomies it names; empty for every one.
-    names: []const []const u8 = &.{},
-    /// `http.fetch`'s domains as set now: exact, `*.example.com`, or `*` (anywhere public).
-    domains: []const []const u8 = &.{},
-    /// On an update's review: the domains the new version adds, joining the list on Allow.
-    new_domains: []const []const u8 = &.{},
-    /// Each flag it asked for, and whether it is on now.
-    flags: []const Flag = &.{},
-
-    pub const State = enum { granted, pending, denied, unavailable };
-
-    pub const Flag = struct {
-        name: permission.Flag,
-        on: bool,
-    };
-};
+pub const Request = public.Request;
 
 /// A row with its JSON columns decoded.
 pub const Decoded = struct {
@@ -48,7 +26,7 @@ pub const Decoded = struct {
     mode: Mode = .sandboxed,
 };
 
-pub const Mode = @import("../../sdk/plugin/context.zig").Mode;
+pub const Mode = public.Mode;
 
 const parse_options: std.json.ParseOptions = .{
     .allocate = .alloc_always,
@@ -98,7 +76,7 @@ pub fn parse_bytes(len: u64) u64 {
 }
 
 /// How many times its length a manifest's parsed values take, at most.
-pub const manifest_factor: u32 = 4;
+pub const manifest_factor = @import("../../publr/operations/plugin.zig").Enable.manifest_factor;
 const parse_slack_bytes: u32 = 64 << 10;
 
 pub fn parse_manifest(arena: std.mem.Allocator, text: []const u8) Error!sandboxed_plugin.Manifest {

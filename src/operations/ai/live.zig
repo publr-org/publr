@@ -7,6 +7,7 @@ const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const store = @import("../../store.zig");
 const conversation = @import("../ai.zig");
+const public = @import("../../publr/operations/ai/live.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -25,33 +26,48 @@ pub fn changed(ctx: *const Ctx, id: []const u8) void {
     live.changed(live.context, id);
 }
 
-/// `ai.progress`, which provider plugins call: declared beside the rest of what they use.
-pub const Progress = @import("../../publr/ai.zig").Progress;
+/// `ai.progress`, which provider plugins call.
+pub const Progress = struct {
+    pub const shape = public.Progress;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+
+    pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
+        std.debug.assert(granted.allows());
+        std.debug.assert(in.words.len <= std.math.maxInt(u32));
+
+        if (ctx.caller != .plugin) {
+            return error.Denied;
+        }
+
+        const progress = ctx.progress orelse return .{};
+
+        progress.said(progress.context, in.words);
+
+        return .{};
+    }
+};
 
 pub const Draft = struct {
-    pub const name = "ai.draft";
-    pub const description = "Keep the words a running conversation's model has written so far";
-    pub const details =
-        \\What a page watching shows before the words are a step; the step or the end of the
-        \\turn clears them. The local operator only (the agent, beside the server).
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
-    pub const operator_only = true;
-    pub const In = struct {
-        id: []const u8,
-        words: []const u8,
-    };
-    pub const Out = struct {};
-    pub const example: In = .{
-        .id = conversation.example_id,
-        .words = "I'll start with",
-    };
-    pub const example_out: Out = .{};
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The conversation's id",
-        .words = "Everything written so far in this reply; cut to 16 KiB",
-    };
+    pub const shape = public.Draft;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const operator_only = shape.operator_only;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -78,31 +94,18 @@ pub const Draft = struct {
 };
 
 pub const Doing = struct {
-    pub const name = "ai.activity";
-    pub const description = "Say what a running conversation's agent is doing between steps";
-    pub const details =
-        \\One line, as the person reads it while they wait: "Thinking" while the model writes
-        \\its reply, "Running publr media import" while a call runs. The page watching shows
-        \\it with how long it has taken; the end of the turn clears it. The local operator
-        \\only (the agent, beside the server).
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const open = true;
-    pub const operator_only = true;
-    pub const In = struct {
-        id: []const u8,
-        doing: []const u8,
-    };
-    pub const Out = struct {};
-    pub const example: In = .{
-        .id = conversation.example_id,
-        .doing = "Thinking",
-    };
-    pub const example_out: Out = .{};
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .id = "The conversation's id",
-        .doing = "What it does now, in one line; cut to 120 bytes",
-    };
+    pub const shape = public.Doing;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const operator_only = shape.operator_only;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

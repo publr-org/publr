@@ -583,12 +583,7 @@ fn fields_name(
     return false;
 }
 
-/// What adding a module did: a plugin new to the list, or a newer version of one there.
-pub const Added = struct {
-    name: []const u8,
-    version: []const u8,
-    update: bool,
-};
+pub const Added = @import("../../publr/operations/plugin.zig").Added;
 
 /// Adds a checked module to the list: a new plugin, disabled; or, for a plugin there
 /// already, its next version, waiting to be applied. Nothing runs yet.

@@ -2,6 +2,7 @@
 //! another plugin did something (an order's timeline), and the admin beside what a plugin
 //! draws.
 const std = @import("std");
+const public = @import("../../publr/operations/plugin/labels.zig");
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const registry = @import("../../server/registry.zig");
@@ -12,45 +13,21 @@ const Error = sdk.Error;
 
 const names_max: u32 = 64;
 
-pub const Named = struct {
-    name: []const u8,
-    label: []const u8,
-};
+pub const Named = public.Named;
 
 pub const Labels = struct {
-    pub const name = "plugin.labels";
-    /// Changes nothing and tells only what every admin page shows: a plugin's code acting
-    /// for anyone may ask.
-    pub const open = true;
-    pub const description = "Name plugins as people read them";
-    pub const details =
-        \\Each plugin named, compiled in or installed, as people read it: the words its
-        \\summary opens with (`Bank transfer: ...` is "Bank transfer"), in the caller's
-        \\language, else its name. A name no plugin has is answered as it was asked. Changes
-        \\nothing; anyone may call it.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        names: []const []const u8,
-    };
-    pub const Out = struct {
-        labels: []const Named,
-    };
-    pub const example: In = .{
-        .names = &.{"bank_transfer"},
-    };
-    pub const example_out: Out = .{
-        .labels = &.{.{
-            .name = "bank_transfer",
-            .label = "Bank transfer",
-        }},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .names = "The plugins, by name; at most 64",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .labels = "Each name asked, with its label",
-    };
+    pub const shape = public.Labels;
+    pub const name = shape.name;
+    pub const open = shape.open;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
