@@ -111,7 +111,7 @@ pub fn add(builder: *std.Build, library: *std.Build.Module, dir: []const u8, nat
             .optimize = library.optimize,
         });
 
-        plugin.addImport("publr", library);
+        plugin.addImport("publr", core.public_of(library));
         plugins.addImport(name, plugin);
         const docs = docs_module(builder, listing, dir, name);
 
@@ -165,7 +165,7 @@ fn add_published(
             .optimize = library.optimize,
         });
 
-        published.addImport("p", core.private_of(library));
+        published.addImport("p", library);
         published.addImport("owner", owner);
         published.addImport("owner_docs", owner_docs);
 
@@ -268,7 +268,7 @@ fn add_interfaces(
             .optimize = library.optimize,
         });
 
-        interface.addImport("publr", library);
+        interface.addImport("publr", core.public_of(library));
 
         modules[index].addImport(name, interface);
     }
@@ -409,7 +409,7 @@ fn examples_test(
         .optimize = library.optimize,
     });
 
-    module.addImport("p", core.private_of(library));
+    module.addImport("p", library);
 
     return builder.addTest(.{
         .name = builder.fmt("examples-{s}", .{name}),

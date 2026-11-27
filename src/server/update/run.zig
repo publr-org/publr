@@ -17,7 +17,7 @@ const fetch = @import("fetch.zig");
 const operator = @import("../operator.zig");
 const backup = @import("../gate/backup.zig");
 
-const version = @import("../../publr.zig").version;
+const version = @import("../../publr/version.zig").version;
 
 const Run = struct {
     init: std.process.Init,

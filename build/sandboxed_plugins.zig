@@ -14,11 +14,11 @@ pub const name_len_max: u32 = 32;
 /// The root a plugin is built from for the sandbox: its exports, generated from its
 /// declarations, and the plugin itself as `Plugin`, which the SDK checks its calls against.
 pub const guest_root_source =
-    \\pub const Plugin = @import("publr").plugin.Bind(@import("plugin"), @import("plugin_docs"));
+    \\pub const Plugin = @import("p").plugin.Bind(@import("plugin"), @import("plugin_docs"));
     \\
     \\comptime {
-    \\    @import("publr").plugin.guest.export_all(Plugin);
-    \\    @import("publr").sdk.published.check(Plugin, &@import("plugin_published").all);
+    \\    @import("p").plugin.guest.export_all(Plugin);
+    \\    @import("p").published.check(Plugin, &@import("plugin_published").all);
     \\}
     \\
 ;

@@ -342,7 +342,10 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server/plugin_hooks.zig` | 99 | Compiled-in plugins around the process: `before_command`, `serving`, operator commands behind the operator key |
 | `server.zig` | 111 | `Server`: open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
 | `server/wasm.zig` | 325 | The same program as a wasm reactor: init, import a db, answer one request |
-| `publr.zig` | 69 | The library root: re-exports every module (what plugins import as `publr`) |
+| `p.zig` | 61 | The library root, private: every module, what Publr's own binaries, generated roots and the installed plugins' guest root import as `p` |
+| `publr.zig` | 95 | What plugins and app middleware import as `publr`: forwards `publr/root.zig`'s names from `p`, reaching nothing else |
+| `publr/root.zig` | 459 | The public names, each defined in a file under `publr/`, documented where they are named |
+| `publr/version.zig` | 17 | The release this is (a release writes it) |
 | `server/registry.zig` | 74 | Core + plugin operations/namespaces/policies/hooks/types/roles, the `SDK`, the status and role registries, bootstrap |
 | `server/routes.zig` | 288 | The route table (`/api/auth/*`, `/api/health`, admin, rest, the apps as the fallback) and a `testing.Flow` that drives the full router |
 | `server/project.zig` | 130 | `Project`: the per-process handle handlers get (`connection`, `auth`, static dir, the loaded apps, the domain), which app a request is for, the session cookie's domain |

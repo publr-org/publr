@@ -13,7 +13,7 @@ const template_features = @import("../../template/features.zig");
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 
-const running = @import("../../publr.zig").version;
+const running = @import("../../publr/version.zig").version;
 
 /// Every operation this Publr runs, core's and the built-in plugins', by name.
 const operation_names = names: {

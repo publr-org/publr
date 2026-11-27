@@ -39,7 +39,7 @@ pub fn write_sdk(init: std.process.Init, out: *std.Io.Writer, args: []const []co
     }
 
     try extract_sdk(init.io, dir);
-    const version = @import("../publr.zig").version;
+    const version = @import("../publr/version.zig").version;
 
     try out.print("Wrote the SDK of Publr {s} to {s}\n", .{ version, folder });
 

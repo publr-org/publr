@@ -1,8 +1,8 @@
 //! Liveness: `heartbeat.check` answers who is calling and which Publr runs, touching no data.
 const operation = @import("../operation.zig");
 
-/// The Publr version answering; a release writes it.
-pub const version = "0.8.4";
+/// The Publr version answering.
+pub const version = @import("../version.zig").version;
 
 pub const namespace: operation.Namespace = .{
     .name = "heartbeat",

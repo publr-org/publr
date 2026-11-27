@@ -8,6 +8,7 @@ const report = @import("../lib/report.zig");
 const operator = @import("operator.zig");
 const routes = @import("routes.zig");
 const http = @import("../lib/http.zig");
+const version = @import("../publr/version.zig").version;
 const apps_adapter = @import("../adapters/apps.zig");
 const model_app = @import("../model/app.zig");
 const sdk = @import("../sdk.zig");
@@ -192,7 +193,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
 
     if (browser_dir == null) {
         try started(init, &project, bound);
-        update.served(init.io, init.arena.allocator(), db_path, @import("../publr.zig").version);
+        update.served(init.io, init.arena.allocator(), db_path, version);
     }
 
     var keeper = try keeper_of(init, db_path, &project);

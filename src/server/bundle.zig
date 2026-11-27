@@ -40,7 +40,7 @@ pub const Manifest = struct {
     format: []const u8 = format_name,
     version: u32 = format_version,
     /// The Publr that packed it.
-    publr: []const u8 = @import("../publr.zig").version,
+    publr: []const u8 = @import("../publr/version.zig").version,
     /// The release that last opened the database; empty when none recorded one.
     release: []const u8,
     name: []const u8,

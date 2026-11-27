@@ -653,7 +653,7 @@ fn recipe(
 
     try argv.appendSlice(arena, &.{ "build-exe", "--stack", "262144" });
     try argv.appendSlice(arena, &target);
-    try argv.appendSlice(arena, &.{ "--dep", "publr", "--dep", "plugin", "--dep", "plugin_docs" });
+    try argv.appendSlice(arena, &.{ "--dep", "p", "--dep", "plugin", "--dep", "plugin_docs" });
     try argv.appendSlice(arena, &.{ "--dep", "plugin_published" });
     try argv.append(arena, try std.fmt.allocPrint(arena, "-Mroot={s}/guest.zig", .{sdk}));
     try argv.appendSlice(arena, &target);
@@ -666,9 +666,12 @@ fn recipe(
         try argv.appendSlice(arena, &.{ "--dep", "plugin_views" });
     }
 
-    const publr_module = try std.fmt.allocPrint(arena, "-Mpublr={s}/src/publr.zig", .{sdk});
-
-    try argv.append(arena, publr_module);
+    // `p`, Publr's library, which the guest root reaches; `publr`, the SDK the plugin
+    // imports, forwarding the library's public names.
+    try argv.append(arena, try std.fmt.allocPrint(arena, "-Mp={s}/src/p.zig", .{sdk}));
+    try argv.appendSlice(arena, &target);
+    try argv.appendSlice(arena, &.{ "--dep", "p" });
+    try argv.append(arena, try std.fmt.allocPrint(arena, "-Mpublr={s}/src/publr.zig", .{sdk}));
 
     if (paths.views) |views| {
         try views_modules(arena, &argv, &target, sdk, views);
@@ -948,7 +951,7 @@ fn write_manifest(
         arena,
         module,
         read.manifest,
-        @import("../publr.zig").version,
+        @import("../publr/version.zig").version,
     );
     var output: std.Io.Writer.Allocating = .init(arena);
 

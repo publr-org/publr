@@ -180,7 +180,7 @@ pub const Server = struct {
             &server.runtime,
             &server.auth,
             db_path,
-            @import("publr.zig").version,
+            @import("publr/version.zig").version,
             sdk.context.wall_clock_ms(process.io),
             .{},
         );

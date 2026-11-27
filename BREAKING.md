@@ -641,4 +641,276 @@ After: `publr.dimension.Value`, `.Member`, `.Shown`, `.values_max`.
 part A change, its line switched now). `System`, `SaveSystem`, `Moodboard`,
 `SaveMoodboard`, `Item` and `namespace` stay. Gone from it: the `operations` list, each `run` and `bootstrap`, core's.
 
+### `sdk:plugin`
+
+`publr.plugin` holds a plugin's registration and what its options take: `define`, `Role`,
+`UserType`, `Limits`, `Page`, `Panel`, `RowAction`, `Blank`, `Translation`, `Grammar` and
+`Word`, as before. Core's half of the module is no longer in it: `Bind`, `guest`, `Merged`,
+`validate`, the `*_of` readers, `testing`, `state`, `depends_on`, `dimensions`,
+`admin_slots`, `types`, `PluginCtx`, `ContentTypeDef`, `InternalCollection`, `Entry`,
+`HookIn`, `HookOut` and the `Owned*` shapes. The rest moved before: `Route`,
+`OperatorCommand`, `route`, `Process`, `SignInProvider` and `AdminBrand` are
+`publr.Host.*`; a test uses `publr.testing.Site`.
+
+```zig
+// Before
+pub fn route(host: *publr.Host) publr.Error!void { try host.route(publr.plugin.Route{ ... }); }
+const Harness = publr.plugin.testing.Harness;
+// After
+pub fn route(host: *publr.Host) publr.Error!void { try host.route(publr.Host.Route{ ... }); }
+var site: publr.testing.Site = undefined;
+```
+
+### `sdk:sdk`
+
+`publr.sdk`, core's operation machinery, is no longer in `publr`. The names plugins used
+through it are public: `publr.Ctx`, `publr.Error`, `publr.operation.{Json, Kind, Failure,
+Problem, Docs, page_limit_max, operations_max, namespace}`, `publr.Deprecated`,
+`publr.messaging`, `publr.testing.Site` (for `sdk.testing.Harness`).
+
+```zig
+// Before
+const Json = publr.sdk.operation.Json;
+fn run(ctx: *publr.sdk.Ctx, in: In) publr.sdk.Error!Out
+// After
+const Json = publr.operation.Json;
+fn run(ctx: *publr.Ctx, in: In) publr.Error!Out
+```
+
+### `sdk:registry`
+
+`publr.registry` (the registered operations and `SDK.dispatch`) is no longer in `publr`. A
+test calls through `publr.testing.Site` (`site.call(Operation, who, in)`, `site.json`); a
+built-in plugin finds an operation by name with `publr.Host.find_operation(name)`.
+
+```zig
+// Before
+_ = try publr.registry.SDK.dispatch(&ctx, Get, .{ .id = id });
+// After
+_ = try site.call(Get, .admin, .{ .id = id });
+```
+
+### `sdk:model`
+
+`publr.model`, core's model files, is no longer in `publr`. What plugins read from it is
+public: `publr.role`, `publr.money` (`Entry`, `format`), `publr.currency`,
+`publr.dimension` (`Pair`, `split`, `parse`), `publr.device`, `publr.app`,
+`publr.sign_on_token`, `publr.files`.
+
+```zig
+// Before
+const Entry = publr.model.money.Entry;
+// After
+const Entry = publr.money.Entry;
+```
+
+### `sdk:lib`
+
+`publr.lib`, Publr's own libraries, is no longer in `publr`. Use `publr.environment.get`
+(for `lib.environment`), `publr.html.escape`, `publr.text`, `publr.Host.timed`.
+
+```zig
+// Before
+const token = publr.lib.environment.get("TOKEN");
+// After
+const token = publr.environment.get("TOKEN");
+```
+
+### `sdk:http`
+
+`publr.http`, the server's HTTP types, is no longer in `publr`. A route or operator command
+takes `publr.Host.Request`, `Response` and `Context`; a query or form field is
+`request.query_param(arena, name)` / `request.form_field(arena, name)`; in app middleware
+`request.query(name)` / `request.form_field(name)`; a field of a query string held as text
+is `try publr.text.query_param(ctx, text, name)`.
+
+```zig
+// Before
+const code = publr.http.Form.query_param(arena, body, "code") orelse "";
+// After
+const code = request.form_field("code") orelse "";
+```
+
+### `sdk:report`
+
+`publr.report`, the server's error reports, is no longer in `publr`. A built-in plugin
+reports through `publr.Host.processes.report_error`; any plugin's failure reaches the Error
+log by itself (`publr.errors.Failed`).
+
+### `sdk:store`
+
+`publr.store`, core's SQL, is no longer in `publr`. Read and write core's data through
+operations (`ctx.call(publr.operations.<namespace>.<Operation>, in)`); a built-in plugin's
+own tables through `ctx.database()`.
+
+### `sdk:cli`
+
+`publr.cli`, the command line's adapter, is no longer in `publr`. A built-in plugin adds a
+command with `publr.Host.operator_command`; every operation is a command already.
+
+### `sdk:server`
+
+`publr.server`, the server's modules, is no longer in `publr`. What a built-in plugin
+reaches of the server is `publr.Host` (routes, middleware, `Serving`, `processes`).
+
+### `sdk:routes`
+
+`publr.routes`, the server's own routes, is no longer in `publr`. A built-in plugin adds
+its own with `publr.Host.route`.
+
+### `sdk:rest`
+
+`publr.rest`, the REST adapter, is no longer in `publr`. Every operation is at
+`/api/<operation>` already; code calling another Publr uses `publr.api_client`.
+
+### `sdk:plugin_routes`
+
+`publr.plugin_routes` is no longer in `publr`. In a route, who sent the request is
+`try context.caller(request, response)` and the session is `context.set_session(...)`
+(`publr.Host.Context`).
+
+```zig
+// Before
+const found = try publr.plugin_routes.caller_context(request, response, ctx) orelse return;
+// After
+const found = try ctx.caller(request, response) orelse return;
+```
+
+### `sdk:plugin_states`
+
+`publr.plugin_states` is no longer in `publr`. A plugin's state is `ctx.state(Plugin)`, in
+a route `context.state(Plugin)`, while serving `served.state(Plugin)`.
+
+```zig
+// Before
+const state = publr.plugin_states.from(publr.project.Project.of(ctx).plugin_states.?, Plugin);
+// After
+const state = ctx.state(Plugin);
+```
+
+### `sdk:plugin_hooks`
+
+`publr.plugin_hooks`, the server's running of plugin hooks, is no longer in `publr`. A
+plugin declares hooks with `publr.before`, `publr.after`, `publr.on` and `publr.hook.*`.
+
+### `sdk:admin`
+
+`publr.admin`, the admin adapter, is no longer in `publr`. A built-in plugin's admin pages
+use `publr.Host.admin_pages` (`require`, `accept`, `Page.screen`, `ctx()`, `compare`,
+`row_actions`, `Page.route_of` for which route of an app draws a URL).
+
+```zig
+// Before
+const core: *const publr.admin.Session = @ptrCast(@alignCast(session));
+const matched = core.project.find(app_name).?.program.?.match(url);
+// After
+const pattern = page.route_of(app_name, url);
+```
+
+### `sdk:project`
+
+`publr.project`, the server's running project, is no longer in `publr`. A plugin's state is
+`ctx.state(Plugin)`; another copy's database is `publr.Host.Process.databases()`.
+
+### `sdk:split`
+
+`publr.split`, the server's admin-origin split, is no longer in `publr`; a plugin never
+needed it.
+
+### `sdk:apps`
+
+`publr.apps`, the apps adapter, is no longer in `publr`. An app's middleware takes
+`publr.Request` and answers `publr.Response`; a hook on apps loading is
+`publr.after(publr.AppsLoaded, run)`.
+
+### `sdk:template`
+
+`publr.template`, the template compiler, is no longer in `publr`; a plugin never needed it.
+Pages are `.publr` templates in an app; a plugin's own pages are views
+(`publr.views.render`).
+
+### `sdk:serve`
+
+`publr.serve` is no longer in `publr`. A built-in plugin hears the server start through
+`publr.Host.Serving` (`served()`: `system`, `reload_apps`, `set_session_cookie`).
+
+### `sdk:build`
+
+`publr.build`, the static build, is no longer in `publr`; a plugin never needed it.
+
+### `sdk:plugin_sdk`
+
+`publr.plugin_sdk` (`publr plugin sdk`) is no longer in `publr`; it is a command.
+
+### `sdk:plugin_build`
+
+`publr.plugin_build` (`publr plugin build` and `prepare`) is no longer in `publr`; it is a
+command.
+
+### `sdk:plugin_check`
+
+`publr.plugin_check` (`publr plugin check`) is no longer in `publr`; it is a command.
+
+### `sdk:operator`
+
+`publr.operator`, the operator's commands, is no longer in `publr`. A built-in plugin adds
+one with `publr.Host.operator_command`.
+
+### `sdk:database`
+
+`publr.database` (`publr db`) is no longer in `publr`; it is a command. A built-in plugin's
+own tables are `ctx.database()` (`publr.Database`).
+
+### `sdk:bundle`
+
+`publr.bundle`, a site's archive, is no longer in `publr`; it is the `publr site` commands.
+
+### `sdk:gate_backup`
+
+`publr.gate_backup`, the backup before an update, is no longer in `publr`; a plugin never
+needed it.
+
+### `sdk:update`
+
+`publr.update`, updating Publr, is no longer in `publr`; it is `publr upgrade` and the
+operations `publr.operations.update`.
+
+### `sdk:agents`
+
+`publr.agents`, the agents' guide, is no longer in `publr`. A built-in plugin hands it out
+with `publr.Host.agents_guide`.
+
+### `sdk:apps_load`
+
+`publr.apps_load` (`publr apps load`) is no longer in `publr`; a hook on apps loading is
+`publr.after(publr.AppsLoaded, run)`.
+
+### `sdk:seed`
+
+`publr.seed`, a new site's first records, is no longer in `publr`; a plugin's own first
+records are made by its `bootstrap` (`publr.Host.bootstrap`).
+
+### `sdk:clone_pack`
+
+`publr.clone_pack`, `publr clone`'s packing, is no longer in `publr`; it is a command.
+
+### `sdk:queue_worker`
+
+`publr.queue_worker` (`publr queue-run`) is no longer in `publr`. A plugin queues work with
+`ctx.enqueue(Job, in)` and `publr.job.define`.
+
+### `sdk:queued_jobs`
+
+`publr.queued_jobs`, the queue's passes, is no longer in `publr`. A plugin queues work with
+`ctx.enqueue(Job, in)`; a test runs it with `site.drain()` (`publr.testing.Site`).
+
+### `sdk:agent_script`
+
+`publr.agent_script`, the agent's script runner, is no longer in `publr`; a plugin never
+needed it.
+
+### `sdk:agent`
+
+`publr.agent` (`publr agent`) is no longer in `publr`; it is a command.
+
 ## 0.8.4 (2026-11-26)

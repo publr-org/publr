@@ -130,7 +130,7 @@ fn asks_sending(comptime Plugin: type) bool {
 }
 
 const TestSecrets = struct {
-    SUPPLIER_API_KEY: @import("../../publr.zig").Secret,
+    SUPPLIER_API_KEY: @import("../../publr/root.zig").Secret,
 };
 
 const TestPlugin = struct {

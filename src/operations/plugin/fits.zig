@@ -44,7 +44,7 @@ pub const Fits = struct {
         }
 
         return .{
-            .publr = @import("../../publr.zig").version,
+            .publr = @import("../../publr/version.zig").version,
             .plugins = plugins,
             .more = in.offset + @as(u32, @intCast(rows.len)) < total,
         };

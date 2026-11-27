@@ -5,7 +5,7 @@ const settings = @import("../../store/settings.zig");
 const gate = @import("../gate.zig");
 const operator = @import("../operator.zig");
 
-const version = @import("../../publr.zig").version;
+const version = @import("../../publr/version.zig").version;
 const conform = gate.conform;
 
 /// `publr db conform [--dry-run]`: 0 when it is done or there is nothing to do, 2 when the

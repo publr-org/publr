@@ -475,7 +475,7 @@ fn publr_function(compiler: *Compiler, request: bool, call: []const u8) Error!vo
     const found = if (method.len > 0) features.function_named(method) else null;
     const feature = found orelse return compiler.fail(
         "{s}: Publr.{s}.{s} is not a function templates have in Publr {s}",
-        .{ compiler.template.rel, scope, method, @import("../publr.zig").version },
+        .{ compiler.template.rel, scope, method, @import("../publr/version.zig").version },
     );
     const name = std.fmt.allocPrint(compiler.arena, "Publr.{s}.{s}", .{ scope, method }) catch
         return error.OutOfMemory;

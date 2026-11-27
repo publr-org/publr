@@ -5,7 +5,7 @@
 const std = @import("std");
 const release = @import("../../model/release.zig");
 
-const version = @import("../../publr.zig").version;
+const version = @import("../../publr/version.zig").version;
 const downloads_default = "https://github.com/" ++ release.repository ++ "/releases/download";
 const listing_default = "https://api.github.com/repos/" ++ release.repository ++
     "/releases?per_page=100";

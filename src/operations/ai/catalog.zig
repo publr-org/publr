@@ -265,7 +265,7 @@ fn built_for_here(ctx: *Ctx, entry: Entry, manifest: []const u8) Error!void {
     std.debug.assert(entry.name.len > 0);
     std.debug.assert(manifest.len > 0);
 
-    const running = @import("../../publr.zig").version;
+    const running = @import("../../publr/version.zig").version;
     const signed = std.json.parseFromSliceLeaky(Signed, ctx.arena, manifest, .{
         .ignore_unknown_fields = true,
     }) catch |err| switch (err) {

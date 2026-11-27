@@ -7,7 +7,7 @@
 const std = @import("std");
 const report = @import("../lib/report.zig");
 const plugin_sdk = @import("plugin_sdk.zig");
-const version = @import("../publr.zig").version;
+const version = @import("../publr/version.zig").version;
 const own = @import("../adapters/apps/interactive.zig");
 
 /// Where an app keeps its built interactive components, inside its folder.

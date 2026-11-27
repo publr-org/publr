@@ -94,7 +94,7 @@ pub fn address_of(
         admin_path,
         prefix,
         locale,
-        @import("../../publr.zig").version,
+        @import("../../publr/version.zig").version,
         std.hash.Wyhash.hash(0, script),
     }) catch error.OutOfMemory;
 }

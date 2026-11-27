@@ -14,7 +14,7 @@ const Collection = model.internal_record.Collection;
 const Scope = store.internal_records.Scope;
 const SDK = registry.SDK;
 /// The release running: the code of every plugin compiled into it.
-const release = @import("../../publr.zig").version;
+const release = @import("../../publr/version.zig").version;
 
 /// The most keys one batch's work may read and still be noted; past it the values are kept
 /// but never fresh, so each read works them out again.

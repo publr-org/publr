@@ -4,7 +4,7 @@ const report = @import("../lib/report.zig");
 const gate = @import("gate.zig");
 const operator = @import("operator.zig");
 
-const version = @import("../publr.zig").version;
+const version = @import("../publr/version.zig").version;
 
 pub const help =
     \\  db check                What this release would find opening the database: the

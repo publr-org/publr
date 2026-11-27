@@ -108,7 +108,7 @@ fn app_module(
         .optimize = library.optimize,
     });
 
-    module.addImport("p", core.private_of(library));
+    module.addImport("p", library);
     module.addAnonymousImport("app_zon", .{
         .root_source_file = builder.path(builder.pathJoin(&.{ app_dir, "app.zon" })),
     });
@@ -156,7 +156,7 @@ fn middleware(
     const plugins = library.import_table.get("native_plugins") orelse
         @panic("native plugins not added");
 
-    module.addImport("publr", library);
+    module.addImport("publr", core.public_of(library));
 
     for (plugins.import_table.keys(), plugins.import_table.values()) |name, plugin| {
         module.addImport(name, plugin);

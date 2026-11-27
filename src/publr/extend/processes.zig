@@ -118,7 +118,7 @@ pub fn unpack(
 }
 
 /// The release of Publr this process is.
-pub const version = @import("../../publr.zig").version;
+pub const version = @import("../version.zig").version;
 
 /// A line on the error output, as Publr's commands write one: for a `before_command` that
 /// turns the command down.

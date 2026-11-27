@@ -154,7 +154,7 @@ pub fn add_module(
         .optimize = optimize,
     });
     const module = builder.createModule(.{
-        .root_source_file = builder.path("src/publr.zig"),
+        .root_source_file = builder.path("src/p.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -221,7 +221,7 @@ pub fn add_module(
     vendors.add_image_api(builder, module);
     module.linkLibrary(vendors.add_library(builder, target));
     @import("javascript.zig").add(builder, module);
-    add_private(builder, module);
+    add_public(builder, module);
     native_plugins.add(builder, module, from.plugins_dir, from.native);
 
     const plugin_ui = native_plugins.ui_dirs(builder, from.plugins_dir, from.native);
@@ -475,33 +475,35 @@ pub fn add_entry(
         .link_libc = true,
     });
 
-    module.addImport("p", private_of(library));
+    module.addImport("p", library);
 
     return module;
 }
 
-/// `p`, the private root Publr's own code imports: its entries and the generated roots of
-/// its apps and published interfaces. One per library, as a file belongs to one module.
-fn add_private(builder: *std.Build, library: *std.Build.Module) void {
+/// `publr`, what plugins and app middleware import: `src/publr.zig`, forwarding the public
+/// names of `p` (the library, `src/p.zig`), reaching nothing else. One per library, as a
+/// file belongs to one module; the library keeps it under `publr_sdk` for the build to find
+/// (`publr` is the admin's script there), and core never imports it.
+fn add_public(builder: *std.Build, library: *std.Build.Module) void {
     std.debug.assert(library.root_source_file != null);
-    std.debug.assert(library.import_table.get("p") == null);
+    std.debug.assert(library.import_table.get("publr_sdk") == null);
 
-    const private = builder.createModule(.{
-        .root_source_file = builder.path("src/p.zig"),
+    const public = builder.createModule(.{
+        .root_source_file = builder.path("src/publr.zig"),
         .target = library.resolved_target,
         .optimize = library.optimize,
     });
 
-    private.addImport("publr", library);
-    library.addImport("p", private);
+    public.addImport("p", library);
+    library.addImport("publr_sdk", public);
 }
 
-pub fn private_of(library: *std.Build.Module) *std.Build.Module {
+pub fn public_of(library: *std.Build.Module) *std.Build.Module {
     std.debug.assert(library.root_source_file != null);
 
-    const private = library.import_table.get("p") orelse @panic("p not added");
+    const public = library.import_table.get("publr_sdk") orelse @panic("publr not added");
 
-    std.debug.assert(private != library);
+    std.debug.assert(public != library);
 
-    return private;
+    return public;
 }

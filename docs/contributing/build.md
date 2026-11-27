@@ -9,7 +9,7 @@ each concern lives in `build/<topic>.zig`.
 |---|---|
 | `zig build` | Build `zig-out/bin/publr` with the apps under `apps/` (none in this repository) and check they compile (`publr check-apps`), then note each compiled-in plugin's remote another compiled-in plugin switches off (`publr check-plugins`; a note, never a failure). The first build also compiles the Zig compiler the binary carries (`../lib/zig`, about two minutes); the cache keeps it after that. |
 | `zig build run -- <args>` | Build and run. |
-| `zig build test` | Run all tests: the core (`src/publr.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
+| `zig build test` | Run all tests: the core (`src/p.zig`, built with the fixture apps under `fixtures/apps/`), every plugin compiled in from `plugins/` (`publr.zon`), and the scripts (`scripts/tidy.zig`, `scripts/vendor.zig`, `scripts/smoke.zig`, `scripts/parity.zig`). |
 | `zig build check` | `zig fmt --check` + `tidy`, without building Publr: seconds, the check on every push. |
 | `zig build verify` | The core's tests + `zig fmt --check` + `tidy`: one compile of the core, the check to run after every change. |
 | `zig build verify-full` | `test` + wasm32-wasi compile of the core + `zig fmt --check` + `tidy` + `smoke` + `parity` + `two-mode` + `browser` + `upgrade`. Each builds Publr its own way, so it takes minutes; run it before a commit. |

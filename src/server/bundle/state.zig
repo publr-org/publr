@@ -9,7 +9,7 @@ const activity = @import("../../store/activity.zig");
 const placeholders = @import("placeholders.zig");
 const operator = @import("../operator.zig");
 
-const version = @import("../../publr.zig").version;
+const version = @import("../../publr/version.zig").version;
 
 pub const help =
     \\  site state [--until <ms>]
