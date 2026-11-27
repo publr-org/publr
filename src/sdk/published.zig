@@ -21,7 +21,7 @@ pub fn of(comptime Plugin: type) Interface {
             .plugin = Plugin.manifest.name,
             .version = Plugin.manifest.version,
             .contracts = contract.owned_of(Plugin),
-            .dimensions = @import("../publr/plugin/dimensions.zig").declared_of(Plugin),
+            .dimensions = @import("plugin/dimensions.zig").declared_of(Plugin),
         };
     }
 }

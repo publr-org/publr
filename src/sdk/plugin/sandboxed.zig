@@ -111,7 +111,7 @@ pub fn runtime_entries(comptime Plugin: type) []const Entry {
         }
 
         // Each dimension's `.options` view, drawn for the field panel's frame.
-        for (@import("../../publr/plugin/dimensions.zig").of(Plugin)) |declared| {
+        for (@import("dimensions.zig").of(Plugin)) |declared| {
             const Dimension = struct {
                 pub const dimension = declared;
             };

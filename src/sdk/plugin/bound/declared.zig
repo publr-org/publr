@@ -88,23 +88,23 @@ fn described_operations(comptime Plugin: type) []const type {
     }
 }
 
-const TaxonomyRegistration = @import("../../../publr/plugin/taxonomy_define.zig").Registration;
+const TaxonomyRegistration = @import("../../../publr/model/taxonomy.zig").Registration;
 
 /// A bound plugin's taxonomies, each `publr.taxonomy.define` stored under the plugin's name.
 fn declared_taxonomies(comptime Plugin: type) []const ContentTypeDef {
     comptime {
-        const taxonomy_define = @import("../../../publr/plugin/taxonomy_define.zig");
+        const taxonomies = @import("../taxonomies.zig");
         var list: []const ContentTypeDef = &.{};
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (Plugin.options.taxonomies) |Taxonomy| {
-            if (!taxonomy_define.is_taxonomy(Taxonomy)) {
+            if (!taxonomies.is_taxonomy(Taxonomy)) {
                 @compileError("plugin " ++ Plugin.manifest.name ++ ": `.taxonomies` lists " ++
                     @typeName(Taxonomy) ++ "; make it with `publr.taxonomy.define`");
             }
 
-            const def = taxonomy_define.def_of(Taxonomy, Plugin.manifest.name, Plugin.docs);
+            const def = taxonomies.def_of(Taxonomy, Plugin.manifest.name, Plugin.docs);
 
             for (list) |earlier| {
                 if (std.mem.eql(u8, earlier.handle, def.handle)) {
@@ -138,7 +138,7 @@ fn declared_registrations(comptime Plugin: type) []const TaxonomyRegistration {
 
         const done = list;
 
-        @import("../../../publr/plugin/taxonomy_define.zig").check(Plugin.manifest.name, done);
+        @import("../taxonomies.zig").check(Plugin.manifest.name, done);
 
         return done;
     }

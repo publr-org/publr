@@ -567,7 +567,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `sdk/plugin/records.zig` + `records/fields.zig`, `records/listed.zig` | 350 + 343, 148 | A plugin's records as core stores them: each content type's declaration, each internal record's collection, the `.register_fields` groups; each field's definition from its Zig type and overrides; the field a record is listed by, its statuses and its flow |
 | `sdk/plugin/menus.zig` | 240 | A plugin's menu items and icons as the admin reads them, checked |
 | `sdk/plugin/location_rules.zig` | 135 | A plugin's location rules as core runs them, compiled in or installed |
-| `sdk/plugin/taxonomies.zig` | 51 | Taxonomies registered on other plugins' types: whose each is, which types its patterns pick |
+| `sdk/plugin/taxonomies.zig` | 193 | Core's reading of taxonomies: each a plugin declares as the type core stores (`def_of`), its registrations checked, and those registrations as the site keeps them: whose each is, which types its patterns pick |
+| `sdk/plugin/dimensions.zig` | 226 | Core's reading of a plugin's dimensions: each list resolved to its own operation, each dimension as data (`declared`, `declared_of`, `Native`) |
 | `sdk/plugin/guest.zig` | 363 | The SDK inside the sandbox: `SandboxApi`, the installed call behind `publr.Ctx`, proxied to the host in the plugin's own structs, the exports generated for a plugin, its manifest among them |
 | `sdk/plugin/shape_wire.zig` | 260 | A struct's layout described at build time, so the host reads values where they lie and writes answers in the plugin's own memory; how a struct with its own JSON says how it lies (`publr_form`) |
 | `sdk/plugin/shape_said.zig` | 233 | How each kind of type is said in a description |
