@@ -2,6 +2,7 @@
 //! frame's document, drawn by the plugin's read as the person looking at it.
 const std = @import("std");
 const admin = @import("../admin.zig");
+const assets = @import("assets.zig");
 const registry = @import("../../server/registry.zig");
 const pages = @import("frame/pages.zig");
 const panels = @import("frame/panels.zig");
@@ -28,7 +29,6 @@ pub const tabs_of = pages.tabs_of;
 pub fn register(router: anytype) void {
     std.debug.assert(router.routes_len > 0);
 
-    router.get(prefix ++ "/:plugin/stores.js", &stores);
     router.get(prefix ++ "/:plugin/:page", &show);
     router.get(prefix ++ "/:plugin/:page/frame", &frame);
     router.get(prefix ++ "/:plugin/panels/:operation/frame", &panel_frame);
@@ -36,20 +36,66 @@ pub fn register(router: anytype) void {
     router.get(prefix ++ "/:plugin/dimensions/:dimension/frame", &options_frame);
 }
 
-/// An installed plugin's views' browser code, for its frame: loaded after the admin's own
-/// stores, importing the same runtime. Code only, as the admin's scripts are, so it is
-/// served to the frame's opaque origin without signing in.
-pub fn stores(request: *Request, response: *Response, ctx: *Context) Error!void {
+/// An installed plugin's views' browser code, for its frame, at
+/// `/admin/assets/<version>/plugin/<name>/stores.js` (`rest` is `<name>/stores.js`): beside
+/// the admin's runtime, so the `../../publr.js` it was built to import is the very runtime the
+/// page loaded. Kept for a year when both the admin's version and the code's own (`?v=`, from
+/// `stores_address`) are today's. Code only, as the admin's scripts are, so it is served to
+/// the frame's opaque origin without signing in.
+pub fn stores(
+    request: *Request,
+    response: *Response,
+    ctx: *Context,
+    rest: []const u8,
+    current: bool,
+) Error!void {
     std.debug.assert(request.method() == .get or request.method() == .head);
     std.debug.assert(ctx.user_data != null);
 
+    const name_end = std.mem.indexOfScalar(u8, rest, '/') orelse rest.len;
+    const plugin = rest[0..name_end];
+
+    if (!std.mem.eql(u8, rest[name_end..], "/stores.js")) {
+        return response.text(.not_found, "Not Found");
+    }
+
     const session = Session.open(request, response, ctx);
-    const plugin = request.param("plugin") orelse "";
     const code = stores_of(&session, plugin) orelse {
         return response.text(.not_found, "Not Found");
     };
+    const own = code_version(code);
+    const asked = admin.query_param(&session, "v") orelse "";
 
-    try admin.script(response, code);
+    try assets.script(response, code, current and std.mem.eql(u8, asked, &own));
+}
+
+/// Where `plugin`'s views' browser code is, under the project's `base`, with its own version.
+fn stores_address(session: *const Session, base: []const u8, plugin: []const u8) Error![]const u8 {
+    std.debug.assert(base.len == 0 or base[0] == '/');
+    std.debug.assert(plugin.len > 0);
+
+    const code = stores_of(session, plugin) orelse return "";
+    const own = code_version(code);
+
+    return std.fmt.allocPrint(session.arena, "{s}{s}/plugin/{s}/stores.js?v={s}", .{
+        base,
+        assets.base,
+        plugin,
+        &own,
+    });
+}
+
+/// The code's own version: an installed plugin changes it without a new Publr.
+fn code_version(code: []const u8) [16]u8 {
+    std.debug.assert(code.len > 0);
+
+    var out: [16]u8 = undefined;
+    const hash = std.hash.Wyhash.hash(0, code);
+    const written = std.fmt.bufPrint(&out, "{x:0>16}", .{hash}) catch unreachable;
+
+    std.debug.assert(written.len == out.len);
+
+    return out;
 }
 
 /// The browser code `plugin`'s views bring when it is installed; null for a compiled-in
@@ -545,10 +591,7 @@ fn send(session: *Session, base: []const u8, html: []const u8) Error!void {
     const response = session.response;
     const plugin = session.request.param("plugin") orelse "";
     var out: std.Io.Writer.Allocating = .init(session.arena);
-    const own: []const u8 = if (stores_of(session, plugin) != null)
-        try std.fmt.allocPrint(session.arena, "{s}{s}/{s}/stores.js", .{ base, prefix, plugin })
-    else
-        "";
+    const own = if (plugin.len > 0) try stores_address(session, base, plugin) else "";
 
     document.write(&out.writer, base, html, session.ctx.view, own) catch {
         return error.OutOfMemory;

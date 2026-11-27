@@ -48,7 +48,7 @@ browser smoke. PTSX files must also compile with `pjsx dom` for the SPA target.
 
 ## Client behavior
 
-The layout loads `/admin/stores.js` as a normal module script, without `async`.
+The layout loads `stores.js` (from `Publr.request.admin.assets`) as a normal module script, without `async`.
 Its hydration must run after the document is parsed, and DOM readiness must wait
 for the module graph. Browser checks use this page entry point rather than
 importing the admin module from test code.

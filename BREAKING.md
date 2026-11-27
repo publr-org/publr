@@ -14,6 +14,23 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `http:/admin/styles.css`
+
+The admin's own files moved under one versioned folder, `/admin/assets/<version>/`, and
+browsers keep them for a year: the stylesheet, `stores.js`, `class-book.js`, the PublrJS
+runtime (`publr.js`, `publr-operations.js` and the rest) and the block editor
+(`editor/...`, was `/admin/editor/...`). An installed plugin's views' script is at
+`/admin/assets/<version>/plugin/<name>/stores.js` (was `/admin/plugin/<name>/stores.js`);
+its built `../../publr.js` import still reaches the runtime, so no plugin needs building
+again. The old addresses answer 404. A page drawn with the admin's layouts gets the new
+addresses itself; markup that linked the old ones takes the folder from
+`Publr.request.admin.assets`.
+
+```
+Before: <link rel="stylesheet" href="/admin/styles.css">
+After:  <link rel="stylesheet" href={Publr.request.admin.assets + "/styles.css"}>
+```
+
 ### `http:/_publr/member`
 
 The pass that carries a staff person from the admin's host to the site's host is the staff

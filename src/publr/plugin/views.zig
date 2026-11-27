@@ -129,6 +129,7 @@ fn translating(arena: std.mem.Allocator) Error!*const anyopaque {
         .admin = .{
             .base = "",
             .path = "",
+            .assets = @import("../../ui/render.zig").assets_base,
             .area = "",
             .can_structure = false,
             .can_settings = false,

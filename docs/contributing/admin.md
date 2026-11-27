@@ -7,20 +7,23 @@ calls one operation with the signed-in user's grant, then redirects. Its pages
 are authored in PTSX under `ui/` (`layouts/`, `pages/`, `components/`) on the
 design system's components (`../ui`), lowered to Zig by the PJSX compiler at
 build time, and styled by one stylesheet the JIT compiles from the classes those
-pages use (`/admin/styles.css`; the palette lives in `ui/styles/base.css`, its
+pages use (`/admin/assets/<version>/styles.css`; the palette lives in `ui/styles/base.css`, its
 tokens in `ui/styles/theme.zon`). Pages carry short class names, one per declaration: the build
 names every declaration the pages' classes make, a class is written as its declarations'
 names (`size-4` is two, `px-4` one), and the sheet holds each declaration once
-(`/admin/class-book.js` hands the same names to the browser). A class Zig code
+(`class-book.js` beside it hands the same names to the browser). A class Zig code
 hands a page is named through `class_merge.listed("pl-4")`, which the build reads.
 `jit decode --book=<class book json> <page.html>` reads a page's names back as Tailwind. The icon sprite holds every icon the pages
 name in their source, plus those named at runtime (a field's kind icon), listed
 one per line in `ui/icons.txt`. Every action is a form, and every step of a
 longer flow (creating a type, then its fields one by one) is a page of its own,
 never a dialog. The one script is the client half of the few components that
-keep state in the browser (`/admin/stores.js`, generated from the PTSX, beside
-the PublrJS runtime at `/admin/publr.js`): today the type's head, where the
-handle and the address follow the name as it is typed.
+keep state in the browser (`stores.js`, generated from the PTSX, beside the PublrJS
+runtime `publr.js`): today the type's head, where the
+handle and the address follow the name as it is typed. All of them are
+served from `/admin/assets/<version>/`, one version for every file the admin serves (a
+hash of them all, made by the build), so browsers keep them for a year and ask again only
+after an update changes one (`src/adapters/admin/assets.zig`).
 
 The chrome is two levels deep, like the design-system library and the PublrJS docs: a
 dark icon rail (the mark, one icon per area, then the pages the person pinned, in their

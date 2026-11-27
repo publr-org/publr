@@ -199,22 +199,17 @@ pub const views = @import("views");
 
 pub const form_pairs_max = Form.pairs_max;
 pub const page_bytes_max: u32 = 4 << 20;
-pub const routes_count: u32 = 175 + @import("admin/ledger.zig").routes_count +
+pub const routes_count: u32 = 170 + assets.routes_count + @import("admin/ledger.zig").routes_count +
     preview_pages.routes_count +
     removal_pages.routes_count + trash_pages.routes_count + health_pages.routes_count +
     @import("admin/queue.zig").routes_count +
-    rail_pages.routes_count + @import("admin/updates.zig").routes_count + client_files.names.len +
+    rail_pages.routes_count + @import("admin/updates.zig").routes_count +
     provider_pages.routes_count + user_type_pages.routes_count + live_pages.routes_count +
     design_pages.routes_count;
-const client_files = @import("../ui/client_files.zig");
+pub const assets = @import("admin/assets.zig");
 
-const styles_css = @embedFile("styles_css");
 const store = @import("../store.zig");
 const ai_model = @import("../model/ai.zig");
-const stores_js = @embedFile("admin_stores_js");
-/// The admin's class book for the browser's merge, installed before any store runs.
-const class_book_js = "import { useClassBook } from \"./publr-class-merge.js\";\n" ++
-    "useClassBook(" ++ @embedFile("admin_class_book_json") ++ ");\n";
 
 pub fn register(router: *http.Router) void {
     std.debug.assert(router.routes_len < router.routes.len - routes_count);
@@ -390,125 +385,17 @@ fn register_fields(router: *http.Router, comptime base: []const u8) void {
     router.post(base ++ "/:handle/fields/:name/move", &field_pages.writes.move);
 }
 
-/// What a page drawn by `render.page` loads, and nothing that needs a project.
-fn register_page_assets(router: *http.Router) void {
-    std.debug.assert(router.routes_len + page_asset_routes_count <= router.routes.len);
-
-    const before = router.routes_len;
-
-    router.get("/admin/styles.css", &styles);
-    router.get("/admin/stores.js", &stores);
-    router.get("/admin/class-book.js", &class_book);
-    router.get("/admin/editor/*", &editor_file);
-
-    inline for (client_files.names) |name| {
-        router.get("/admin/" ++ name ++ ".js", &struct {
-            fn serve(_: *Request, response: *Response, _: *Context) Error!void {
-                try script(response, @embedFile(name));
-            }
-        }.serve);
-    }
-
-    std.debug.assert(router.routes_len == before + page_asset_routes_count);
-}
-
-const page_asset_routes_count: u32 = 4 + client_files.names.len;
-
 fn register_assets(router: *http.Router) void {
-    std.debug.assert(router.routes_len < router.routes.len - client_files.names.len - 5);
-    register_page_assets(router);
+    std.debug.assert(router.routes_len < router.routes.len - 5);
+    assets.register(router);
     router.get("/admin/messages/*", &@import("admin/language.zig").messages);
     router.post("/admin/language", &@import("admin/language.zig").choose);
     router.get("/admin/welcome", &@import("admin/welcome.zig").page);
     router.post("/admin/welcome", &@import("admin/welcome.zig").save);
 }
 
-const editor_files = @import("editor_files").files;
 const editor_module = @import("admin/editor.zig");
 const zone_module = @import("../lib/zone.zig");
-
-/// The block editor's own files (ES modules on the admin's runtime, its canvas stylesheet,
-/// the jit engine the canvas compiles live classes with), embedded at build.
-fn editor_file(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(std.mem.startsWith(u8, request.path(), "/admin/editor/"));
-    std.debug.assert(ctx.user_data != null);
-
-    const path = request.path()["/admin/editor/".len..];
-
-    for (editor_files) |file| {
-        if (std.mem.eql(u8, file.path, path)) {
-            if (std.mem.endsWith(u8, path, ".js")) {
-                return script(response, file.data);
-            }
-
-            try response.set_body(.ok, editor_file_type(path), file.data);
-            try response.set_header("Cache-Control", "no-cache");
-            return;
-        }
-    }
-
-    try response.set_body(.not_found, "text/plain; charset=utf-8", "Not Found");
-}
-
-fn editor_file_type(path: []const u8) []const u8 {
-    std.debug.assert(path.len > 0);
-    std.debug.assert(path[0] != '/');
-
-    if (std.mem.endsWith(u8, path, ".js")) {
-        return "text/javascript; charset=utf-8";
-    }
-
-    if (std.mem.endsWith(u8, path, ".css")) {
-        return "text/css; charset=utf-8";
-    }
-
-    if (std.mem.endsWith(u8, path, ".wasm")) {
-        return "application/wasm";
-    }
-
-    // The canvas page, which the editor's frame loads so it is served as the admin is.
-    if (std.mem.endsWith(u8, path, ".html")) {
-        return "text/html; charset=utf-8";
-    }
-
-    return "text/plain; charset=utf-8";
-}
-
-/// The admin stylesheet, compiled by the build from the classes the views use.
-fn styles(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(request.method() == .get or request.method() == .head);
-    std.debug.assert(ctx.user_data != null);
-
-    try response.set_body(.ok, "text/css; charset=utf-8", styles_css);
-    try response.set_header("Cache-Control", "no-cache");
-}
-
-/// The client half of the pages that keep state in the browser, and the runtime it
-/// imports (`publr.js` pulls `publr-position.js` itself).
-fn stores(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(request.method() == .get or request.method() == .head);
-    std.debug.assert(ctx.user_data != null);
-
-    try script(response, stores_js);
-}
-
-fn class_book(request: *Request, response: *Response, ctx: *Context) Error!void {
-    std.debug.assert(request.method() == .get or request.method() == .head);
-    std.debug.assert(ctx.user_data != null);
-
-    try script(response, class_book_js);
-}
-
-pub fn script(response: *Response, source: []const u8) Error!void {
-    std.debug.assert(source.len > 0);
-    std.debug.assert(response.body.len == 0);
-
-    try response.set_body(.ok, "text/javascript; charset=utf-8", source);
-    try response.set_header("Cache-Control", "no-cache");
-    // The plugin frame has an opaque origin, and a module script it loads needs this; the
-    // admin's scripts carry no data, only code every visitor of the login page gets.
-    try response.set_header("Access-Control-Allow-Origin", "*");
-}
 
 /// One admin request: who is calling, where the answer goes, and a context to dispatch
 /// operations with.

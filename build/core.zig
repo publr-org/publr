@@ -248,17 +248,33 @@ pub fn add_module(
     });
     module.addImport("class_merge", generated.class_merge);
     add_admin_scripts(builder, module, generated.stores);
+    const asset_version = @import("admin_assets.zig").add(builder, module, .{
+        .styles = book.css,
+        .stores = generated.stores,
+        .class_book = book.json,
+    });
     module.addAnonymousImport("admin_expressions", .{
         .root_source_file = generated.expressions,
     });
     add_apps(builder, module, generated, optimize, from);
-    add_sdk(builder, module, target, from, generated.out);
+    add_sdk(builder, module, target, from, .{
+        .views = generated.out,
+        .asset_version = asset_version,
+    });
 
     std.debug.assert(module.link_libc == true);
     std.debug.assert(module.root_source_file != null);
 
     return module;
 }
+
+/// What the build made that the SDK archive carries.
+const SdkGenerated = struct {
+    /// The admin's generated views.
+    views: std.Build.LazyPath,
+    /// The version of the admin's files (`admin_assets.zig`).
+    asset_version: std.Build.LazyPath,
+};
 
 /// The SDK sandboxed plugins are built against, carried wherever there is a file system:
 /// `plugin sdk` and `plugin prepare` write it out for the compiler outside this binary (the
@@ -269,7 +285,7 @@ fn add_sdk(
     module: *std.Build.Module,
     target: std.Build.ResolvedTarget,
     from: Sources,
-    views: std.Build.LazyPath,
+    generated: SdkGenerated,
 ) void {
     std.debug.assert(module.root_source_file != null);
     std.debug.assert(builder.root.sub_path.len == 0);
@@ -292,8 +308,9 @@ fn add_sdk(
             publr_zig.artifact("pack"),
             limits_module.source(builder, from.limits),
             .{
-                .views = views,
+                .views = generated.views,
                 .lowering = lowering(builder, target),
+                .asset_version = generated.asset_version,
             },
         ),
     });

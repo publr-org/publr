@@ -1,7 +1,7 @@
 //! The admin stylesheet: the JIT (a path dependency) over the classes the generated
 //! views use, themed by `ui/styles/theme.zon` over `ui/styles/base.css`'s palette, with the JIT's
 //! preflight ahead of everything. Embedded into the app as `styles_css` and served
-//! at `/admin/styles.css`. Minified except in Debug builds.
+//! at `/admin/assets/<version>/styles.css`. Minified except in Debug builds.
 const std = @import("std");
 const repository = @import("repository.zig");
 
@@ -68,6 +68,8 @@ pub const Book = struct {
     zig: std.Build.LazyPath,
     /// The book as JSON, for the browser's (`/admin/classes.json`).
     json: std.Build.LazyPath,
+    /// The admin's stylesheet, built from the classes the views use.
+    css: std.Build.LazyPath,
 };
 
 pub fn add(
@@ -117,5 +119,6 @@ pub fn add(
     return .{
         .zig = book_zig,
         .json = book_json,
+        .css = css,
     };
 }

@@ -5,6 +5,7 @@
 const std = @import("std");
 const class_merge = @import("class_merge");
 const View = @import("../../../sdk/context.zig").View;
+const assets = @import("../assets.zig");
 
 pub const policy = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; " ++
     "default-src 'none'; " ++
@@ -87,8 +88,8 @@ pub fn write(
             // before the page's own scripts load.
             const admin_at = std.mem.indexOf(u8, stores, "/admin/") orelse 0;
 
-            try writer.print("<script type=\"module\" src=\"{s}/admin/publr-operations.js\">" ++
-                "</script>", .{stores[0..admin_at]});
+            try writer.print("<script type=\"module\" src=\"{s}{s}/publr-operations.js\">" ++
+                "</script>", .{ stores[0..admin_at], assets.base });
             try writer.print("<script type=\"module\" src=\"{s}\"></script>", .{stores});
         }
 
@@ -103,8 +104,8 @@ pub fn write(
         "\"><head>" ++
             "<meta charset=\"utf-8\">" ++
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" ++
-            "<link rel=\"stylesheet\" href=\"{s}/admin/styles.css\">",
-        .{base},
+            "<link rel=\"stylesheet\" href=\"{s}{s}/styles.css\">",
+        .{ base, assets.base },
     );
     try write_bridge(writer, view);
     try writer.writeAll("</head><body class=\"");
@@ -254,7 +255,9 @@ test "the frame's document links the stylesheet under the base and carries the b
 
     const text = writer.buffered();
 
-    try std.testing.expect(std.mem.indexOf(u8, text, "/env/staging/admin/styles.css") != null);
+    const stylesheet = "/env/staging" ++ assets.base ++ "/styles.css";
+
+    try std.testing.expect(std.mem.indexOf(u8, text, stylesheet) != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "window.publr") != null);
     try std.testing.expect(std.mem.endsWith(u8, bridge, "})\n"));
     try std.testing.expect(std.mem.endsWith(u8, text, "<p>Hello</p></body></html>"));
@@ -263,17 +266,19 @@ test "the frame's document links the stylesheet under the base and carries the b
 test "an installed plugin's stores load after the bridge, before the page's own head" {
     var buffer: [8192]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
-    const page = "<!doctype html><html><head><script type=\"module\" src=\"/admin/stores.js\">" ++
-        "</script></head><body></body></html>";
+    const page = "<!doctype html><html><head><script type=\"module\" src=\"" ++ assets.base ++
+        "/stores.js\"></script></head><body></body></html>";
+    const sampler = assets.base ++ "/plugin/sampler/stores.js?v=0123456789abcdef";
 
-    try write(&writer, "", page, .{}, "/admin/plugin/sampler/stores.js");
+    try write(&writer, "", page, .{}, sampler);
 
     const text = writer.buffered();
-    const own = std.mem.indexOf(u8, text, "src=\"/admin/plugin/sampler/stores.js\"").?;
+    const own = std.mem.indexOf(u8, text, "src=\"" ++ sampler ++ "\"").?;
     const bridge_end = std.mem.indexOf(u8, text, ");</script>").?;
-    const admin_own = std.mem.indexOf(u8, text, "src=\"/admin/stores.js\"").?;
+    const admin_own = std.mem.indexOf(u8, text, "src=\"" ++ assets.base ++ "/stores.js\"").?;
 
-    const operations = std.mem.indexOf(u8, text, "src=\"/admin/publr-operations.js\"").?;
+    const runtime = "src=\"" ++ assets.base ++ "/publr-operations.js\"";
+    const operations = std.mem.indexOf(u8, text, runtime).?;
 
     try std.testing.expect(bridge_end < operations);
     try std.testing.expect(operations < own);

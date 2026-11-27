@@ -20,6 +20,10 @@ pub fn Shape(comptime Node: type) type {
             base: []const u8,
             /// The address asked for, without the query.
             path: []const u8,
+            /// Where the admin's own files are, with their version (`/admin/assets/<version>`):
+            /// the stylesheet, the stores, the runtime and the editor, kept by browsers for a
+            /// year.
+            assets: []const u8,
             /// The rail section the page is in: `overview`, `content`, `media`, `settings`, or
             /// `section` (a plugin's, its sidebar heading in `sidebar_heading`).
             area: []const u8,

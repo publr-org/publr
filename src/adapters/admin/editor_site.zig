@@ -26,7 +26,7 @@ pub fn json(session: *const Session, app_name: ?[]const u8) admin.Error![]const 
     std.debug.assert(session.project.apps.len <= 1024);
 
     const arena = session.arena;
-    const reset = "/admin/editor/preflight.css";
+    const reset = admin.render.assets_base ++ "/editor/preflight.css";
     const app = find(session, app_name) orelse {
         const bare: Site = .{
             .styles = &.{reset},

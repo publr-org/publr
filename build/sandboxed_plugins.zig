@@ -327,6 +327,8 @@ pub fn sdk_archive(
 
     // Not a stub: a plugin built here holds what this binary's entries and types may.
     _ = stubs.add("limits_options.zig", limits_source);
+    // Not a stub: the views link the admin's files at this binary's version.
+    _ = stubs.addCopyFile(parts.asset_version, "admin_asset_version.zig");
     const guest = builder.addWriteFiles().add("guest.zig", guest_root_source);
     const run = builder.addRunArtifact(pack);
     const archive = run.addOutputFileArg("sdk.tar.gz");
@@ -361,6 +363,8 @@ pub const ViewsParts = struct {
     views: std.Build.LazyPath,
     /// The lowering, an executable.
     lowering: std.Build.LazyPath,
+    /// The version of the admin's files: the views draw with its layouts, which link them.
+    asset_version: std.Build.LazyPath,
 };
 
 /// What lowering and building an installed plugin's views takes, into the archive.

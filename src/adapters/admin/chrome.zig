@@ -85,6 +85,7 @@ pub const signed_out: Request = .{
     .admin = .{
         .base = "",
         .path = "/admin",
+        .assets = admin.render.assets_base,
         .area = "",
         .can_structure = false,
         .can_settings = false,
@@ -192,6 +193,7 @@ pub fn request_of(session: *const Session, options: Options) admin.Error!*const 
         .admin = .{
             .base = session.project.admin_path(),
             .path = path,
+            .assets = admin.render.assets_base,
             .area = @tagName(area),
             .can_structure = registry.SDK.may(&session.ctx, types.Create),
             .can_settings = registry.SDK.may(&session.ctx, users.List),

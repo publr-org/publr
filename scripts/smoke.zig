@@ -513,12 +513,7 @@ fn expect_serve(
         return error.SmokeFailed;
     }
 
-    const styles = try http_get(init, port, "/admin/styles.css");
-
-    if (std.mem.indexOf(u8, styles, "--background:") == null) {
-        std.debug.print("smoke: serve: /admin/styles.css carries no palette\n", .{});
-        return error.SmokeFailed;
-    }
+    try expect_admin_styles(init, port, login_page);
 
     try expect_mcp(init, port);
 
@@ -883,6 +878,38 @@ fn expect_mcp(init: std.process.Init, port: u16) !void {
 
     if (std.mem.indexOf(u8, size, "administrator_required") == null) {
         std.debug.print("smoke: serve: a clone's size without an administrator: {s}\n", .{size});
+        return error.SmokeFailed;
+    }
+}
+
+/// The stylesheet the login page links, at its versioned address: the palette in it, and
+/// kept by browsers for a year.
+fn expect_admin_styles(init: std.process.Init, port: u16, login_page: []const u8) !void {
+    std.debug.assert(port > 0);
+    std.debug.assert(login_page.len > 0);
+
+    const marker = "<link rel=\"stylesheet\" href=\"";
+    const start = (std.mem.indexOf(u8, login_page, marker) orelse {
+        std.debug.print("smoke: serve: /admin/login links no stylesheet\n", .{});
+        return error.SmokeFailed;
+    }) + marker.len;
+    const end = std.mem.indexOfScalarPos(u8, login_page, start, '"') orelse start;
+    const href = login_page[start..end];
+
+    if (!std.mem.startsWith(u8, href, "/admin/assets/")) {
+        std.debug.print("smoke: serve: the stylesheet is not versioned: {s}\n", .{href});
+        return error.SmokeFailed;
+    }
+
+    const styles = try http_get(init, port, href);
+
+    if (std.mem.indexOf(u8, styles, "--background:") == null) {
+        std.debug.print("smoke: serve: {s} carries no palette\n", .{href});
+        return error.SmokeFailed;
+    }
+
+    if (std.mem.indexOf(u8, styles, "max-age=31536000, immutable") == null) {
+        std.debug.print("smoke: serve: {s} is not kept for a year\n", .{href});
         return error.SmokeFailed;
     }
 }

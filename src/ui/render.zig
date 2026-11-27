@@ -19,6 +19,10 @@ pub const page_bytes_first: u32 = 1 << 20;
 /// What a view reads as `Publr.request`: handed to the page's root, which hands it down.
 pub const Request = request_module.Request;
 
+/// Where the admin's own files are served, with the version that changes whenever one of
+/// them does (`build/admin_assets.zig`).
+pub const assets_base = "/admin/assets/" ++ @import("admin_asset_version").version;
+
 /// What a view's `node` prop takes: markup that renders into the page's writer when the
 /// view reaches it. A view nested in another streams through `rt.block` in the generated
 /// code; markup this adapter rendered ahead of time goes in as `node`.
@@ -108,6 +112,7 @@ pub fn engine_request(runner: *const Runner) Request {
         .admin = .{
             .base = "",
             .path = "",
+            .assets = assets_base,
             .area = "",
             .can_structure = false,
             .can_settings = false,

@@ -42,10 +42,10 @@ export function Document({ title, children }: DocumentProps) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="publr-csrf" content={Publr.request.session.csrf} />
         <title>{title} · {Publr.request.admin.brand !== "" ? Publr.request.admin.brand : "Publr"}</title>
-        <link rel="stylesheet" href="/admin/styles.css" />
+        <link rel="stylesheet" href={Publr.request.admin.assets + "/styles.css"} />
         {Publr.request.admin.messages !== "" && <script src={Publr.request.admin.messages}></script>}
-        <script type="module" src="/admin/stores.js"></script>
-        <script type="module" src="/admin/editor/editor/host/admin.js"></script>
+        <script type="module" src={Publr.request.admin.assets + "/stores.js"}></script>
+        <script type="module" src={Publr.request.admin.assets + "/editor/editor/host/admin.js"}></script>
       </head>
       <body class={["bg-background text-foreground antialiased", Publr.request.admin.framed ? "" : "min-h-screen"]}>
         <Navigation>
