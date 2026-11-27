@@ -13,7 +13,8 @@ const output_bytes_max: u32 = 8 << 20;
 const files_max: u32 = 20_000;
 
 const Deprecation = struct {
-    /// `call`, `event`, `mod`: the key is `<kind>:<name>`, as `offered` writes it.
+    /// `call`, `event`, `mod`, `template`, `sdk`: the key is `<kind>:<name>`, as `offered`
+    /// writes it.
     kind: []const u8 = "call",
     name: []const u8,
     since: []const u8,
@@ -186,9 +187,12 @@ fn list(init: std.process.Init, surface: Surface, src: []const u8, before: []con
             continue;
         }
 
-        // An operation declares `pub const name`; an event or a mod `.name = ` in a literal.
+        // An operation declares `pub const name`; an event or a mod `.name = ` in a literal;
+        // an SDK name its entry in `operations/plugin/sdk_offered.zig`'s `deprecated`.
         const declaration = if (std.mem.eql(u8, item.kind, "call"))
             try std.fmt.allocPrint(arena, "pub const name = \"{s}\";", .{item.name})
+        else if (std.mem.eql(u8, item.kind, "sdk"))
+            try std.fmt.allocPrint(arena, ".name = \"sdk:{s}\",", .{item.name})
         else if (std.mem.eql(u8, item.kind, "template"))
             try std.fmt.allocPrint(arena, ".name = \"{s}\",", .{bare_feature(item.name)})
         else

@@ -8,6 +8,7 @@ const model = @import("../../model.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const registry = @import("../../server/registry.zig");
 const offered = @import("offered.zig");
+const sdk_offered = @import("sdk_offered.zig");
 const template_features = @import("../../template/features.zig");
 
 const Ctx = sdk.Ctx;
@@ -138,10 +139,11 @@ const mod_names = names: {
 
 /// What a plugin may use, as its manifest's `uses` names it: every operation, every host
 /// function, every event core has (`event:`, which a plugin's `emit:` and `hook:` name; an
-/// operation is an event too, under its own name), every mod core applies by name.
+/// operation is an event too, under its own name), every mod core applies by name, every
+/// template feature, and every name of the plugin SDK (`sdk:`).
 const offered_all = names: {
     const total = operation_names.len + host_names.len + offered.event_names.len +
-        mod_names.len + template_features.offered.len;
+        mod_names.len + template_features.offered.len + sdk_offered.names.len;
 
     @setEvalBranchQuota(1000 + total * 64);
 
@@ -173,6 +175,11 @@ const offered_all = names: {
         index += 1;
     }
 
+    for (sdk_offered.names) |name| {
+        names[index] = name;
+        index += 1;
+    }
+
     const final = names;
 
     break :names final;
@@ -187,7 +194,8 @@ const deprecated_all = listed: {
 
     @setEvalBranchQuota(1000 + operations.len * 16);
 
-    var count: usize = offered.deprecated.len + template_features.deprecated.len;
+    var count: usize = offered.deprecated.len + template_features.deprecated.len +
+        sdk_offered.deprecated.len;
 
     for (operations) |Operation| {
         if (sdk.operation.deprecation(Operation) != null) {
@@ -227,6 +235,18 @@ const deprecated_all = listed: {
         list[index] = .{
             .kind = "template",
             .name = item.name,
+            .since = item.deprecated.since,
+            .removed_on = item.deprecated.removed_on,
+            .instead = item.deprecated.instead,
+            .migration = item.deprecated.migration,
+        };
+        index += 1;
+    }
+
+    for (sdk_offered.deprecated) |item| {
+        list[index] = .{
+            .kind = "sdk",
+            .name = item.name["sdk:".len..],
             .since = item.deprecated.since,
             .removed_on = item.deprecated.removed_on,
             .instead = item.deprecated.instead,
@@ -276,6 +296,7 @@ pub const Surface = struct {
 
 test {
     _ = offered;
+    _ = sdk_offered;
 }
 
 comptime {

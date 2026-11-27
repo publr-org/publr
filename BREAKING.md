@@ -913,4 +913,10 @@ needed it.
 
 `publr.agent` (`publr agent`) is no longer in `publr`; it is a command.
 
+### `sdk:testing.Site`
+
+`publr.testing.Site` no longer has the fields `harness` and `states`, core's own test site
+and its plugin states; they are behind `held`, Publr's own. Its methods are as before; a test
+that read them calls `site.ctx(who)`, `site.call`, `site.drain()` and `site.databases()`.
+
 ## 0.8.4 (2026-11-26)

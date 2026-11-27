@@ -3,8 +3,8 @@
 //! it is installed, and again each time it is loaded.
 const operation = @import("../../operation.zig");
 
-/// An item on its way out (`call`, `event`, `mod`), as a release's migration prompt and
-/// roadmap say it.
+/// An item on its way out (`call`, `event`, `mod`, `template`, `sdk`), as a release's
+/// migration prompt and roadmap say it.
 pub const Deprecation = struct {
     kind: []const u8 = "call",
     name: []const u8,
@@ -22,8 +22,8 @@ pub const Surface = struct {
         \\of core and of the built-in plugins (`call:`; each is an event too), the functions
         \\the sandbox gives a module (`host:`), core's events (`event:`, which a plugin emits
         \\or hooks: `emit:`, `hook:` in its `uses`), the mods core applies by name (`mod:`)
-        \\and what an app's templates use (`template:`: functions, directives, attributes,
-        \\settings).
+        \\what an app's templates use (`template:`: functions, directives, attributes,
+        \\settings) and the plugin SDK's names (`sdk:Ctx`, `sdk:Ctx.call`, `sdk:record.define`).
         \\A plugin's manifest lists what it uses and the Publr it was built with
         \\(`minimum_publr`); one using what this list lacks in a namespace of core's, or built
         \\with a later Publr, is refused as it is installed and as it is loaded. `deprecated`

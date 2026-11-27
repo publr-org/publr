@@ -343,6 +343,8 @@ Grouped by kind. Lines are the whole file, tests included.
 | `server.zig` | 111 | `Server`: open the database, apply schema and plugin bootstrap, open the dependency index, hold auth state |
 | `server/wasm.zig` | 325 | The same program as a wasm reactor: init, import a db, answer one request |
 | `p.zig` | 61 | The library root, private: every module, what Publr's own binaries, generated roots and the installed plugins' guest root import as `p` |
+| `sdk/public_root.zig` | 263 | The root check: every name of `publr/root.zig`, and every type its fields, decls and signatures reach, is defined under `publr/` (or in `std`, `publr_api`, `publr_text`, `publr_ai`); `publr` forwards exactly those names, `db` the one exception |
+| `operations/plugin/sdk_offered.zig` | 94 | The SDK's names as `sdk:` items of `plugin surface` (root names and their members), and their deprecations |
 | `publr.zig` | 95 | What plugins and app middleware import as `publr`: forwards `publr/root.zig`'s names from `p`, reaching nothing else |
 | `publr/root.zig` | 459 | The public names, each defined in a file under `publr/`, documented where they are named |
 | `publr/version.zig` | 17 | The release this is (a release writes it) |

@@ -33,8 +33,16 @@ pub const Plugin = callers.Plugin;
 /// How many queued jobs `drain` runs at most in one pass.
 const drained_max: u32 = 64;
 
-pub const Site = struct {
+/// What a site runs on, Publr's own: held apart from `Site`, whose fields a test sees.
+const Held = struct {
     harness: sdk.testing.Harness,
+    /// Every built-in plugin's `State`, made as `serve` makes them, for the calls made here.
+    states: PluginStates,
+};
+
+pub const Site = struct {
+    /// Publr's own site behind the test's, made by `init`.
+    held: *anyopaque,
     /// What `json` answers lives here, until `deinit`.
     keep: std.heap.ArenaAllocator,
     /// The site's time for every call: set it to move the clock.
@@ -45,17 +53,19 @@ pub const Site = struct {
     failure: []const u8 = "",
     /// What the last call's `error.Invalid` found wrong (`problems`).
     refused: []const Problem = &.{},
-    /// Every built-in plugin's `State`, made as `serve` makes them, for the calls made here.
-    states: PluginStates,
-
     /// An empty site with every plugin of the build: its tables and what each sets up.
     pub fn init(site: *Site) Error!void {
+        const held = try std.testing.allocator.create(Held);
+        errdefer std.testing.allocator.destroy(held);
+
+        site.held = held;
+
         // A site that cannot be made in memory is one the test cannot run on.
-        site.harness.init() catch |err| return switch (err) {
+        site.backing().harness.init() catch |err| return switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             else => error.Unavailable,
         };
-        errdefer site.harness.deinit();
+        errdefer site.backing().harness.deinit();
 
         site.keep = .init(std.testing.allocator);
         errdefer site.keep.deinit();
@@ -65,33 +75,38 @@ pub const Site = struct {
         site.failure = "";
         site.refused = &.{};
 
-        var system = site.harness.ctx(.system);
+        var system = site.backing().harness.ctx(.system);
 
         SDK.apply_schemas(system.db) catch |err| return public_of(err);
         SDK.bootstrap(&system) catch |err| return public_of(err);
-        site.harness.fixed.reset();
+        site.backing().harness.fixed.reset();
 
         // A state that cannot be made here is one the test cannot run with.
-        site.states.init(.{
+        site.backing().states.init(.{
             .io = std.testing.io,
             .gpa = std.testing.allocator,
             .arena = site.keep.allocator(),
             .db_path = ":memory:",
-            .runtime = @ptrCast(&site.harness.fixture.runtime),
+            .runtime = @ptrCast(&site.backing().harness.fixture.runtime),
         }) catch |err| return switch (err) {
             error.OutOfMemory => error.OutOfMemory,
             else => error.Unavailable,
         };
 
-        std.debug.assert(site.harness.fixture.connection.transaction_depth == 0);
+        std.debug.assert(site.backing().harness.fixture.connection.transaction_depth == 0);
     }
 
     pub fn deinit(site: *Site) void {
-        std.debug.assert(site.harness.fixture.connection.transaction_depth == 0);
+        std.debug.assert(site.backing().harness.fixture.connection.transaction_depth == 0);
 
-        site.states.deinit();
+        site.backing().states.deinit();
         site.keep.deinit();
-        site.harness.deinit();
+        site.backing().harness.deinit();
+        std.testing.allocator.destroy(site.backing());
+    }
+
+    fn backing(site: *const Site) *Held {
+        return @ptrCast(@alignCast(site.held));
     }
 
     /// Whether the build has an operation by this name: a test of a plugin that hooks
@@ -187,10 +202,10 @@ pub const Site = struct {
     /// Databases besides the site's own, by path, opened as a built-in plugin's `State`
     /// opens them (`process.databases()`).
     pub fn databases(site: *Site) database.Databases {
-        std.debug.assert(site.harness.buffer.len > 0);
+        std.debug.assert(site.backing().harness.buffer.len > 0);
 
         return .{
-            .runtime = @ptrCast(&site.harness.fixture.runtime),
+            .runtime = @ptrCast(&site.backing().harness.fixture.runtime),
         };
     }
 
@@ -212,11 +227,11 @@ pub const Site = struct {
     }
 
     fn context(site: *Site, who: Who) sdk.Ctx {
-        site.harness.fixed.reset();
+        site.backing().harness.fixed.reset();
         site.failure = "";
         site.refused = &.{};
 
-        var made = site.harness.ctx(callers.caller_of(who));
+        var made = site.backing().harness.ctx(callers.caller_of(who));
 
         switch (who) {
             .visitor => |id| made.visitor = id,
@@ -230,7 +245,7 @@ pub const Site = struct {
             .system, .admin => {},
         }
 
-        made.plugin_states = &site.states;
+        made.plugin_states = &site.backing().states;
         made.now_ms = site.now_ms;
         made.test_clock = site.development;
 
