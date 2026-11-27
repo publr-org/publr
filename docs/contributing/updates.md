@@ -16,8 +16,9 @@ migration:
   major may ship one, and data people made is exported first;
 - never changes once released, and is never removed.
 
-A compiled-in plugin keeps its own in its folder and lists them as
-`pub const migrations = [_]publr.db.migration.Migration{ .of("<name>", ...) }`.
+Plugins have no migrations. A compiled-in plugin's own table (`host.table`) is made when the
+database opens and never migrated: a change to its shape is the plugin's own to make
+([Plugins](../plugins.md)). Everything else a plugin keeps is records, which need none.
 
 **Readers are tolerant.** Code reading rows, documents and stored JSON ignores what it does
 not know and fills in what is missing with its default, so a release runs on a database the

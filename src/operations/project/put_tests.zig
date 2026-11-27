@@ -235,6 +235,14 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
         .roles = &.{"editor"},
     });
 
+    // A member's user type travels with the account.
+    try std.testing.expect(try store.user_types.add(admin.db, person.user_id, "member"));
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        try rows_of(&admin, .user, person.user_id),
+        "\"user_types\":[{\"user_id\":",
+    ) != null);
+
     try round_trip(&admin, .term, filed.id);
     try round_trip(&admin, .taxonomy, topics.id);
     try round_trip(&admin, .content_type, note.id);

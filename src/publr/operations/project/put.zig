@@ -36,8 +36,8 @@ pub const Put = struct {
         \\`record_terms`), `term` (`terms`, `term_values`), `internal` (`internal_records`,
         \\`internal_record_values`), `content_type` and `taxonomy` (its row and its
         \\`field_groups` row), `field_group` (a custom field group, by its handle), `role`
-        \\(`roles`, `role_grants`), `user` (`users`, `user_roles`, `user_values`,
-        \\`user_search`, `identities`) and `plugin` (an installed plugin's
+        \\(`roles`, `role_grants`), `user` (`users`, `user_roles`, `user_types`,
+        \\`user_values`, `user_search`, `identities`) and `plugin` (an installed plugin's
         \\`sandboxed_plugins` row: its versions and grants, never its files). Ids, versions
         \\and timestamps are kept as given; a BLOB is hex; search text of records and terms
         \\is made again. A unit already as given is not written. Records and terms then land

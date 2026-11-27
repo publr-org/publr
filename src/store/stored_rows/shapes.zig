@@ -122,6 +122,10 @@ pub fn shape_of(kind: Kind) Shape {
                     .key = "user_id",
                 },
                 .{
+                    .name = "user_types",
+                    .key = "user_id",
+                },
+                .{
                     .name = "user_values",
                     .key = "record",
                 },
@@ -145,7 +149,7 @@ pub fn shape_of(kind: Kind) Shape {
     };
 
     std.debug.assert(shape.own.name.len > 0);
-    std.debug.assert(shape.children.len <= 4);
+    std.debug.assert(shape.children.len <= 5);
 
     return shape;
 }

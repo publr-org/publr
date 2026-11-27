@@ -132,7 +132,7 @@ nothing. Only plugins call it (with `project.put`), and administrators.
 | `content_type`, `taxonomy` | its id | its row, its `field_groups` row |
 | `field_group` | its handle | its `field_groups` row (scope `custom_fields`) |
 | `role` | its name | `roles`, `role_grants` |
-| `user` | its id | `users`, `user_roles`, `user_values`, `user_search`, `identities` |
+| `user` | its id | `users`, `user_roles`, `user_types`, `user_values`, `user_search`, `identities` |
 | `plugin` | its name | its `sandboxed_plugins` row: versions and grants, never its files |
 
 A BLOB travels as hex. Records and terms then land as the same change made by a person:

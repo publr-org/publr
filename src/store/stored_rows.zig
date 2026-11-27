@@ -102,7 +102,7 @@ pub fn read(
     id: []const u8,
 ) Error![]const u8 {
     std.debug.assert(id.len > 0);
-    std.debug.assert(shape.children.len <= 4);
+    std.debug.assert(shape.children.len <= 5);
 
     const own = try statements.canonical_stored(connection, arena, shape.own, id);
 
