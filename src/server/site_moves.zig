@@ -8,6 +8,9 @@ const queue_worker = @import("queue_worker.zig");
 const outside = @import("../model/outside.zig");
 
 pub const Follower = struct {
+    io: std.Io,
+    /// The binary the worker runs and its database: memory that outlives `buffer`.
+    executable: []const u8,
     db_path: []const u8,
     /// None for a server no command reaches.
     session: ?operator.Session,
@@ -28,26 +31,21 @@ pub const Follower = struct {
     }
 
     fn follow(follower: *Follower, address: []const u8, origins: outside.Origins) !void {
-        const worker = follower.worker;
+        std.debug.assert(follower.executable.len > 0);
+        std.debug.assert(follower.db_path.len > 0);
 
-        std.debug.assert(worker.argv.len >= 8);
-
-        // Both name memory that outlives the buffer: the binary's path, the database's.
-        const executable = worker.argv[0];
-        const db_path = worker.argv[2];
         var fixed = std.heap.FixedBufferAllocator.init(&follower.buffer);
         const arena = fixed.allocator();
-        const site = try arena.dupe(u8, origins.site);
-        const argv = try queue_worker.argv_of(arena, executable, db_path, .{
-            .site = site,
+        const argv = try queue_worker.argv_of(arena, follower.executable, follower.db_path, .{
+            .site = try arena.dupe(u8, origins.site),
             .admin = origins.admin,
             .started = origins.started,
         });
 
-        worker.restart(argv);
+        follower.worker.restart(argv.ptr);
 
         if (follower.session) |session| {
-            try operator.readdress(worker.io, arena, follower.db_path, session, address);
+            try operator.readdress(follower.io, arena, follower.db_path, session, address);
         }
     }
 };

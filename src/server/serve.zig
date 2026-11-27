@@ -5,6 +5,7 @@ const limits = @import("../model/limits.zig");
 const plugin_hooks = @import("plugin_hooks.zig");
 const server = @import("../server.zig");
 const report = @import("../lib/report.zig");
+const crowding_module = @import("crowding.zig");
 const operator = @import("operator.zig");
 const routes = @import("routes.zig");
 const http = @import("../lib/http.zig");
@@ -199,7 +200,7 @@ fn serve_project(init: std.process.Init, db_path: [:0]const u8, flags: Flags) !E
     var keeper = try keeper_of(init, db_path, &apps);
     defer keeper.stop();
 
-    const worker = worker_of(&apps, &keeper, browser_dir == null, db_path, session);
+    const worker = worker_of(init.io, &apps, &keeper, browser_dir == null, db_path, session);
     var plugins = try Plugins.of(&application);
 
     try listener.enable_shutdown_signals();
@@ -233,8 +234,7 @@ fn keeper_of(
     std.debug.assert(argv.len >= 8);
 
     return .{
-        .io = init.io,
-        .argv = argv,
+        .argv = argv.ptr,
     };
 }
 
@@ -242,6 +242,7 @@ fn keeper_of(
 /// the site to another address while it runs (`site_moves.zig`): the session a command
 /// reads and the worker itself.
 fn worker_of(
+    io: std.Io,
     apps: *apps_host.AppsHost,
     keeper: *queue_worker.Keeper,
     runs: bool,
@@ -256,6 +257,8 @@ fn worker_of(
     }
 
     apps.follower = .{
+        .io = io,
+        .executable = std.mem.span(keeper.argv[0].?),
         .db_path = db_path,
         .session = session,
         .worker = keeper,
@@ -720,6 +723,9 @@ fn run_loop(
         .last_ms = sdk.context.wall_clock_ms(project.io),
     };
     var watch: @import("apps_watch.zig").Watch = .{};
+    var crowding: crowding_module.Crowding = .{
+        .connections_max = listener.engine.options.connections_max,
+    };
 
     // The loop is the server's, interleaved with the apps' rebuild queue: a batch that
     // went quiet (an admin's publish, a CLI's) is rebuilt between requests, never inside
@@ -729,6 +735,8 @@ fn run_loop(
 
         const counters = listener.engine.counters;
         const idle_over = idle.over(counters.requests_total, counters.active, project.io);
+
+        crowding.tick(counters.paused_total, sdk.context.wall_clock_ms(project.io));
 
         if ((project.stop_requested or idle_over) and listener.engine.phase == .running) {
             listener.engine.stop();
@@ -871,9 +879,12 @@ fn server_options(first_port: u16, browser: bool) http.Options {
     return .{
         .address = loopback,
         .port = first_port,
-        .connections_max = 64,
+        .connections_max = 4096,
         .request_bytes_max = limits.request_bytes_max,
         .response_bytes_max = 2 << 20,
+        // Most responses are sent the moment they are built; these are for slow readers.
+        .responses_max = 16,
+        .bodies_max = 4,
         .arena_bytes = limits.request_arena_bytes,
     };
 }
@@ -1121,13 +1132,17 @@ fn start_server(
             return error.AddressInUse;
         };
 
-        return http.App.init(gpa, options.*) catch |err| {
+        const app = http.App.init(gpa, options.*) catch |err| {
             if (err == error.AddressInUse and attempt < search_span) {
                 continue;
             }
 
             return err;
         };
+
+        crowding_module.say_fitted(options.connections_max, app.engine.options.connections_max);
+
+        return app;
     }
 
     unreachable;
@@ -1389,4 +1404,8 @@ test "the admin is given an origin of its own: admin.<host>, admin.localhost on 
         error.NoAdminAddress,
         default_admin_url(arena, "http://10.0.0.5:8080"),
     );
+}
+
+test {
+    _ = crowding_module;
 }

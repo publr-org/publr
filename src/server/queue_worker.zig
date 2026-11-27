@@ -6,6 +6,7 @@ const sdk = @import("../sdk.zig");
 const server = @import("../server.zig");
 const queued_jobs = @import("queued_jobs.zig");
 const store = @import("../store.zig");
+const spawn = @import("../lib/spawn.zig");
 
 const Project = @import("project.zig").Project;
 
@@ -113,18 +114,19 @@ fn default_signals() void {
 }
 
 /// How `serve` starts the worker: `executable` on its database, told the origins its rule
-/// follows (`outside_of`); `--started-url` only while the site answers away from it.
+/// follows (`outside_of`); `--started-url` only while the site answers away from it. As C
+/// strings, the last one null, as `posix_spawn` takes them (`Keeper`).
 pub fn argv_of(
     arena: std.mem.Allocator,
     executable: []const u8,
     db_path: []const u8,
     origins: @import("../model/outside.zig").Origins,
-) error{OutOfMemory}![]const []const u8 {
+) error{OutOfMemory}![:null]?[*:0]const u8 {
     std.debug.assert(executable.len > 0);
     std.debug.assert(db_path.len > 0);
 
     const moved = origins.started.len > 0 and !std.mem.eql(u8, origins.started, origins.site);
-    const argv: []const []const u8 = &.{
+    const all = [_][]const u8{
         executable,
         "--db",
         db_path,
@@ -136,30 +138,38 @@ pub fn argv_of(
         "--started-url",
         origins.started,
     };
+    const words = if (moved) all[0..] else all[0..8];
+    const argv = try arena.allocSentinel(?[*:0]const u8, words.len, null);
 
-    return arena.dupe([]const u8, if (moved) argv else argv[0..8]);
+    for (words, argv) |word, *slot| {
+        slot.* = try arena.dupeSentinel(u8, word, 0);
+    }
+
+    return argv;
 }
 
-/// The worker `serve` keeps running beside it.
+/// The worker `serve` keeps running beside it, started with `posix_spawn` (`lib/spawn.zig`)
+/// rather than a copy of `serve`: in a small VM a copy would be booked for all of `serve`'s
+/// reserved memory and refused.
 pub const Keeper = struct {
-    io: std.Io,
-    argv: []const []const u8,
-    child: ?std.process.Child = null,
+    /// `publr --db <path> queue-run ...`, as C strings, the last one null.
+    argv: [*:null]const ?[*:0]const u8,
+    pid: ?std.c.pid_t = null,
     /// When it may be started again after ending: never more than once a second.
     next_start_ms: i64 = 0,
 
     /// Started when not running, at most once a second; a worker that ended is reaped.
     pub fn tick(keeper: *Keeper, now_ms: i64) void {
-        std.debug.assert(keeper.argv.len > 0);
+        std.debug.assert(keeper.argv[0] != null);
         std.debug.assert(now_ms >= 0);
 
-        if (keeper.child) |child| {
-            if (!ended(child)) {
+        if (keeper.pid) |pid| {
+            if (!spawn.ended(pid)) {
                 return;
             }
 
             std.log.warn("worker: ended; starting it again", .{});
-            keeper.child = null;
+            keeper.pid = null;
         }
 
         if (now_ms < keeper.next_start_ms) {
@@ -167,46 +177,31 @@ pub const Keeper = struct {
         }
 
         keeper.next_start_ms = now_ms + 1000;
-        keeper.child = std.process.spawn(keeper.io, .{
-            .argv = keeper.argv,
-            .stdin = .ignore,
-            .stdout = .inherit,
-            .stderr = .inherit,
-        }) catch |err| blk: {
+        keeper.pid = spawn.start(keeper.argv) catch |err| blk: {
             std.log.warn("worker: not started: {t}", .{err});
             break :blk null;
         };
     }
 
-    /// Whether the worker has ended, reaped without waiting.
-    fn ended(child: std.process.Child) bool {
-        const pid = child.id orelse return true;
-        var status: c_int = 0;
-
-        std.debug.assert(pid > 0);
-
-        return std.c.waitpid(pid, &status, std.c.W.NOHANG) == pid;
-    }
-
     pub fn stop(keeper: *Keeper) void {
-        std.debug.assert(keeper.argv.len > 0);
+        std.debug.assert(keeper.argv[0] != null);
 
-        if (keeper.child) |*child| {
-            child.kill(keeper.io);
+        if (keeper.pid) |pid| {
+            spawn.stop(pid);
         }
 
-        keeper.child = null;
+        keeper.pid = null;
     }
 
     /// Stopped, to be started again with `argv` at the next tick: the site moved.
-    pub fn restart(keeper: *Keeper, argv: []const []const u8) void {
-        std.debug.assert(argv.len >= 8 and argv.len <= 10);
+    pub fn restart(keeper: *Keeper, argv: [*:null]const ?[*:0]const u8) void {
+        std.debug.assert(argv[0] != null);
 
         keeper.stop();
         keeper.argv = argv;
         keeper.next_start_ms = 0;
 
-        std.debug.assert(keeper.child == null);
+        std.debug.assert(keeper.pid == null);
     }
 };
 
@@ -249,4 +244,8 @@ test "the worker follows serve's rule: development for a plain http site, else p
 
     try std.testing.expectEqual(@as(usize, 3), moved.own_hosts.len);
     try std.testing.expectEqualStrings("mykiosk.com", moved.own_hosts[0]);
+}
+
+test {
+    _ = spawn;
 }
