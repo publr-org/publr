@@ -1,4 +1,4 @@
-//! Staff and visitors are two ladders: a type of user gives visitor roles only, so signing up,
+//! Staff and members are two ladders: a type of user gives member roles only, so signing up,
 //! a plugin holding `users.own` and the roles editor never make an account staff.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
@@ -6,7 +6,7 @@ const store = @import("../../store.zig");
 const registry = @import("../registry.zig");
 const scenarios = @import("scenarios.zig");
 const scenarios_remotes = @import("scenarios_remotes.zig");
-const visitors = @import("../../operations/user/visitors.zig");
+const members = @import("../../operations/user/members.zig");
 
 const Scenario = scenarios.Scenario;
 const admin = scenarios.admin;
@@ -56,7 +56,7 @@ fn staff(scenario: *Scenario, email: []const u8) !bool {
     return false;
 }
 
-test "staff ladder: a visitor who signs up to a type never reaches the admin" {
+test "staff ladder: a member who signs up to a type never reaches the admin" {
     var scenario: Scenario = undefined;
     try scenario.init();
     defer scenario.deinit();
@@ -68,7 +68,7 @@ test "staff ladder: a visitor who signs up to a type never reaches the admin" {
 
     visiting.app = "www";
     visiting.app_address = "https://example.com";
-    _ = try registry.SDK.dispatch(&visiting, visitors.SignUp, .{
+    _ = try registry.SDK.dispatch(&visiting, members.SignUp, .{
         .user_type = "till_regular",
         .email = "ada@example.com",
         .display_name = "Ada",
@@ -92,7 +92,7 @@ test "staff ladder: a plugin holding users.own makes nobody staff" {
     _ = try scenarios_remotes.put(&scenario, "till.wasm", till);
     try scenarios_remotes.enable(&scenario, "till");
 
-    // Its own regular, with the type's role: a visitor.
+    // Its own regular, with the type's role: a member.
     _ = try scenario.call(admin, "till.add", "{\"email\":\"ada@example.com\"}");
     try std.testing.expect(!try staff(&scenario, "ada@example.com"));
 
@@ -144,7 +144,7 @@ test "staff ladder: a plugin whose type gives a staff role is refused at enable"
     try std.testing.expectEqualStrings("StaffRoleGiven", enabling.failure.?.name);
     try std.testing.expect(std.mem.indexOf(u8, enabling.failure.?.message, "till_regular") != null);
 
-    // Taken back to what visitors call, the till comes on.
+    // Taken back to what members call, the till comes on.
     _ = try scenario.call(admin, "role.update",
         \\{"name":"till_regular","label":"Regular","grants":[]}
     );
@@ -184,7 +184,7 @@ test "staff ladder: the roles editor never makes a role a type gives staff" {
 
     try std.testing.expect(!try staff(&scenario, "ada@example.com"));
 
-    // What visitors call stays theirs to be given: an app's operation, or what apps call.
+    // What members call stays theirs to be given: an app's operation, or what apps call.
     _ = try scenario.call(admin, "role.update",
         \\{"name":"till_regular","label":"Regular","grants":["app.till.*","till.seen"]}
     );
@@ -198,8 +198,8 @@ test "staff ladder: the roles editor never makes a role a type gives staff" {
 
 const porch = @embedFile("sandboxed_plugin_porch");
 
-/// A visitor signing up to `porch_guest` on `www`.
-fn sign_up(scenario: *Scenario, email: []const u8) sdk.Error!visitors.Sent {
+/// Someone signing up to `porch_guest` on `www`.
+fn sign_up(scenario: *Scenario, email: []const u8) sdk.Error!members.Sent {
     std.debug.assert(email.len > 0);
 
     var visiting = scenario.ctx(.anonymous);
@@ -207,7 +207,7 @@ fn sign_up(scenario: *Scenario, email: []const u8) sdk.Error!visitors.Sent {
     visiting.app = "www";
     visiting.app_address = "https://example.com";
 
-    return registry.SDK.dispatch(&visiting, visitors.SignUp, .{
+    return registry.SDK.dispatch(&visiting, members.SignUp, .{
         .user_type = "porch_guest",
         .email = email,
         .display_name = "Guest",
@@ -244,7 +244,7 @@ test "staff ladder: a type naming a role staff now gives nothing, and the admin 
     try std.testing.expect(!try staff(&scenario, "ada@example.com"));
 }
 
-test "staff ladder: an update taking an operation from visitors drops its grant" {
+test "staff ladder: an update taking an operation from members drops its grant" {
     var scenario: Scenario = undefined;
     try scenario.init();
     defer scenario.deinit();

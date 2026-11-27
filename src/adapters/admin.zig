@@ -748,7 +748,7 @@ pub fn require(request: *Request, response: *Response, ctx: *Context) Error!?Ses
         return null;
     }
 
-    // An account whose roles reach none of the admin's operations (an app's visitor) is
+    // An account whose roles reach none of the admin's operations (an app's member) is
     // turned back at every admin URL, to the login page that says so.
     if (!registry.SDK.reaches_admin(&session.ctx)) {
         try response.redirect(.see_other, "/admin/login");

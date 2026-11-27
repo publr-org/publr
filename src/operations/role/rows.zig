@@ -80,7 +80,7 @@ pub fn check(row: Row, grants: []const []const u8) Error!void {
     }
 }
 
-/// Refused when `grants` would make a role a type of user gives staff: staff and visitors
+/// Refused when `grants` would make a role a type of user gives staff: staff and members
 /// are two ladders, and a type's people never reach the admin.
 pub fn refuse_staff_given(ctx: *Ctx, row: Row, grants: []const []const u8) Error!void {
     std.debug.assert(row.name.len > 0);
@@ -98,7 +98,7 @@ pub fn refuse_staff_given(ctx: *Ctx, row: Row, grants: []const []const u8) Error
         .message = std.fmt.allocPrint(
             ctx.arena,
             "{s} is given by the {s} type; it cannot reach the admin or any operation " ++
-                "but what visitors call",
+                "but what members call",
             .{ row.label, giver.label },
         ) catch return error.OutOfMemory,
     });

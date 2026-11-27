@@ -701,7 +701,7 @@ pub fn enable_among(
 }
 
 /// Refused when a type of user the plugin registers gives a role that is staff here: a type
-/// gives visitor roles only (`model.user_type.problem` refuses core's by name at add).
+/// gives member roles only (`model.user_type.problem` refuses core's by name at add).
 fn refuse_staff_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Error!void {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(manifest.user_types.len <= model.user_type.types_max);
@@ -714,7 +714,7 @@ fn refuse_staff_types(ctx: *Ctx, manifest: *const sandboxed_plugin.Manifest) Err
             .status = 422,
             .message = try std.fmt.allocPrint(ctx.arena, "{s} can't be enabled: its type " ++
                 "{s} gives the role {s}, which reaches the admin or what staff call; a type " ++
-                "gives visitor roles only", .{ manifest.name, declared.label, given }),
+                "gives member roles only", .{ manifest.name, declared.label, given }),
         });
     }
 }

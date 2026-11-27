@@ -1737,8 +1737,8 @@ a new account with `publr.after(publr.auth.SignedUp, …)` and a sign-in with
 .permissions = .{.{ .key = "users.own", .reason = "Makes and changes customers' accounts" }},
 ```
 
-A type gives visitor roles only: staff and visitors are two ladders. A role is staff when
-its grants reach past what visitors call (an operation for untrusted callers or open to
+A type gives member roles only: staff and members are two ladders. A role is staff when
+its grants reach past what members call (an operation for untrusted callers or open to
 everyone); the grants decide, never the name. A type naming `admin`, `editor` or
 `contributor` fails the build and is refused at install; one naming a role that is staff
 now is refused at enable (`StaffRoleGiven`), and the roles editor refuses grants that would

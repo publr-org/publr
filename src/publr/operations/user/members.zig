@@ -1,4 +1,4 @@
-//! Accounts of a user type on the site, by the visitors themselves: signing up and asking for
+//! Members' own accounts of a user type on the site: signing up and asking for
 //! a new password, each answered with a set-password link sent by email to a page of the app
 //! they are on (the type's `password_page`), redeemed with `user.set_password`. Neither ever
 //! says whether an account exists. Staff never use them: their links open the admin.

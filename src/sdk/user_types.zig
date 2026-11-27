@@ -157,7 +157,7 @@ pub fn opens_any(
     return false;
 }
 
-/// The first role `declared` gives that is staff now, or null: a type gives visitor roles
+/// The first role `declared` gives that is staff now, or null: a type gives member roles
 /// only, so one that names a staff role is refused at enable, and gives nothing meanwhile.
 pub fn staff_role_given(ctx: *const sdk.Ctx, declared: Declared) sdk.Error!?[]const u8 {
     std.debug.assert(declared.name.len > 0);

@@ -48,7 +48,7 @@ pub const Create = struct {
         }
 
         try check_user_type(ctx, in.user_type);
-        try visitors.refuse_other_type(ctx, in.user_type);
+        try members.refuse_other_type(ctx, in.user_type);
 
         const roles = try roles_of_new(ctx, in.roles, in.user_type);
 
@@ -116,7 +116,7 @@ fn roles_of_new(
     try roles.appendSlice(ctx.arena, named orelse &.{});
 
     for (declared.roles) |given| {
-        if (!visitors.held(roles.items, given)) {
+        if (!members.held(roles.items, given)) {
             try roles.append(ctx.arena, given);
         }
     }
@@ -166,7 +166,7 @@ pub const PasswordLink = struct {
 
         const credentials = try find_user(ctx, in.user) orelse return error.NotFound;
 
-        try visitors.refuse_other_account(ctx, credentials.user);
+        try members.refuse_other_account(ctx, credentials.user);
 
         const link = try issue_link(ctx, credentials.user.id);
 
@@ -293,7 +293,7 @@ pub const List = struct {
             return error.Invalid;
         }
 
-        try visitors.refuse_unread_type(ctx, in.user_type);
+        try members.refuse_unread_type(ctx, in.user_type);
 
         window.sort = in.sort;
         window.user_type = in.user_type;
@@ -587,7 +587,7 @@ pub const Get = fields.Get;
 pub const Validate = fields.Validate;
 
 pub const language = @import("user/language.zig");
-pub const visitors = @import("user/visitors.zig");
+pub const members = @import("user/members.zig");
 pub const columns = @import("user/columns.zig");
 pub const types = @import("user/types.zig");
 pub const staff = @import("user/staff.zig");
@@ -608,7 +608,7 @@ pub const operations = [_]type{
     language.SetLanguage,
     columns.Columns,
     columns.SetColumns,
-} ++ visitors.operations ++ types.operations;
+} ++ members.operations ++ types.operations;
 
 pub fn summary_of(user: store.users.User) Summary {
     std.debug.assert(user.id.len > 0);

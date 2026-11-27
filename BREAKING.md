@@ -14,6 +14,19 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:operations.user.visitors`
+
+The two ladders of accounts are staff and members: a role a type of user gives is a member
+role. The file holding `user.sign_up` and `user.request_reset` is `members`; the operations
+and their names are unchanged.
+
+```zig
+// Before
+const sent = try ctx.call(publr.operations.user.visitors.SignUp, in);
+// After
+const sent = try ctx.call(publr.operations.user.members.SignUp, in);
+```
+
 ### `sdk:Ctx.state`
 
 `ctx.state(Plugin)` answers null where the call runs with no states made (a plugin's
@@ -576,7 +589,7 @@ which are core's.
 no longer core's own field definitions: what REST, the CLI and MCP answer is unchanged. The
 user operations' shapes are defined in `publr/operations/user.zig` (and its `user/` files),
 and `publr.operations.user` names that file: every operation, `Summary`, `Link`,
-`invitation_path`, `fields`, `language`, `visitors`, `columns`, `types`. Core's functions are
+`invitation_path`, `fields`, `language`, `members`, `columns`, `types`. Core's functions are
 no longer reached through it (`language.person_speaks`, `create_user`, `staff`, `summary_of`
 and the rest). The language a person reads, for a message composed in their words, is
 `ctx.locale(person).code` (the site's when their account names none): before

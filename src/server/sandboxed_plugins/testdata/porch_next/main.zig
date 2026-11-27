@@ -10,7 +10,7 @@ const manifest: publr.Manifest = .{
     .version = "0.2.0",
 };
 
-/// A porch's guests: visitors who sign up on the `www` app.
+/// A porch's guests: members who sign up on the `www` app.
 const user_types = [_]publr.plugin.UserType{.{
     .name = "porch_guest",
     .label = "Guest",

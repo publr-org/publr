@@ -139,12 +139,12 @@ pub fn permit(roles: []const Role, held: []const []const u8, operation_name: []c
     return false;
 }
 
-/// Whether grants make a role staff: one reaches past what visitors call. Staff and visitors
+/// Whether grants make a role staff: one reaches past what members call. Staff and members
 /// are two ladders, decided from the grants, never the name: a grant naming one operation
-/// for untrusted callers or open to everyone (`visitors.is_visitor`), or an app's address
-/// (`app.`, which no operation is named), is a visitor's; any other grant, a namespace or
+/// for untrusted callers or open to everyone (`members.is_member`), or an app's address
+/// (`app.`, which no operation is named), is a member's; any other grant, a namespace or
 /// `*` included, is staff's, as is a name no operation has now, which a plugin may bring.
-pub fn staff_grants(grants: []const []const u8, visitors: anytype) bool {
+pub fn staff_grants(grants: []const []const u8, members: anytype) bool {
     std.debug.assert(grants.len <= grants_max * 4);
 
     for (grants) |grant| {
@@ -154,7 +154,7 @@ pub fn staff_grants(grants: []const []const u8, visitors: anytype) bool {
             continue;
         }
 
-        if (std.mem.indexOfScalar(u8, grant, '*') != null or !visitors.is_visitor(grant)) {
+        if (std.mem.indexOfScalar(u8, grant, '*') != null or !members.is_member(grant)) {
             return true;
         }
     }
@@ -197,29 +197,29 @@ test "grants: exact names, namespaces at any depth, everything, and taken back" 
     try std.testing.expect(!permits(&writer, "user.list"));
 }
 
-test "staff or visitor: decided by what the grants reach, never the role's name" {
-    const Visitors = struct {
-        fn is_visitor(_: @This(), name: []const u8) bool {
+test "staff or member: decided by what the grants reach, never the role's name" {
+    const Members = struct {
+        fn is_member(_: @This(), name: []const u8) bool {
             const open = std.mem.eql(u8, name, "user.set_password");
 
             return open or std.mem.eql(u8, name, "shop.track");
         }
     };
-    const visitors: Visitors = .{};
+    const members: Members = .{};
 
-    try std.testing.expect(!staff_grants(&.{}, visitors));
-    const visitor_grants = [_][]const u8{ "shop.track", "app.shop.*", "!record.save" };
+    try std.testing.expect(!staff_grants(&.{}, members));
+    const member_grants = [_][]const u8{ "shop.track", "app.shop.*", "!record.save" };
 
-    try std.testing.expect(!staff_grants(&visitor_grants, visitors));
-    try std.testing.expect(staff_grants(&.{"*"}, visitors));
-    try std.testing.expect(staff_grants(&.{ "*", "!user.*" }, visitors));
-    try std.testing.expect(staff_grants(&.{"record.*"}, visitors));
-    try std.testing.expect(staff_grants(&.{"shop.*"}, visitors));
-    try std.testing.expect(staff_grants(&.{ "shop.track", "shop.refund" }, visitors));
-    try std.testing.expect(staff_grants(&.{"newsletter.send"}, visitors));
+    try std.testing.expect(!staff_grants(&member_grants, members));
+    try std.testing.expect(staff_grants(&.{"*"}, members));
+    try std.testing.expect(staff_grants(&.{ "*", "!user.*" }, members));
+    try std.testing.expect(staff_grants(&.{"record.*"}, members));
+    try std.testing.expect(staff_grants(&.{"shop.*"}, members));
+    try std.testing.expect(staff_grants(&.{ "shop.track", "shop.refund" }, members));
+    try std.testing.expect(staff_grants(&.{"newsletter.send"}, members));
 
     for (core) |each| {
-        try std.testing.expect(staff_grants(each.grants, visitors));
+        try std.testing.expect(staff_grants(each.grants, members));
     }
 }
 

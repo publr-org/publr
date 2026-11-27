@@ -1,6 +1,6 @@
 //! Changing and removing accounts; the rules that keep one admin around.
 const std = @import("std");
-const visitors = @import("visitors.zig");
+const members = @import("members.zig");
 const sdk = @import("../../sdk.zig");
 const public = @import("../../publr/operations/user/manage.zig");
 const store = @import("../../store.zig");
@@ -31,9 +31,9 @@ pub const Update = struct {
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
 
-        try visitors.refuse_other_account(ctx, found.user);
+        try members.refuse_other_account(ctx, found.user);
 
-        try visitors.refuse_roles_not_its_own(ctx, in.roles);
+        try members.refuse_roles_not_its_own(ctx, in.roles);
         try user_operations.staff.refuse_from_plugin(ctx, found.user.roles, in.roles);
 
         const display_name = store.users.validate_display_name(in.display_name) catch {
@@ -96,7 +96,7 @@ pub const Delete = struct {
 
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
 
-        try visitors.refuse_other_account(ctx, found.user);
+        try members.refuse_other_account(ctx, found.user);
 
         if (is_self(ctx, found.user.id)) {
             return error.Invalid;

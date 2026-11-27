@@ -10,7 +10,7 @@ const registry = @import("../../server/registry.zig");
 const custom_fields = @import("../custom_fields.zig");
 const document_module = @import("../document/document.zig");
 const user_operations = @import("../user.zig");
-const visitors = @import("visitors.zig");
+const members = @import("members.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -184,7 +184,7 @@ pub const Get = struct {
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
 
         // Through `users.own` alone, another type's account is as if it were not there.
-        visitors.refuse_unread_account(ctx, found.user) catch return error.NotFound;
+        members.refuse_unread_account(ctx, found.user) catch return error.NotFound;
 
         // A caller who may not read the custom field groups (a plugin through `users.own`)
         // gets the account without them.

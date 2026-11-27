@@ -334,7 +334,7 @@ written into the elements as mail apps want, and its text version. A preview sen
 template's sample values.
 
 A copy of the site (an environment or a branch: the process started with `PUBLR_COPY` set)
-mails staff accounts alone, never a customer or a visitor.
+mails staff accounts alone, never a customer or another member.
 
 A link a person opens without signing in (unsubscribe, a cart, an invoice) is signed:
 `ctx.sign(intent, subject, expires)` answers a token and its `/_links/<token>` path,
@@ -1451,7 +1451,7 @@ works today; in the plugin frame it waits on the frame reaching `media` operatio
 
 A plugin can declare roles (`.roles`, each a `publr.plugin.Role`): a name, a
 label and grants, each an operation or a namespace ending in `.*`. A name of its own is
-a new role, such as the visitors of an app, granted `<feature>.*`; the name of one
+a new role, such as the members of an app, granted `<feature>.*`; the name of one
 there already adds grants to it, so a plugin whose operations editors should call
 declares `editor` with `<feature>.*`. The roles are made the first time the plugin
 declares them; after that an update adds only the grants new in it, so what the site

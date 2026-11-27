@@ -9,11 +9,11 @@ pub const Declared = struct {
     /// The apps (`app.zon`'s `.name`) its people may sign in to until an administrator
     /// chooses; empty: none.
     apps: []const []const u8 = &.{},
-    /// Visitors may make their own account of it on an app it opens (`user.sign_up`).
+    /// Anyone may make their own account of it on an app it opens (`user.sign_up`).
     sign_up: bool = false,
     /// The roles the type gives its people (on signing up, or `user.add_type`); one at least
-    /// when `sign_up`. Visitor roles only: never `admin`, `editor` or `contributor`, nor a
-    /// role whose grants reach past what visitors call (refused at enable and by the roles
+    /// when `sign_up`. Member roles only: never `admin`, `editor` or `contributor`, nor a
+    /// role whose grants reach past what members call (refused at enable and by the roles
     /// editor).
     roles: []const []const u8 = &.{},
     /// The app's page where its people set a password from the link they are sent, on

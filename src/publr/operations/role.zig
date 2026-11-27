@@ -124,7 +124,7 @@ pub const Create = struct {
         \\them. Fails as invalid for a bad name, label or grant, when the name is taken, or
         \\when the project holds 64 roles already; as not found when `copy` names no role;
         \\as `GivenByType` when a type of user gives the name and the grants reach past
-        \\what visitors call.
+        \\what members call.
     ;
     pub const kind: operation.Kind = .write;
     pub const failures = [_]operation.Failure{given_by_type};
@@ -167,7 +167,7 @@ pub const Update = struct {
         \\Administrators only. `grants` is the whole list, in place of the one it had. Fails
         \\as not found for a name no role has, as `Locked` for `admin`, as invalid for a
         \\bad label, description or grant, and as `GivenByType` when a type of user gives
-        \\the role and the grants reach past what visitors call: staff and visitors are two
+        \\the role and the grants reach past what members call: staff and members are two
         \\ladders.
     ;
     pub const kind: operation.Kind = .write;
@@ -275,7 +275,7 @@ pub const Removed = event_define(.{
 });
 
 /// A grant left a role a type of user gives: the plugin's update took the operation from
-/// visitors, and a type's people never reach what staff call.
+/// members, and a type's people never reach what staff call.
 pub const GrantDropped = event_define(.{
     .name = "role.grant_dropped",
     .payload = struct {

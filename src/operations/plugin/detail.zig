@@ -142,7 +142,7 @@ fn staff_types(
         const user_types = @import("../../sdk/user_types.zig");
         const given = try user_types.staff_role_given(ctx, declared) orelse continue;
         const text = std.fmt.allocPrint(ctx.arena, "Its type {s} gives nothing: the role {s} " ++
-            "reaches what staff call, and a type gives visitor roles only", .{
+            "reaches what staff call, and a type gives member roles only", .{
             declared.label,
             given,
         }) catch return error.OutOfMemory;

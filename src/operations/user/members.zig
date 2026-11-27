@@ -1,4 +1,4 @@
-//! Accounts of a user type on the site, by the visitors themselves: signing up and asking for
+//! Members' own accounts of a user type on the site: signing up and asking for
 //! a new password, each answered with a set-password link sent by email to a page of the app
 //! they are on (the type's `password_page`), redeemed with `user.set_password`. Neither ever
 //! says whether an account exists. Staff never use them: their links open the admin.
@@ -8,7 +8,7 @@
 //! or another plugin's.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
-const public = @import("../../publr/operations/user/visitors.zig");
+const public = @import("../../publr/operations/user/members.zig");
 const store = @import("../../store.zig");
 const user_types = @import("../../sdk/user_types.zig");
 const messaging = @import("../../sdk/messaging.zig");
@@ -53,7 +53,7 @@ pub const SignUp = struct {
             return error.Invalid;
         }
 
-        // A type gives visitor roles only: one giving a staff role makes no account.
+        // A type gives member roles only: one giving a staff role makes no account.
         if (try user_types.staff_role_given(ctx, declared) != null) {
             return error.Invalid;
         }

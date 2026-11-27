@@ -1,7 +1,7 @@
 //! `/_publr/toolbar?path=<page>`: what the toolbar a signed-in person sees on the site
 //! offers for that page. The admin, always; the editor of the record the page renders, named
 //! by its type ("Edit Post"), when the route reads one by its slug and the caller can
-//! read it. Nobody signed in: nothing. An app's visitor (an account that cannot use the
+//! read it. Nobody signed in: nothing. An app's member (an account that cannot use the
 //! admin) is signed in, so the page's `signedIn` parts keep drawing for them, and is offered
 //! no admin (`admin` empty): no bar.
 
@@ -30,7 +30,7 @@ pub const path_len_max: u32 = 1024;
 const Answer = struct {
     signed_in: bool,
     name: []const u8 = "",
-    /// Empty for an app's visitor, who is signed in to the app and shown no bar.
+    /// Empty for an app's member, who is signed in to the app and shown no bar.
     admin: []const u8 = admin_path,
     /// The admin page that edits what this page shows; null when it shows no one record.
     edit: ?[]const u8 = null,
@@ -82,7 +82,7 @@ pub fn toolbar(request: *Request, response: *Response, ctx: *HttpContext) anyerr
 
     var door = identity_module.context(project, ctx.arena, identity.caller);
 
-    // An app's visitor is signed in to the app, not to Publr: no bar, no way to the admin.
+    // An app's member is signed in to the app, not to Publr: no bar, no way to the admin.
     if (!registry.SDK.reaches_admin(&door)) {
         return response.json(.ok, Answer{
             .signed_in = true,
@@ -194,7 +194,7 @@ const testing_users = @import("../../operations/user.zig");
 const testing_roles = @import("../../operations/role.zig");
 const Harness = @import("../apps.zig").Harness;
 
-test "an app's visitor is signed in and offered no admin; staff get the bar; nobody nothing" {
+test "an app's member is signed in and offered no admin; staff get the bar; nobody nothing" {
     var harness: Harness = undefined;
     try harness.init(.{});
     defer harness.deinit();
@@ -222,10 +222,10 @@ test "an app's visitor is signed in and offered no admin; staff get the bar; nob
 
     try std.testing.expect(has(nobody.body, "\"signed_in\":false"));
 
-    const visitor = try ask(&harness, try session(&harness, "ada@x.test"));
+    const member = try ask(&harness, try session(&harness, "ada@x.test"));
 
-    try std.testing.expect(has(visitor.body, "\"signed_in\":true"));
-    try std.testing.expect(has(visitor.body, "\"admin\":\"\""));
+    try std.testing.expect(has(member.body, "\"signed_in\":true"));
+    try std.testing.expect(has(member.body, "\"admin\":\"\""));
 
     const staff = try ask(&harness, try session(&harness, "ed@x.test"));
 

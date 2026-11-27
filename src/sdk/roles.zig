@@ -132,14 +132,14 @@ pub fn allows(ctx: *const Ctx, names: []const []const u8, operation_name: []cons
     return role.permit(roles, names, operation_name);
 }
 
-/// The operations visitors call, compiled in and installed: those for untrusted callers and
+/// The operations members call, compiled in and installed: those for untrusted callers and
 /// those open to everyone. What a role's grants reach beyond them makes it staff.
-pub const Visitors = struct {
+pub const Members = struct {
     ctx: *const Ctx,
 
-    pub fn is_visitor(visitors: Visitors, name: []const u8) bool {
+    pub fn is_member(members: Members, name: []const u8) bool {
         std.debug.assert(name.len > 0);
-        std.debug.assert(visitors.ctx.now_ms >= 0);
+        std.debug.assert(members.ctx.now_ms >= 0);
 
         const registry = @import("../server/registry.zig");
 
@@ -155,7 +155,7 @@ pub const Visitors = struct {
             }
         }
 
-        const sandboxed = visitors.ctx.sandboxed_plugins orelse return false;
+        const sandboxed = members.ctx.sandboxed_plugins orelse return false;
 
         if (name.len > @import("operation.zig").name_len_max) {
             return false;
@@ -172,7 +172,7 @@ pub fn staff_grants(ctx: *const Ctx, grants: []const []const u8) bool {
     std.debug.assert(ctx.now_ms >= 0);
     std.debug.assert(grants.len <= role.grants_max * 4);
 
-    return role.staff_grants(grants, Visitors{
+    return role.staff_grants(grants, Members{
         .ctx = ctx,
     });
 }

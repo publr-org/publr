@@ -258,8 +258,8 @@ pub const plugin = publr.plugin.define(manifest, .{
   `.user_types = &[_]publr.plugin.UserType{.{ .name = "affiliate", .label = "Affiliate",
   .apps = &.{"shop"}, .sign_up = true, .roles = &.{"affiliate"} }}` and
   `.roles = &[_]publr.plugin.Role{.{ .name = "affiliate", .label = "Affiliate",
-  .description = "..." }}`. A type gives visitor roles only: never `admin`, `editor` or
-  `contributor`, nor a role whose grants reach past what visitors call. With `users.own` the
+  .description = "..." }}`. A type gives member roles only: never `admin`, `editor` or
+  `contributor`, nor a role whose grants reach past what members call. With `users.own` the
   plugin makes accounts of its own types and gives or takes them
   (`publr.operations.user.AddType`, `.user`, `.user_type`).
 - **Taxonomies.** `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single,

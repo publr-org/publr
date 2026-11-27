@@ -258,7 +258,7 @@ test "the last identity of an account without a password cannot be dropped" {
         .label = "Member",
         .grants = &.{"app.*"},
     });
-    // Open sign-up makes visitors only: a role reaching the admin is refused.
+    // Open sign-up makes members only: a role reaching the admin is refused.
     const staff_role = SDK.dispatch(&system, identity_operations.Configure, .{
         .open_sign_up = "editor",
     });

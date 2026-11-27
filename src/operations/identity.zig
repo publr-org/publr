@@ -184,7 +184,7 @@ fn resolve(
 /// A new account behind an identity-aware proxy, with the roles an administrator chose for
 /// new members of the organisation, staff roles included. The one exception to "only staff
 /// make staff": staff made the rule and the proxy vouches for the person. Never sign-up,
-/// a user type, an app's actions or a signed link: those stay visitor-only.
+/// a user type, an app's actions or a signed link: those stay member-only.
 fn new_member(
     ctx: *Ctx,
     identity: model.Identity,
@@ -296,7 +296,7 @@ pub const Configure = struct {
             return error.Invalid;
         }
 
-        // Signing up makes a visitor, never staff: a role reaching the admin is refused.
+        // Signing up makes a member, never staff: a role reaching the admin is refused.
         if (try sdk.stored_roles.staff(ctx, in.open_sign_up)) {
             return error.Denied;
         }
@@ -422,7 +422,7 @@ test "open sign-up creates an account with the role, from a verified email only"
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Configure, admin));
     try std.testing.expectError(error.Invalid, SDK.dispatch(&system, Configure, unknown));
 
-    // A visitor's role only: one reaching the admin is refused.
+    // A member role only: one reaching the admin is refused.
     const staff_role: Configure.In = .{
         .open_sign_up = "editor",
     };

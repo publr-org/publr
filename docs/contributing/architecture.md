@@ -81,7 +81,7 @@ only ever narrow a grant, and any deny wins. Who gets what:
   and grants, each naming an operation or a namespace (`record.*`). Two roles
   ship with the core, `admin` (everything) and `editor` (all content, no
   structure, user or settings management); plugins declare their own, such as
-  an app's visitors, whose grants reach only that app's operations
+  an app's members, whose grants reach only that app's operations
   (`app.<feature>.*`) and so never the admin. See [Auth](../auth.md#roles).
 - **API tokens** come in two kinds. A user token acts as the user it belongs
   to, within that user's roles. A machine token belongs to no user and carries

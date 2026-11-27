@@ -4,7 +4,7 @@
 //! id its caller gave (unique: the same id twice is a conflict), its count within bounds,
 //! its note no longer than 20, the messaging provider that told of it named by a provider
 //! field, and the move's own rule that a refund names why. Its regulars are a user type
-//! visitors sign up to, whose accounts it manages with `users.own` and nobody else's.
+//! people sign up to, whose accounts it manages with `users.own` and nobody else's.
 const std = @import("std");
 const publr = @import("publr");
 
@@ -83,7 +83,7 @@ pub const Moves = publr.record.define(Move, .{
     },
 });
 
-/// A till's regulars: visitors who sign up on the `www` app.
+/// A till's regulars: members who sign up on the `www` app.
 const user_types = [_]publr.plugin.UserType{.{
     .name = "till_regular",
     .label = "Regular",
@@ -92,7 +92,7 @@ const user_types = [_]publr.plugin.UserType{.{
     .roles = &.{"till_regular"},
 }};
 
-/// What a regular holds: nothing of the admin's, only what visitors call.
+/// What a regular holds: nothing of the admin's, only what members call.
 const roles = [_]publr.plugin.Role{.{
     .name = "till_regular",
     .label = "Regular",

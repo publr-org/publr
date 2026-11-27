@@ -273,7 +273,7 @@ fn plugin_grant(ctx: *const Ctx, request: Request, roles: []const Role) operatio
     });
     const held = plugin.roles orelse return granted;
 
-    // Its own types' records are its own business whoever it acts for: a visitor's account,
+    // Its own types' records are its own business whoever it acts for: a member's account,
     // holding none of the admin's roles, still has its order made.
     if (own_records(access, request)) {
         return granted;
@@ -410,7 +410,7 @@ test "core policy: a plugin's own type is reached whoever it runs for, only that
     try std.testing.expectError(error.Denied, authorize(&anon, not_own, &.{}, &role.core));
 }
 
-test "an installed plugin acting for a visitor's account queries its own types, only those" {
+test "an installed plugin acting for a member's account queries its own types, only those" {
     var harness: Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -440,7 +440,7 @@ test "an installed plugin acting for a visitor's account queries its own types, 
     try std.testing.expect(!granted.allows_type("post"));
 }
 
-test "an installed plugin acting for a visitor's account queries what its records.read names" {
+test "an installed plugin acting for a member's account queries what its records.read names" {
     var harness: Harness = undefined;
     try harness.init();
     defer harness.deinit();

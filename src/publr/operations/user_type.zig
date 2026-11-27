@@ -25,7 +25,7 @@ pub const Listed = struct {
     /// The apps its people may sign in to now.
     apps: []const []const u8,
     /// A role it names that is staff now, so it gives nothing (no sign-up, no `user.add_type`)
-    /// until the role is a visitor's again; empty when its roles are visitors'.
+    /// until the role is a member role again; empty when its roles are members'.
     refused_role: []const u8 = "",
 };
 

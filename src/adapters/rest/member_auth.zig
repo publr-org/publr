@@ -1,10 +1,10 @@
-//! Visitors' own accounts on an app: `/api/auth/sign-up` and `/api/auth/reset`, each sending
+//! Members' own accounts on an app: `/api/auth/sign-up` and `/api/auth/reset`, each sending
 //! a set-password link to the app's page for it (`user.sign_up`, `user.request_reset`).
 //! Called from the site's own pages only; the body names the app the visitor is on.
 
 const std = @import("std");
 const registry = @import("../../server/registry.zig");
-const visitors = @import("../../operations/user/visitors.zig");
+const members = @import("../../operations/user/members.zig");
 const address = @import("../../model/app/address.zig");
 const auth = @import("auth.zig");
 const identity_module = @import("identity.zig");
@@ -30,7 +30,7 @@ pub fn sign_up(request: *Request, response: *Response, ctx: *Context) Error!void
         language: []const u8 = "",
     };
 
-    return answer(Body, visitors.SignUp, request, response, ctx);
+    return answer(Body, members.SignUp, request, response, ctx);
 }
 
 pub fn reset(request: *Request, response: *Response, ctx: *Context) Error!void {
@@ -43,7 +43,7 @@ pub fn reset(request: *Request, response: *Response, ctx: *Context) Error!void {
         language: []const u8 = "",
     };
 
-    return answer(Body, visitors.RequestReset, request, response, ctx);
+    return answer(Body, members.RequestReset, request, response, ctx);
 }
 
 fn answer(

@@ -11,7 +11,7 @@ const sdk = @import("../../sdk.zig");
 const public = @import("../../publr/operations/user/types.zig");
 const store = @import("../../store.zig");
 const user_types = @import("../../sdk/user_types.zig");
-const visitors = @import("visitors.zig");
+const members = @import("members.zig");
 const user_operations = @import("../user.zig");
 const role = @import("../../model/role.zig");
 
@@ -45,7 +45,7 @@ pub const AddType = struct {
         const found = try user_operations.find_user(ctx, in.user) orelse return error.NotFound;
         const declared = try declared_of(ctx, in.user_type);
 
-        // A type gives visitor roles only: one giving a staff role gives nothing.
+        // A type gives member roles only: one giving a staff role gives nothing.
         if (try user_types.staff_role_given(ctx, declared) != null) {
             return error.Denied;
         }
@@ -59,7 +59,7 @@ pub const AddType = struct {
         try roles.appendSlice(ctx.arena, found.user.roles);
 
         for (declared.roles) |given| {
-            if (!visitors.held(roles.items, given)) {
+            if (!members.held(roles.items, given)) {
                 try roles.append(ctx.arena, given);
             }
         }
@@ -98,7 +98,7 @@ pub const RemoveType = struct {
         var roles: std.ArrayList([]const u8) = .empty;
 
         for (found.user.roles) |held_role| {
-            const given = visitors.held(declared.roles, held_role);
+            const given = members.held(declared.roles, held_role);
 
             if (!given or try given_by_any(ctx, kept_types, held_role)) {
                 try roles.append(ctx.arena, held_role);
@@ -122,8 +122,8 @@ fn declared_of(ctx: *Ctx, name: []const u8) Error!user_types.Declared {
 
     const declared = try user_types.find(ctx, name) orelse return error.Invalid;
 
-    if (visitors.own_only(ctx)) {
-        try visitors.types_of_its_own(ctx, declared.name);
+    if (members.own_only(ctx)) {
+        try members.types_of_its_own(ctx, declared.name);
     }
 
     return declared;
@@ -136,7 +136,7 @@ fn given_by_any(ctx: *Ctx, held_types: []const []const u8, name: []const u8) Err
     for (held_types) |type_name| {
         const declared = try user_types.find(ctx, type_name) orelse continue;
 
-        if (visitors.held(declared.roles, name)) {
+        if (members.held(declared.roles, name)) {
             return true;
         }
     }

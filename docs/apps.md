@@ -157,11 +157,11 @@ which Publr writes there inline; a font family is then used through a token
 ([`design save_system`](cli/design.md)), keeping the rest of `app.zon` as written, and
 loads the apps so every page shows the change.
 
-## Signed-in visitors and roles
+## Accounts and roles
 
 A project has one set of accounts and one session for all its apps. With an app on a
 subdomain, the session cookie is set for the whole domain, so one sign-in holds on every
-app. What an account may do is its roles ([Auth](auth.md#roles)): an app's visitors hold
+app. What an account may do is its roles ([Auth](auth.md#roles)): an app's members hold
 a role its plugin declares, whose grants reach the app's operations (`app.<feature>.*`)
 and nothing of the admin's, so they can never enter the admin.
 
@@ -405,8 +405,8 @@ static island, a prerender) reads as an anonymous caller: live records of
 public types and nothing else. A render made for one request (a dynamic page, a
 dynamic island) reads as the signed-in visitor, within that user's roles and
 the plugins' policies; a visitor whose roles grant no record reads (an app's
-visitor) reads what anyone may, live records of public types. What is private to
-a visitor (their orders, their projects) a page reads through its feature's own
+member) reads what anyone may, live records of public types. What is private to
+a member (their orders, their projects) a page reads through its feature's own
 operation, `Publr.request.call('app.<feature>.<verb>')`, which decides what the
 visitor may see. An entry is
 `id`, `type` (the handle), `slug`, `title`, `created_at`, `updated_at` (dates as
@@ -654,7 +654,7 @@ Every page links `<mount>/_app/toolbar.js`. For someone signed in who may use th
 shows a small bar with a link to the admin and, on a page that renders one record (a
 route whose `Publr.build.getEntry()` reads it, by slug or as its type's one record), a
 link to that record's editor named by its type ("Edit Post"). It wears the admin rail's
-colours and mark, whatever the app looks like. An app's visitor, whose roles reach none of
+colours and mark, whatever the app looks like. An app's member, whose roles reach none of
 the admin's operations, never sees it. The bar can be dragged by the mark, and the browser remembers where.
 Hiding it is remembered too; a small triangle then appears when the pointer reaches the
 page's bottom-right corner, and clicking it brings the bar back.

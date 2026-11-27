@@ -1,4 +1,4 @@
-//! A plugin's update may take an operation from visitors (`.untrusted_callers` dropped). A
+//! A plugin's update may take an operation from members (`.untrusted_callers` dropped). A
 //! role a type of user gives that granted it by name would then reach what staff call, so
 //! the grant goes: dropped, never kept, so a type never holds staff power, with the event
 //! `role.grant_dropped` when an operation is running (enable, update, roll back) and a line
@@ -13,9 +13,9 @@ const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 
 /// Drops from each role in `given` every grant naming, by its exact name, an operation of a
-/// plugin `plugins.owns` that is not one `visitors.is_visitor` now: what a type gives stays a
-/// visitor's. Answers how many grants went.
-pub fn drop(ctx: *Ctx, given: []const []const u8, plugins: anytype, visitors: anytype) Error!u32 {
+/// plugin `plugins.owns` that is not one `members.is_member` now: what a type gives stays a
+/// member's. Answers how many grants went.
+pub fn drop(ctx: *Ctx, given: []const []const u8, plugins: anytype, members: anytype) Error!u32 {
     std.debug.assert(given.len <= role.roles_max * 16);
     std.debug.assert(ctx.now_ms >= 0);
 
@@ -30,7 +30,7 @@ pub fn drop(ctx: *Ctx, given: []const []const u8, plugins: anytype, visitors: an
         var gone: std.ArrayList([]const u8) = .empty;
 
         for (grants) |grant| {
-            if (stale(grant, plugins, visitors)) {
+            if (stale(grant, plugins, members)) {
                 gone.append(ctx.arena, grant) catch return error.OutOfMemory;
             }
         }
@@ -47,8 +47,8 @@ pub fn drop(ctx: *Ctx, given: []const []const u8, plugins: anytype, visitors: an
     return dropped;
 }
 
-/// Whether `grant` names one plugin operation, by name, that visitors no longer call.
-fn stale(grant: []const u8, plugins: anytype, visitors: anytype) bool {
+/// Whether `grant` names one plugin operation, by name, that members no longer call.
+fn stale(grant: []const u8, plugins: anytype, members: anytype) bool {
     std.debug.assert(grant.len > 0);
     std.debug.assert(grant.len <= role.grant_len_max + 1);
 
@@ -62,7 +62,7 @@ fn stale(grant: []const u8, plugins: anytype, visitors: anytype) bool {
         return false;
     }
 
-    return !visitors.is_visitor(grant);
+    return !members.is_member(grant);
 }
 
 fn tell(ctx: *Ctx, name: []const u8, gone: []const []const u8) void {
@@ -72,7 +72,7 @@ fn tell(ctx: *Ctx, name: []const u8, gone: []const []const u8) void {
     for (gone) |grant| {
         if (ctx.parent == null) {
             std.log.warn("role {s}: {s} dropped: a type of user gives the role, and " ++
-                "visitors no longer call it", .{ name, grant });
+                "members no longer call it", .{ name, grant });
         } else {
             ctx.emit(role_operations.GrantDropped, .{
                 .role = name,
@@ -82,7 +82,7 @@ fn tell(ctx: *Ctx, name: []const u8, gone: []const []const u8) void {
     }
 }
 
-test "an operation taken from visitors leaves the roles types give, nothing else" {
+test "an operation taken from members leaves the roles types give, nothing else" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();
@@ -105,17 +105,17 @@ test "an operation taken from visitors leaves the roles types give, nothing else
             return std.mem.eql(u8, name, "porch");
         }
     };
-    const Visitors = struct {
-        fn is_visitor(_: @This(), name: []const u8) bool {
+    const Members = struct {
+        fn is_member(_: @This(), name: []const u8) bool {
             return std.mem.eql(u8, name, "porch.ring");
         }
     };
     const plugins: Plugins = .{};
-    const visitors: Visitors = .{};
+    const members: Members = .{};
 
-    try std.testing.expectEqual(@as(u32, 1), try drop(&system, &.{"guest"}, plugins, visitors));
-    try std.testing.expectEqual(@as(u32, 0), try drop(&system, &.{"guest"}, plugins, visitors));
-    try std.testing.expectEqual(@as(u32, 0), try drop(&system, &.{"ghost"}, plugins, visitors));
+    try std.testing.expectEqual(@as(u32, 1), try drop(&system, &.{"guest"}, plugins, members));
+    try std.testing.expectEqual(@as(u32, 0), try drop(&system, &.{"guest"}, plugins, members));
+    try std.testing.expectEqual(@as(u32, 0), try drop(&system, &.{"ghost"}, plugins, members));
 
     const kept = try store.role_grants.of(system.db, system.arena, "guest");
 
@@ -126,7 +126,7 @@ test "an operation taken from visitors leaves the roles types give, nothing else
     }
 }
 
-/// The plugins compiled in: at boot, a new build may have taken an operation from visitors.
+/// The plugins compiled in: at boot, a new build may have taken an operation from members.
 const Compiled = struct {
     pub fn owns(_: Compiled, name: []const u8) bool {
         std.debug.assert(name.len > 0);
@@ -142,20 +142,20 @@ const Compiled = struct {
 };
 
 /// At boot: the roles types give lose each grant of a compiled-in plugin's operation that
-/// its build no longer opens to visitors.
+/// its build no longer opens to members.
 pub fn drop_compiled(ctx: *Ctx) Error!u32 {
     std.debug.assert(ctx.caller == .system);
     std.debug.assert(ctx.now_ms >= 0);
 
     const given = try @import("../../sdk/user_types.zig").roles_given(ctx);
 
-    return drop(ctx, given, Compiled{}, sdk.stored_roles.Visitors{
+    return drop(ctx, given, Compiled{}, sdk.stored_roles.Members{
         .ctx = ctx,
     });
 }
 
 /// An installed plugin's version, as its manifest says: its own operations, and which of
-/// them visitors call.
+/// them members call.
 const Installed = struct {
     manifest: *const Manifest,
 
@@ -165,7 +165,7 @@ const Installed = struct {
         return std.mem.eql(u8, installed.manifest.name, name);
     }
 
-    pub fn is_visitor(installed: Installed, name: []const u8) bool {
+    pub fn is_member(installed: Installed, name: []const u8) bool {
         std.debug.assert(name.len > 0);
 
         for (installed.manifest.operations) |operation| {
@@ -181,7 +181,7 @@ const Installed = struct {
 const Manifest = @import("../../model/sandboxed_plugin.zig").Manifest;
 
 /// Enabling, updating or rolling back an installed plugin: the roles types give (its own
-/// types' included) lose each grant of its operations this version does not open to visitors.
+/// types' included) lose each grant of its operations this version does not open to members.
 pub fn drop_installed(ctx: *Ctx, manifest: *const Manifest) Error!u32 {
     std.debug.assert(manifest.name.len > 0);
     std.debug.assert(manifest.user_types.len <= 64);
@@ -206,23 +206,23 @@ pub fn drop_installed(ctx: *Ctx, manifest: *const Manifest) Error!u32 {
 /// The plugin's own operations as its manifest says, every other one as it is here now.
 const Combined = struct {
     installed: Installed,
-    here: sdk.stored_roles.Visitors,
+    here: sdk.stored_roles.Members,
 
-    pub fn is_visitor(combined: Combined, name: []const u8) bool {
+    pub fn is_member(combined: Combined, name: []const u8) bool {
         std.debug.assert(name.len > 0);
 
         const dot = std.mem.indexOfScalar(u8, name, '.') orelse return false;
 
         if (combined.installed.owns(name[0..dot])) {
-            return combined.installed.is_visitor(name);
+            return combined.installed.is_member(name);
         }
 
-        return combined.here.is_visitor(name);
+        return combined.here.is_member(name);
     }
 };
 
 /// The first role `declared` (a type `manifest` registers) gives that is staff, its own
-/// operations read from the manifest being enabled; null when it gives visitor roles only.
+/// operations read from the manifest being enabled; null when it gives member roles only.
 pub fn staff_given(
     ctx: *Ctx,
     manifest: *const Manifest,

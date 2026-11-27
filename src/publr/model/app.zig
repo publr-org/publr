@@ -63,7 +63,7 @@ pub const Config = struct {
     tokens: []const Token = &.{},
     /// The typefaces every page links in its head, before the app's stylesheet.
     fonts: []const Font = &.{},
-    /// The roles a signed-in visitor needs to be signed in to this app; empty for any role.
+    /// The roles an account needs to be signed in to this app; empty for any role.
     roles: []const []const u8 = &.{},
     /// The plugins the app uses: it never reaches a content type another plugin owns, and
     /// the admin narrowed to it shows only theirs beside the project's own. Null: every one.

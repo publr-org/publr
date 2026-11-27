@@ -24,7 +24,7 @@ export type UserTypesProps = {
     plugin: string;
     /** Where its form posts. */
     action: string;
-    /** The staff role it names, so it gives nothing; empty when its roles are visitors'. */
+    /** The staff role it names, so it gives nothing; empty when its roles are members'. */
     refused_role: string;
     /** Every app of the site, switched on where the type's people may sign in. */
     apps: Array<{
@@ -62,7 +62,7 @@ export function UserTypes({ types, notice }: UserTypesProps) {
           {type.refused_role !== "" && (
             <Callout tone="warning" title={Publr.t("Gives nothing: {role} reaches what staff call", { role: type.refused_role })}>
               <Text as="span" variant="body-sm">
-                {Publr.t("A type gives visitor roles only. Take the staff grants back from the role under Roles, and its people sign up and are given the type again.")}
+                {Publr.t("A type gives member roles only. Take the staff grants back from the role under Roles, and its people sign up and are given the type again.")}
               </Text>
             </Callout>
           )}

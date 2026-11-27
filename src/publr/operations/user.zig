@@ -15,7 +15,7 @@ pub const namespace: operation.Namespace = .{
     \\one, or a set-password link). An account holds the roles it is given, none unless
     \\asked, and may call what any of them grants. Core has `admin` (everything) and
     \\`editor` (content, not users, structure or settings); plugins add their own, such as
-    \\the visitors of an app, whose grants reach only that app's operations
+    \\the members of an app, whose grants reach only that app's operations
     \\(`app.<feature>.*`).
     \\
     \\`sign_in`, `sign_out` and `set_password` are open to anyone; the rest
@@ -30,7 +30,7 @@ pub const invitation_path = "/admin/welcome";
 
 pub const fields = @import("user/fields.zig");
 pub const language = @import("user/language.zig");
-pub const visitors = @import("user/visitors.zig");
+pub const members = @import("user/members.zig");
 pub const columns = @import("user/columns.zig");
 pub const types = @import("user/types.zig");
 const manage = @import("user/manage.zig");

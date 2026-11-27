@@ -95,7 +95,7 @@ order:
 3. Otherwise, nobody: `wrong email or password`, the same answer as a wrong password.
 4. Unless an administrator opened sign-up (`identity configure --open_sign_up <role>`):
    then a new account with that role, still only from a verified email. The role is a
-   visitor's, never one that reaches the admin. Sign-up is closed by default.
+   member role, never one that reaches the admin. Sign-up is closed by default.
 
 An account made this way has no password and may add one later; an account with a
 password may link identities (`identity link`, by the system for a signed-in person) and
@@ -262,18 +262,18 @@ to other roles always leave with it. A name an account holds that no role has gr
 nothing. `admin` holds `*` and never changes.
 
 Operations an app calls are named `app.<feature>.<verb>` (`app.newsletter.subscribe`),
-the feature's own namespace: any app may call them. A role for an app's visitors grants
+the feature's own namespace: any app may call them. A role for an app's members grants
 those (`app.newsletter.*`) and never the admin's (`newsletter.*`).
 
 Short of a grant, a signed-in account gets what an anonymous visitor gets: live records
 and terms of public types. An app's pages read those for any visitor, whatever their
-roles; what is private to a visitor (their orders, their projects) an app reads through
-its own operations, which decide what the visitor may see.
+roles; what is private to a member (their orders, their projects) an app reads through
+its own operations, which decide what the member may see.
 
 **The admin's door.** Only an account whose roles grant one of the admin's operations
 (anything outside `app.*`, and not one open to everyone) gets in. Reading live public
 content, which anyone may, does not count. The admin's sign-in
-refuses anyone else, and every admin URL sends them back to it. So an app's visitor,
+refuses anyone else, and every admin URL sends them back to it. So an app's member,
 signed in through the app, never sees the admin, nor the site toolbar that leads there.
 Only an admin grants roles (`user create`, `user update`).
 
@@ -297,14 +297,14 @@ type, or a role no type gives.
   roles reach.
 - **The admin.** Reached by roles alone: an account gets in when its roles grant one of the
   admin's operations, whatever types it holds.
-- **Two ladders: staff and visitors.** A role is staff when its grants reach past what
-  visitors call: anything but an operation for untrusted callers or open to everyone (or an
+- **Two ladders: staff and members.** A role is staff when its grants reach past what
+  members call: anything but an operation for untrusted callers or open to everyone (or an
   app's `app.` address); `*`, a namespace and a name no operation has now count as staff.
-  The grants decide, never the name. A type gives visitor roles only: one naming `admin`,
+  The grants decide, never the name. A type gives member roles only: one naming `admin`,
   `editor` or `contributor` is refused at build and at install, one naming any role that is
   staff now is refused at enable, and meanwhile signs nobody up and is given to nobody
   (`user add_type`; Settings › User types and the plugin's page say why). When a plugin's
-  update (installed, or a new build compiled in) takes an operation from visitors, a role a
+  update (installed, or a new build compiled in) takes an operation from members, a role a
   type gives loses its grant of that operation by name (`role.grant_dropped`; at boot, a
   line in the log), so a type never holds staff power. The roles editor refuses grants that would make a role a type gives
   staff (`GivenByType`: "Customer is given by the Customer type; it cannot reach the

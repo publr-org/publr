@@ -28,7 +28,7 @@ pub const Spec = struct {
     /// Its folder under the apps' folder, where its public files are read from.
     folder: []const u8,
     mount: model_app.Mount,
-    /// The roles a visitor needs to be signed in to this app; empty for any.
+    /// The roles an account needs to be signed in to this app; empty for any.
     roles: []const []const u8,
     /// The plugins whose content types it reaches; null for every plugin's.
     plugins: ?[]const []const u8,

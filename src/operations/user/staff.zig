@@ -1,6 +1,6 @@
 //! Who may make an account staff: only an account (or the site's own CLI) that may manage
 //! users, never a plugin, whatever it holds (`users.write`, `users.own`), compiled in or
-//! installed, and never through a type of user, which gives visitor roles only.
+//! installed, and never through a type of user, which gives member roles only.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const user_operations = @import("../user.zig");

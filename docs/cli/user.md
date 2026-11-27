@@ -119,7 +119,7 @@ Output: `{ "user_id" }`.
 
 ## `user sign_up` and `user request_reset`
 
-A visitor's own account on an app, called from the app's pages (`POST /api/auth/sign-up`,
+A member's own account on an app, called from the app's pages (`POST /api/auth/sign-up`,
 `POST /api/auth/reset`): `sign_up` makes an inactive account of a user type that allows it
 (`--user_type`, `--email`, `--display_name`); `request_reset` (`--email`) is for an account of a
 type that opens the app. Each sends a one-hour set-password link to the type's page on the

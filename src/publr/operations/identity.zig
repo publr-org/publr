@@ -109,7 +109,7 @@ pub const Configure = struct {
     pub const description = "Open or close sign-up through providers, and with which role";
     pub const details =
         \\Administrators only. `open_sign_up` names the role a new account gets when a
-        \\provider identity nobody holds signs in with a verified email: a visitor's role,
+        \\provider identity nobody holds signs in with a verified email: a member role,
         \\never one reaching the admin (refused as denied). Empty closes sign-up again: only
         \\accounts that exist sign in, which is the default.
     ;

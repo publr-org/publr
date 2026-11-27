@@ -73,7 +73,7 @@ pub fn problem(declared: []const Declared) ?[]const u8 {
         }
 
         if (one.sign_up and one.roles.len == 0) {
-            return "a user type visitors sign up to names the roles their accounts hold";
+            return "a user type open to sign-up names the roles their accounts hold";
         }
 
         if (roles_problem(one.roles)) |found| {
@@ -98,7 +98,7 @@ pub fn problem(declared: []const Declared) ?[]const u8 {
 /// checked where they are known (`sdk/user_types.zig`).
 const staff_roles = [_][]const u8{ role.admin, role.editor, role.contributor };
 
-/// Why the roles a type gives cannot stand, or null: visitor roles only, each a role's name.
+/// Why the roles a type gives cannot stand, or null: member roles only, each a role's name.
 fn roles_problem(roles: []const []const u8) ?[]const u8 {
     std.debug.assert(roles.len <= 1 << 16);
 
@@ -113,7 +113,7 @@ fn roles_problem(roles: []const []const u8) ?[]const u8 {
 
         for (staff_roles) |staff| {
             if (std.mem.eql(u8, staff, name)) {
-                return "a user type gives visitor roles only, never admin, editor or " ++
+                return "a user type gives member roles only, never admin, editor or " ++
                     "contributor: its people never reach the admin";
             }
         }
@@ -216,7 +216,7 @@ test "a user type is named, labelled, and opens only the apps it names" {
     try std.testing.expect(problem(&.{open}) != null);
 }
 
-test "a user type gives visitor roles only: never admin, editor or contributor" {
+test "a user type gives member roles only: never admin, editor or contributor" {
     const staff_names = [_][]const u8{ role.admin, role.editor, role.contributor };
 
     for (staff_names) |name| {
@@ -230,15 +230,15 @@ test "a user type gives visitor roles only: never admin, editor or contributor" 
         try std.testing.expect(problem(&.{given}) != null);
     }
 
-    const visitor: Declared = .{
+    const member: Declared = .{
         .name = "member",
         .label = "Member",
         .sign_up = true,
         .roles = &.{"member"},
     };
-    var odd = visitor;
+    var odd = member;
 
     odd.roles = &.{"Member"};
-    try std.testing.expect(problem(&.{visitor}) == null);
+    try std.testing.expect(problem(&.{member}) == null);
     try std.testing.expect(problem(&.{odd}) != null);
 }

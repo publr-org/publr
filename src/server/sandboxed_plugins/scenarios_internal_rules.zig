@@ -164,14 +164,14 @@ test "a plugin with users.own makes accounts of its own type only" {
     try std.testing.expect(std.mem.indexOf(u8, regulars, "ada@example.com") != null);
 }
 
-test "visitors sign up and ask for a new password on an app; nothing says who has one" {
+test "members sign up and ask for a new password on an app; nothing says who has one" {
     var scenario: Scenario = undefined;
     try scenario.init();
     defer scenario.deinit();
 
     try installed(&scenario);
 
-    const visitors = @import("../../operations/user/visitors.zig");
+    const members = @import("../../operations/user/members.zig");
     const store = @import("../../store.zig");
     const registry = @import("../registry.zig");
     var visiting = scenario.ctx(.anonymous);
@@ -179,7 +179,7 @@ test "visitors sign up and ask for a new password on an app; nothing says who ha
     visiting.app = "www";
     visiting.app_address = "https://example.com";
 
-    const signed_up = try registry.SDK.dispatch(&visiting, visitors.SignUp, .{
+    const signed_up = try registry.SDK.dispatch(&visiting, members.SignUp, .{
         .user_type = "till_regular",
         .email = "ada@example.com",
         .display_name = "Ada",
@@ -202,10 +202,10 @@ test "visitors sign up and ask for a new password on an app; nothing says who ha
     visiting.app = "www";
     visiting.app_address = "https://example.com";
 
-    const again = try registry.SDK.dispatch(&visiting, visitors.RequestReset, .{
+    const again = try registry.SDK.dispatch(&visiting, members.RequestReset, .{
         .email = "ada@example.com",
     });
-    const nobody = try registry.SDK.dispatch(&visiting, visitors.RequestReset, .{
+    const nobody = try registry.SDK.dispatch(&visiting, members.RequestReset, .{
         .email = "nobody@example.com",
     });
 
@@ -216,7 +216,7 @@ test "visitors sign up and ask for a new password on an app; nothing says who ha
     var throttled = false;
 
     while (asked < 16 and !throttled) : (asked += 1) {
-        _ = registry.SDK.dispatch(&visiting, visitors.RequestReset, .{
+        _ = registry.SDK.dispatch(&visiting, members.RequestReset, .{
             .email = "grace@example.com",
         }) catch |err| {
             try std.testing.expectEqual(error.Throttled, err);
@@ -231,7 +231,7 @@ test "visitors sign up and ask for a new password on an app; nothing says who ha
 
     elsewhere.app = "shop";
     elsewhere.app_address = "https://example.com/shop";
-    try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&elsewhere, visitors.SignUp, .{
+    try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&elsewhere, members.SignUp, .{
         .user_type = "till_regular",
         .email = "bob@example.com",
         .display_name = "Bob",
