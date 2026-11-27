@@ -1,5 +1,5 @@
-//! What only a compiled-in sampler carries: a route, operator commands, a state and process
-//! hooks. Each takes the host's own modules, which the sandbox lacks.
+//! What only a compiled-in sampler carries: a route, operator commands, a state, process
+//! hooks and a bootstrap. Each takes the host's own modules, which the sandbox lacks.
 const std = @import("std");
 const publr = @import("publr");
 
@@ -20,6 +20,23 @@ pub fn extend(host: *publr.Host) publr.Error!void {
     try host.state(State);
     try host.serving(serving);
     try host.before_command(before_command);
+    try host.bootstrap(bootstrap);
+}
+
+/// As the database opens, as the sampler's own code: its internal tallies are its to read,
+/// and Publr itself answers it.
+fn bootstrap(ctx: *publr.Ctx) publr.Error!void {
+    const Tallies = @import("records/tallies.zig");
+    const kept = try Tallies.record.page(ctx, .word, "bootstrap", .{
+        .limit = 1,
+    });
+
+    std.debug.assert(kept.len <= 1);
+
+    // A boot that cannot read its own records or act as Publr stops, for the smoke to see.
+    if (!(try ctx.as_system()).caller().system) {
+        return error.Invalid;
+    }
 }
 
 const routes = [_]publr.Host.Route{.{
@@ -75,7 +92,8 @@ pub fn serving(serve: publr.Host.Serving) anyerror!void {
     state.port = serve.port;
 }
 
-/// `POST /_publr/sampler/ping`: the port `serve` noted, the database, and how many pings.
+/// `POST /_publr/sampler/ping`: the port `serve` noted, the database, how many pings, and
+/// whether the server's clock reads, through its I/O.
 fn ping(
     request: *publr.Host.Request,
     response: *publr.Host.Response,
@@ -93,6 +111,7 @@ fn ping(
             .port = state.port,
             .db_path = state.db_path,
             .pings = state.pings,
+            .clock_read = publr.Host.wall_clock_ms(ctx.io()) > 0,
         },
     );
 }

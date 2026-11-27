@@ -10,10 +10,13 @@ pub const publr_name = public.publr_name;
 
 /// What a plugin's code reads of `raw`, a caller as core knows it.
 pub fn view_of(raw: Caller, seen: Seen) View {
+    // A built-in plugin acting for a person (`ctx.as_person`) makes the person's own call.
     const person = switch (raw) {
         .user, .token => true,
-        .anonymous, .system, .plugin => false,
+        .plugin => |plugin| plugin.for_person,
+        .anonymous, .system => false,
     };
+    const acting_roles = if (raw == .plugin and raw.plugin.for_person) raw.plugin.roles else null;
 
     std.debug.assert(!person or raw.user_id() != null);
     std.debug.assert(!(seen.granted_here and seen.from == .app));
@@ -25,7 +28,7 @@ pub fn view_of(raw: Caller, seen: Seen) View {
         .person = person,
         .device = raw == .token,
         .account_id = raw.user_id(),
-        .held_roles = raw.roles(),
+        .held_roles = raw.roles() orelse acting_roles,
         .granted_here = seen.granted_here,
         .system = raw == .system,
         .nested = seen.nested,

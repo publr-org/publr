@@ -119,6 +119,20 @@ pub const Request = struct {
         return http.Form.query_param(request.arena, request.held().http.query(), name);
     }
 
+    /// The whole query, as sent, without its `?`: empty for a request with none.
+    pub fn query_text(request: *const Request) []const u8 {
+        std.debug.assert(request.held().http.path().len > 0);
+
+        return request.held().http.query();
+    }
+
+    /// One field of a posted urlencoded form, decoded; null when the body has none.
+    pub fn form_field(request: *const Request, name: []const u8) ?[]const u8 {
+        std.debug.assert(name.len > 0);
+
+        return http.Form.query_param(request.arena, request.posted(), name);
+    }
+
     pub fn header(request: *const Request, name: []const u8) ?[]const u8 {
         std.debug.assert(name.len > 0);
 

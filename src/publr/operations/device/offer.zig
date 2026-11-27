@@ -10,10 +10,11 @@ pub const Offer = struct {
     pub const name = "device.offer";
     pub const description = "Offer this account's sign-in to a computer, as a one-time code";
     pub const details =
-        \\Signed-in people only (not a device). Makes a device request already approved for
-        \\the caller's account under `scope`, and answers its code: whoever holds it takes
-        \\the token once with `device claim --device_code <code>`, within ten minutes. Treat
-        \\the code like a password until it is used or lapses.
+        \\Signed-in people only, or a built-in plugin acting for one; never a device. Makes a
+        \\device request already approved for the account under `scope`, and answers its
+        \\code: whoever holds it takes the token once with `device claim --device_code
+        \\<code>`, within ten minutes. Treat the code like a password until it is used or
+        \\lapses.
     ;
     pub const kind: operation.Kind = .write;
     pub const In = struct {

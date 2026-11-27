@@ -181,20 +181,28 @@ pub fn admits(answer: Answer, caller: sdk.Caller, through_app: bool, plugin_code
     std.debug.assert(@backingInt(caller) <= @backingInt(sdk.Caller.plugin));
     std.debug.assert(@backingInt(answer) <= @backingInt(Answer.plugin_calls));
 
-    if (!through_app and (caller == .system or caller.holds("admin"))) {
+    if (!through_app and (caller == .system or held(caller, "admin"))) {
         return true;
     }
 
     return switch (answer) {
         .visitor => true,
-        .signed_in => caller.is_authenticated() and caller != .plugin,
+        .signed_in => caller.is_authenticated() and
+            (caller != .plugin or caller.person() != null),
         .roles => |names| for (names) |wanted| {
-            if (caller == .system or caller.holds(wanted)) {
+            if (caller == .system or held(caller, wanted)) {
                 break true;
             }
         } else false,
         .plugin_calls => caller == .plugin or plugin_code,
     };
+}
+
+/// The caller holds the role, or the person a built-in plugin acts for does (`as_person`).
+fn held(caller: sdk.Caller, name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    return caller.holds(name) or caller.person_holds(name);
 }
 
 /// What `.validate` fills: `problems.add(.page, "Must start with /")`. Every problem is told

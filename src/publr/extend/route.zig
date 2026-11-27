@@ -178,7 +178,7 @@ pub const Context = opaque {
 
     /// For calls to elsewhere, made while the request waits.
     pub fn io(context: *const Context) std.Io {
-        return behind(http.Context, context).io;
+        return @import("../../server/plugin_routes.zig").public.io(context);
     }
 
     /// Whoever sent the request, as a `publr.Ctx` to call operations as them, the way the
@@ -230,4 +230,30 @@ pub const Context = opaque {
 
 fn State(comptime Plugin: type) type {
     return @import("../../server/plugin_states.zig").StateOf(Plugin);
+}
+
+test "a route's context answers the server's own memory, I/O and database" {
+    const sdk = @import("../../sdk.zig");
+    const Project = @import("../../server/project.zig").Project;
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var project: Project = .{
+        .connection = &harness.fixture.connection,
+        .auth = &harness.auth,
+        .io = std.testing.io,
+        .db_path = "site.db",
+    };
+    var server: http.Context = undefined;
+
+    server.arena = std.testing.allocator;
+    server.user_data = &project;
+
+    const context: *Context = @ptrCast(&server);
+
+    try std.testing.expect(context.io().vtable == std.testing.io.vtable);
+    try std.testing.expectEqualStrings("site.db", context.db_path());
+    try std.testing.expect(context.arena().ptr == std.testing.allocator.ptr);
 }

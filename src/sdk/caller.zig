@@ -34,7 +34,48 @@ pub const Caller = union(enum) {
         /// The roles of the account an installed plugin acts for: each call gets the narrower
         /// of the plugin's grant and theirs.
         roles: ?[]const []const u8 = null,
+        /// A built-in plugin acting for the account (`ctx.as_person`): the person's own call,
+        /// the plugin's code making it for them. Never an installed plugin relaying a call.
+        for_person: bool = false,
     };
+
+    /// The account of the person making the call themselves: signed in, or a built-in
+    /// plugin acting for them (`ctx.as_person`). Null for a device, which never lets in
+    /// another, for an installed plugin relaying a call, and for anyone else.
+    pub fn person(caller: Caller) ?[]const u8 {
+        const id: ?[]const u8 = switch (caller) {
+            .user => |user| user.id,
+            .plugin => |plugin| if (plugin.for_person) plugin.on_behalf_of else null,
+            .anonymous, .token, .system => null,
+        };
+
+        std.debug.assert(id == null or id.?.len > 0);
+        std.debug.assert(id == null or caller == .user or caller.plugin.on_behalf_of != null);
+
+        return id;
+    }
+
+    /// Whether the person making the call themselves (`person`) holds the role `name`: a
+    /// built-in plugin acting for them stands in their place for what their roles decide.
+    pub fn person_holds(caller: Caller, name: []const u8) bool {
+        std.debug.assert(name.len > 0);
+
+        const held: []const []const u8 = switch (caller) {
+            .user => |user| user.roles,
+            .plugin => |plugin| if (plugin.for_person) plugin.roles orelse &.{} else &.{},
+            .anonymous, .token, .system => &.{},
+        };
+
+        std.debug.assert(held.len <= role.user_roles_max);
+
+        for (held) |candidate| {
+            if (std.mem.eql(u8, candidate, name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     pub fn is_authenticated(caller: Caller) bool {
         const authenticated = switch (caller) {
@@ -156,4 +197,41 @@ test "authentication and user id per caller kind" {
     try std.testing.expect(!token.holds("admin"));
     try std.testing.expectEqual(device.Scope.read, token.scope().?);
     try std.testing.expect(user.scope() == null);
+}
+
+test "the person making the call: signed in, or a built-in plugin acting for them" {
+    const user: Caller = .{
+        .user = .{
+            .id = "u_1",
+        },
+    };
+    const token: Caller = .{
+        .token = .{
+            .id = "t_1",
+            .user_id = "u_2",
+        },
+    };
+    const acting: Caller = .{
+        .plugin = .{
+            .name = "cloud",
+            .on_behalf_of = "u_3",
+            .for_person = true,
+        },
+    };
+    const relaying: Caller = .{
+        .plugin = .{
+            .name = "shop",
+            .on_behalf_of = "u_4",
+        },
+    };
+
+    try std.testing.expectEqualStrings("u_1", user.person().?);
+    try std.testing.expectEqualStrings("u_3", acting.person().?);
+    try std.testing.expect(token.person() == null);
+    try std.testing.expect(relaying.person() == null);
+    try std.testing.expect(user.person_holds("admin"));
+    try std.testing.expect(!token.person_holds("admin"));
+    try std.testing.expect(!acting.person_holds("admin"));
+    try std.testing.expect(@as(Caller, .system).person() == null);
+    try std.testing.expect(@as(Caller, .anonymous).person() == null);
 }

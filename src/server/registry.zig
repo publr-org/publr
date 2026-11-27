@@ -233,6 +233,22 @@ const core_namespace_names = names: {
     break :names names;
 };
 
+/// Whether `operation_name` is core's, not a plugin's.
+pub fn is_core_operation(operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(core_namespace_names.len > 0);
+
+    const namespace = sdk.operation.namespace(operation_name);
+
+    for (core_namespace_names) |name| {
+        if (std.mem.eql(u8, name, namespace)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 comptime {
     // Each name against each plugin's, a byte at a time.
     @setEvalBranchQuota(1000 + bound_plugins.len * reserved_names.len * contract.name_len_max);
@@ -741,7 +757,7 @@ pub const before_command = native_plugins.merged_before_command;
 pub const serving = native_plugins.merged_serving;
 
 /// Once the schema is applied: the declared types and fields, then each plugin's own
-/// `bootstrap`, as the system, in name order.
+/// `bootstrap`, as that plugin, in name order.
 fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
     @import("std").debug.assert(ctx.caller == .system);
     @import("std").debug.assert(ctx.db.transaction_depth == 0);
@@ -755,11 +771,11 @@ fn bootstrap(ctx: *sdk.Ctx) sdk.Error!void {
 
     inline for (native_plugins.all) |Plugin| {
         if (comptime plugin_define.has(Plugin, "bootstrap")) {
-            var host: @import("../sdk/plugin/context.zig").HostApi = .{
-                .inner = ctx,
-            };
-
-            try plugin_define.get(Plugin, "bootstrap")(host.ctx());
+            try @import("../sdk/plugin/bootstrap_run.zig").run(
+                ctx,
+                Plugin.manifest.name,
+                plugin_define.get(Plugin, "bootstrap"),
+            );
         }
     }
 }

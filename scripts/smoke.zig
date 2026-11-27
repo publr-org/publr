@@ -633,6 +633,11 @@ fn expect_site(init: std.process.Init, port: u16) !void {
             .needle = "\"app\":\"portal\"",
             .host = "portal.127.0.0.1",
         },
+        .{
+            .path = "/x?code=a%2Fb",
+            .needle = "\"query\":\"code=a%2Fb\"",
+            .host = "portal.127.0.0.1",
+        },
     };
 
     for (checks) |check| {

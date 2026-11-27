@@ -34,6 +34,20 @@ pub const Who = union(enum) {
     user: User,
     /// A built-in plugin's own code, calling as itself.
     plugin: Plugin,
+    /// A device (the CLI, an agent, an app signed in to the account) acting for a person:
+    /// their roles, narrowed by the device's scope.
+    device: Device,
+};
+
+pub const Device = struct {
+    /// The device's id, as its token names it.
+    id: []const u8 = "d_test",
+    /// The person it acts for.
+    user: User,
+    /// What the person approved it for.
+    scope: @import("model/device.zig").Scope = .read,
+    /// What the person approved it as.
+    name: []const u8 = "",
 };
 
 pub const User = struct {
@@ -221,6 +235,7 @@ pub const Site = struct {
         switch (who) {
             .visitor => |id| made.visitor = id,
             .user => |user| made.visitor = user.visitor,
+            .device => |device| made.visitor = device.user.visitor,
             .plugin => |plugin| {
                 made.visitor = plugin.visitor;
                 made.plugin = plugin.name;
@@ -254,6 +269,7 @@ fn caller_of(who: Who) sdk.Caller {
     const user: ?User = switch (who) {
         .user => |user| user,
         .plugin => |plugin| plugin.user,
+        .device => |device| device.user,
         .system, .admin, .visitor => null,
     };
 
@@ -273,6 +289,15 @@ fn caller_of(who: Who) sdk.Caller {
                 .roles = person.roles,
             },
         } else .anonymous,
+        .device => |device| .{
+            .token = .{
+                .id = device.id,
+                .user_id = device.user.id,
+                .roles = device.user.roles,
+                .scope = device.scope,
+                .name = device.name,
+            },
+        },
     };
 }
 
@@ -314,6 +339,22 @@ test "a site answers each caller as it would, runs its queue and opens other dat
 
     try std.testing.expectEqual(@as(i64, 1_900_000_000_000), as_admin.now().ms);
     try std.testing.expectEqualStrings("u_admin", as_admin.caller().user_id().?);
+
+    const computer: Who = .{
+        .device = .{
+            .user = .{
+                .id = "u_admin",
+                .roles = &.{"admin"},
+            },
+            .scope = .publish,
+        },
+    };
+    const seen = (try site.ctx(computer)).caller();
+
+    try std.testing.expect(seen.device);
+    try std.testing.expect(seen.device_scope.? == .publish);
+    try std.testing.expectEqualStrings("u_admin", seen.user_id().?);
+    try std.testing.expect((try site.call(roles.List, computer, .{})).roles.len > 0);
     _ = try site.drain();
     _ = try site.deliver(.{
         .channel = "email",

@@ -191,6 +191,14 @@ pub const public = struct {
         return project.db_path;
     }
 
+    pub fn io(context: *const extend.Context) std.Io {
+        const project = Project.of(core(http.Context, context));
+
+        std.debug.assert(project.db_path.len < 1 << 12);
+
+        return project.io;
+    }
+
     pub fn stop_serving(context: *extend.Context) void {
         const project = Project.of(core(http.Context, context));
 

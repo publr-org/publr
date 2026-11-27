@@ -4,6 +4,7 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
+const store = @import("../../store.zig");
 const context = @import("context.zig");
 const id_len_max = @import("../caller.zig").id_len_max;
 
@@ -62,11 +63,29 @@ pub fn as_person(api: *HostApi, person: []const u8) Error!*context.PluginCtx {
                 .name = inner.plugin,
                 .on_behalf_of = inner.arena.dupe(u8, person) catch return error.OutOfMemory,
                 .access = registry.SDK.compiled_access(inner.plugin),
+                .roles = try roles_of(inner, person),
+                .for_person = true,
             },
         },
     };
 
     return made.ctx();
+}
+
+/// The roles the account holds, for what the person's own standing decides (the site's
+/// answer for an operation, what no grant names); none for an account that cannot sign in.
+fn roles_of(inner: *sdk.Ctx, person: []const u8) Error![]const []const u8 {
+    std.debug.assert(person.len > 0);
+
+    const found = try store.users.find_by_id(inner.db, inner.arena, person) orelse return &.{};
+
+    if (!found.user.active) {
+        return &.{};
+    }
+
+    std.debug.assert(found.user.roles.len <= @import("../../model/role.zig").user_roles_max);
+
+    return found.user.roles;
 }
 
 pub fn as_system(api: *HostApi) Error!*context.PluginCtx {

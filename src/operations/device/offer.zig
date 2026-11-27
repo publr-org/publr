@@ -34,10 +34,8 @@ pub const Offer = struct {
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
-        const user_id = switch (ctx.caller) {
-            .user => |user| user.id,
-            else => return error.Denied,
-        };
+        // The person's own hand, or a built-in plugin's acting for them; never a device.
+        const user_id = ctx.caller.person() orelse return error.Denied;
 
         if (model.Scope.parse(in.scope) == null) {
             return error.Invalid;
@@ -71,3 +69,52 @@ pub const Offer = struct {
         };
     }
 };
+
+test "a built-in plugin acting for a person offers them a device; a device and a relay never" {
+    const registry = @import("../../server/registry.zig");
+    const user_operations = @import("../user.zig");
+
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var system = harness.ctx(.system);
+
+    try user_operations.seed_admin(&system);
+
+    const admin = (try user_operations.find_user(&system, "admin@example.com")).?.user;
+    var running = harness.ctx(.system);
+
+    running.plugin = "cloud";
+    running.plugin_code = true;
+
+    var api: @import("../../sdk/plugin/context.zig").HostApi = .{
+        .inner = &running,
+    };
+    const member = try api.as_person(admin.id);
+    const offered = try member.call(public.Offer, .{});
+
+    try std.testing.expectEqual(@as(usize, model.offer_code_len), offered.code.len);
+    try std.testing.expect(running.caller == .system);
+
+    var relayed = harness.ctx(.{
+        .plugin = .{
+            .name = "shop",
+            .on_behalf_of = admin.id,
+            .roles = admin.roles,
+        },
+    });
+
+    try std.testing.expectError(error.Denied, registry.SDK.dispatch(&relayed, Offer, .{}));
+
+    var computer = harness.ctx(.{
+        .token = .{
+            .id = "d_1",
+            .user_id = admin.id,
+            .roles = admin.roles,
+            .scope = .publish,
+        },
+    });
+
+    try std.testing.expectError(error.Denied, registry.SDK.dispatch(&computer, Offer, .{}));
+}

@@ -14,6 +14,45 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:Host.bootstrap`
+
+A built-in plugin's `bootstrap` runs as the plugin's own code, as its jobs do: its internal
+records are its to read and write, its calls are held to its grants, and `ctx.as_system()`
+and `ctx.as_person()` answer it (they refused before). The caller is still Publr itself. A
+bootstrap that set `ctx.plugin` itself drops that; one that called something its grants do
+not reach calls it through `ctx.as_system()`.
+
+```zig
+// Before
+fn bootstrap(ctx: *publr.sdk.Ctx) publr.sdk.Error!void {
+    ctx.plugin = "cloud";
+    _ = try SDK.dispatch(ctx, identity.Configure, .{ .open_sign_up = "customer" });
+}
+// After
+fn bootstrap(ctx: *publr.Ctx) publr.Error!void {
+    _ = try (try ctx.as_system()).call(identity.Configure, .{ .open_sign_up = "customer" });
+}
+```
+
+### `sdk:Ctx.as_person`
+
+A call made through `ctx.as_person(person)` is the person's own call, made by the plugin's
+code: what a permission names, the plugin's grants decide (unchanged); the site's answer for
+an operation (`operation authorize`, an operation's `authorize`) judges the person's roles,
+and `signed_in` admits them; a core operation no permission names (`device.offer`, rail
+pins, removal lists) is decided by the person's roles, as if they were signed in. What no
+grant reaches stays refused (`permission.never`: sessions, passwords, identities, a
+person's conversations), and so do the steps only the person's own hand takes: approving or
+denying a device (`device.request`, `device.approve`, `device.deny`). `ctx.caller()` reads
+`signed_in()` and the person's roles. An installed plugin relaying a call is unchanged.
+
+```zig
+// Before: refused, `device.offer` wanted a signed-in caller
+const offered = try (try ctx.as_person(member)).call(device.Offer, .{ .scope = "publish" });
+// After: the member's own offer
+const offered = try (try ctx.as_person(member)).call(device.Offer, .{ .scope = "publish" });
+```
+
 ### `sdk:Ctx.grant`
 
 `ctx.grant(key)` answers `publr.Ctx.Grant` (`on`, `drafts`, `private`, `internal`,

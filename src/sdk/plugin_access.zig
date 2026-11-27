@@ -284,6 +284,17 @@ pub fn names_operation(operation_name: []const u8) bool {
     return naming(&nothing, operation_name) != null;
 }
 
+/// Whether a grant cannot decide `operation_name`, nor is it out of every grant's reach: no
+/// permission names it and it is not among `permission.never` (sessions, passwords,
+/// identities, conversations). What the person a built-in plugin acts for may do.
+pub fn person_decides(operation_name: []const u8) bool {
+    std.debug.assert(operation_name.len > 0);
+    std.debug.assert(permission.never.len > 0);
+
+    return !names_operation(operation_name) and
+        !permission.contains(&permission.never, operation_name);
+}
+
 /// The permission whose operations name `operation_name`, if any.
 /// The permission that opens `operation_name` to the plugin: one it holds when several name
 /// it (`users.write` and the narrower `users.own`), else the first.

@@ -175,6 +175,7 @@ fn expect_ping(init: std.process.Init, port: u16, dir: []const u8) !void {
     try expect_in("/_publr/sampler/ping without the key", refused, "403 Forbidden");
     try expect_in("/_publr/sampler/ping", answered, "\"port\":8092");
     try expect_in("/_publr/sampler/ping", answered, "\"pings\":1");
+    try expect_in("/_publr/sampler/ping", answered, "\"clock_read\":true");
 }
 
 /// The CLI pre-command hook: `--sampler-in <folder>` runs the command in that folder.

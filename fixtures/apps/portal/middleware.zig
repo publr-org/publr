@@ -7,5 +7,7 @@ pub fn middleware(request: *publr.Request) !?publr.Response {
         .app = "portal",
         .path = request.path(),
         .signed_in = user != null,
+        .query = request.query_text(),
+        .note = request.form_field("note"),
     });
 }

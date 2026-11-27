@@ -112,12 +112,41 @@ pub fn core_policy(ctx: *const Ctx, request: Request, roles: []const Role) opera
         .anonymous => anonymous_grant(request),
         .user => |user| role_grant(roles, user.roles, request),
         .token => |token| device_grant(roles, token, request),
-        .plugin => |plugin| if (plugin.access != null)
+        .plugin => |plugin| if (plugin.for_person)
+            try person_grant(ctx, request, roles)
+        else if (plugin.access != null)
             try plugin_grant(ctx, request, roles)
         else
             Grant.deny,
         .system => Grant.allow_all,
     };
+}
+
+/// A built-in plugin acting for a person (`ctx.as_person`): the plugin's grants decide what
+/// they reach, never narrowed; a core operation no grant can decide (the person's own
+/// devices, pins, lists) is the person's own call, judged by their roles. What no grant
+/// reaches (`permission.never`) stays out of reach.
+fn person_grant(ctx: *const Ctx, request: Request, roles: []const Role) operation.Error!Grant {
+    const plugin = ctx.caller.plugin;
+
+    std.debug.assert(plugin.for_person);
+    std.debug.assert(plugin.on_behalf_of != null);
+
+    const granted = if (plugin.access) |access|
+        try plugin_access.grant(ctx.arena, plugin.name, access, .{
+            .operation_name = request.operation_name,
+            .type_id = request.type_id,
+        })
+    else
+        Grant.deny;
+    const own_call = plugin_access.person_decides(request.operation_name) and
+        @import("../server/registry.zig").is_core_operation(request.operation_name);
+
+    if (granted.allows() or !own_call) {
+        return granted;
+    }
+
+    return role_grant(roles, plugin.roles orelse &.{}, request);
 }
 
 fn own_data(operation_name: []const u8) bool {

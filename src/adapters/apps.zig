@@ -1150,9 +1150,22 @@ test "a subdomain answers with its own app, whose middleware sees the path insid
         .{},
     );
     const portal = try harness.flow.call(head, "");
-    const expected = "{\"app\":\"portal\",\"path\":\"/anything\",\"signed_in\":false}";
+    const expected = "{\"app\":\"portal\",\"path\":\"/anything\",\"signed_in\":false," ++
+        "\"query\":\"\",\"note\":null}";
 
     try std.testing.expectEqualStrings(expected, portal.body);
+
+    // Middleware reads the query as sent and a posted form's fields, decoded.
+    const form = "note=hi+there%21";
+    const posted_head = try harness.flow.head(
+        "POST /anything?code=a%2Fb&state=s HTTP/1.1\r\nHost: portal.example.test:8080\r\n" ++
+            "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {d}\r\n\r\n",
+        .{form.len},
+    );
+    const posted = try harness.flow.call(posted_head, form);
+
+    try std.testing.expect(contains(posted.body, "\"query\":\"code=a%2Fb&state=s\""));
+    try std.testing.expect(contains(posted.body, "\"note\":\"hi there!\""));
 
     // The same path on the domain is the root app's; an unknown subdomain too.
     const domain = try harness.get("/anything");
@@ -1218,7 +1231,7 @@ test "an app that names roles sees an account holding none of them as nobody" {
         const portal = try harness.flow.call(head, "");
         const expected = try std.fmt.allocPrint(
             harness.arena_state.allocator(),
-            "\"signed_in\":{s}}}",
+            "\"signed_in\":{s},",
             .{case.signed_in},
         );
 

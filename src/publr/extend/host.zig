@@ -142,7 +142,8 @@ pub const Host = struct {
         host.operator_commands = host.operator_commands ++ &[_]routing.OperatorCommand{command};
     }
 
-    /// Runs once, as the system, when the database opens.
+    /// Runs once as the database opens, as the plugin's own code with nobody behind it: its
+    /// own records reachable, its calls held to its grants (`ctx.as_system()` for the rest).
     pub fn bootstrap(host: *Host, comptime run: fn (*Ctx) Error!void) Error!void {
         host.give("bootstrap", run);
     }
