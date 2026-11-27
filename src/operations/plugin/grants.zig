@@ -1,6 +1,7 @@
 //! A plugin's permissions switched by a person: a key on or off, and each flag it asked for
 //! on or off. Never more than it asked for; a key switched off is denied, on is granted.
 const std = @import("std");
+const held_of = @import("../../model/sandboxed_plugin.zig").held_of;
 const sdk = @import("../../sdk.zig");
 const model = @import("../../model.zig");
 const state = @import("state.zig");
@@ -173,7 +174,7 @@ pub fn problem(manifest: *const sandboxed_plugin.Manifest) ?[]const u8 {
 
     for (manifest.permissions) |*ask| {
         const entry = permission.find(ask.key) orelse continue;
-        const held = ask.held();
+        const held = held_of(ask);
 
         if (ask.records.len > 0 and entry.narrowing != .records) {
             return "a permission names content types it does not take";
@@ -271,7 +272,7 @@ test "a choice switches a flag or the key, never past what was asked" {
         .publish = false,
     });
     try std.testing.expect(!sandboxed_plugin.as_set(
-        test_manifest.permissions[0].held(),
+        held_of(&test_manifest.permissions[0]),
         decoded.grants,
     ).publish);
     try std.testing.expectError(error.Invalid, apply(arena, &decoded, .{
@@ -296,7 +297,7 @@ test "a choice switches a flag or the key, never past what was asked" {
         .publish = true,
     });
     try std.testing.expect(sandboxed_plugin.as_set(
-        test_manifest.permissions[0].held(),
+        held_of(&test_manifest.permissions[0]),
         decoded.grants,
     ).publish);
     try std.testing.expectEqual(@as(usize, 2), decoded.grants.len);
@@ -321,7 +322,7 @@ test "a person adds and removes http.fetch's domains; only valid ones, only on t
         .denied = &.{},
         .grants = &.{},
     };
-    const asked = manifest.permissions[0].held();
+    const asked = held_of(&manifest.permissions[0]);
 
     try std.testing.expectEqualStrings("api.supplier.com", sandboxed_plugin.as_set(
         asked,

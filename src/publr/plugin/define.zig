@@ -249,7 +249,7 @@ const resolvers = .{
     .{ "row_actions", RowAction, described_row_actions },
     .{ "field_kinds", Kind, declared_kinds },
     .{ "custom_fields", ContentTypeDef, declared_field_groups },
-    .{ "permissions", @import("../../model/sandboxed_plugin.zig").Ask, asks_of },
+    .{ "permissions", @import("../model/sandboxed_plugin.zig").Ask, asks_of },
     .{ "compatible_with", []const u8, compatible_with_of },
     .{ "depends_on", []const u8, depends_on_of },
 };
@@ -280,7 +280,7 @@ fn described_row_actions(comptime Plugin: type) []const RowAction {
     return admin_described.each(Plugin, RowAction, listed);
 }
 
-fn asks_of(comptime Plugin: type) []const @import("../../model/sandboxed_plugin.zig").Ask {
+fn asks_of(comptime Plugin: type) []const @import("../model/sandboxed_plugin.zig").Ask {
     std.debug.assert(Plugin.manifest.name.len > 0);
 
     return @import("../../sdk/plugin/permission_define.zig").asks_of(Plugin);

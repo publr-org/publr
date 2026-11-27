@@ -1,6 +1,23 @@
 //! What a plugin declares of webhooks, jobs, icons and its limits, as `publr.plugin.define`
 //! and `publr.webhook.define` take it.
 
+/// A permission a plugin asks for, by the key the administrator sees, with its own reason,
+/// the content types or taxonomies it names and its flags.
+pub const Ask = struct {
+    key: []const u8,
+    reason: []const u8,
+    records: []const []const u8 = &.{},
+    taxonomies: []const []const u8 = &.{},
+    /// `http.fetch`'s: where it may send.
+    domains: []const []const u8 = &.{},
+    /// `ledger.read`'s: whose accounts it reads.
+    plugins: []const []const u8 = &.{},
+    drafts: bool = false,
+    private: bool = false,
+    internal: bool = false,
+    publish: bool = false,
+};
+
 /// How a webhook's sender signs.
 pub const Signature = union(enum) {
     /// An HMAC-SHA256 of the body in a header (`X-Hub-Signature-256: sha256=<hex>`).

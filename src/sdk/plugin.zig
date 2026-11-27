@@ -1,4 +1,5 @@
 const std = @import("std");
+const held_of = @import("../model/sandboxed_plugin.zig").held_of;
 const host_of = @import("plugin/context.zig").host_of;
 const plugin_define = @import("../publr/plugin/define.zig");
 const taxonomy_define = @import("../publr/plugin/taxonomy_define.zig");
@@ -281,7 +282,7 @@ pub fn grants_of(comptime Plugin: type) sdk.PluginGrants {
         std.debug.assert(Plugin.manifest.name.len > 0);
 
         for (asks) |ask| {
-            held = held ++ &[_]permission_model.Held{ask.held()};
+            held = held ++ &[_]permission_model.Held{held_of(&ask)};
         }
 
         for (plugin_define.get(Plugin, "content_types")) |def| {

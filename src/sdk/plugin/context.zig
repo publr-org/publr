@@ -1,4 +1,5 @@
 const std = @import("std");
+const held_of = @import("../../model/sandboxed_plugin.zig").held_of;
 const mods = @import("../mods.zig");
 const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
@@ -841,7 +842,7 @@ pub fn held_in(asks: []const Ask, key: []const u8) ?permission_model.Held {
 
     for (asks) |ask| {
         if (std.mem.eql(u8, ask.key, key)) {
-            return ask.held();
+            return held_of(&ask);
         }
     }
 

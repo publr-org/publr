@@ -4,6 +4,7 @@
 //! lives in a database in memory, made for the server and gone with it: its types are
 //! defined there, and its record calls on its own types are answered there.
 const std = @import("std");
+const held_of = @import("../../model/sandboxed_plugin.zig").held_of;
 const wasm = @import("publr_wasm");
 const db = @import("../../lib/db.zig");
 const sdk = @import("../../sdk.zig");
@@ -186,7 +187,7 @@ fn row_of(
     }
 
     for (manifest.permissions) |*ask| {
-        try grants.append(arena, ask.held());
+        try grants.append(arena, held_of(ask));
     }
 
     return .{

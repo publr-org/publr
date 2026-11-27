@@ -34,40 +34,25 @@ pub const Namespace = struct {
     details: []const u8,
 };
 
-/// A permission a plugin asks for, by the key the administrator sees, with its own reason,
-/// the content types or taxonomies it names and its flags.
-pub const Ask = struct {
-    key: []const u8,
-    reason: []const u8,
-    records: []const []const u8 = &.{},
-    taxonomies: []const []const u8 = &.{},
-    /// `http.fetch`'s: where it may send.
-    domains: []const []const u8 = &.{},
-    /// `ledger.read`'s: whose accounts it reads.
-    plugins: []const []const u8 = &.{},
-    drafts: bool = false,
-    private: bool = false,
-    internal: bool = false,
-    publish: bool = false,
+pub const Ask = public.Ask;
 
-    /// The grant it asks for.
-    pub fn held(ask: *const Ask) permission.Held {
-        std.debug.assert(ask.key.len > 0);
-        std.debug.assert(ask.records.len <= names_max and ask.taxonomies.len <= names_max);
+/// The grant `ask` asks for.
+pub fn held_of(ask: *const Ask) permission.Held {
+    std.debug.assert(ask.key.len > 0);
+    std.debug.assert(ask.records.len <= names_max and ask.taxonomies.len <= names_max);
 
-        return .{
-            .key = ask.key,
-            .records = ask.records,
-            .taxonomies = ask.taxonomies,
-            .domains = ask.domains,
-            .plugins = ask.plugins,
-            .drafts = ask.drafts,
-            .private = ask.private,
-            .internal = ask.internal,
-            .publish = ask.publish,
-        };
-    }
-};
+    return .{
+        .key = ask.key,
+        .records = ask.records,
+        .taxonomies = ask.taxonomies,
+        .domains = ask.domains,
+        .plugins = ask.plugins,
+        .drafts = ask.drafts,
+        .private = ask.private,
+        .internal = ask.internal,
+        .publish = ask.publish,
+    };
+}
 
 pub const Secret = @import("secrets.zig").Declared;
 
@@ -589,7 +574,7 @@ pub fn requests(
 
     for (manifest.permissions) |ask| {
         const found = permission.find(ask.key);
-        const asked = ask.held();
+        const asked = held_of(&ask);
         const tier = if (found) |entry|
             permission.tier_of_held(entry, &asked)
         else
@@ -835,7 +820,7 @@ pub fn held_now(
                 .key = ask.key,
             });
         } else {
-            try held.append(arena, as_set(ask.held(), stored));
+            try held.append(arena, as_set(held_of(ask), stored));
         }
     }
 

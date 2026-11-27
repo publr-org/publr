@@ -1,6 +1,7 @@
 //! The step behind a sign-in provider's `publr.ExchangeCtx` (`publr/exchange_ctx.zig`).
 //! Core runs it (`run`) and decides whose account it is.
 const std = @import("std");
+const held_of = @import("../../model/sandboxed_plugin.zig").held_of;
 const sdk = @import("../../sdk.zig");
 const words = @import("../../publr/plugin/words.zig");
 const http_operations = @import("../../operations/http.zig");
@@ -336,7 +337,7 @@ test "the exchange fetches only to its domains, fills its secret, gives up in ti
         .reason = "Asks the provider who signed in",
     };
     const access: plugin_access.Access = .{
-        .held = &.{ask.held()},
+        .held = &.{held_of(&ask)},
         .own_types = &.{},
         .secrets = &.{.{
             .name = name,
