@@ -52,8 +52,8 @@ pub const Failure = public.Failure;
 pub const Problem = public.Problem;
 
 pub const problems_max: u32 = 64;
-pub const failure_name_len_max: u32 = 64;
-pub const failure_message_len_max: u32 = 200;
+pub const failure_name_len_max = public.failure_name_len_max;
+pub const failure_message_len_max = public.failure_message_len_max;
 
 /// A failure as declared: a name of letters starting upper-case, a 4xx or 5xx status, and
 /// a message of 1 to 200 characters.

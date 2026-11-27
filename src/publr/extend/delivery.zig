@@ -25,6 +25,13 @@ pub const Delivery = struct {
 pub const Refusal = struct {
     status: u16,
     body: []const u8,
+
+    /// Whether core takes it: a status from 400 to 599 and a page of at most 64 KiB.
+    pub fn valid(refusal: Refusal) bool {
+        const status_ok = refusal.status >= 400 and refusal.status <= 599;
+
+        return status_ok and refusal.body.len <= body_bytes_max;
+    }
 };
 
 pub const Verdict = union(enum) {

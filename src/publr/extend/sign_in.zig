@@ -90,3 +90,11 @@ pub const FromRequest = struct {
 };
 
 pub const header_len_max: u32 = 64;
+
+/// What is wrong with `provider` as a sign-in provider core offers, or null: its name,
+/// label and icon within their limits, a callback or a request reader.
+pub fn problem(provider: SignInProvider) ?[]const u8 {
+    std.debug.assert(provider.name.len <= 1 << 10);
+
+    return @import("../../sdk/provider.zig").problem(provider);
+}

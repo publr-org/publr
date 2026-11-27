@@ -5,7 +5,7 @@
 const std = @import("std");
 const admin = @import("../../admin.zig");
 const registry = @import("../../../server/registry.zig");
-const admin_slots = @import("../../../sdk/plugin/admin_slots.zig");
+const admin_slots = @import("../../../publr/plugin/admin_slots.zig");
 
 const Session = admin.Session;
 

@@ -6,27 +6,8 @@ pub const hooks_max: u32 = 256;
 
 const Error = operation.Error;
 
-/// `modify` changes a value applied under a name (`mods.zig`), never what an operation does.
-pub const Stage = enum { pre, before, after, on, modify };
-
-/// An operation's end, refused or failed alike, or an event emitted.
-pub const Event = union(enum) {
-    completed: Ended,
-    failed: Ended,
-    emitted: Emitted,
-
-    pub const Ended = struct {
-        operation_name: []const u8,
-        operation_id: u64,
-    };
-    /// An event emitted under its name (`<plugin>.<event>`, `role.created`, or an operation's
-    /// own on success), its payload as JSON.
-    pub const Emitted = struct {
-        operation_id: u64,
-        name: []const u8,
-        subject: []const u8,
-    };
-};
+pub const Stage = @import("../publr/extend/middleware.zig").Stage;
+pub const Event = @import("../publr/extend/middleware.zig").Event;
 
 pub fn validate(comptime Middleware: type) void {
     comptime {

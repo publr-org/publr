@@ -74,13 +74,7 @@ pub const Policy = authorize.Policy;
 pub const Event = hooks.Event;
 /// An app loaded from the folder, as the server started or the folder changed: core's own
 /// event, emitted outside any operation.
-pub const AppsLoaded = @import("publr/plugin/hook_define.zig").event(.{
-    .name = "apps.loaded",
-    .payload = struct {
-        /// The app's name
-        app: []const u8,
-    },
-});
+pub const AppsLoaded = @import("publr/apps_loaded.zig").AppsLoaded;
 pub const Scratch = scratch.Scratch;
 pub const DefinitionCache = definition_cache.DefinitionCache;
 

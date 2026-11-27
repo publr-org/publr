@@ -308,10 +308,7 @@ pub const Field = struct {
 
 /// A column a declared form's list leaves empty in the row an `only_one` column picks (the
 /// main language's address), and what its field says there instead (`The site's own`).
-pub const Blank = struct {
-    column: []const u8,
-    says: []const u8,
-};
+pub const Blank = public.Blank;
 
 /// A page of the plugin's own: drawn by its read `operation` in the plugin frame, or, by
 /// declaration, a form the admin draws from `save`'s input filled from `read`.

@@ -4,9 +4,9 @@
 //! function the admin calls for every signed-in page; a row action is data the page's owner
 //! reads.
 const std = @import("std");
-const plugin_define = @import("../../publr/plugin/define.zig");
+const plugin_define = @import("define.zig");
 
-pub const Blank = @import("../../model/sandboxed_plugin.zig").Blank;
+pub const Blank = @import("../model/sandboxed_plugin.zig").Blank;
 pub const row_actions_max: u32 = 8;
 pub const pages_max: u32 = 8;
 pub const page_path_len_max: u32 = 48;

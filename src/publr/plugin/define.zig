@@ -582,9 +582,9 @@ fn declared_namespaces(comptime Plugin: type) []const Namespace {
 }
 
 const Namespace = @import("../operation.zig").Namespace;
-const Page = @import("../../sdk/plugin/admin_slots.zig").Page;
-const Panel = @import("../../sdk/plugin/admin_slots.zig").Panel;
-const RowAction = @import("../../sdk/plugin/admin_slots.zig").RowAction;
+const Page = @import("admin_slots.zig").Page;
+const Panel = @import("admin_slots.zig").Panel;
+const RowAction = @import("admin_slots.zig").RowAction;
 const admin_described = @import("../../sdk/plugin/admin_described.zig");
 const host_define = @import("../extend/host.zig");
 

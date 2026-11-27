@@ -47,9 +47,7 @@ pub fn decide(gates: []const Gate, delivery: *const Delivery) operation.Error!Ve
 pub fn valid_refusal(refusal: Refusal) bool {
     std.debug.assert(body_bytes_max > 0);
 
-    const status_ok = refusal.status >= 400 and refusal.status <= 599;
-
-    return status_ok and refusal.body.len <= body_bytes_max;
+    return refusal.valid();
 }
 
 const testing = struct {

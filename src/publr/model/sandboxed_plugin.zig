@@ -86,3 +86,9 @@ pub const PluginIcon = struct {
     name: []const u8,
     svg: []const u8,
 };
+
+/// A column a form's `only_one` row leaves empty, and what it says there instead.
+pub const Blank = struct {
+    column: []const u8,
+    says: []const u8,
+};

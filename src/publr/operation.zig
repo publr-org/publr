@@ -8,6 +8,9 @@ pub const Json = @import("operation/json.zig").Json;
 
 /// The longest operation name, `namespace.verb`.
 pub const name_len_max: u32 = 64;
+/// The longest name and message a `Failure` holds.
+pub const failure_name_len_max: u32 = 64;
+pub const failure_message_len_max: u32 = 200;
 /// The most fields an operation's `In` or `Out` holds at one level.
 pub const fields_max: u32 = 64;
 /// The most operations one Publr holds, its plugins' included.

@@ -46,6 +46,7 @@ pub const operation = struct {
     pub const operations_max = @import("publr/operation.zig").operations_max;
     /// The largest page a list answers at once.
     pub const page_limit_max = @import("publr/operation.zig").page_limit_max;
+    pub const failure_message_len_max = @import("publr/operation.zig").failure_message_len_max;
 };
 /// `publr.record.define(Document, .{ .name, .internal, ... })` and a reference to any record.
 pub const record = struct {
@@ -341,6 +342,9 @@ pub const app = @import("publr/model/app.zig");
 /// A site in memory for a plugin's tests: `var site: publr.testing.Site = undefined;`,
 /// `site.call(Operation, who, in)`, `site.json(who, name, input)`, `site.drain()`.
 pub const testing = @import("publr/testing.zig");
+/// An app loaded from the folder, as the server started or the folder changed:
+/// `publr.after(publr.AppsLoaded, run)`.
+pub const AppsLoaded = @import("publr/apps_loaded.zig").AppsLoaded;
 /// The double-entry ledger: `pub const Ledger = publr.ledger.define(struct { ... }, .{
 /// .reasons = Reason })`, listed in `define` as `.ledger`, used as `Ledger.transfer(ctx, ...)`;
 /// reads as `publr.ledger.balance(ctx, account)` and the rest.

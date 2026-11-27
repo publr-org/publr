@@ -2,6 +2,7 @@
 //! generated at build time from the plugin's declarations, read by the host before anything
 //! runs. One shape for both, so they cannot drift.
 const std = @import("std");
+const admin_slots = @import("../../publr/plugin/admin_slots.zig");
 const plugin_define = @import("../../publr/plugin/define.zig");
 const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
@@ -280,10 +281,10 @@ fn operations_of(comptime Plugin: type) []const Operation {
 /// context is left out with its operation.
 fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
     comptime {
-        const declared = @import("admin_slots.zig").pages_of(Plugin);
+        const declared = admin_slots.pages_of(Plugin);
         var list: []const sandboxed_plugin.Page = &.{};
 
-        std.debug.assert(declared.len <= @import("admin_slots.zig").pages_max);
+        std.debug.assert(declared.len <= admin_slots.pages_max);
 
         for (declared) |page| {
             const takes = @import("context.zig").takes_plugin_ctx;
@@ -343,7 +344,7 @@ fn pages_of(comptime Plugin: type) []const sandboxed_plugin.Page {
 
 /// A page's place in the top bar, its count named; none when its count takes the host's
 /// context.
-fn top_bar_of(comptime page: @import("admin_slots.zig").Page) ?sandboxed_plugin.TopBar {
+fn top_bar_of(comptime page: admin_slots.Page) ?sandboxed_plugin.TopBar {
     comptime {
         std.debug.assert(page.path.len > 0);
 
@@ -363,7 +364,7 @@ fn panels_of(comptime Plugin: type) []const sandboxed_plugin.Panel {
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (@import("admin_slots.zig").panels_of(Plugin)) |panel| {
+        for (admin_slots.panels_of(Plugin)) |panel| {
             panels = panels ++ &[_]sandboxed_plugin.Panel{.{
                 .type = panel.type,
                 .label = panel.label,
@@ -382,7 +383,7 @@ fn row_actions_of(comptime Plugin: type) []const sandboxed_plugin.RowAction {
 
         std.debug.assert(Plugin.manifest.name.len > 0);
 
-        for (@import("admin_slots.zig").row_actions_of(Plugin)) |action| {
+        for (admin_slots.row_actions_of(Plugin)) |action| {
             actions = actions ++ &[_]sandboxed_plugin.RowAction{.{
                 .slot = action.slot,
                 .label = action.label,
