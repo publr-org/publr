@@ -13,7 +13,7 @@ const AnyRef = @import("record_define.zig").AnyRef;
 const AccountRef = @import("../account_ref.zig").Account;
 const Contract = @import("../model/contract.zig");
 
-pub const Error = sdk.Error;
+pub const Error = @import("../operation.zig").Error;
 pub const Kind = @import("../model/ledger.zig").Kind;
 pub const Limit = @import("../model/ledger.zig").Limit;
 

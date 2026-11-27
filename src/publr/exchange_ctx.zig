@@ -6,7 +6,7 @@
 const std = @import("std");
 const words = @import("plugin/words.zig");
 const Exchange = @import("../sdk/plugin/exchange.zig").Exchange;
-const Error = @import("../sdk/operation.zig").Error;
+const Error = @import("operation.zig").Error;
 const http_operations = @import("operations/http.zig");
 
 fn BehindOf(comptime Pointer: type) type {

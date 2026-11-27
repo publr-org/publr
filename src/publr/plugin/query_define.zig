@@ -16,6 +16,7 @@ const behind_of = @import("../../sdk/plugin/context.zig").behind_of;
 const host_of = @import("../../sdk/plugin/context.zig").host_of;
 const listed_in = @import("define.zig").listed_in;
 const sdk = @import("../../sdk.zig");
+const Error = @import("../operation.zig").Error;
 const record = @import("../../operations/record.zig");
 
 pub const params_max: u32 = 32;
@@ -60,7 +61,7 @@ pub fn prepare(comptime text: []const u8, comptime options: Options) type {
                 any_ctx: anytype,
                 comptime Result: type,
                 params: anytype,
-            ) sdk.Error!Result {
+            ) Error!Result {
                 const ctx = queue.base_of(any_ctx);
 
                 comptime check_params(text, names, @TypeOf(params));

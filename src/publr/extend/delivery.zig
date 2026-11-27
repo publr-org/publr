@@ -5,8 +5,7 @@
 //! still being built. The theme's assets are never gated: they show nothing of the content.
 const Ctx = @import("../ctx.zig").Ctx;
 const caller = @import("../caller.zig");
-// Until `publr.Error` is the public set.
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
 
 pub const gates_max: u32 = 16;
 pub const body_bytes_max: u32 = 64 << 10;

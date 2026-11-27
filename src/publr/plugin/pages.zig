@@ -12,6 +12,7 @@
 //! A page is good until the next `next`; what must outlive it is copied out of it first.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../operation.zig").Error;
 const lists = @import("../../sdk/operation/lists.zig");
 const queue = @import("../../sdk/plugin/queue.zig");
 const walks = @import("../../sdk/plugin/walks.zig");
@@ -52,7 +53,7 @@ pub fn Pages(comptime Operation: type) type {
         }
 
         /// `text` from a page, copied where the walk began: good after the next page.
-        pub fn keep(self: *const Self, text: []const u8) sdk.Error![]const u8 {
+        pub fn keep(self: *const Self, text: []const u8) Error![]const u8 {
             const outer = self.outer orelse return error.Invalid;
 
             std.debug.assert(self.walk != null);
@@ -61,7 +62,7 @@ pub fn Pages(comptime Operation: type) type {
         }
 
         /// The next page, or null after the last. Good until the next call.
-        pub fn next(self: *Self) sdk.Error!?*const Operation.Out {
+        pub fn next(self: *Self) Error!?*const Operation.Out {
             std.debug.assert(self.after_len <= lists.next_bytes_max);
 
             if (self.done) {
@@ -109,7 +110,7 @@ pub fn Pages(comptime Operation: type) type {
             std.debug.assert(!walks.alive(self.ctx, handle));
         }
 
-        fn opened(self: *Self) sdk.Error!walks.Handle {
+        fn opened(self: *Self) Error!walks.Handle {
             std.debug.assert(self.walk == null);
 
             self.outer = self.ctx.arena();
@@ -122,7 +123,7 @@ pub fn Pages(comptime Operation: type) type {
         }
 
         /// Where the page after this one starts, kept past the page's memory.
-        fn continued(self: *Self, next_position: []const u8) sdk.Error!void {
+        fn continued(self: *Self, next_position: []const u8) Error!void {
             std.debug.assert(self.after_len <= lists.next_bytes_max);
 
             if (next_position.len > lists.next_bytes_max) {

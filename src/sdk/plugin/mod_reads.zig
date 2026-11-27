@@ -15,7 +15,7 @@ const id_map = @import("../../publr/plugin/id_map.zig");
 const sdk = @import("../../sdk.zig");
 const record = @import("../../operations/record.zig");
 
-const Error = sdk.Error;
+const Error = @import("../../publr/operation.zig").Error;
 
 /// A read that depends on a read takes another round; past this the item stays as it was.
 pub const rounds_max: u32 = 4;
@@ -68,7 +68,9 @@ const kept = if (json_form.sandboxed) @import("mod_reads_laid.zig") else struct 
     pub fn ask(api: anytype, arena: std.mem.Allocator, entry: *Entry) Error!void {
         _ = arena;
 
-        entry.answer = try api.call_json(entry.name, entry.input);
+        entry.answer = api.call_json(entry.name, entry.input) catch |err| {
+            return @import("../operation.zig").public_of(err);
+        };
     }
 
     /// The plain `record.get`s noted, read together in one `record.list`; a list that

@@ -1,4 +1,5 @@
 const std = @import("std");
+const public_operation = @import("../publr/operation.zig");
 const held_of = @import("../model/sandboxed_plugin.zig").held_of;
 const host_of = @import("plugin/context.zig").host_of;
 const plugin_define = @import("../publr/plugin/define.zig");
@@ -1208,7 +1209,7 @@ pub const testing = struct {
         });
 
         const record_greeting = struct {
-            fn run(ctx: *PluginCtx, in: RecordIn) sdk.Error!RecordOut {
+            fn run(ctx: *PluginCtx, in: RecordIn) public_operation.Error!RecordOut {
                 std.debug.assert(in.note.len > 0);
                 std.debug.assert(ctx.now().ms >= 0);
 
@@ -1239,7 +1240,11 @@ pub const testing = struct {
             }
         }.run;
 
-        fn counted(ctx: *PluginCtx, in: *Record.In, out: *const Record.Out) sdk.Error!void {
+        fn counted(
+            ctx: *PluginCtx,
+            in: *Record.In,
+            out: *const Record.Out,
+        ) public_operation.Error!void {
             std.debug.assert(in.note.len > 0);
             std.debug.assert(out.rows > 0);
             ctx.emit(Recorded, .{
@@ -1387,7 +1392,7 @@ const teller = struct {
         .run = tell,
     });
 
-    fn tell(ctx: *PluginCtx, in: TellIn) sdk.Error!TellOut {
+    fn tell(ctx: *PluginCtx, in: TellIn) public_operation.Error!TellOut {
         std.debug.assert(in.who.len > 0);
 
         ctx.emit(Told, .{
@@ -1399,7 +1404,7 @@ const teller = struct {
         };
     }
 
-    fn kept(ctx: *PluginCtx, told: Told.Payload) sdk.Error!void {
+    fn kept(ctx: *PluginCtx, told: Told.Payload) public_operation.Error!void {
         std.debug.assert(host_of(ctx).inner.db.transaction_depth >= 1);
 
         if (std.mem.eql(u8, told.who, "nobody")) {
@@ -1409,13 +1414,13 @@ const teller = struct {
         try line(ctx, "kept", told.who);
     }
 
-    fn heard(ctx: *QueueCtx, told: Told.Payload) sdk.Error!void {
+    fn heard(ctx: *QueueCtx, told: Told.Payload) public_operation.Error!void {
         std.debug.assert(host_of(ctx.base).inner.db.transaction_depth == 0);
 
         try line(ctx.base, "heard", told.who);
     }
 
-    fn answered(ctx: *QueueCtx, out: Tell.Out) sdk.Error!void {
+    fn answered(ctx: *QueueCtx, out: Tell.Out) public_operation.Error!void {
         std.debug.assert(host_of(ctx.base).inner.db.transaction_depth == 0);
 
         try line(ctx.base, "answered", out.told);
@@ -1423,16 +1428,14 @@ const teller = struct {
 
     const QueueCtx = @import("plugin/queue.zig").QueueCtx;
 
-    fn line(ctx: *PluginCtx, comptime what: []const u8, who: []const u8) sdk.Error!void {
+    fn line(
+        ctx: *PluginCtx,
+        comptime what: []const u8,
+        who: []const u8,
+    ) public_operation.Error!void {
         std.debug.assert(who.len > 0);
 
-        const database = host_of(ctx).inner.db;
-        var insert = try database.prepare("INSERT INTO told (what, who) VALUES (?1, ?2)");
-        defer insert.finalize();
-
-        try insert.bind_text(1, what);
-        try insert.bind_text(2, who);
-        try insert.exec();
+        try ctx.database().exec("INSERT INTO told (what, who) VALUES (?1, ?2)", .{ what, who });
     }
 };
 
@@ -1520,7 +1523,7 @@ test "a remote operation that fits the compiled-in one it names; the manifest ca
             .run = adjust,
         });
 
-        fn adjust(_: *PluginCtx, in: AdjustIn) sdk.Error!AdjustOut {
+        fn adjust(_: *PluginCtx, in: AdjustIn) public_operation.Error!AdjustOut {
             return .{
                 .total = in.delta,
                 .sku = in.sku,

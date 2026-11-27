@@ -2001,7 +2001,7 @@ ctx.now() })`; `prepare(sql, values)` gives a statement to step through. Prefer 
 
 `host.state(State)`, a struct with optional `init(state: *State, process:
 publr.plugin.Process)` and `deinit`, reached with `publr.plugin_states.of(ctx, @This())`;
-`host.bootstrap` (`fn (*sdk.Ctx) sdk.Error!void`, every start, as the system);
+`host.bootstrap` (`fn (*publr.Ctx) publr.Error!void`, every start, as the system);
 `host.before_command` (`fn (*publr.plugin_hooks.Command) anyerror!void`); `host.serving`
 (`fn (publr.plugin_hooks.Serving) anyerror!void`); `host.operator_command` (`{ name,
 handler }`, answered at `POST /_publr/<plugin>/<name>` with the operator key only).

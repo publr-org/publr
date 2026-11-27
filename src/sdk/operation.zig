@@ -12,6 +12,20 @@ pub const fields_max = public.fields_max;
 
 pub const Error = db.Error || public.Error;
 
+/// The error a plugin hears for one of core's: the database's own become what a plugin can
+/// act on (a broken constraint a conflict, a locked or failing database unavailable, a
+/// statement stopped or too big invalid).
+pub fn public_of(err: Error) public.Error {
+    std.debug.assert(@typeInfo(public.Error).error_set.error_names.?.len > 0);
+
+    return switch (err) {
+        error.Constraint => error.Conflict,
+        error.Busy, error.ReadOnly, error.Sqlite => error.Unavailable,
+        error.Interrupted, error.TooBig => error.Invalid,
+        else => |other| other,
+    };
+}
+
 pub const Kind = public.Kind;
 
 /// Whether the operation destroys what cannot be had back (`pub const destroys = true`):

@@ -28,6 +28,33 @@ const fetch = ctx.grant("http.fetch"); // core's permission_define.Grant
 const fetch: publr.Ctx.Grant = ctx.grant("http.fetch");
 ```
 
+### `sdk:Error`
+
+`publr.Error` no longer holds the database's own error names. Every call, record read and
+write, `publr.Database` statement and definer a plugin uses answers the public set
+(`Denied`, `Invalid`, `NotFound`, `Conflict`, `Throttled`, `Failed`, `Unavailable`,
+`BadCredentials`, `InvalidationFailed`, `NotYet`, `OutOfMemory`): `Constraint` is now
+`Conflict`; `Busy`, `ReadOnly` and `Sqlite` are `Unavailable`; `Interrupted` and `TooBig` are
+`Invalid`. A plugin that names one of the old errors switches to the new name; a function a
+plugin hands Publr (an operation's `run`, a hook, a job, a gate) returns `publr.Error`, not
+`publr.sdk.Error`. An installed plugin built before keeps working: the old codes read as
+their new names.
+
+```zig
+// Before
+database.exec("INSERT ...", .{id}) catch |err| switch (err) {
+    error.Constraint => return ctx.fail(.Taken, "Already there", .{}),
+    else => |other| return other,
+};
+fn run(ctx: *publr.Ctx, in: In) publr.sdk.Error!Out { ... }
+// After
+database.exec("INSERT ...", .{id}) catch |err| switch (err) {
+    error.Conflict => return ctx.fail(.Taken, "Already there", .{}),
+    else => |other| return other,
+};
+fn run(ctx: *publr.Ctx, in: In) publr.Error!Out { ... }
+```
+
 ### `sdk:Host.app_picker_segment`
 
 `host.app_picker_segment` takes the plugin's view and a function answering its props, no

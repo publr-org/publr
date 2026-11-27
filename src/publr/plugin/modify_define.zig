@@ -7,6 +7,7 @@
 const std = @import("std");
 const behind_of = @import("../../sdk/plugin/context.zig").behind_of;
 const sdk = @import("../../sdk.zig");
+const Error = @import("../operation.zig").Error;
 const mods = @import("../../sdk/mods.zig");
 const mod_reads = @import("../../sdk/plugin/mod_reads.zig");
 
@@ -73,7 +74,7 @@ pub fn run_all(
     comptime run: anytype,
     ctx: anytype,
     items: []Value,
-) sdk.Error!void {
+) Error!void {
     std.debug.assert(items.len <= mods.items_max);
     std.debug.assert(behind_of(ctx).reads == null);
 
@@ -113,7 +114,7 @@ pub fn run_values(
     comptime run: anytype,
     ctx: anytype,
     items: []Value,
-) sdk.Error!void {
+) Error!void {
     std.debug.assert(items.len <= mods.items_max);
     std.debug.assert(behind_of(ctx).reads == null);
 
@@ -159,7 +160,7 @@ fn pass(
     ctx: anytype,
     values: []?Value,
     done: []bool,
-) sdk.Error!bool {
+) Error!bool {
     std.debug.assert(values.len == done.len);
     std.debug.assert(values.len <= mods.items_max);
 
@@ -202,7 +203,7 @@ test "values already of the modifier's type are changed where they lie; a failed
             return self.memory;
         }
 
-        pub fn call_json(self: *@This(), name: []const u8, _: []const u8) sdk.Error![]const u8 {
+        pub fn call_json(self: *@This(), name: []const u8, _: []const u8) Error![]const u8 {
             std.debug.assert(name.len > 0);
 
             self.lists += 1;
@@ -216,7 +217,7 @@ test "values already of the modifier's type are changed where they lie; a failed
         note: ?[]const u8 = null,
     };
     const Modifier = struct {
-        fn run(ctx: *Fake, price: *Price) sdk.Error!void {
+        fn run(ctx: *Fake, price: *Price) Error!void {
             std.debug.assert(price.id.len > 0);
 
             _ = behind_of(ctx).reads.?.answer(u8, "record.query", .{
@@ -290,7 +291,7 @@ test "a batch modifier takes every value at once; its error is the whole batch's
         cents: i64,
     };
     const Modifier = struct {
-        fn run(ctx: *Fake, charges: []Charge) sdk.Error!void {
+        fn run(ctx: *Fake, charges: []Charge) Error!void {
             std.debug.assert(charges.len > 0);
 
             ctx.runs += 1;

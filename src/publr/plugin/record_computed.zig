@@ -7,6 +7,7 @@
 //! answers then goes through `<record>.<field>`, which any plugin may modify.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../operation.zig").Error;
 const hook_define = @import("hook_define.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 
@@ -116,9 +117,9 @@ fn Function(
     comptime compute: anytype,
 ) type {
     const Field = @FieldType(Definition.Doc, name);
-    const Plain = fn (*PluginCtx, *const Definition.Doc) sdk.Error!Field;
+    const Plain = fn (*PluginCtx, *const Definition.Doc) Error!Field;
     // The record's id beside it, for a value that names it to others (a line's parts).
-    const Named = fn (*PluginCtx, []const u8, *const Definition.Doc) sdk.Error!Field;
+    const Named = fn (*PluginCtx, []const u8, *const Definition.Doc) Error!Field;
     const named = @TypeOf(compute) == Named;
 
     if (@TypeOf(compute) != Plain and !named) {
@@ -132,7 +133,7 @@ fn Function(
         pub const Value = Computing(Definition.Doc, Field);
 
         /// Every value of the batch worked out; one that fails refuses them all.
-        pub fn run(ctx: *PluginCtx, values: []Value) sdk.Error!void {
+        pub fn run(ctx: *PluginCtx, values: []Value) Error!void {
             std.debug.assert(values.len <= sdk.mods.items_max);
             std.debug.assert(name.len > 0);
 

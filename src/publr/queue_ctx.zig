@@ -7,7 +7,7 @@ const words = @import("plugin/words.zig");
 const caller_view = @import("caller.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
-const Error = @import("../sdk/operation.zig").Error;
+const Error = @import("operation.zig").Error;
 const http_operations = @import("operations/http.zig");
 const link = @import("operations/link.zig");
 

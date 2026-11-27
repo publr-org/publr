@@ -9,7 +9,7 @@ const laid_key = @import("laid_key.zig");
 const mod_reads = @import("mod_reads.zig");
 const guest = @import("guest.zig");
 
-const Error = sdk.Error;
+const Error = @import("../../publr/operation.zig").Error;
 const Entry = mod_reads.Entry;
 const Reads = mod_reads.Reads;
 

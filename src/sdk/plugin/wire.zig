@@ -4,7 +4,8 @@
 const std = @import("std");
 const operation = @import("../operation.zig");
 
-pub const Error = operation.Error;
+/// What a call answers an installed plugin with: the public set, never the database's own.
+pub const Error = @import("../../publr/operation.zig").Error;
 
 /// Every call answers 0 or the code of one error of the SDK's set.
 pub const ok: u32 = 0;
@@ -17,9 +18,12 @@ pub const Result = extern struct {
 
 pub const result_bytes: u32 = @sizeOf(Result);
 
-/// Every error of the SDK's set, in the order that numbers them on the wire. The order of an
+/// Every error of core's set, in the order that numbers them on the wire. The order of an
 /// error set's `@typeInfo` differs between two compilations, so it is written out here, once,
-/// and a new error the set gains fails to compile until it is listed.
+/// and a new error the set gains fails to compile until it is listed. The database's own
+/// (`Sqlite`, `Constraint`, `Busy`, `ReadOnly`, `Interrupted`, `TooBig`) keep their numbers:
+/// nothing sends them any more, and a plugin built when something did is read through
+/// `operation.public_of`.
 const names = [_][]const u8{
     "Denied",     "Invalid",     "NotFound",       "Conflict",           "Throttled",
     "Failed",     "Unavailable", "BadCredentials", "InvalidationFailed", "Sqlite",
@@ -28,7 +32,7 @@ const names = [_][]const u8{
 };
 
 comptime {
-    for (@typeInfo(Error).error_set.error_names.?) |item_name| {
+    for (@typeInfo(operation.Error).error_set.error_names.?) |item_name| {
         var listed = false;
 
         for (names) |name| {
@@ -41,9 +45,12 @@ comptime {
     }
 }
 
-pub fn code_of(err: Error) u32 {
+/// The code `err` crosses as, once it is the error a plugin hears.
+pub fn code_of(err: operation.Error) u32 {
+    const heard = operation.public_of(err);
+
     inline for (names, 0..) |name, index| {
-        if (err == @field(Error, name)) {
+        if (heard == @field(operation.Error, name)) {
             return index + 1;
         }
     }
@@ -57,7 +64,7 @@ pub fn error_of(code: u32) Error {
 
     inline for (names, 0..) |name, index| {
         if (code == index + 1) {
-            return @field(Error, name);
+            return operation.public_of(@field(operation.Error, name));
         }
     }
 
@@ -136,4 +143,17 @@ test "every error round-trips through its code; unknown codes are Invalid" {
     try std.testing.expectEqual(@as(u32, 1), code_of(error.Denied));
     try std.testing.expectEqual(@as(u32, 2), code_of(error.Invalid));
     try std.testing.expectEqual(error.Invalid, error_of(10_000));
+}
+
+test "the database's errors cross as public ones; their old codes still read" {
+    try std.testing.expectEqual(code_of(error.Conflict), code_of(error.Constraint));
+    try std.testing.expectEqual(code_of(error.Unavailable), code_of(error.Busy));
+    try std.testing.expectEqual(code_of(error.Invalid), code_of(error.TooBig));
+
+    try std.testing.expectEqual(error.Unavailable, error_of(10));
+    try std.testing.expectEqual(error.Conflict, error_of(11));
+    try std.testing.expectEqual(error.Unavailable, error_of(12));
+    try std.testing.expectEqual(error.Unavailable, error_of(13));
+    try std.testing.expectEqual(error.Invalid, error_of(15));
+    try std.testing.expectEqual(error.Invalid, error_of(16));
 }

@@ -21,6 +21,8 @@
 const std = @import("std");
 const http = @import("../lib/http.zig");
 const sdk = @import("../sdk.zig");
+const Error = @import("operation.zig").Error;
+const public_of = @import("../sdk/operation.zig").public_of;
 const registry = @import("../server/registry.zig");
 const identity_module = @import("../adapters/rest/identity.zig");
 const context_module = @import("../adapters/apps/context.zig");
@@ -173,7 +175,7 @@ pub const Request = struct {
         request: *const Request,
         comptime Operation: type,
         in: Operation.In,
-    ) sdk.Error!Operation.Out {
+    ) Error!Operation.Out {
         comptime std.debug.assert(registry.SDK.bound(Operation).name.len > 0);
 
         var ctx = identity_module.request_context(
@@ -187,7 +189,7 @@ pub const Request = struct {
         ctx.app_plugins = request.held().app.spec.plugins;
         ctx.app_reach = request.held().app.spec.name;
 
-        return registry.SDK.dispatch(&ctx, Operation, in);
+        return registry.SDK.dispatch(&ctx, Operation, in) catch |err| return public_of(err);
     }
 
     /// Text formatted into the request's memory.

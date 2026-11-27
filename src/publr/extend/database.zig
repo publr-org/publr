@@ -2,8 +2,8 @@
 //! transaction, from `ctx.database()`. What lies behind it is Publr's own connection.
 const std = @import("std");
 const db = @import("../../lib/db.zig");
-// Until `publr.Error` is the public set: the database's own errors among them.
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
+const public_of = @import("../../sdk/operation.zig").public_of;
 
 pub const Database = struct {
     /// Publr's own: the connection the call runs on.
@@ -46,7 +46,7 @@ pub const Database = struct {
 
     /// Runs `sql`, no values, no rows: a schema, a pragma, `BEGIN` / `COMMIT`.
     pub fn run(database: Database, comptime sql: [*:0]const u8) Error!void {
-        return database.core().exec(sql);
+        return database.core().exec(sql) catch |err| return public_of(err);
     }
 
     /// Runs `sql` with each `?` taken from `values` in order: text, an integer, a bool, a
@@ -69,17 +69,17 @@ pub const Database = struct {
         comptime std.debug.assert(sql.len > 0);
         comptime std.debug.assert(values.len < 1 << 15);
 
-        var prepared = try database.core().prepare(sql);
+        var prepared = database.core().prepare(sql) catch |err| return public_of(err);
         errdefer prepared.finalize();
 
         inline for (values, 1..) |value, index| {
-            try bind(&prepared, index, value);
+            bind(&prepared, index, value) catch |err| return public_of(err);
         }
 
         return Statement.of(prepared);
     }
 
-    fn bind(statement: *db.Statement, index: u31, value: anytype) Error!void {
+    fn bind(statement: *db.Statement, index: u31, value: anytype) db.Error!void {
         std.debug.assert(index > 0);
 
         const Value = @TypeOf(value);
@@ -116,7 +116,9 @@ pub const Databases = struct {
         const connection = try memory.create(db.Db);
         errdefer memory.destroy(connection);
 
-        connection.* = try db.open(@ptrCast(@alignCast(databases.runtime)), path);
+        const runtime: *db.Runtime = @ptrCast(@alignCast(databases.runtime));
+
+        connection.* = db.open(runtime, path) catch |err| return public_of(err);
 
         return .{
             .connection = connection,
@@ -160,51 +162,51 @@ pub const Statement = struct {
     pub fn bind_text(statement: *Statement, index: u31, value: []const u8) Error!void {
         var prepared = statement.core();
 
-        return prepared.bind_text(index, value);
+        return prepared.bind_text(index, value) catch |err| return public_of(err);
     }
 
     pub fn bind_optional_text(statement: *Statement, index: u31, value: ?[]const u8) Error!void {
         var prepared = statement.core();
 
-        return prepared.bind_optional_text(index, value);
+        return prepared.bind_optional_text(index, value) catch |err| return public_of(err);
     }
 
     pub fn bind_blob(statement: *Statement, index: u31, value: []const u8) Error!void {
         var prepared = statement.core();
 
-        return prepared.bind_blob(index, value);
+        return prepared.bind_blob(index, value) catch |err| return public_of(err);
     }
 
     pub fn bind_int(statement: *Statement, index: u31, value: i64) Error!void {
         var prepared = statement.core();
 
-        return prepared.bind_int(index, value);
+        return prepared.bind_int(index, value) catch |err| return public_of(err);
     }
 
     pub fn bind_real(statement: *Statement, index: u31, value: f64) Error!void {
         var prepared = statement.core();
 
-        return prepared.bind_real(index, value);
+        return prepared.bind_real(index, value) catch |err| return public_of(err);
     }
 
     pub fn bind_null(statement: *Statement, index: u31) Error!void {
         var prepared = statement.core();
 
-        return prepared.bind_null(index);
+        return prepared.bind_null(index) catch |err| return public_of(err);
     }
 
     /// The next row: true while there is one.
     pub fn step(statement: *Statement) Error!bool {
         var prepared = statement.core();
 
-        return prepared.step();
+        return prepared.step() catch |err| return public_of(err);
     }
 
     /// Steps once, for a statement answering no rows.
     pub fn exec(statement: *Statement) Error!void {
         var prepared = statement.core();
 
-        return prepared.exec();
+        return prepared.exec() catch |err| return public_of(err);
     }
 
     /// The row as `Row`, a struct with one field per column: integers, floats, bools, text,
@@ -216,7 +218,7 @@ pub const Statement = struct {
     ) Error!Row {
         var prepared = statement.core();
 
-        return prepared.read(Row, arena);
+        return prepared.read(Row, arena) catch |err| return public_of(err);
     }
 
     /// The row's one column, a number.

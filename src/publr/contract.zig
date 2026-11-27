@@ -9,6 +9,8 @@ const behind_of = @import("../sdk/plugin/context.zig").behind_of;
 const wire_json = @import("../sdk/plugin/wire_json.zig");
 const guest = @import("../sdk/plugin/guest.zig");
 const sdk = @import("../sdk.zig");
+const Error = @import("operation.zig").Error;
+const public_of = @import("../sdk/operation.zig").public_of;
 const shapes = @import("../model/contract.zig");
 const public_shapes = @import("model/contract.zig");
 const private = @import("../sdk/contract.zig");
@@ -228,12 +230,12 @@ pub fn providers(
     ctx: anytype,
     comptime Contract: type,
     comptime options: anytype,
-) sdk.Error![]const Provider(Contract) {
+) Error![]const Provider(Contract) {
     comptime std.debug.assert(is_contract(Contract));
 
     const can = comptime can_names(Contract, options);
     const found = if (@TypeOf(ctx) == *sdk.Ctx)
-        try private.enabled(ctx, Contract.contract_name, can)
+        private.enabled(ctx, Contract.contract_name, can) catch |err| return public_of(err)
     else
         (try ctx.call(private.List, .{
             .contract = Contract.contract_name,
@@ -271,7 +273,7 @@ pub fn Provider(comptime Contract: type) type {
             ctx: anytype,
             comptime part: @TypeOf(.enum_literal),
             in: Contract.Shape(@tagName(part)).In,
-        ) sdk.Error!Contract.Shape(@tagName(part)).Out {
+        ) Error!Contract.Shape(@tagName(part)).Out {
             comptime {
                 if (!Contract.required(@tagName(part))) {
                     @compileError("`" ++ @tagName(part) ++ "` is optional: call it through " ++
@@ -289,7 +291,7 @@ pub fn Provider(comptime Contract: type) type {
         pub fn answers(
             self: Self,
             ctx: anytype,
-        ) sdk.Error!Contract.Shape(Contract.install_part).Out {
+        ) Error!Contract.Shape(Contract.install_part).Out {
             comptime {
                 if (Contract.install_part.len == 0) {
                     @compileError("contract " ++ Contract.contract_name ++ " has no part " ++
@@ -349,7 +351,7 @@ pub fn Optional(comptime Shape: type) type {
     return struct {
         operation: []const u8,
 
-        pub fn call(self: @This(), ctx: anytype, in: Shape.In) sdk.Error!Shape.Out {
+        pub fn call(self: @This(), ctx: anytype, in: Shape.In) Error!Shape.Out {
             std.debug.assert(self.operation.len > 0);
 
             return call_part(ctx, Shape, self.operation, in);
@@ -364,7 +366,7 @@ fn call_part(
     comptime Shape: type,
     operation: []const u8,
     in: Shape.In,
-) sdk.Error!Shape.Out {
+) Error!Shape.Out {
     std.debug.assert(operation.len > 0);
 
     const core = @TypeOf(ctx) == *sdk.Ctx;
@@ -382,7 +384,10 @@ fn call_part(
     const memory = ctx.arena;
 
     const input = wire_json.stringify(memory, in) catch return error.OutOfMemory;
-    const output = try @import("../server/registry.zig").SDK.call_json(ctx, operation, input);
+    const registry = @import("../server/registry.zig");
+    const output = registry.SDK.call_json(ctx, operation, input) catch |err| {
+        return public_of(err);
+    };
 
     return wire_json.parse(Shape.Out, memory, output, .{}) catch error.Invalid;
 }

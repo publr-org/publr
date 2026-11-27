@@ -6,6 +6,7 @@
 const std = @import("std");
 const public_operation = @import("../operation.zig");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../operation.zig").Error;
 const comptime_json = @import("../../model/comptime_json.zig");
 const plugin_define = @import("define.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
@@ -142,7 +143,7 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
                 plugin_define.words(Docs, "operation:" ++ Definition.verb ++ ":authorize"),
             );
 
-            pub fn run(ctx: *PluginCtx, in: In, granted: *const sdk.Grant) sdk.Error!Out {
+            pub fn run(ctx: *PluginCtx, in: In, granted: *const sdk.Grant) Error!Out {
                 std.debug.assert(name.len > 0);
                 std.debug.assert(granted.allows());
                 comptime std.debug.assert(@hasField(Options, "run"));
@@ -513,7 +514,7 @@ test "an operation described from its words" {
             .migration = "Send the rating as `stars`.",
         },
         .run = struct {
-            fn run(_: *PluginCtx, _: In) sdk.Error!Out {
+            fn run(_: *PluginCtx, _: In) Error!Out {
                 return .{
                     .yes = 1,
                 };
@@ -557,7 +558,7 @@ test "--help says what is checked and who may call, in the functions' words" {
         .{ @typeName(Out) ++ ".yes", "Yes answers" },
     });
     const parts = struct {
-        fn run(_: *PluginCtx, _: In) sdk.Error!Out {
+        fn run(_: *PluginCtx, _: In) Error!Out {
             return .{
                 .yes = 1,
             };

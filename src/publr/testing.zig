@@ -19,6 +19,8 @@ const messaging = @import("messaging.zig");
 const database = @import("extend/database.zig");
 
 const SDK = registry.SDK;
+const Error = @import("operation.zig").Error;
+const public_of = @import("../sdk/operation.zig").public_of;
 
 /// Who makes a call.
 pub const Who = union(enum) {
@@ -110,23 +112,23 @@ pub const Site = struct {
         comptime Operation: type,
         who: Who,
         in: Operation.In,
-    ) !Operation.Out {
+    ) Error!Operation.Out {
         var inner = site.context(who);
 
         return SDK.dispatch(&inner, Operation, in) catch |err| {
             site.note(&inner, err);
-            return err;
+            return public_of(err);
         };
     }
 
     /// Runs any operation by name as `who`, JSON in and out; the answer lives until `deinit`.
-    pub fn json(site: *Site, who: Who, name: []const u8, input: []const u8) ![]const u8 {
+    pub fn json(site: *Site, who: Who, name: []const u8, input: []const u8) Error![]const u8 {
         std.debug.assert(name.len > 0);
 
         var inner = site.context(who);
         const out = SDK.call_json(&inner, name, input) catch |err| {
             site.note(&inner, err);
-            return err;
+            return public_of(err);
         };
 
         return site.keep.allocator().dupe(u8, out);
@@ -134,9 +136,9 @@ pub const Site = struct {
 
     /// Runs the jobs queued so far that are due (events' `on` hooks, `ctx.enqueue`), as the
     /// queue's worker does between requests: how many ran.
-    pub fn drain(site: *Site) !u32 {
+    pub fn drain(site: *Site) Error!u32 {
         var inner = site.context(.system);
-        const ran = try SDK.jobs.drain(&inner, drained_max);
+        const ran = SDK.jobs.drain(&inner, drained_max) catch |err| return public_of(err);
 
         std.debug.assert(ran <= drained_max);
 
@@ -145,7 +147,13 @@ pub const Site = struct {
 
     /// Hands `message` to the providers as core does from the queue: the provider's id for
     /// it, or null when none covered it. The id lives until `deinit`.
-    pub fn deliver(site: *Site, message: messaging.Message) !?[]const u8 {
+    pub fn deliver(site: *Site, message: messaging.Message) Error!?[]const u8 {
+        std.debug.assert(message.channel.len > 0);
+
+        return site.delivered(message) catch |err| return public_of(err);
+    }
+
+    fn delivered(site: *Site, message: messaging.Message) sdk.Error!?[]const u8 {
         std.debug.assert(message.channel.len > 0);
 
         var inner = site.context(.system);
@@ -195,13 +203,15 @@ pub const Site = struct {
         site: *Site,
         memory: std.mem.Allocator,
         path: [:0]const u8,
-    ) !database.Database {
+    ) Error!database.Database {
         std.debug.assert(path.len > 0);
 
         const opened = try site.databases().open(memory, path);
         errdefer opened.close(memory);
 
-        try @import("../lib/db.zig").schema.apply(@ptrCast(@alignCast(opened.connection)));
+        const connection: *@import("../lib/db.zig").Db = @ptrCast(@alignCast(opened.connection));
+
+        @import("../lib/db.zig").schema.apply(connection) catch |err| return public_of(err);
 
         return opened;
     }

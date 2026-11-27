@@ -6,6 +6,7 @@
 //! for all of them.
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../../publr/operation.zig").Error;
 const record_operations = @import("../../operations/record.zig");
 const internal_operations = @import("../../operations/internal.zig");
 const operation_define = @import("../../publr/plugin/operation_define.zig");
@@ -44,7 +45,7 @@ fn Checks(comptime Definition: type) type {
                 ctx: *PluginCtx,
                 in: *Operations.Create.In,
                 out: *const Operations.Create.Out,
-            ) sdk.Error!void {
+            ) Error!void {
                 std.debug.assert(out.id.len > 0);
 
                 if (!std.mem.eql(u8, if (internal) in.kind else in.type, name)) {
@@ -65,7 +66,7 @@ fn Checks(comptime Definition: type) type {
                 ctx: *PluginCtx,
                 in: *Operations.Save.In,
                 out: *const Operations.Save.Out,
-            ) sdk.Error!void {
+            ) Error!void {
                 std.debug.assert(in.id.len > 0);
                 std.debug.assert(out.version >= 1);
 
@@ -78,7 +79,7 @@ fn Checks(comptime Definition: type) type {
         };
 
         /// The record as written, checked; another type's record is none of this hook's.
-        fn check(ctx: *PluginCtx, id: []const u8) sdk.Error!void {
+        fn check(ctx: *PluginCtx, id: []const u8) Error!void {
             std.debug.assert(id.len > 0);
 
             const held = Definition.get(ctx, id, .{}) catch |err| switch (err) {

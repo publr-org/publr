@@ -8,7 +8,7 @@ const http_operations = @import("../../operations/http.zig");
 const plugin_access = @import("../plugin_access.zig");
 const provider = @import("../provider.zig");
 
-pub const Error = sdk.Error;
+pub const Error = @import("../../publr/operation.zig").Error;
 
 /// A provider plugin built without grants: every request refused.
 const nothing_granted: plugin_access.Access = .{
@@ -42,7 +42,9 @@ pub const Exchange = struct {
 
         const limit_ms: u32 = @intCast(@min(left, provider.exchange_ms_max));
 
-        return http_operations.fetch_as(self.inner, self.fetcher, request, limit_ms);
+        return http_operations.fetch_as(self.inner, self.fetcher, request, limit_ms) catch |err| {
+            return sdk.operation.public_of(err);
+        };
     }
 
     /// The step's time, one value for the whole step.

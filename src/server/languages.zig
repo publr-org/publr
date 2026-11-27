@@ -2,6 +2,7 @@
 //! once when the server starts from every file in that language. English is the source text
 //! and needs none.
 const std = @import("std");
+const public_operation = @import("../publr/operation.zig");
 const model = @import("../model.zig");
 const registry = @import("registry.zig");
 const runtime = @import("runtime");
@@ -548,7 +549,7 @@ test "queued work speaks the language it was queued in: a job about a Polish rec
         var said: [64]u8 = undefined;
         var said_len: usize = 0;
 
-        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+        fn run(ctx: *QueueCtx, in: In) public_operation.Error!void {
             std.debug.assert(in.title.len > 0);
 
             const text = ctx.t("{title} is ready", .{
@@ -647,7 +648,7 @@ test "queued work tells each in their own words: the admin in English, the visit
             said_len[slot] = @intCast(text.len);
         }
 
-        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+        fn run(ctx: *QueueCtx, in: In) public_operation.Error!void {
             std.debug.assert(in.title.len > 0);
             std.debug.assert(in.admin.len > 0);
 

@@ -2,8 +2,7 @@
 //! (`host.admin_brand`) and where someone who must sign in goes instead of the form
 //! (`host.sign_in_at`).
 const Ctx = @import("../ctx.zig").Ctx;
-// Until `publr.Error` is the public set.
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
 
 /// Whose admin it is: its name in the window's title and its mark in the rail. Empty is
 /// Publr's.

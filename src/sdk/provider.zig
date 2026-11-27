@@ -2,13 +2,12 @@
 //! are its checks and the lookups the login pages make.
 
 const std = @import("std");
-const operation = @import("operation.zig");
 const model = @import("../model/identity.zig");
 const exchange_module = @import("plugin/exchange.zig");
 
 pub const ExchangeCtx = exchange_module.ExchangeCtx;
 const PluginCtx = @import("plugin/context.zig").PluginCtx;
-pub const Error = operation.Error;
+pub const Error = @import("../publr/operation.zig").Error;
 const public = @import("../publr/extend/sign_in.zig");
 
 pub const providers_max = public.providers_max;

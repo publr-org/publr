@@ -12,7 +12,9 @@ const host_of = @import("../../sdk/plugin/context.zig").host_of;
 const job_define = @import("job_define.zig");
 const queue = @import("../../sdk/plugin/queue.zig");
 const deliveries = @import("../../store/webhook_deliveries.zig");
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
+const CoreError = @import("../../sdk/operation.zig").Error;
+const public_of = @import("../../sdk/operation.zig").public_of;
 
 const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
 
@@ -122,7 +124,14 @@ pub fn define(comptime Event: type, comptime options: anytype) type {
                 return options.run(ctx, event);
             }
 
-            const inner = host_of(base).inner;
+            return kept_run(ctx, in) catch |err| return public_of(err);
+        }
+
+        /// A compiled-in plugin's run: the delivery read from the store, how it ended kept.
+        fn kept_run(ctx: anytype, in: Queued) CoreError!void {
+            std.debug.assert(in.delivery > 0);
+
+            const inner = host_of(queue.base_of(ctx)).inner;
             const kept = try deliveries.get(inner.db, inner.arena, in.delivery) orelse {
                 return error.NotFound;
             };
@@ -217,7 +226,7 @@ pub const Queued = struct {
 };
 
 /// The delivery's result and what its run logged.
-pub fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8) Error!void {
+pub fn settled(inner: anytype, id: i64, result: []const u8, problem: []const u8) CoreError!void {
     std.debug.assert(id > 0);
     std.debug.assert(result.len > 0);
 

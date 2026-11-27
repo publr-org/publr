@@ -2,6 +2,7 @@
 //! claimed, each run as its plugin, then removed, or moved later when it fails, until its
 //! last attempt keeps it as failed and tells the job's `on_failure`.
 const std = @import("std");
+const public_operation = @import("../publr/operation.zig");
 const host_of = @import("plugin/context.zig").host_of;
 const sdk = @import("../sdk.zig");
 const job_queue = @import("../store/job_queue.zig");
@@ -788,7 +789,7 @@ test "a failing job runs again later, then is kept as failed and its on_failure 
             word: []const u8,
         };
 
-        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+        fn run(ctx: *QueueCtx, in: In) public_operation.Error!void {
             std.debug.assert(in.word.len > 0);
 
             return host_of(ctx.base).inner.fail(.{
@@ -849,13 +850,15 @@ test "a job's run is one write: kept with its events when it ends well, undone w
             fail: bool = false,
         };
 
-        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+        fn run(ctx: *QueueCtx, in: In) public_operation.Error!void {
             const inner = host_of(ctx.base).inner;
 
             std.debug.assert(in.key.len > 0);
             std.debug.assert(inner.parent != null);
 
-            try store_settings.set(inner.db, in.key, "written", inner.now_ms);
+            store_settings.set(inner.db, in.key, "written", inner.now_ms) catch |err| {
+                return sdk.operation.public_of(err);
+            };
             inner.emit_json("probe.written", "{}", false);
 
             if (in.fail) {
@@ -902,7 +905,7 @@ test "a job's run is one write: kept with its events when it ends well, undone w
 
 test "a repeating job is queued once, runs at its moment, and is queued again for the next" {
     const Tidy = struct {
-        fn run(ctx: *QueueCtx) sdk.Error!void {
+        fn run(ctx: *QueueCtx) public_operation.Error!void {
             std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
 
             host_of(ctx.base).inner.dependency_failure = true;
@@ -949,7 +952,7 @@ test "a job ending in a conflict is heard by on_conflict, kept, and its run is t
             word: []const u8,
         };
 
-        fn run(ctx: *QueueCtx, in: In) sdk.Error!void {
+        fn run(ctx: *QueueCtx, in: In) public_operation.Error!void {
             std.debug.assert(in.word.len > 0);
 
             // The run is the author of what it writes.
@@ -1064,7 +1067,7 @@ test "a .due job runs once per moment of its record's field, moved by edits, giv
         // What the run hears outlives it here: the run's own memory goes as it ends.
         var heard_buffer: [32]u8 = undefined;
 
-        fn run(ctx: *QueueCtx, event: Events.Held) sdk.Error!void {
+        fn run(ctx: *QueueCtx, event: Events.Held) public_operation.Error!void {
             std.debug.assert(event.id.len > 0);
             std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
 
@@ -1168,7 +1171,7 @@ test "a yearly .due job runs on each return of its date, then follows the next o
         .name = "probe.person",
     });
     const Probe = struct {
-        fn run(ctx: *QueueCtx, person: People.Held) sdk.Error!void {
+        fn run(ctx: *QueueCtx, person: People.Held) public_operation.Error!void {
             std.debug.assert(person.id.len > 0);
             std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
         }
@@ -1239,7 +1242,7 @@ test "a yearly .due job runs on each return of its date, then follows the next o
 
 test "a repeating job runs at its time on the site's clock; moved or paused by the administrator" {
     const Tidy = struct {
-        fn run(ctx: *QueueCtx) sdk.Error!void {
+        fn run(ctx: *QueueCtx) public_operation.Error!void {
             std.debug.assert(host_of(ctx.base).inner.now_ms >= 0);
         }
     };

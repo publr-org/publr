@@ -1,6 +1,7 @@
 //! `publr.errors.Failed` heard by a compiled-in tracker: an error line and a crash raise it
 //! once each, kept outside the write; a refusal raises nothing.
 const std = @import("std");
+const public_operation = @import("../../publr/operation.zig");
 const plugin_host_of = @import("../../sdk/plugin/context.zig").host_of;
 const sdk = @import("../../sdk.zig");
 const plugin_module = @import("../../sdk/plugin.zig");
@@ -36,7 +37,7 @@ const Tracker = struct {
         .run = break_as_asked,
     });
 
-    fn break_as_asked(ctx: *PluginCtx, in: BreakIn) sdk.Error!BreakOut {
+    fn break_as_asked(ctx: *PluginCtx, in: BreakIn) public_operation.Error!BreakOut {
         std.debug.assert(in.how.len > 0);
 
         if (std.mem.eql(u8, in.how, "refuse")) {
@@ -58,7 +59,7 @@ const Tracker = struct {
         };
     }
 
-    fn track(ctx: *QueueCtx, failed: error_events.Failed.Payload) sdk.Error!void {
+    fn track(ctx: *QueueCtx, failed: error_events.Failed.Payload) public_operation.Error!void {
         std.debug.assert(plugin_host_of(ctx.base).inner.db.transaction_depth == 0);
         std.debug.assert(failed.entry > 0);
 

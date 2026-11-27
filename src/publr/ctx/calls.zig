@@ -4,8 +4,7 @@ const Ctx = @import("../ctx.zig").Ctx;
 const words = @import("../plugin/words.zig");
 const files = @import("../files.zig");
 const link = @import("../operations/link.zig");
-// Until `publr.Error` is the public set: an operation's errors, database ones among them.
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
 
 /// Inside a computed field's function: the value it answers holds until `time`, and is
 /// worked out again then whatever else happens (a sale ends). The earliest one counts.

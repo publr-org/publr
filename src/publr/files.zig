@@ -18,8 +18,7 @@ const file_key = @import("model/file_key.zig");
 pub const valid_key = file_key.valid_key;
 pub const key_len_max = file_key.key_len_max;
 
-// Until `publr.Error` is the public set: an operation's errors, database ones among them.
-pub const Error = @import("../sdk/operation.zig").Error;
+pub const Error = @import("operation.zig").Error;
 
 /// What a made file is kept as.
 pub const Made = struct {

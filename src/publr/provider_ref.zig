@@ -6,7 +6,7 @@ const std = @import("std");
 const contract = @import("contract.zig");
 const identity = @import("../model/identity.zig");
 
-const Error = @import("../sdk.zig").Error;
+const Error = @import("operation.zig").Error;
 
 /// The field kind a `ProviderRef` keeps as.
 pub const kind_id = "provider";

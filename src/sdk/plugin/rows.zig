@@ -17,6 +17,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../../publr/operation.zig").Error;
 const moved = @import("../moved.zig");
 const internal_operations = @import("../../operations/internal.zig");
 const internal_records = @import("../../store/internal_records.zig");
@@ -75,7 +76,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         pub const Row = Kept.FoundOf(Wanted);
 
         /// The next row, or null after the last. Good until the next call.
-        pub fn next(self: *Self) sdk.Error!?*const Row {
+        pub fn next(self: *Self) Error!?*const Row {
             std.debug.assert(self.index <= self.page.len);
 
             if (self.done) {
@@ -122,7 +123,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         /// `row` copied whole into the memory the walk began in, to outlive the loop: a
         /// deliberate act, for the rare walk that must hold its rows. A walk over many rows
         /// holding all of them holds all of their memory.
-        pub fn kept(self: *const Self, row: *const Row) sdk.Error!Row {
+        pub fn kept(self: *const Self, row: *const Row) Error!Row {
             const outer = self.outer orelse return error.Invalid;
 
             comptime std.debug.assert(moved.plain(Row));
@@ -131,7 +132,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         }
 
         /// `text` from a row copied into the memory the walk began in, to outlive the loop.
-        pub fn keep(self: *const Self, text: []const u8) sdk.Error![]const u8 {
+        pub fn keep(self: *const Self, text: []const u8) Error![]const u8 {
             const outer = self.outer orelse return error.Invalid;
 
             std.debug.assert(self.walk != null);
@@ -204,7 +205,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         /// A whole number of every row added up by the database, none handed over:
         /// `Lines.where(ctx, .cart, id).sum("priced.total")`. A computed field's values
         /// are worked out first where stale. `first` does not bound it.
-        pub fn sum(self: Self, comptime path: []const u8) sdk.Error!i64 {
+        pub fn sum(self: Self, comptime path: []const u8) Error!i64 {
             comptime check_sum_path(Document, path);
             std.debug.assert(path.len > 0);
 
@@ -225,7 +226,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         }
 
         /// How many rows: counted from the index, none read.
-        pub fn count(self: Self) sdk.Error!u64 {
+        pub fn count(self: Self) Error!u64 {
             var number: [number_bytes_max]u8 = undefined;
             const counted = try self.ctx.call(internal_operations.Count, .{
                 .kind = kind,
@@ -237,13 +238,13 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         }
 
         /// Whether there is a row.
-        pub fn any(self: Self) sdk.Error!bool {
+        pub fn any(self: Self) Error!bool {
             return try self.count() > 0;
         }
 
         /// The one row, or null when there is none; two are a conflict. Read in the
         /// caller's memory, never as a walk.
-        pub fn one(self: Self) sdk.Error!?Row {
+        pub fn one(self: Self) Error!?Row {
             std.debug.assert(self.walk == null);
 
             var number: [number_bytes_max]u8 = undefined;
@@ -267,7 +268,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         /// The page of rows after `after` (empty for the first), read in the caller's memory:
         /// what an operation answering a page at a time hands back, with `next` for its
         /// caller to ask for the page after (`after` in its input, `next` in its answer).
-        pub fn page_after(self: Self, after: []const u8) sdk.Error!Paged {
+        pub fn page_after(self: Self, after: []const u8) Error!Paged {
             std.debug.assert(self.walk == null);
 
             if (after.len > internal_records.id_bytes_max) {
@@ -296,7 +297,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
             };
         }
 
-        fn opened(self: *Self) sdk.Error!walks.Handle {
+        fn opened(self: *Self) Error!walks.Handle {
             std.debug.assert(self.walk == null);
 
             const handle = try walks.open(self.ctx);
@@ -308,7 +309,7 @@ pub fn Rows(comptime Document: type, comptime kind: []const u8, comptime Wanted:
         }
 
         /// The next page in its own memory, the last given back; false after the last.
-        fn read_page(self: *Self, handle: walks.Handle) sdk.Error!bool {
+        fn read_page(self: *Self, handle: walks.Handle) Error!bool {
             const started = self.asked > 0;
 
             std.debug.assert(self.index == self.page.len);

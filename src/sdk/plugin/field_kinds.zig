@@ -8,6 +8,7 @@ const kinds = @import("../../model/kinds.zig");
 const field_model = @import("../../model/field.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../../publr/operation.zig").Error;
 const plugin_context = @import("context.zig");
 const views = @import("../../publr/plugin/views.zig");
 const operation_define = @import("../../publr/plugin/operation_define.zig");
@@ -299,7 +300,7 @@ test "a field kind from its value's struct and words" {
             }
         }.validate,
         .text = struct {
-            fn text(ctx: *plugin_context.PluginCtx, value: Location) sdk.Error![]const u8 {
+            fn text(ctx: *plugin_context.PluginCtx, value: Location) Error![]const u8 {
                 return ctx.print("{d}, {d}", .{ value.lat, value.lng });
             }
         }.text,

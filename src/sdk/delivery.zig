@@ -14,6 +14,8 @@ pub const Delivery = public.Delivery;
 pub const Refusal = public.Refusal;
 pub const Verdict = public.Verdict;
 pub const Gate = public.Gate;
+/// What a gate fails with: the error set plugins see.
+pub const Error = @import("../publr/operation.zig").Error;
 
 /// Every gate's say: the first refusal wins, any `private` keeps the answer private. A
 /// gate that fails refuses nothing on its own; its error ends the request.
@@ -51,11 +53,11 @@ pub fn valid_refusal(refusal: Refusal) bool {
 }
 
 const testing = struct {
-    fn silent(_: *const Delivery) operation.Error!Verdict {
+    fn silent(_: *const Delivery) Error!Verdict {
         return .open;
     }
 
-    fn members(delivery: *const Delivery) operation.Error!Verdict {
+    fn members(delivery: *const Delivery) Error!Verdict {
         std.debug.assert(delivery.path.len > 0);
 
         if (delivery.visitor.user_id() != null) {
@@ -70,7 +72,7 @@ const testing = struct {
         };
     }
 
-    fn broken(_: *const Delivery) operation.Error!Verdict {
+    fn broken(_: *const Delivery) Error!Verdict {
         return .{
             .refuse = .{
                 .status = 200,

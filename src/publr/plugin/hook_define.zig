@@ -9,6 +9,7 @@ const remote_fields = @import("../../sdk/plugin/remote_fields.zig");
 const std = @import("std");
 const public_operation = @import("../operation.zig");
 const sdk = @import("../../sdk.zig");
+const Error = @import("../operation.zig").Error;
 const hooks = @import("../../sdk/hooks.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const HostApi = @import("../../sdk/plugin/context.zig").HostApi;
@@ -150,7 +151,7 @@ pub fn request(comptime run: anytype) type {
             pub fn wrapped(
                 ctx: *sdk.Ctx,
                 page: *PageRequest.PageRequest,
-            ) sdk.Error!PageRequest.Answered {
+            ) Error!PageRequest.Answered {
                 var plugin_ctx: HostApi = .{
                     .inner = ctx,
                 };
@@ -252,7 +253,7 @@ pub fn Described(
                 pub const whole = @hasDecl(Target, "whole");
 
                 /// Over the values of one apply that read as `Value`, changed where they lie.
-                pub fn run(ctx: *PluginCtx, values: []Target.Value) sdk.Error!void {
+                pub fn run(ctx: *PluginCtx, values: []Target.Value) Error!void {
                     if (comptime whole) {
                         return modify_define.run_all(Target.Value, given_run, ctx, values);
                     }
@@ -290,7 +291,7 @@ pub fn Described(
                 pub const Payload = if (is_event(Target)) Target.Payload else Target.Out;
                 pub const reason = text;
 
-                pub fn run(ctx: *PluginCtx, payload: Payload) sdk.Error!void {
+                pub fn run(ctx: *PluginCtx, payload: Payload) Error!void {
                     return queued(given_run, ctx, payload);
                 }
             },
@@ -323,7 +324,7 @@ fn EventHook(
                 pub const Payload = Payload_;
                 pub const reason = text;
 
-                pub fn run(ctx: *PluginCtx, in: *Payload) sdk.Error!void {
+                pub fn run(ctx: *PluginCtx, in: *Payload) Error!void {
                     return given_run(ctx, in.*);
                 }
             };
@@ -336,7 +337,7 @@ fn EventHook(
             pub const Payload = Payload_;
             pub const reason = text;
 
-            pub fn run(ctx: *PluginCtx, in: *Payload, _: *const Nothing) sdk.Error!void {
+            pub fn run(ctx: *PluginCtx, in: *Payload, _: *const Nothing) Error!void {
                 return given_run(ctx, in.*);
             }
         };
@@ -345,7 +346,7 @@ fn EventHook(
 
 /// An `on` hook is queued work, run from the queue once the write committed: its `run`
 /// takes `*publr.QueueCtx` (with `fetch`).
-fn queued(comptime given: anytype, ctx: *PluginCtx, value: anytype) sdk.Error!void {
+fn queued(comptime given: anytype, ctx: *PluginCtx, value: anytype) Error!void {
     const First = @typeInfo(@TypeOf(given)).@"fn".param_types[0].?;
 
     if (comptime First != *queue.QueueCtx) {
@@ -469,7 +470,7 @@ pub const remote = struct {
                     any_ctx: anytype,
                     comptime field: std.meta.FieldEnum(Fields),
                     value: anytype,
-                ) sdk.Error!?Held {
+                ) Error!?Held {
                     return Typed.find_one(queue.base_of(any_ctx), @tagName(field), value);
                 }
 
@@ -480,7 +481,7 @@ pub const remote = struct {
                     any_ctx: anytype,
                     id: []const u8,
                     options: anytype,
-                ) sdk.Error!Held {
+                ) Error!Held {
                     return record_define.get_typed(Typed, any_ctx, id, options);
                 }
 
@@ -490,7 +491,7 @@ pub const remote = struct {
                     any_ctx: anytype,
                     held: Held,
                     comptime named: @TypeOf(.enum_literal),
-                ) sdk.Error!record_define.Transitioned {
+                ) Error!record_define.Transitioned {
                     return record_define.transition_named(any_ctx, held.id, @tagName(named));
                 }
             };
@@ -524,7 +525,7 @@ test "a hook on a plugin's own operation is named for the plugin" {
         pub const verb = "sign";
     };
     const Refuse = before(Definition, struct {
-        fn run(_: *PluginCtx, _: *u8) sdk.Error!void {}
+        fn run(_: *PluginCtx, _: *u8) Error!void {}
     }.run);
     const Hook = Described(Refuse, "guestbook", "Refuses links");
     const Unexplained = Described(Refuse, "guestbook", null);

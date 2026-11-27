@@ -12,7 +12,7 @@ const view_wire = @import("../../sdk/plugin/view_wire.zig");
 const shape_wire = @import("../../sdk/plugin/shape_wire.zig");
 const shape_parts = @import("../../sdk/plugin/shape_parts.zig");
 
-const Error = @import("../../sdk.zig").Error;
+const Error = @import("../operation.zig").Error;
 
 /// The plugin's views, by name: the admin's generated set compiled in, the plugin's own
 /// installed.

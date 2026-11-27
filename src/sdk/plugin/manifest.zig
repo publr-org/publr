@@ -727,7 +727,7 @@ fn operation_types(comptime Plugin: type) []const type {
 }
 
 test "a plugin's manifest names its operation, fields, hook and record" {
-    const sdk = @import("../../sdk.zig");
+    const public = @import("../../publr/operation.zig");
     const PluginCtx = @import("context.zig").PluginCtx;
     const hook_define = @import("../../publr/plugin/hook_define.zig");
     const Greeting = struct {
@@ -760,7 +760,7 @@ test "a plugin's manifest names its operation, fields, hook and record" {
             .migration = "Greet through greeter.hello.",
         },
         .run = struct {
-            fn run(_: *PluginCtx, in: In) sdk.Error!Out {
+            fn run(_: *PluginCtx, in: In) public.Error!Out {
                 return .{
                     .text = in.who,
                 };
@@ -781,7 +781,7 @@ test "a plugin's manifest names its operation, fields, hook and record" {
             }},
             .operations = &.{Greet},
             .hooks = &.{hook_define.after(Greet, struct {
-                fn run(_: *PluginCtx, _: *In, _: *const Out) sdk.Error!void {}
+                fn run(_: *PluginCtx, _: *In, _: *const Out) public.Error!void {}
             }.run)},
         });
     };

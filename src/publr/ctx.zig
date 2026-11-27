@@ -10,8 +10,8 @@ const caller_view = @import("caller.zig");
 const calls = @import("ctx/calls.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
-// Until `publr.Error` is the public set: an operation's errors, database ones among them.
-const Error = @import("../sdk/operation.zig").Error;
+const Error = operation.Error;
+const public_of = @import("../sdk/operation.zig").public_of;
 
 /// What lies behind a `Ctx` in this build: the call's state in the host, or in the module.
 const Behind = switch (guest.mode) {
@@ -96,7 +96,7 @@ pub const Ctx = opaque {
 
     /// `enqueue` with when it may run: never before `at`, about a minute after it at most.
     pub fn enqueue_at(ctx: *Ctx, comptime Job: type, in: Job.Input, at: words.Time) Error!void {
-        return behind(ctx).enqueue_at(Job, in, at);
+        return behind(ctx).enqueue_at(Job, in, at) catch |err| return public_of(err);
     }
 
     /// SQL on the plugin's own tables (`host.table`), inside the call's transaction. Only a
@@ -215,19 +215,19 @@ pub const Ctx = opaque {
     /// its own. `error.Denied` when an administrator has not granted (or has revoked) what it
     /// needs; `error.Failed` with `failure()` naming a refusal the operation declares.
     pub fn call(ctx: *Ctx, comptime Operation: type, in: Operation.In) Error!Operation.Out {
-        return behind(ctx).call(Operation, in);
+        return behind(ctx).call(Operation, in) catch |err| return public_of(err);
     }
 
     /// Calls an operation by a name known only when it runs (a contract's provider), `in`
     /// any struct, the answer read as an `Out`.
     pub fn call_named(ctx: *Ctx, comptime Out: type, name: []const u8, in: anytype) Error!Out {
-        return behind(ctx).call_named(Out, name, in);
+        return behind(ctx).call_named(Out, name, in) catch |err| return public_of(err);
     }
 
     /// Calls an operation by name with a value whose shape comes with the data, and answers
     /// one: for a caller that learns what to send only when it runs.
     pub fn call_value(ctx: *Ctx, name: []const u8, input: free_value.Value) Error!free_value.Value {
-        return behind(ctx).call_value(name, input);
+        return behind(ctx).call_value(name, input) catch |err| return public_of(err);
     }
 
     /// Which refusal the last `call` came back with as `error.Failed`, or the plugin's own
@@ -255,7 +255,7 @@ pub const Ctx = opaque {
         comptime Value: type,
         values: []const Value,
     ) Error![]const Value {
-        return behind(ctx).mod_all(name, Value, values);
+        return behind(ctx).mod_all(name, Value, values) catch |err| return public_of(err);
     }
 
     /// Emits an event: `ctx.emit(OutOfStock, .{ .variant = ref })`, a type made with

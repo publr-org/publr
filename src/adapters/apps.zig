@@ -778,7 +778,7 @@ test "islands: a dynamic fragment is rendered per request and never kept, a stat
 }
 
 /// A plugin's gate, as a test declares one: the site for members, a page for the rest.
-fn members_only(delivery: *const sdk.delivery.Delivery) sdk.Error!sdk.delivery.Verdict {
+fn members_only(delivery: *const sdk.delivery.Delivery) sdk.delivery.Error!sdk.delivery.Verdict {
     std.debug.assert(delivery.path.len > 0);
 
     if (delivery.visitor.user_id() != null) {
@@ -865,7 +865,7 @@ test "assets: the stylesheet and the loader from memory, immutable under the fin
 }
 
 const edge_testing = struct {
-    fn private_gate(_: *const sdk.delivery.Delivery) sdk.Error!sdk.delivery.Verdict {
+    fn private_gate(_: *const sdk.delivery.Delivery) sdk.delivery.Error!sdk.delivery.Verdict {
         return .private;
     }
 };

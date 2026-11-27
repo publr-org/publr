@@ -1624,9 +1624,10 @@ A write may also say what it does outside the database once it is kept:
 transaction commits, only when no other write encloses it (core's `design.save_system`
 loads the apps this way). Its failure is the call's answer; the write stays.
 
-A plugin can run once the database opens (`host.bootstrap`, a `fn (ctx: *sdk.Ctx) sdk.Error!void`),
-as the system, after every declared type and field is in place: a setting the product
-needs, a record that must exist. It runs at every start, so it checks before it writes.
+A plugin can run once the database opens (`host.bootstrap`, a
+`fn (ctx: *publr.Ctx) publr.Error!void`), as the system, after every declared type and field
+is in place: a setting the product needs, a record that must exist. It runs at every start,
+so it checks before it writes.
 
 What a plugin keeps for itself and nobody edits (carts, reservations, stock movements,
 logs) is not content: it declares each kind as a record with `.internal = true` (and

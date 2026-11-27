@@ -7,8 +7,7 @@
 const std = @import("std");
 const Ctx = @import("../ctx.zig").Ctx;
 const ExchangeCtx = @import("../exchange_ctx.zig").ExchangeCtx;
-// Until `publr.Error` is the public set.
-const Error = @import("../../sdk/operation.zig").Error;
+const Error = @import("../operation.zig").Error;
 
 pub const providers_max: u32 = 16;
 pub const label_len_max: u32 = 32;

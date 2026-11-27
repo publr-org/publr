@@ -12,7 +12,7 @@ const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const guest = @import("../../sdk/plugin/guest.zig");
 const values_operations = @import("../../operations/custom_fields/values.zig");
 
-const Error = sdk.Error;
+const Error = @import("../operation.zig").Error;
 
 /// The group's values on the account, wherever its location places it.
 pub fn get(ctx: *PluginCtx, comptime Fields: type, user: []const u8) Error!Fields {

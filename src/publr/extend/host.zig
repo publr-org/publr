@@ -12,8 +12,7 @@ const delivery = @import("delivery.zig");
 const sign_in = @import("sign_in.zig");
 const admin = @import("admin.zig");
 
-// Until `publr.Error` is the public set.
-pub const Error = sdk.Error;
+pub const Error = @import("../operation.zig").Error;
 
 /// A table of the plugin's own, named under it (`shipping_shipments`): `schema` is the one
 /// `CREATE TABLE` making it, with its indexes. Read and written with `ctx.database()`.
