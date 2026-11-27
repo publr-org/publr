@@ -338,6 +338,9 @@ pub const device = @import("publr/model/device.zig");
 pub const sign_on_token = @import("publr/model/sign_on_token.zig");
 /// An app as `app.zon` declares it: `Config`, `Mount`, `valid_name`, `valid_mount`, `label_of`.
 pub const app = @import("publr/model/app.zig");
+/// A site in memory for a plugin's tests: `var site: publr.testing.Site = undefined;`,
+/// `site.call(Operation, who, in)`, `site.json(who, name, input)`, `site.drain()`.
+pub const testing = @import("publr/testing.zig");
 /// The double-entry ledger: `pub const Ledger = publr.ledger.define(struct { ... }, .{
 /// .reasons = Reason })`, listed in `define` as `.ledger`, used as `Ledger.transfer(ctx, ...)`;
 /// reads as `publr.ledger.balance(ctx, account)` and the rest.
