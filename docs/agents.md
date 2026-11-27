@@ -258,10 +258,10 @@ pub const plugin = publr.plugin.define(manifest, .{
   `.user_types = &[_]publr.plugin.UserType{.{ .name = "affiliate", .label = "Affiliate",
   .apps = &.{"shop"}, .sign_up = true, .roles = &.{"affiliate"} }}` and
   `.roles = &[_]publr.plugin.Role{.{ .name = "affiliate", .label = "Affiliate",
-  .description = "..." }}`. A type gives member roles only: never `admin`, `editor` or
-  `contributor`, nor a role whose grants reach past what members call. With `users.own` the
-  plugin makes accounts of its own types and gives or takes them
-  (`publr.operations.user.AddType`, `.user`, `.user_type`).
+  .description = "..." }}`. Accounts are on two ladders, staff and members, and a type gives
+  member roles only: never `admin`, `editor` or `contributor`, nor a role whose grants reach
+  past what members call. With `users.own` the plugin makes accounts of its own types and
+  gives or takes them (`publr.operations.user.AddType`, `.user`, `.user_type`).
 - **Taxonomies.** `publr.taxonomy.define(Term, .{ .name, .public, .hierarchical, .single,
   .internal, .fields })` in `.taxonomies`, stored as `<plugin>.<name>`. A type lists its
   taxonomies (`.taxonomies = &.{ "blog.topic", "tags" }` on the record); another plugin's
@@ -429,8 +429,8 @@ curl -X POST http://127.0.0.1:8080/api/guestbook.sign \
   -d '{"name":"Ada","message":"hi"}'             # one for untrusted callers, as a visitor
 ```
 
-**A test clock.** Work that waits for a date (a month's billing, an overdue request, VAT
-due at a period's end) is tried by moving the site's clock:
+**A test clock.** Work that waits for a date (a month's billing, an overdue request, a lapsed
+cart) is tried by moving the site's clock:
 `publr --as-admin project set_clock --ahead_ms 2678400000` (31 days on), `--at_ms <ms>` (a
 moment), `--reset` (back to the wall clock). `ctx.now()`, queued work's moments and the
 queue worker read it, so what falls due runs. Only on a test site: one on this computer,
@@ -1187,26 +1187,22 @@ Another plugin or staff never posts on your line: `orders.adjust` asks you throu
 Your own statuses (reserved, ready, checked in) stay in your records. Ask for each call
 with a `call:orders.<verb>` permission and a `publr.remote.operation` in your own words.
 
-### When VAT falls due
+### A charge's tax
 
-You never place tax points: the country's law (`tax_pl`) places them from each charge's
-kind of supply and dates. Give the right kind in `declare`, and per charge when it differs
-(`supply` on a `price` charge or on `orders.charge_more`). Under Polish law:
+Give each charge its facts: the kind of supply and the tax class in `declare`, and per
+charge when they differ (`supply` and `tax_class` on a `price` charge or on
+`orders.charge_more`). `tax` answers each charge's VAT from its class's rate, as the
+country's plugin (`tax_pl`) gives it, and `orders` keeps it on the order. Publr Commerce is
+not accounting software: when VAT falls due, the VAT return and the books are the
+accountant's, from the documents and exports.
 
-| Kind of supply | VAT falls due |
-|---|---|
-| Goods, admission, restaurant, transport, short hire, other services | at the supply (`supply_at`, or recorded later with `orders.facts`); money received before it, when received |
-| `accommodation` (a stay, a hotel night, a berth by the night) | as other services |
-| A service over a period (a subscription month) | at the period's end |
-| `rental` (rent, a lease, a berth or storage by the month), `energy`, `long_hire` | when invoiced, at the latest on its payment request's `due_at`; never on a payment, never at a period's end. Ask for each period with `orders.request_payment` and a due date |
-
-A charge's period is a fact recorded once the line is placed: `orders.facts` with the
-`line` (or the `charge`) and `period_from`, `period_to`, from your `on_placed` for the
-first period and, for each later one, after the `orders.charge_more` that charges it (with
-the `charge` it answered). A charge's rate comes from its tax class as the `tax` plugin
-names it: empty for the standard rate; with `tax_pl` also `reduced` (8 %), `super_reduced`
-(5 %), `zero` and `exempt`. A short stay is `accommodation` at `reduced`, a monthly
-contract for the same berth `rental` at the standard rate.
+A charge's rate comes from its tax class as the `tax` plugin names it: empty for the
+standard rate; with `tax_pl` also `reduced` (8 %), `super_reduced` (5 %), `zero` and
+`exempt`. A short stay is `accommodation` at `reduced`, a monthly contract for the same
+berth `rental` at the standard rate. A charge's period (a stay, a month's rent) is a fact
+recorded once the line is placed: `orders.facts` with the `line` (or the `charge`) and
+`period_from`, `period_to`, from your `on_placed` for the first period and, for each later
+one, after the `orders.charge_more` that charges it (with the `charge` it answered).
 
 ### The cart's other parts
 
