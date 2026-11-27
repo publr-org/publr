@@ -24,37 +24,9 @@ const hook_define = @import("../publr/plugin/hook_define.zig");
 const Ctx = sdk.Ctx;
 const Error = sdk.Error;
 
-pub const Kind = enum {
-    record,
-    term,
-    content_type,
-    taxonomy,
-    field_group,
-    plugin,
-    view,
-    user,
-    internal,
-};
-
-/// One thing a write changed: a type's or taxonomy's handle, a field group's, a plugin's
-/// name, a view's id (a type's default view by the type's handle), anything else's id.
-pub const Unit = struct {
-    kind: Kind,
-    key: []const u8,
-
-    /// `plugin:shelf`.
-    pub fn text(unit: Unit, arena: std.mem.Allocator) Error![]const u8 {
-        std.debug.assert(unit.key.len > 0);
-
-        const written = std.fmt.allocPrint(arena, "{t}:{s}", .{ unit.kind, unit.key }) catch {
-            return error.OutOfMemory;
-        };
-
-        std.debug.assert(written.len > unit.key.len);
-
-        return written;
-    }
-};
+/// What a write changed, unit by unit: defined in `publr/changed_units.zig`.
+pub const Kind = @import("../publr/changed_units.zig").Kind;
+pub const Unit = @import("../publr/changed_units.zig").Unit;
 
 /// What a reader does with a unit a write changed, inside that write.
 pub const Keep = fn (ctx: *Ctx, operation: []const u8, unit: Unit) void;

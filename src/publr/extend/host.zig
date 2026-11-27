@@ -47,6 +47,9 @@ const Lists = struct {
 pub const Host = struct {
     /// A built-in plugin's own request out that gives up after a time limit.
     pub const timed = @import("timed.zig");
+    /// Unix milliseconds now, for code outside any call (a route, a process hook); inside
+    /// one, `ctx.now()`.
+    pub const wall_clock_ms = @import("clock.zig").wall_clock_ms;
     /// What `before_command` and `serving` are given.
     pub const Command = @import("process.zig").Command;
     pub const Serving = @import("process.zig").Serving;

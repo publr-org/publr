@@ -1,4 +1,5 @@
-//! The one thing every HTML writer needs: escaping text so it cannot become markup.
+//! The one thing every HTML writer needs: escaping text so it cannot become markup:
+//! `publr.html.escape(writer, text)`.
 
 const std = @import("std");
 

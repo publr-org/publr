@@ -493,9 +493,14 @@ which are core's.
 
 `user.get`'s answer holds the custom field groups (`fields`) as JSON (`publr.operation.Json`),
 no longer core's own field definitions: what REST, the CLI and MCP answer is unchanged. The
-user operations' shapes are defined in `publr/operations/user.zig` (and its `user/` files);
-`publr.operations.user` still names core's module until core's `language.person_speaks`,
-which Cloud reaches, has a public home.
+user operations' shapes are defined in `publr/operations/user.zig` (and its `user/` files),
+and `publr.operations.user` names that file: every operation, `Summary`, `Link`,
+`invitation_path`, `fields`, `language`, `visitors`, `columns`, `types`. Core's functions are
+no longer reached through it (`language.person_speaks`, `create_user`, `staff`, `summary_of`
+and the rest). The language a person reads, for a message composed in their words, is
+`ctx.locale(person).code` (the site's when their account names none): before
+`try publr.operations.user.language.person_speaks(ctx, reader)`, after
+`ctx.locale(reader).code`.
 
 Before: `got.fields[0].fields`.
 After: `const Groups = []const struct { name: []const u8 };` then

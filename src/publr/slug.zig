@@ -1,4 +1,5 @@
-//! Text utilities: slugs (URL-safe names) and their numeric suffixes.
+//! Slugs, the URL-safe names records go by, and their numeric suffixes:
+//! `publr.text.slugify(arena, "Róża w ogrodzie")` is `roza-w-ogrodzie`.
 
 const std = @import("std");
 

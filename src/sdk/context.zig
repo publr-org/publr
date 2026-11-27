@@ -727,15 +727,8 @@ pub const Ctx = struct {
     };
 };
 
-pub fn wall_clock_ms(io: std.Io) i64 {
-    const now = std.Io.Clock.real.now(io);
-    const ms: i64 = @intCast(@divTrunc(now.nanoseconds, std.time.ns_per_ms));
-
-    std.debug.assert(ms >= 0);
-    std.debug.assert(ms < std.math.maxInt(i64) / 2);
-
-    return ms;
-}
+/// Unix milliseconds now, defined in `publr/extend/clock.zig` (`publr.Host.wall_clock_ms`).
+pub const wall_clock_ms = @import("../publr/extend/clock.zig").wall_clock_ms;
 
 test "operation ids are unique and increasing within a ctx" {
     var fixture: db.testing.Fixture = undefined;

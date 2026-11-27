@@ -21,6 +21,29 @@ pub const Database = struct {
         memory.destroy(connection);
     }
 
+    /// The pages built from this database that read any of `keys` (`record:<id>`,
+    /// `type:<handle>`), as its dependency index answers: what a change to them rebuilds.
+    pub fn affected(
+        database: Database,
+        memory: std.mem.Allocator,
+        keys: []const []const u8,
+    ) Error![]const []const u8 {
+        std.debug.assert(keys.len <= 1 << 16);
+
+        const deps = @import("../../lib/deps.zig");
+        var index: deps.Index = .{
+            .db = database.core(),
+            .options = .{
+                .quiet_ms = deps.quiet_ms,
+            },
+        };
+
+        return index.affected(memory, keys) catch |err| switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.Invalid,
+        };
+    }
+
     /// Runs `sql`, no values, no rows: a schema, a pragma, `BEGIN` / `COMMIT`.
     pub fn run(database: Database, comptime sql: [*:0]const u8) Error!void {
         return database.core().exec(sql);

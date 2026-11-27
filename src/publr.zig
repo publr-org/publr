@@ -324,6 +324,20 @@ pub const money = @import("publr/model/money.zig");
 pub const currency = @import("publr/model/currency.zig");
 /// The process environment, for plugins compiled into Publr: `publr.environment.get(name)`.
 pub const environment = @import("publr/environment.zig");
+/// Text made safe to put in HTML: `try publr.html.escape(writer, text)`.
+pub const html = @import("publr/html.zig");
+/// Files: what `ctx.make_file` makes, and whether a key names a media file
+/// (`publr.files.valid_key(key)`).
+pub const files = @import("publr/files.zig");
+/// What a write changed, unit by unit, for a built-in plugin's hooks:
+/// `publr.changed_units.hooks(&.{ .record }, changed)`.
+pub const changed_units = @import("publr/changed_units.zig");
+/// A device acting for an account: its `Scope`, `valid_name`, `name_len_max`.
+pub const device = @import("publr/model/device.zig");
+/// A sign-on token an issuer signs for one site: `sign`, `verify`, `key_from_hex`.
+pub const sign_on_token = @import("publr/model/sign_on_token.zig");
+/// An app as `app.zon` declares it: `Config`, `Mount`, `valid_name`, `valid_mount`, `label_of`.
+pub const app = @import("publr/model/app.zig");
 /// The double-entry ledger: `pub const Ledger = publr.ledger.define(struct { ... }, .{
 /// .reasons = Reason })`, listed in `define` as `.ledger`, used as `Ledger.transfer(ctx, ...)`;
 /// reads as `publr.ledger.balance(ctx, account)` and the rest.
@@ -389,7 +403,7 @@ pub const operations = struct {
     pub const project = @import("publr/operations/project.zig");
     pub const clock = @import("publr/operations/clock.zig");
     pub const custom_fields = @import("publr/operations/custom_fields.zig");
-    pub const user = @import("operations/user.zig");
+    pub const user = @import("publr/operations/user.zig");
     pub const user_type = @import("publr/operations/user_type.zig");
     pub const sign_in = @import("publr/operations/sign_in.zig");
     pub const sign_on = @import("publr/operations/sign_on.zig");

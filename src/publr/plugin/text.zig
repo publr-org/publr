@@ -26,6 +26,10 @@ pub const parse_int = library.parse_int;
 pub const parse_float = library.parse_float;
 pub const is_email = library.is_email;
 pub const is_url = library.is_url;
+/// A URL-safe name for `text`, as records get theirs: `Róża w ogrodzie` is `roza-w-ogrodzie`;
+/// at most `slug_len_max` bytes, `record` when nothing is left.
+pub const slugify = @import("../slug.zig").slugify;
+pub const slug_len_max = @import("../slug.zig").slug_len_max;
 
 pub const Error = error{OutOfMemory};
 
