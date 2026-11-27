@@ -41,7 +41,7 @@ pub fn publr_granted(env: *wasm.Env, key_ptr: u32, key_len: u32) callconv(.c) u3
         .publish = held.publish,
     };
 
-    return granted.bits();
+    return permission_define.bits_of(granted);
 }
 
 /// The domains on the plugin's grant for a key (`http.fetch`) as granted now, one per line:

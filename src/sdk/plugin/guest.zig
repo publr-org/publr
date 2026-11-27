@@ -190,7 +190,7 @@ pub const SandboxApi = struct {
 
         comptime std.debug.assert(permission.find(key) != null);
 
-        var granted = permission_define.Grant.from_bits(publr_granted(key.ptr, key.len) & 0x1f);
+        var granted = permission_define.grant_from_bits(publr_granted(key.ptr, key.len) & 0x1f);
 
         if (comptime std.mem.eql(u8, key, "http.fetch")) {
             if (granted.on) {

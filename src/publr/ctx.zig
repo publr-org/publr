@@ -7,7 +7,6 @@ const std = @import("std");
 const guest = @import("../sdk/plugin/guest.zig");
 const words = @import("plugin/words.zig");
 const caller_view = @import("caller.zig");
-const permission_define = @import("../sdk/plugin/permission_define.zig");
 const calls = @import("ctx/calls.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
@@ -35,6 +34,11 @@ fn PluginState(comptime Plugin: type) type {
 pub const Ctx = opaque {
     pub const Scope = ScopeOf;
     pub const Locale = LocaleOf;
+    /// What `grant` answers.
+    pub const Grant = @import("model/permission.zig").Grant;
+    /// What `make_file` answers, and what its `done` keeps.
+    pub const Making = @import("files.zig").Making;
+    pub const Made = @import("files.zig").Made;
 
     /// Who is calling: where from, whether signed in, their account and roles, whether an
     /// administrator granted them this operation, the visitor's stable id.
@@ -44,7 +48,7 @@ pub const Ctx = opaque {
 
     /// What the plugin was given for a request. Compiled in: what its `.permissions` asked
     /// for. Installed: whether an administrator granted the key now, and its flags.
-    pub fn grant(ctx: *const Ctx, comptime key: []const u8) permission_define.Grant {
+    pub fn grant(ctx: *const Ctx, comptime key: []const u8) Ctx.Grant {
         return behind(ctx).grant(key);
     }
 

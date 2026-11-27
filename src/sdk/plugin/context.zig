@@ -132,7 +132,7 @@ pub const HostApi = struct {
     pub fn grant(self: *const HostApi, comptime key: []const u8) permission_define.Grant {
         std.debug.assert(self.inner.now_ms >= 0);
 
-        return permission_define.Grant.of(key, held_of_running(self.inner.plugin, key));
+        return permission_define.grant_of(key, held_of_running(self.inner.plugin, key));
     }
 
     pub fn now(self: *const HostApi) words.Time {
@@ -897,14 +897,14 @@ test "a compiled-in plugin is granted what it asked for, nothing more" {
         .records = &.{"products.variant"},
         .reason = "Puts the supplier's new prices in",
     }};
-    const write = permission_define.Grant.of("records.write", held_in(&asks, "records.write"));
+    const write = permission_define.grant_of("records.write", held_in(&asks, "records.write"));
 
     try std.testing.expect(write.on and !write.publish);
-    try std.testing.expect(!permission_define.Grant.of(
+    try std.testing.expect(!permission_define.grant_of(
         "records.read",
         held_in(&asks, "records.read"),
     ).on);
-    try std.testing.expect(!permission_define.Grant.of(
+    try std.testing.expect(!permission_define.grant_of(
         "http.fetch",
         held_of_running("no_such_plugin", "http.fetch"),
     ).on);
@@ -916,7 +916,7 @@ test "a compiled-in plugin's http.fetch grant answers its domains as asked" {
         .domains = &.{ "api.supplier.com", "*.supplier-cdn.com" },
         .reason = "Downloads the supplier's price list",
     }};
-    const fetch = permission_define.Grant.of("http.fetch", held_in(&asks, "http.fetch"));
+    const fetch = permission_define.grant_of("http.fetch", held_in(&asks, "http.fetch"));
 
     try std.testing.expect(fetch.on);
     try std.testing.expectEqual(@as(usize, 2), fetch.domains.len);

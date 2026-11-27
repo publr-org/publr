@@ -2,7 +2,7 @@
 const std = @import("std");
 const Ctx = @import("../ctx.zig").Ctx;
 const words = @import("../plugin/words.zig");
-const files_api = @import("../../sdk/plugin/files_api.zig");
+const files = @import("../files.zig");
 const link = @import("../operations/link.zig");
 // Until `publr.Error` is the public set: an operation's errors, database ones among them.
 const Error = @import("../../sdk/operation.zig").Error;
@@ -49,15 +49,11 @@ pub fn verify(ctx: *Ctx, intent: []const u8, token: []const u8) Error![]const u8
 }
 
 /// A file the plugin makes, written in pieces (`write`) and kept with `done` as a file of
-/// one of its own media types (`type_handle`, `kind` `media`): see `files_api.zig`.
-pub fn make_file(
-    ctx: *Ctx,
-    type_handle: []const u8,
-    filename: []const u8,
-) files_api.Making(Ctx) {
+/// one of its own media types (`type_handle`, `kind` `media`): see `publr.Ctx.Making`.
+pub fn make_file(ctx: *Ctx, type_handle: []const u8, filename: []const u8) files.Making {
     std.debug.assert(type_handle.len > 0);
 
-    return files_api.Making(Ctx).begin(ctx, type_handle, filename);
+    return files.Making.begin(ctx, type_handle, filename);
 }
 
 /// Fills `buffer` (at most 64 bytes) from the host's cryptographic source: codes a person

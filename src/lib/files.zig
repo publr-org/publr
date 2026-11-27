@@ -8,14 +8,16 @@ const std = @import("std");
 pub const kept_elsewhere = @import("files/deferred.zig");
 pub const Deferred = kept_elsewhere.Deferred;
 const disk = @import("files/disk.zig");
+const file_key = @import("../publr/model/file_key.zig");
 pub const dropped = @import("files/dropped.zig");
 
 pub const Disk = disk.Disk;
 
 /// The largest file kept: an upload, or an original read back.
 pub const bytes_max: u32 = 32 << 20;
-pub const key_len_max: u32 = 200;
-pub const segments_max: u32 = 4;
+pub const key_len_max = file_key.key_len_max;
+pub const segments_max = file_key.segments_max;
+pub const valid_key = file_key.valid_key;
 
 /// Where a file lives: an original, an upload arriving in pieces, a resized copy that can
 /// be thrown away and made again, or an original set aside in the trash until it is
@@ -176,40 +178,6 @@ pub const Files = union(enum) {
         return kept;
     }
 };
-
-/// Up to four `/`-separated segments of `[a-z0-9._-]`, none empty or starting with a dot,
-/// so a key never climbs out of its folder or names a hidden file.
-pub fn valid_key(key: []const u8) bool {
-    std.debug.assert(key_len_max > 0);
-
-    if (key.len == 0 or key.len > key_len_max) {
-        return false;
-    }
-
-    var segments = std.mem.splitScalar(u8, key, '/');
-    var count: u32 = 0;
-
-    while (segments.next()) |segment| {
-        count += 1;
-
-        if (count > segments_max or segment.len == 0 or segment[0] == '.') {
-            return false;
-        }
-
-        for (segment) |char| {
-            const allowed = std.ascii.isLower(char) or std.ascii.isDigit(char) or
-                char == '.' or char == '-' or char == '_';
-
-            if (!allowed) {
-                return false;
-            }
-        }
-    }
-
-    std.debug.assert(count >= 1);
-
-    return true;
-}
 
 /// The part of a key's last segment before its extension: `2026/10/cat-a1b2c3.jpg` is
 /// `cat-a1b2c3`.

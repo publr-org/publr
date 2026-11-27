@@ -14,6 +14,20 @@ release renames it to its version and day.
 
 ## Unreleased
 
+### `sdk:Ctx.grant`
+
+`ctx.grant(key)` answers `publr.Ctx.Grant` (`on`, `drafts`, `private`, `internal`,
+`publish`, `domains`, and `publr.Ctx.Grant.off`), defined publicly. It no longer carries
+`of`, `bits` or `from_bits`, which were core's. `ctx.make_file(type, filename)` answers
+`publr.Ctx.Making` (`write`, `done`), and `done` a `publr.Ctx.Made`; the same calls as before.
+
+```zig
+// Before
+const fetch = ctx.grant("http.fetch"); // core's permission_define.Grant
+// After
+const fetch: publr.Ctx.Grant = ctx.grant("http.fetch");
+```
+
 ### `sdk:Host.app_picker_segment`
 
 `host.app_picker_segment` takes the plugin's view and a function answering its props, no

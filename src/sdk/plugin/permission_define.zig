@@ -169,76 +169,62 @@ fn takes(comptime entry: *const permission.Permission, comptime option: []const 
     }
 }
 
-/// What a plugin was given for one request: whether the key is on, and its flags as
-/// granted now.
-pub const Grant = struct {
-    on: bool,
-    drafts: bool = false,
-    private: bool = false,
-    internal: bool = false,
-    publish: bool = false,
-    /// `http.fetch`'s domains as granted now: compiled in, as asked; installed, the list an
-    /// administrator left (as asked until one is saved).
-    domains: []const []const u8 = &.{},
+/// What a plugin was given for one request, defined in `publr/model/permission.zig`.
+pub const Grant = @import("../../publr/model/permission.zig").Grant;
 
-    pub const off: Grant = .{
-        .on = false,
+/// The grant read from what the plugin holds for the key; off when it holds nothing.
+pub fn grant_of(comptime key: []const u8, held: ?permission.Held) Grant {
+    comptime {
+        if (permission.find(key) == null) {
+            @compileError("no permission `" ++ key ++ "`");
+        }
+    }
+
+    const found = held orelse return Grant.off;
+
+    std.debug.assert(std.mem.eql(u8, found.key, key));
+
+    return .{
+        .on = true,
+        .drafts = found.drafts,
+        .private = found.private,
+        .internal = found.internal,
+        .publish = found.publish,
+        .domains = found.domains,
     };
+}
 
-    /// Read from what the plugin holds for the key; null when it holds nothing.
-    pub fn of(comptime key: []const u8, held: ?permission.Held) Grant {
-        comptime {
-            if (permission.find(key) == null) {
-                @compileError("no permission `" ++ key ++ "`");
-            }
-        }
+/// A grant as the sandbox carries it: the key on in the first bit, a flag a bit each after.
+pub fn bits_of(grant: Grant) u32 {
+    std.debug.assert(grant.on or !(grant.drafts or grant.publish));
 
-        const found = held orelse return off;
-
-        std.debug.assert(std.mem.eql(u8, found.key, key));
-
-        return .{
-            .on = true,
-            .drafts = found.drafts,
-            .private = found.private,
-            .internal = found.internal,
-            .publish = found.publish,
-            .domains = found.domains,
-        };
+    if (!grant.on) {
+        return 0;
     }
 
-    /// As the sandbox carries it: the key on in the first bit, a flag a bit each after it.
-    pub fn bits(grant: Grant) u32 {
-        std.debug.assert(grant.on or !(grant.drafts or grant.publish));
+    const flags = [_]bool{ grant.drafts, grant.private, grant.internal, grant.publish };
+    var packed_bits: u32 = 1;
 
-        if (!grant.on) {
-            return 0;
-        }
-
-        const flags = [_]bool{ grant.drafts, grant.private, grant.internal, grant.publish };
-        var packed_bits: u32 = 1;
-
-        for (flags, 1..) |flag, shift| {
-            packed_bits |= @as(u32, @intFromBool(flag)) << @intCast(shift);
-        }
-
-        return packed_bits;
+    for (flags, 1..) |flag, shift| {
+        packed_bits |= @as(u32, @intFromBool(flag)) << @intCast(shift);
     }
 
-    pub fn from_bits(packed_bits: u32) Grant {
-        std.debug.assert(packed_bits < 1 << 5);
+    return packed_bits;
+}
 
-        const on = packed_bits & 1 == 1;
+pub fn grant_from_bits(packed_bits: u32) Grant {
+    std.debug.assert(packed_bits < 1 << 5);
 
-        return .{
-            .on = on,
-            .drafts = on and packed_bits & 2 != 0,
-            .private = on and packed_bits & 4 != 0,
-            .internal = on and packed_bits & 8 != 0,
-            .publish = on and packed_bits & 16 != 0,
-        };
-    }
-};
+    const on = packed_bits & 1 == 1;
+
+    return .{
+        .on = on,
+        .drafts = on and packed_bits & 2 != 0,
+        .private = on and packed_bits & 4 != 0,
+        .internal = on and packed_bits & 8 != 0,
+        .publish = on and packed_bits & 16 != 0,
+    };
+}
 
 fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
     std.debug.assert(name.len > 0);
@@ -335,13 +321,13 @@ test "a grant crosses the sandbox as bits and back" {
         .drafts = true,
         .publish = true,
     };
-    const back = Grant.from_bits(granted.bits());
+    const back = grant_from_bits(bits_of(granted));
 
     try std.testing.expect(back.on and back.drafts and back.publish);
     try std.testing.expect(!back.private and !back.internal);
-    try std.testing.expect(!Grant.from_bits(Grant.off.bits()).on);
-    try std.testing.expect(Grant.of("records.read", null).on == false);
-    try std.testing.expect(Grant.of("records.write", .{
+    try std.testing.expect(!grant_from_bits(bits_of(Grant.off)).on);
+    try std.testing.expect(grant_of("records.read", null).on == false);
+    try std.testing.expect(grant_of("records.write", .{
         .key = "records.write",
         .publish = true,
     }).publish);

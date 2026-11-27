@@ -5,7 +5,6 @@ const std = @import("std");
 const Ctx = @import("ctx.zig").Ctx;
 const words = @import("plugin/words.zig");
 const caller_view = @import("caller.zig");
-const permission_define = @import("../sdk/plugin/permission_define.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
 const Error = @import("../sdk/operation.zig").Error;
@@ -97,7 +96,7 @@ pub const QueueCtx = struct {
         return self.base.now();
     }
 
-    pub fn grant(self: *const QueueCtx, comptime key: []const u8) permission_define.Grant {
+    pub fn grant(self: *const QueueCtx, comptime key: []const u8) Ctx.Grant {
         return self.base.grant(key);
     }
 
