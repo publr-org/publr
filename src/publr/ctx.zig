@@ -8,6 +8,7 @@ const guest = @import("../sdk/plugin/guest.zig");
 const words = @import("plugin/words.zig");
 const caller_view = @import("caller.zig");
 const calls = @import("ctx/calls.zig");
+const built_in = @import("ctx/built_in.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
 const Error = operation.Error;
@@ -39,6 +40,10 @@ pub const Ctx = opaque {
     /// What `make_file` answers, and what its `done` keeps.
     pub const Making = @import("files.zig").Making;
     pub const Made = @import("files.zig").Made;
+    /// What `start_session` answers.
+    pub const Session = @import("ctx/session.zig").Session;
+    /// A value a message names, as `locale.say` takes it.
+    pub const Said = @import("ctx/said.zig").Said;
 
     /// Who is calling: where from, whether signed in, their account and roles, whether an
     /// administrator granted them this operation, the visitor's stable id.
@@ -64,29 +69,13 @@ pub const Ctx = opaque {
     pub const random = calls.random;
     pub const time_zone = calls.time_zone;
 
-    /// The same plugin, calling for one person: every call made through the answer runs as
-    /// the plugin acting for the account `person` (its id), with the plugin's own grants, so
-    /// a record it makes names them as its maker and the site's policies judge the person.
-    /// For a built-in plugin's operations that read and write on a member's behalf after
-    /// checking what is theirs: an installed build that asks for it does not compile.
-    pub fn as_person(ctx: *Ctx, person: []const u8) Error!*Ctx {
-        if (comptime guest.mode == .sandboxed) {
-            @compileError("ctx.as_person() is for a built-in plugin's own operations");
-        }
-
-        return behind(ctx).as_person(person);
-    }
-
-    /// Whether the caller (the person, through `as_person`) may run `Operation`, as the
-    /// call itself would be judged: to offer only what they may do. An installed build that
-    /// asks for it does not compile.
-    pub fn may(ctx: *const Ctx, comptime Operation: type) bool {
-        if (comptime guest.mode == .sandboxed) {
-            @compileError("ctx.may() is for a built-in plugin's own code");
-        }
-
-        return behind(ctx).may(Operation);
-    }
+    pub const as_person = built_in.as_person;
+    pub const may = built_in.may;
+    pub const as_system = built_in.as_system;
+    pub const io = built_in.io;
+    pub const start_session = built_in.start_session;
+    pub const mark_copy = built_in.mark_copy;
+    pub const reload_plugins = built_in.reload_plugins;
 
     /// Queues `Job` to run after this call, between requests, as the plugin. Inside a write,
     /// a rolled-back write queues nothing: `try ctx.enqueue(ReleaseHold, .{ .hold = ref })`.
@@ -315,6 +304,21 @@ const LocaleOf = struct {
         values: anytype,
     ) []const u8 {
         return behind(self.ctx).said_in(self.code, one, many, count, values);
+    }
+
+    /// `text`, known only as the code runs (a message marked where it was written with
+    /// `publr.t`), in their language, each `{name}` filled from `values`. A built-in
+    /// plugin's: an installed build that asks for it does not compile.
+    pub fn say(
+        self: LocaleOf,
+        text: []const u8,
+        values: []const Ctx.Said,
+    ) error{OutOfMemory}![]const u8 {
+        if (comptime guest.mode == .sandboxed) {
+            @compileError("locale.say is for a built-in plugin");
+        }
+
+        return behind(self.ctx).said_values(self.code, text, values);
     }
 };
 

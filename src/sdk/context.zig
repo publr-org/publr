@@ -142,10 +142,7 @@ pub const Message = struct {
     count: ?f64 = null,
     values: []const Value = &.{},
 
-    pub const Value = struct {
-        name: []const u8,
-        value: []const u8,
-    };
+    pub const Value = @import("../publr/ctx/said.zig").Said;
 };
 
 /// One language over one domain's messages: how many it translates, the ones it does not,

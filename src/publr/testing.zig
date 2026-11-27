@@ -209,9 +209,7 @@ pub const Site = struct {
         const opened = try site.databases().open(memory, path);
         errdefer opened.close(memory);
 
-        const connection: *@import("../lib/db.zig").Db = @ptrCast(@alignCast(opened.connection));
-
-        @import("../lib/db.zig").schema.apply(connection) catch |err| return public_of(err);
+        try opened.apply_schema();
 
         return opened;
     }
@@ -340,4 +338,25 @@ test "a site answers each caller as it would, runs its queue and opens other dat
     defer opened.close(memory);
 
     try opened.run("SELECT 1 FROM users LIMIT 0");
+
+    const copied = try std.fmt.allocPrint(memory, "{s}/copied.db", .{root});
+
+    try opened.copy_to(copied);
+
+    const Any = @import("extend/database_any.zig").Any;
+    var one = try opened.prepare("SELECT 1, 'a', NULL", .{});
+    defer one.finalize();
+
+    try std.testing.expect(try one.step());
+
+    const read = try one.read(struct {
+        number: Any,
+        text: Any,
+        nothing: Any,
+    }, memory);
+
+    try std.testing.expectEqual(@as(i64, 1), read.number.integer);
+    try std.testing.expectEqualStrings("a", read.text.text);
+    try std.testing.expect(read.nothing == .null);
+    try std.testing.expect(!opened.in_transaction());
 }

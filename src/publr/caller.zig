@@ -39,6 +39,12 @@ pub const View = struct {
     /// Administrators, and roles an administrator granted this operation; false through an
     /// app's address.
     granted_here: bool = false,
+    /// Publr itself: its work between requests, or a built-in plugin's `ctx.as_system()`.
+    system: bool = false,
+    /// Made inside another operation's run, not by whoever sent the request.
+    nested: bool = false,
+    /// A device's scope, what it may do with its account; null for any other caller.
+    device_scope: ?@import("model/device.zig").Scope = null,
 
     pub fn signed_in(view: View) bool {
         std.debug.assert(!view.person or view.account_id != null);

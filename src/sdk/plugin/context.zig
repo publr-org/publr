@@ -69,6 +69,7 @@ pub const Mode = guest.Mode;
 const guest = @import("guest.zig");
 const mod_reads = @import("mod_reads.zig");
 const acting_for = @import("acting_for.zig");
+const host_powers = @import("host_powers.zig");
 
 /// A native plugin's way into Publr: direct calls through the SDK, full access.
 pub const HostApi = struct {
@@ -80,6 +81,12 @@ pub const HostApi = struct {
 
     pub const as_person = acting_for.as_person;
     pub const may = acting_for.may;
+    pub const as_system = acting_for.as_system;
+    pub const io = host_powers.io;
+    pub const start_session = host_powers.start_session;
+    pub const mark_copy = host_powers.mark_copy;
+    pub const said_values = host_powers.said_values;
+    pub const reload_plugins = host_powers.reload_plugins;
 
     /// The plugin's `ctx` this call stands behind.
     pub fn ctx(self: *HostApi) *PluginCtx {
@@ -110,6 +117,7 @@ pub const HostApi = struct {
             .visitor = self.inner.visitor,
             .referer = self.inner.referer,
             .granted_here = granted_here,
+            .nested = self.inner.within.len > 0,
         });
     }
 

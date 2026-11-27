@@ -27,6 +27,9 @@ pub fn view_of(raw: Caller, seen: Seen) View {
         .account_id = raw.user_id(),
         .held_roles = raw.roles(),
         .granted_here = seen.granted_here,
+        .system = raw == .system,
+        .nested = seen.nested,
+        .device_scope = if (raw == .token) raw.token.scope else null,
     };
 }
 
@@ -36,6 +39,8 @@ pub const Seen = struct {
     visitor: []const u8 = "",
     referer: []const u8 = "",
     granted_here: bool = false,
+    /// Made inside another operation's run.
+    nested: bool = false,
 };
 
 /// Where a call came from, from what the core knows of it. `over_api`: the request came to

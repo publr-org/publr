@@ -168,6 +168,37 @@ pub const public = struct {
         return host.ctx();
     }
 
+    pub fn system(context: *extend.Context) error{OutOfMemory}!*PluginCtx {
+        const ctx = core(http.Context, context);
+        const inner = try ctx.arena.create(sdk.Ctx);
+        const host = try ctx.arena.create(HostApi);
+
+        inner.* = identity.context(Project.of(ctx), ctx.arena, .system);
+        host.* = .{
+            .inner = inner,
+        };
+
+        std.debug.assert(inner.caller == .system);
+
+        return host.ctx();
+    }
+
+    pub fn db_path(context: *const extend.Context) []const u8 {
+        const project = Project.of(core(http.Context, context));
+
+        std.debug.assert(project.db_path.len < 1 << 12);
+
+        return project.db_path;
+    }
+
+    pub fn stop_serving(context: *extend.Context) void {
+        const project = Project.of(core(http.Context, context));
+
+        std.debug.assert(project.db_path.len < 1 << 12);
+
+        project.stop_requested = true;
+    }
+
     pub fn state(
         context: *const extend.Context,
         comptime Plugin: type,

@@ -44,6 +44,31 @@ pub const Database = struct {
         };
     }
 
+    /// Whether a write is open on this connection: an `.on` middleware heard inside a write
+    /// waits for the write to end.
+    pub fn in_transaction(database: Database) bool {
+        const depth = database.core().transaction_depth;
+
+        std.debug.assert(depth < 1 << 16);
+
+        return depth > 0;
+    }
+
+    /// The whole database written to a new file at `path`, as it stands: a copy of the site.
+    pub fn copy_to(database: Database, path: []const u8) Error!void {
+        std.debug.assert(path.len > 0);
+
+        return db.copy_to(database.core(), path) catch |err| return public_of(err);
+    }
+
+    /// Publr's own tables made in this database, as a new site's: for a database a plugin
+    /// makes to become a site (a copy, a test's).
+    pub fn apply_schema(database: Database) Error!void {
+        std.debug.assert(database.core().transaction_depth == 0);
+
+        return db.schema.apply(database.core()) catch |err| return public_of(err);
+    }
+
     /// Runs `sql`, no values, no rows: a schema, a pragma, `BEGIN` / `COMMIT`.
     pub fn run(database: Database, comptime sql: [*:0]const u8) Error!void {
         return database.core().exec(sql) catch |err| return public_of(err);
@@ -210,15 +235,23 @@ pub const Statement = struct {
     }
 
     /// The row as `Row`, a struct with one field per column: integers, floats, bools, text,
-    /// each optional for a column that may be NULL. Text lives in `arena`.
+    /// `publr.Host.Any` for a column of no one type, each optional for a column that may be
+    /// NULL. Text lives in `arena`.
     pub fn read(
         statement: *Statement,
         comptime Row: type,
         arena: std.mem.Allocator,
     ) Error!Row {
+        const any = @import("database_any.zig");
         var prepared = statement.core();
 
-        return prepared.read(Row, arena) catch |err| return public_of(err);
+        if (comptime !any.holds_any(Row)) {
+            return prepared.read(Row, arena) catch |err| return public_of(err);
+        }
+
+        const core_row = prepared.read(any.CoreRow(Row), arena) catch |err| return public_of(err);
+
+        return any.row_of(Row, core_row);
     }
 
     /// The row's one column, a number.

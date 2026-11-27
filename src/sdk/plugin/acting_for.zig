@@ -30,7 +30,7 @@ pub fn begin(api: *const HostApi) Acting {
     };
 
     if (api.person) |person| {
-        std.debug.assert(person == .plugin);
+        std.debug.assert(person == .plugin or person == .system);
 
         api.inner.caller = person;
     }
@@ -64,6 +64,27 @@ pub fn as_person(api: *HostApi, person: []const u8) Error!*context.PluginCtx {
                 .access = registry.SDK.compiled_access(inner.plugin),
             },
         },
+    };
+
+    return made.ctx();
+}
+
+pub fn as_system(api: *HostApi) Error!*context.PluginCtx {
+    const inner = api.inner;
+
+    std.debug.assert(inner.now_ms >= 0);
+
+    // Core's own code needs no stand-in: it calls as the system already.
+    if (inner.plugin.len == 0) {
+        return error.Denied;
+    }
+
+    const made = inner.arena.create(HostApi) catch return error.OutOfMemory;
+
+    made.* = .{
+        .inner = inner,
+        .reads = api.reads,
+        .person = .system,
     };
 
     return made.ctx();
@@ -107,4 +128,9 @@ test "a plugin calls for a person with its own grants, and its caller is put bac
     try std.testing.expect(api.may(@import("../../publr/operations/role.zig").List));
     try std.testing.expect(!person.may(@import("../../publr/operations/role.zig").Create));
     try std.testing.expect(inner.caller == .user);
+
+    const system = context.host_of(try api.as_system());
+
+    try std.testing.expect(system.caller().system);
+    try std.testing.expect(!api.caller().system);
 }

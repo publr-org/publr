@@ -188,6 +188,22 @@ pub const Context = opaque {
         return @import("../../server/plugin_routes.zig").public.caller(context, request, response);
     }
 
+    /// Publr itself, as a `publr.Ctx`: for a route only other processes of the host reach
+    /// (an operator command, a copy's handoff), with no person behind the request.
+    pub fn system(context: *Context) error{OutOfMemory}!*Ctx {
+        return @import("../../server/plugin_routes.zig").public.system(context);
+    }
+
+    /// The path of the database this server runs on.
+    pub fn db_path(context: *const Context) []const u8 {
+        return @import("../../server/plugin_routes.zig").public.db_path(context);
+    }
+
+    /// Asks the server to stop once this answer is sent: it drains and exits.
+    pub fn stop_serving(context: *Context) void {
+        @import("../../server/plugin_routes.zig").public.stop_serving(context);
+    }
+
     /// The state the built-in plugin `Plugin` keeps for the life of the process.
     pub fn state(context: *const Context, comptime Plugin: type) *State(Plugin) {
         return @import("../../server/plugin_routes.zig").public.state(context, Plugin);

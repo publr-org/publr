@@ -40,6 +40,7 @@ fn asked(ctx: *const Ctx, request: Request, policy: Policy) Grant {
     const through_app = ctx.app_plugins != null;
     const who = caller_view.view_of(ctx.caller, .{
         .from = caller_view.from_of(ctx.caller, through_app, ctx.over_api, ctx.job),
+        .nested = ctx.within.len > 0,
     });
     const answer = policy(who, .{
         .operation_name = request.operation_name,

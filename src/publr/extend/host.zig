@@ -46,9 +46,17 @@ const Lists = struct {
 pub const Host = struct {
     /// A built-in plugin's own request out that gives up after a time limit.
     pub const timed = @import("timed.zig");
+    /// Other Publr servers on this host and sites packed as bundles.
+    pub const processes = @import("processes.zig");
+    /// The guide `publr agents` prints, for a plugin handing it to an agent.
+    pub const agents_guide = @import("../../server/agents.zig").guide;
     /// Unix milliseconds now, for code outside any call (a route, a process hook); inside
     /// one, `ctx.now()`.
     pub const wall_clock_ms = @import("clock.zig").wall_clock_ms;
+    /// The operation named `name` in this build, as the type `ctx.call` takes (another
+    /// built-in plugin's, or one of the plugin's own by its full name); null when the build
+    /// has none. Worked out as Publr is compiled.
+    pub const find_operation = @import("operations_found.zig").find_operation;
     /// What `before_command` and `serving` are given.
     pub const Command = @import("process.zig").Command;
     pub const Serving = @import("process.zig").Serving;
@@ -74,6 +82,8 @@ pub const Host = struct {
     pub const Verdict = delivery.Verdict;
     pub const Refusal = delivery.Refusal;
     pub const SignInProvider = sign_in.SignInProvider;
+    /// What is wrong with a sign-in provider, or null: for a plugin's own test.
+    pub const sign_in_problem = sign_in.problem;
     pub const Claims = sign_in.Claims;
     pub const Callback = sign_in.Callback;
     pub const Authorize = sign_in.Authorize;
@@ -82,6 +92,11 @@ pub const Host = struct {
     pub const Database = @import("database.zig").Database;
     pub const Statement = @import("database.zig").Statement;
     pub const Databases = @import("database.zig").Databases;
+    /// A column read as whatever it holds: `Statement.read` fills a field of this type.
+    pub const Any = @import("database_any.zig").Any;
+    /// When a middleware (`host.middleware`) runs, and what an `.on` one hears.
+    pub const Stage = @import("middleware.zig").Stage;
+    pub const Event = @import("middleware.zig").Event;
     /// A built-in plugin's own admin screens, in the admin's chrome.
     pub const admin_pages = @import("admin_page.zig");
     /// What `admin_brand` answers.
