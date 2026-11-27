@@ -22,8 +22,8 @@ pub const Input = struct {
     name: ?[]const u8 = null,
     avatar: ?[]const u8 = null,
     /// Behind an identity-aware proxy, the roles a new account gets when nobody holds the
-    /// identity: what an administrator chose for new members (none at all, or staff too).
-    /// Null: no account is made this way. The system alone passes it.
+    /// identity: what an administrator chose for new organization members (none at all, or
+    /// staff too). Null: no account is made this way. The system alone passes it.
     new_account_roles: ?[]const []const u8 = null,
 };
 

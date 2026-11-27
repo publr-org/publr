@@ -28,6 +28,36 @@ Before: /_publr/member?pass=<pass>&path=<address>   cookie publr_member_<mark>
 After:  /_publr/staff?pass=<pass>&path=<address>    cookie publr_staff_<mark>
 ```
 
+### `sdk:Host.FromRequest`
+
+A proxy sign-in provider's rule for someone the proxy lets through with no account is
+`organization_member` (was `new_member`); what it takes and answers is unchanged.
+
+```zig
+// Before
+.from_request = .{
+    .header = header,
+    .read = &read,
+    .new_member = &new_member,
+},
+// After
+.from_request = .{
+    .header = header,
+    .read = &read,
+    .organization_member = &organization_member,
+},
+```
+
+### `call:auth_iap.save_settings`
+
+`auth_iap.read_settings` and `auth_iap.save_settings` name the choice `organization_members`
+(was `new_members`); its values (`none`, `waiting`, `role`) and a site's saved choice stay.
+
+```
+Before: { "new_members": "role", "role": "editor" }
+After:  { "organization_members": "role", "role": "editor" }
+```
+
 ### `sdk:operations.user.visitors`
 
 The two ladders of accounts are staff and members: a role a type of user gives is a member

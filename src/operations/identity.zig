@@ -141,7 +141,7 @@ fn resolve(
     }
 
     if (new_account_roles) |roles| {
-        return new_member(ctx, identity, email, roles);
+        return organization_member(ctx, identity, email, roles);
     }
 
     const open_role = try store.settings.get(ctx.db, ctx.arena, open_sign_up_key) orelse {
@@ -182,10 +182,10 @@ fn resolve(
 }
 
 /// A new account behind an identity-aware proxy, with the roles an administrator chose for
-/// new members of the organisation, staff roles included. The one exception to "only staff
+/// new organization members, staff roles included. The one exception to "only staff
 /// make staff": staff made the rule and the proxy vouches for the person. Never sign-up,
 /// a user type, an app's actions or a signed link: those stay member-only.
-fn new_member(
+fn organization_member(
     ctx: *Ctx,
     identity: model.Identity,
     email: []const u8,

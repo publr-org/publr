@@ -127,7 +127,7 @@ that header instead of redirecting. While the provider is available:
   posted to `/admin/login` goes back to the proxy's way in, and `/api/auth/sign-in` answers
   `403 sign_in_through_proxy`. The first-time setup and the site's own visitor sign-in stay.
 - Someone the proxy lets through with no account gets what the provider says
-  (`from_request.new_member`): nothing, which is the default (an administrator adds each
+  (`from_request.organization_member`): nothing, which is the default (an administrator adds each
   person); an account with no role, which waits for an administrator ("Waiting for
   access"); or an account with roles an administrator chose, staff roles included. The
   account is made only from an email the provider vouches for, and only the system passes

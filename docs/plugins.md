@@ -1482,8 +1482,8 @@ the admin puts on every request (an identity-aware proxy such as Google IAP). In
 header's name in lower case, and `read(ctx, value)`, which returns the `Claims` the value
 names, or null when it does not check out. `read` decides, so it never calls out: it checks
 a signature against keys the plugin keeps (a job fetches them). An optional
-`.new_member(ctx, claims)` says what someone the proxy let through with no account gets:
-null for nothing (the default when it is left out), an empty list for an account with no
+`.organization_member(ctx, claims)` says what someone the proxy let through with no account
+gets: null for nothing (the default when it is left out), an empty list for an account with no
 role, or the roles an administrator chose on the plugin's own settings. A site has at most one such
 provider; while it is available the admin signs in through it alone and checks it on every
 request ([Auth](auth.md#behind-an-identity-aware-proxy)).

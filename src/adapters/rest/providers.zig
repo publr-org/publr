@@ -227,9 +227,9 @@ fn from_request(
         return refuse(response, cleared, "the proxy's header named another provider", null);
     }
 
-    const decide = reading.new_member orelse &null_member;
+    const decide = reading.organization_member orelse &no_organization_member;
     const new_account_roles = decide(asking.ctx(), claims) catch |err| {
-        return refuse(response, cleared, "deciding what a new member gets", err);
+        return refuse(response, cleared, "deciding what a new organization member gets", err);
     };
 
     try settle(request, response, project, .{
@@ -243,8 +243,8 @@ fn from_request(
     }, next, cleared);
 }
 
-/// A provider without a rule for new members: nobody gets an account by arriving.
-fn null_member(
+/// A provider without a rule for new organization members: nobody gets an account by arriving.
+fn no_organization_member(
     _: *@import("../../publr/ctx.zig").Ctx,
     claims: sdk.provider.Claims,
 ) sdk.Error!?[]const []const u8 {
@@ -826,7 +826,7 @@ test "behind a proxy a session holds only while the header names its account" {
     }
 }
 
-test "a proxy's rule for new members makes the account with the roles it names, and only that" {
+test "a proxy's rule for organization members makes the account with the roles it names" {
     var harness: sdk.testing.Harness = undefined;
     try harness.init();
     defer harness.deinit();

@@ -84,9 +84,12 @@ pub const FromRequest = struct {
     read: *const fn (ctx: *Ctx, value: []const u8) Error!?Claims,
     /// What someone the proxy let through gets when no account holds them: the roles for a
     /// new account (empty: an account with none, waiting for an administrator), or null for
-    /// none, as today. What an administrator chose for new members; a deciding step like
-    /// `read`. Left out: accounts are only ever made by an administrator.
-    new_member: ?*const fn (ctx: *Ctx, claims: Claims) Error!?[]const []const u8 = null,
+    /// none, as today. What an administrator chose for new organization members; a deciding
+    /// step like `read`. Left out: accounts are only ever made by an administrator.
+    organization_member: ?*const fn (
+        ctx: *Ctx,
+        claims: Claims,
+    ) Error!?[]const []const u8 = null,
 };
 
 pub const header_len_max: u32 = 64;
