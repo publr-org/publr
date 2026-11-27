@@ -8,12 +8,11 @@ const guest = @import("../sdk/plugin/guest.zig");
 const words = @import("plugin/words.zig");
 const caller_view = @import("caller.zig");
 const permission_define = @import("../sdk/plugin/permission_define.zig");
-const files_api = @import("../sdk/plugin/files_api.zig");
+const calls = @import("ctx/calls.zig");
 const free_value = @import("free_value.zig");
 const operation = @import("operation.zig");
 // Until `publr.Error` is the public set: an operation's errors, database ones among them.
 const Error = @import("../sdk/operation.zig").Error;
-const link = @import("operations/link.zig");
 
 /// What lies behind a `Ctx` in this build: the call's state in the host, or in the module.
 const Behind = switch (guest.mode) {
@@ -54,82 +53,35 @@ pub const Ctx = opaque {
         return behind(ctx).now();
     }
 
-    /// Inside a computed field's function: the value it answers holds until `time`, and is
-    /// worked out again then whatever else happens (a sale ends). The earliest one counts.
-    pub fn holds_until(ctx: *Ctx, time: words.Time) Error!void {
-        std.debug.assert(time.ms > 0);
+    pub const holds_until = calls.holds_until;
+    pub const sign = calls.sign;
+    pub const verify = calls.verify;
+    pub const make_file = calls.make_file;
+    pub const random = calls.random;
+    pub const time_zone = calls.time_zone;
 
-        _ = try ctx.call(@import("operations/internal.zig").HoldsUntil, .{
-            .until_ms = time.ms,
-        });
+    /// The same plugin, calling for one person: every call made through the answer runs as
+    /// the plugin acting for the account `person` (its id), with the plugin's own grants, so
+    /// a record it makes names them as its maker and the site's policies judge the person.
+    /// For a built-in plugin's operations that read and write on a member's behalf after
+    /// checking what is theirs: an installed build that asks for it does not compile.
+    pub fn as_person(ctx: *Ctx, person: []const u8) Error!*Ctx {
+        if (comptime guest.mode == .sandboxed) {
+            @compileError("ctx.as_person() is for a built-in plugin's own operations");
+        }
+
+        return behind(ctx).as_person(person);
     }
 
-    /// A link a person opens without signing in, for one purpose (`intent`, the plugin's
-    /// own word) and one subject, until `expires` (null: until revoked): its `token`, and
-    /// its `path` (`/_links/<token>`, which runs the plugin's operation named `intent`).
-    pub fn sign(
-        ctx: *Ctx,
-        intent: []const u8,
-        subject: []const u8,
-        expires: ?words.Time,
-    ) Error!link.Sign.Out {
-        std.debug.assert(intent.len > 0);
+    /// Whether the caller (the person, through `as_person`) may run `Operation`, as the
+    /// call itself would be judged: to offer only what they may do. An installed build that
+    /// asks for it does not compile.
+    pub fn may(ctx: *const Ctx, comptime Operation: type) bool {
+        if (comptime guest.mode == .sandboxed) {
+            @compileError("ctx.may() is for a built-in plugin's own code");
+        }
 
-        return ctx.call(link.Sign, .{
-            .intent = intent,
-            .subject = subject,
-            .expires_at = if (expires) |time| time.ms else 0,
-        });
-    }
-
-    /// The subject a link's token was signed for, when it is good for `intent`; not found
-    /// otherwise (another purpose, past its time, revoked).
-    pub fn verify(ctx: *Ctx, intent: []const u8, token: []const u8) Error![]const u8 {
-        std.debug.assert(intent.len > 0);
-
-        const read = try ctx.call(link.Verify, .{
-            .intent = intent,
-            .token = token,
-        });
-
-        return read.subject;
-    }
-
-    /// A file the plugin makes, written in pieces (`write`) and kept with `done` as a file of
-    /// one of its own media types (`type_handle`, `kind` `media`): see `files_api.zig`.
-    pub fn make_file(
-        ctx: *Ctx,
-        type_handle: []const u8,
-        filename: []const u8,
-    ) files_api.Making(Ctx) {
-        std.debug.assert(type_handle.len > 0);
-
-        return files_api.Making(Ctx).begin(ctx, type_handle, filename);
-    }
-
-    /// Fills `buffer` (at most 64 bytes) from the host's cryptographic source: codes a person
-    /// must not guess. Never a hash of an id, which anyone who knows the id can work out.
-    pub fn random(ctx: *Ctx, buffer: []u8) Error!void {
-        std.debug.assert(buffer.len > 0);
-
-        const random_operation = @import("../operations/random.zig");
-        const answered = try ctx.call(random_operation.Random, .{
-            .bytes = @intCast(buffer.len),
-        });
-
-        return random_operation.fill(buffer, answered.hex);
-    }
-
-    /// The site's time zone, to read moments on its clock: `ctx.now().local_date(zone)`.
-    pub fn time_zone(ctx: *Ctx) Error!words.TimeZone {
-        const answered = try ctx.call(@import("../operations/job.zig").TimeZone, .{});
-
-        std.debug.assert(answered.rule.len > 0);
-
-        return .{
-            .name = answered.name,
-            .rule = answered.rule,
-        };
+        return behind(ctx).may(Operation);
     }
 
     /// Queues `Job` to run after this call, between requests, as the plugin. Inside a write,

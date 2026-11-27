@@ -68,12 +68,18 @@ pub const Mode = guest.Mode;
 
 const guest = @import("guest.zig");
 const mod_reads = @import("mod_reads.zig");
+const acting_for = @import("acting_for.zig");
 
 /// A native plugin's way into Publr: direct calls through the SDK, full access.
 pub const HostApi = struct {
     inner: *sdk.Ctx,
     /// Set while a modifier runs: its reads are noted and answered for the whole batch.
     reads: ?*mod_reads.Reads = null,
+    /// Set by `ctx.as_person`: who each call made through it runs as.
+    person: ?sdk.Caller = null,
+
+    pub const as_person = acting_for.as_person;
+    pub const may = acting_for.may;
 
     /// The plugin's `ctx` this call stands behind.
     pub fn ctx(self: *HostApi) *PluginCtx {
@@ -85,6 +91,9 @@ pub const HostApi = struct {
     pub fn caller(self: *const HostApi) caller_view.View {
         std.debug.assert(self.inner.now_ms >= 0);
         std.debug.assert(self.inner.next_operation_id > 0);
+
+        const acting = acting_for.begin(self);
+        defer acting.end();
 
         const through_app = self.inner.app_plugins != null;
         const raw = self.inner.caller;
@@ -380,6 +389,9 @@ pub const HostApi = struct {
             try remote_reachable(self.inner, Operation.name);
         }
 
+        const acting = acting_for.begin(self);
+        defer acting.end();
+
         self.inner.failure = null;
 
         return in_working_memory(self.inner, comptime registry.SDK.bound(Operation), in);
@@ -565,6 +577,9 @@ pub const HostApi = struct {
 
         std.debug.assert(batch.len <= mods.items_max);
 
+        const acting = acting_for.begin(self);
+        defer acting.end();
+
         // The values laid out, each modifier's copy of them and the apply's own work are
         // in memory of their own, given back once the last values are read back.
         var work: plugin_memory.Work = undefined;
@@ -663,6 +678,9 @@ pub const HostApi = struct {
     pub fn call_json(self: *HostApi, name: []const u8, input: []const u8) Error![]const u8 {
         std.debug.assert(name.len > 0);
         std.debug.assert(self.reads == null);
+
+        const acting = acting_for.begin(self);
+        defer acting.end();
 
         // The call works in memory of its own, as one by type does: its answer is kept.
         var work: plugin_memory.Work = undefined;
