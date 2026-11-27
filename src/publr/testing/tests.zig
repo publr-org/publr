@@ -132,3 +132,30 @@ test "a refused input's problems reach the test, each beside its field" {
     _ = try site.call(@import("../operations/role.zig").List, .admin, .{});
     try std.testing.expectEqual(@as(usize, 0), site.problems().len);
 }
+
+test "calls come through the app the test names, as from its pages" {
+    const members = @import("../operations/user/members.zig");
+
+    var site: Site = undefined;
+    try site.init();
+    defer site.deinit();
+
+    const visitor: Who = .{
+        .visitor = "v_1",
+    };
+    const asked: members.RequestReset.In = .{
+        .email = "nobody@example.com",
+    };
+
+    // A member's own door answers only on an app's pages.
+    try std.testing.expectError(error.Invalid, site.call(members.RequestReset, visitor, asked));
+
+    site.app = .{
+        .name = "www",
+        .address = "https://example.com",
+    };
+
+    const sent = try site.call(members.RequestReset, visitor, asked);
+
+    try std.testing.expect(sent.sent);
+}

@@ -30,6 +30,14 @@ pub const Device = callers.Device;
 pub const User = callers.User;
 pub const Plugin = callers.Plugin;
 
+/// An app of the site, as a call made from its pages names it.
+pub const App = struct {
+    /// Its `app.zon` `.name`: `dashboard`.
+    name: []const u8 = "",
+    /// Where it is reached, its mount included: `https://example.com`.
+    address: []const u8 = "",
+};
+
 /// How many queued jobs `drain` runs at most in one pass.
 const drained_max: u32 = 64;
 
@@ -53,6 +61,9 @@ pub const Site = struct {
     failure: []const u8 = "",
     /// What the last call's `error.Invalid` found wrong (`problems`).
     refused: []const Problem = &.{},
+    /// The app the calls come through, as from its pages: `user.sign_up` and
+    /// `user.request_reset` answer for the app the person is on. Empty: none.
+    app: App = .{},
     /// An empty site with every plugin of the build: its tables and what each sets up.
     pub fn init(site: *Site) Error!void {
         const held = try std.testing.allocator.create(Held);
@@ -74,6 +85,7 @@ pub const Site = struct {
         site.development = false;
         site.failure = "";
         site.refused = &.{};
+        site.app = .{};
 
         var system = site.backing().harness.ctx(.system);
 
@@ -250,6 +262,8 @@ pub const Site = struct {
         made.plugin_states = &site.backing().states;
         made.now_ms = site.now_ms;
         made.test_clock = site.development;
+        made.app = site.app.name;
+        made.app_address = site.app.address;
 
         std.debug.assert(made.now_ms > 0);
 
