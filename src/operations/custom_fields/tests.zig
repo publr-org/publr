@@ -66,14 +66,28 @@ test "custom field schemas are isolated, bounded and administrator controlled" {
         \\{"handle":"user","name":"User fields","public":true,"fields":[]}
     ;
 
-    for ([_][]const u8{
-        "{", &@as([store.settings.value_len_max + 1]u8, @splat('x')), public_schema, invalid_schema,
-    }) |invalid| {
+    for ([_][]const u8{ public_schema, invalid_schema }) |invalid| {
         try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Update, .{
             .group = "user",
             .definition = try model.content_type.read(system.arena, invalid),
         }));
     }
+
+    // Past what a setting holds, however it reads.
+    var oversized = Destination.user.definition();
+
+    oversized.description = &@as([store.settings.value_len_max + 1]u8, @splat('x'));
+    try std.testing.expectError(error.Invalid, registry.SDK.dispatch(&system, Update, .{
+        .group = "user",
+        .definition = oversized,
+    }));
+
+    // JSON that is not a definition is refused where it is read, at the edge.
+    try std.testing.expectError(error.Invalid, registry.SDK.call_json(
+        &system,
+        "custom_fields.update",
+        "{\"group\":\"user\",\"definition\":{",
+    ));
 
     const unchanged = try registry.SDK.dispatch(&system, custom.Get, .{
         .group = "user",

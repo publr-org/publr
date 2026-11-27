@@ -212,9 +212,9 @@ pub fn rows_of(context: Context, fields: []const Def, document: ?Value) Error![]
 
         // A field the person may not read is not on their form: special-category data is
         // shown only on its declaring plugin's own pages, never to administrators.
-        const unseen = !visibility.sees(&context.session.ctx, def.visibility);
+        const ctx = &context.session.ctx;
 
-        if (model.field.hidden(def.visibility) and unseen) {
+        if (model.field.hidden(def.visibility) and !visibility.sees(ctx, def.visibility)) {
             continue;
         }
 
