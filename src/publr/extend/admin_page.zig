@@ -105,6 +105,69 @@ pub const Page = opaque {
     pub fn translated(page: *const Page, comptime id: []const u8) Error![]const u8 {
         return session_of(page).translated(id, .{});
     }
+
+    /// The field kinds the project knows, the build's and its installed plugins': what
+    /// `compare` shows a field's definition by.
+    pub fn kinds(page: *const Page) compare.Kinds {
+        const known = admin.kinds_of(session_of(page));
+
+        std.debug.assert(known.len <= std.math.maxInt(u32));
+
+        return .{
+            .held = @ptrCast(known.ptr),
+            .count = @intCast(known.len),
+        };
+    }
+
+    /// Where the page of a record of type `handle` is in the site's preview, by its slug
+    /// (`new` for none yet): the first app with a page for the type. Null when no app has.
+    pub fn record_path(
+        page: *const Page,
+        handle: []const u8,
+        slug: ?[]const u8,
+    ) Error!?[]const u8 {
+        std.debug.assert(handle.len > 0);
+
+        const session = session_of(page);
+        const preview = admin.preview_pages;
+
+        return preview.record_path(session.project, session.arena, null, handle, slug) catch
+            error.OutOfMemory;
+    }
+};
+
+/// The actions plugins put on the rows of `slot` (`.row_actions`), for a row named `name` of
+/// `kind`, as `ctx`'s caller may use them: those whose operation they may call, `{name}` in
+/// their paths filled in. On a plugin's own page or a `Page`'s `ctx()`.
+pub fn row_actions(
+    ctx: *const Ctx,
+    comptime slot: []const u8,
+    kind: []const u8,
+    name: []const u8,
+) error{OutOfMemory}![]const RowLink {
+    std.debug.assert(name.len > 0);
+
+    const inner = @import("../../sdk/plugin/context.zig").host_of(ctx).inner;
+    const links = try admin.row_actions(inner, slot, kind, name);
+    const found = try inner.arena.alloc(RowLink, links.len);
+
+    for (links, found) |link, *row| {
+        row.* = .{
+            .label = link.label,
+            .href = link.href,
+        };
+    }
+
+    return found;
+}
+
+/// Two versions side by side, as the admin draws them on a review screen.
+pub const compare = @import("compare.zig");
+
+/// One row action as `row_actions` answers it: what the menu item says and where it goes.
+pub const RowLink = struct {
+    label: []const u8,
+    href: []const u8,
 };
 
 const HostApi = @import("../../sdk/plugin/context.zig").HostApi;

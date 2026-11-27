@@ -7,23 +7,8 @@ const field = @import("field.zig");
 
 const Shown = field.Shown;
 
-/// A plugin's row as a version holds it, the JSON columns as text; empty when the version
-/// has no such plugin.
-pub const Row = struct {
-    manifest: []const u8 = "",
-    granted: []const u8 = "[]",
-    denied: []const u8 = "[]",
-    grants: []const u8 = "[]",
-    enabled: ?bool = null,
-};
-
-/// What a plugin's row shows as, one JSON value per thing: the plugin, whether it runs,
-/// each request. A value's JSON is what `of` draws it from.
-pub const RowValues = struct {
-    plugin: []const []const u8,
-    enabled: []const []const u8,
-    requests: []const []const u8,
-};
+pub const Row = @import("../../../publr/extend/compare.zig").plugin.Row;
+pub const RowValues = @import("../../../publr/extend/compare.zig").plugin.RowValues;
 
 const requests_max: u32 = 256;
 

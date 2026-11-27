@@ -8,21 +8,15 @@ pub const Kind = @import("../../model/kinds.zig").Kind;
 pub const plugin = @import("compare/plugin.zig");
 const file_lines = @import("compare/lines.zig");
 
-/// A value as a version holds it: its JSON, its text, and for a document it points at, that
-/// document's card.
-pub const Value = struct {
-    json: []const u8,
-    text: []const u8,
-    card_title: []const u8 = "",
-    card_type: []const u8 = "",
-    card_status: []const u8 = "",
-    card_href: []const u8 = "",
-};
+const public = @import("../../publr/extend/compare.zig");
 
-pub const Segment = field.Segment;
-
-/// A value ready to draw: the fields `CompareValue` has.
-pub const Shown = field.Shown;
+pub const Value = public.Value;
+pub const Segment = public.Segment;
+pub const Shown = public.Shown;
+pub const same = public.same;
+pub const has = public.has;
+pub const segments_into = public.segments_into;
+pub const into = public.into;
 
 const values_max: u32 = 4096;
 
@@ -286,37 +280,6 @@ fn is_object(json: []const u8) bool {
     return json.len > 0 and json[0] == '{';
 }
 
-/// Whether two versions hold the same values, in the same order.
-pub fn same(before: []const Value, after: []const Value) bool {
-    std.debug.assert(before.len <= values_max);
-    std.debug.assert(after.len <= values_max);
-
-    if (before.len != after.len) {
-        return false;
-    }
-
-    for (before, after) |left, right| {
-        if (!std.mem.eql(u8, left.json, right.json)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-pub fn has(list: []const Value, json: []const u8) bool {
-    std.debug.assert(json.len > 0);
-    std.debug.assert(list.len <= values_max);
-
-    for (list) |value| {
-        if (std.mem.eql(u8, value.json, json)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 const StatusShown = struct {
     label: []const u8,
     tone: []const u8,
@@ -346,61 +309,6 @@ fn status_of(id: []const u8) StatusShown {
         .label = known.label,
         .tone = tone,
     };
-}
-
-/// The segments as a page's own item type.
-pub fn segments_into(
-    comptime Item: type,
-    arena: std.mem.Allocator,
-    list: []const Segment,
-) ![]const Item {
-    std.debug.assert(list.len <= values_max * 4);
-
-    const items = try arena.alloc(Item, list.len);
-
-    for (list, items) |segment, *item| {
-        item.* = .{
-            .text = segment.text,
-            .mark = segment.mark,
-        };
-    }
-
-    std.debug.assert(items.len == list.len);
-
-    return items;
-}
-
-/// The values as a page's own item type (`CompareValue` as the page declares it).
-pub fn into(comptime Item: type, arena: std.mem.Allocator, list: []const Shown) ![]const Item {
-    std.debug.assert(list.len <= values_max);
-
-    const items = try arena.alloc(Item, list.len);
-    const SegmentItem = std.meta.Elem(@FieldType(Item, "segments"));
-    const Icon = @FieldType(Item, "icon");
-
-    for (list, items) |value, *item| {
-        item.* = .{
-            .json = value.json,
-            .mark = value.mark,
-            .card = value.card,
-            .title = value.title,
-            .type_label = value.type_label,
-            .status = value.status,
-            .tone = value.tone,
-            .href = value.href,
-            .segments = try segments_into(SegmentItem, arena, value.segments),
-            .definition = value.definition,
-            .icon = std.meta.stringToEnum(Icon, value.icon) orelse .link,
-            .required = value.required,
-            .summary = value.summary,
-            .name = value.name,
-            .details = value.details,
-        };
-    }
-
-    std.debug.assert(items.len == list.len);
-
-    return items;
 }
 
 test "a text changed shows the words, a value new whole shows nothing" {

@@ -5,29 +5,8 @@ const kinds = @import("../../../model/kinds.zig");
 const model_field = @import("../../../model/field.zig");
 
 /// A value ready to draw, as `CompareValue` declares it.
-pub const Shown = struct {
-    json: []const u8,
-    mark: []const u8,
-    card: bool,
-    title: []const u8 = "",
-    type_label: []const u8 = "",
-    status: []const u8 = "",
-    tone: []const u8 = "neutral",
-    href: []const u8 = "",
-    segments: []const Segment = &.{},
-    /// Drawn as a definition card: a field of a type, a plugin, a request it makes.
-    definition: bool = false,
-    icon: []const u8 = "link",
-    required: bool = false,
-    summary: []const u8 = "",
-    name: []const u8 = "",
-    details: []const []const u8 = &.{},
-};
-
-pub const Segment = struct {
-    text: []const u8,
-    mark: []const u8,
-};
+pub const Shown = @import("../../../publr/extend/compare.zig").Shown;
+pub const Segment = @import("../../../publr/extend/compare.zig").Segment;
 
 const said = [_][]const u8{ "name", "label", "kind", "many", "required", "options", "fields" };
 const options_said = [_][]const u8{ "to", "taxonomy", "choices" };
