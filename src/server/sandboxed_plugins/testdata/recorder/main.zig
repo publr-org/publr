@@ -89,8 +89,8 @@ fn plugin_enabled(
 }
 
 /// Keeps the apps loaded
-fn apps_loaded(ctx: *publr.QueueCtx, loaded: publr.sdk.AppsLoaded.Payload) publr.Error!void {
-    try keep(ctx, publr.sdk.AppsLoaded.full_name, loaded.app);
+fn apps_loaded(ctx: *publr.QueueCtx, loaded: publr.AppsLoaded.Payload) publr.Error!void {
+    try keep(ctx, publr.AppsLoaded.full_name, loaded.app);
 }
 
 pub const SeenIn = struct {};
@@ -130,6 +130,6 @@ pub const plugin = publr.plugin.define(manifest, .{
         publr.after(operations.custom_fields.Create, fields_made),
         publr.after(operations.plugin.Add, plugin_added),
         publr.after(operations.plugin.Enable, plugin_enabled),
-        publr.on(publr.sdk.AppsLoaded, apps_loaded),
+        publr.on(publr.AppsLoaded, apps_loaded),
     },
 });

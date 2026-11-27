@@ -32,6 +32,9 @@ fn PluginState(comptime Plugin: type) type {
     return @import("../server/plugin_states.zig").StateOf(Plugin);
 }
 
+/// Whether this build is compiled into Publr, not installed: `publr.compiled_in`.
+pub const compiled_in = guest.mode == .native;
+
 pub const Ctx = opaque {
     pub const Scope = ScopeOf;
     pub const Locale = LocaleOf;

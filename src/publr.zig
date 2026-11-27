@@ -19,6 +19,9 @@ pub const Manifest = @import("publr/plugin/define.zig").Manifest;
 /// What a plugin's code runs with, and how it fails.
 pub const Ctx = @import("publr/ctx.zig").Ctx;
 pub const Error = @import("publr/operation.zig").Error;
+/// Whether this build of the plugin is compiled into Publr (a built-in plugin), not installed
+/// (a Wasm module the host runs): what only a built-in plugin carries is chosen by it.
+pub const compiled_in = @import("publr/ctx.zig").compiled_in;
 /// What a built-in plugin's `.extend` registers through: `fn extend(host: *publr.Host)`.
 pub const Host = @import("publr/extend/host.zig").Host;
 /// SQL on a built-in plugin's own tables: `ctx.database()`.

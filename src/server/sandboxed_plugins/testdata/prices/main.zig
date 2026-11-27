@@ -53,7 +53,7 @@ fn post(ctx: *publr.Ctx, in: PostIn) publr.Error!PostOut {
 
     const created = try ctx.call(record.Create, .{
         .type = "note",
-        .document = publr.sdk.operation.Json.of(ctx.arena(), .{
+        .document = publr.operation.Json.of(ctx.arena(), .{
             .title = in.title,
         }) catch return error.OutOfMemory,
     });

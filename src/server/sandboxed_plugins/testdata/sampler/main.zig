@@ -306,7 +306,7 @@ const icons = .{
 /// What only a compiled-in plugin carries (routes, operator commands, a state, process hooks,
 /// the page reading that state) takes the host's own modules, which the sandbox lacks: its
 /// sandboxed build registers the rest.
-pub const plugin = if (publr.plugin.guest.mode == .native)
+pub const plugin = if (publr.compiled_in)
     publr.plugin.define(manifest, .{
         .records = &records,
         .ledger = Books.Ledger,

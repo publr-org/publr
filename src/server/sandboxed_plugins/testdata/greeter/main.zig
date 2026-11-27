@@ -212,7 +212,7 @@ fn greet(ctx: *publr.Ctx, in: GreetIn) publr.Error!GreetOut {
     };
     _ = try ctx.call(record.Create, .{
         .type = "greeter.salutation",
-        .document = publr.sdk.operation.Json.of(ctx.arena(), note) catch {
+        .document = publr.operation.Json.of(ctx.arena(), note) catch {
             return error.OutOfMemory;
         },
     });
