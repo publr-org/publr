@@ -1,22 +1,12 @@
 const std = @import("std");
+const public = @import("../publr/model/status.zig");
 
-pub const id_len_max: u32 = 32;
-pub const statuses_max: u32 = 64;
-pub const transitions_max: u32 = 200;
+pub const id_len_max = public.id_len_max;
+pub const statuses_max = public.statuses_max;
+pub const transitions_max = public.transitions_max;
 
-pub const Color = enum { neutral, info, success, warning, danger };
-
-pub const Status = struct {
-    id: []const u8,
-    label: []const u8,
-    color: Color = .neutral,
-    live: bool = false,
-    listed: bool = true,
-    initial: bool = false,
-    /// Another plugin's status this one stands in for (`orders.paid`): with that one known,
-    /// it takes its label, colour and visibility, and a filter asking for it finds this one.
-    alias: []const u8 = "",
-};
+pub const Color = public.Color;
+pub const Status = public.Status;
 
 /// Each status standing in for another (`alias`) given that one's meaning, when the site
 /// knows it; one whose alias is unknown keeps its own.
@@ -69,89 +59,9 @@ test "a status standing in for another takes its meaning when the site knows it"
     try std.testing.expect(!statuses[2].live);
 }
 
-pub const Transition = struct {
-    from: []const u8,
-    to: []const u8,
-    label: []const u8,
-};
-
-pub const core_statuses = [_]Status{
-    .{
-        .id = "draft",
-        .label = "Draft",
-        .initial = true,
-    },
-    .{
-        .id = "published",
-        .label = "Published",
-        .color = .success,
-        .live = true,
-    },
-    .{
-        .id = "archived",
-        .label = "Archived",
-        .listed = false,
-    },
-    .{
-        .id = "trashed",
-        .label = "In the trash",
-        .color = .danger,
-        .listed = false,
-    },
-};
-
-pub const core_transitions = [_]Transition{
-    .{
-        .from = "draft",
-        .to = "published",
-        .label = "Publish",
-    },
-    .{
-        .from = "published",
-        .to = "draft",
-        .label = "Unpublish",
-    },
-    .{
-        .from = "draft",
-        .to = "archived",
-        .label = "Archive",
-    },
-    .{
-        .from = "published",
-        .to = "archived",
-        .label = "Archive",
-    },
-    .{
-        .from = "archived",
-        .to = "draft",
-        .label = "Restore",
-    },
-    .{
-        .from = "draft",
-        .to = "trashed",
-        .label = "Delete",
-    },
-    .{
-        .from = "published",
-        .to = "trashed",
-        .label = "Delete",
-    },
-    .{
-        .from = "archived",
-        .to = "trashed",
-        .label = "Delete",
-    },
-    .{
-        .from = "trashed",
-        .to = "draft",
-        .label = "Restore",
-    },
-    .{
-        .from = "trashed",
-        .to = "archived",
-        .label = "Restore",
-    },
-};
+pub const Transition = public.Transition;
+pub const core_statuses = public.core_statuses;
+pub const core_transitions = public.core_transitions;
 
 pub fn Registry(comptime statuses: []const Status, comptime transitions: []const Transition) type {
     comptime validate(statuses, transitions);

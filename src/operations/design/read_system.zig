@@ -1,8 +1,6 @@
-//! `design.system`: an app's design system as it is written, its `app.zon` tokens and fonts
-//! and the structure in its `design/system.zon`; what the design system builder opens on.
-
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/design/read_system.zig");
 const registry = @import("../../server/registry.zig");
 const apps = @import("../apps.zig");
 const model_app = @import("../../model/app.zig");
@@ -14,48 +12,17 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 
 pub const System = struct {
-    pub const name = "design.system";
-    pub const description = "Read an app's design system: tokens, fonts and the structure";
-    pub const details =
-        \\Administrators only. The tokens and fonts its `app.zon` declares, as written, and
-        \\the structure over them its `design/system.zon` holds: color roles and contexts,
-        \\font definitions, the type scale, icons and the blocks' starting documents. `system`
-        \\is null when the app has none yet, or when the file is not one (`saved` says
-        \\which). Not found when no app has that `.name`.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        app: []const u8,
-    };
-    pub const Out = struct {
-        /// One document: every token, `[{ "name", "value" }]`.
-        tokens: sdk.operation.Json,
-        fonts: []const model_app.Font,
-        /// One document: `design/system.zon` as JSON, or null.
-        system: ?sdk.operation.Json,
-        saved: bool,
-    };
-    pub const example: In = .{
-        .app = "www",
-    };
-    // An app that declares no tokens or design system yet: the first a site has.
-    pub const example_out: Out = .{
-        .tokens = .{
-            .text = "[]",
-        },
-        .fonts = &.{},
-        .system = null,
-        .saved = false,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .app = "The app's `.name`",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .tokens = "Every token `app.zon` declares, in order",
-        .fonts = "Every font `app.zon` declares: a stylesheet, or hosted faces",
-        .system = "The structure `design/system.zon` holds, or null",
-        .saved = "Whether `design/system.zon` exists",
-    };
+    pub const shape = public.System;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(in.app.len < 1 << 16);

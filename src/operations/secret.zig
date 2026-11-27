@@ -1,5 +1,6 @@
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/secret.zig");
 const trash = @import("trash.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
@@ -12,30 +13,10 @@ const Error = sdk.Error;
 const secrets = model.secrets;
 const kept = store.secrets;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "secret",
-    .label = "Secrets",
-    .area = .system,
-    .summary = "Secrets plugins name but never hold: API keys, set by an administrator",
-    .details =
-    \\A plugin declares the secrets it uses in `.secrets` (not a permission) and writes
-    \\`{secret:NAME}` where the value goes in a request it sends out; the value is filled in
-    \\as the request leaves, so the plugin never sees it. Names are site-wide: plugins
-    \\naming the same one share its value. A value comes from the environment variable of
-    \\the same name when a built-in plugin declares it or `PUBLR_SECRETS_FROM_ENVIRONMENT`
-    \\lists it (names separated by spaces or commas), else from what an administrator set
-    \\here, kept sealed
-    \\with the project's key: `PUBLR_SECRET_KEY`, else `secret.key` beside the database.
-    \\A value is never answered back. `PUBLR_SECRET_KEY` and
-    \\`PUBLR_SECRETS_FROM_ENVIRONMENT` are never a secret's name. Administrators only,
-    \\but for `secret.digest`: a plugin's code hashing text that holds its own secrets
-    \\(a gateway's signature), the value filled in by core.
-    ,
-};
+pub const namespace = public.namespace;
 
 pub const operations = [_]type{ List, Set, Remove, Digest };
 
-/// A hash of text holding a plugin's secrets, made by core: `secret_digest.zig`.
 pub const Digest = digest.Digest;
 const digest = @import("secret_digest.zig");
 
@@ -43,49 +24,19 @@ const digest = @import("secret_digest.zig");
 pub const key_variable = "PUBLR_SECRET_KEY";
 const key_file = "secret.key";
 
-pub const Listed = struct {
-    name: []const u8,
-    /// `environment` (the variable wins), `kept` (set here), or `missing`.
-    source: []const u8,
-    /// The plugins that declare it, installed and built in.
-    used_by: []const []const u8,
-    updated_at: i64,
-};
-
-const example_listed: Listed = .{
-    .name = "STOCKS_API_KEY",
-    .source = "kept",
-    .used_by = &.{},
-    .updated_at = 1789650000000,
-};
+pub const Listed = public.Listed;
 
 pub const List = struct {
-    pub const name = "secret.list";
-    pub const description = "List the secrets: those plugins declare and those set";
-    pub const details =
-        \\Each with where its value comes from (`environment`, `kept` or `missing`) and the
-        \\plugins that declare it; never a value. `key` says where the project's key is:
-        \\`environment`, `file`, or `none` until a secret is first set.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        limit: u32 = 50,
-        offset: u32 = 0,
-    };
-    pub const Out = struct {
-        secrets: []const Listed,
-        key: []const u8,
-        total: u32 = 0,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .limit = "How many at most; 50 when omitted, up to 200",
-        .offset = "How many to pass over first: the set ones by name, then the declared",
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .secrets = &.{example_listed},
-        .key = "file",
-    };
+    pub const shape = public.List;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const field_docs = shape.field_docs;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -127,34 +78,17 @@ pub const List = struct {
 };
 
 pub const Set = struct {
-    pub const name = "secret.set";
-    pub const description = "Set a secret's value, replacing any";
-    pub const details =
-        \\Kept sealed with the project's key, made beside the database the first time when
-        \\`PUBLR_SECRET_KEY` is not set. An environment variable of the same name still wins.
-        \\The value is up to 8 KiB and never shown again.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const secret = .{"value"};
-    pub const In = struct {
-        name: []const u8,
-        value: []const u8,
-    };
-    pub const Out = Listed;
-    pub const example: In = .{
-        .name = "STOCKS_API_KEY",
-        .value = "sk-example",
-    };
-    pub const example_out: Out = .{
-        .name = "STOCKS_API_KEY",
-        .source = "kept",
-        .used_by = &.{},
-        .updated_at = 1789650000000,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "Capitals, digits and underscores: STOCKS_API_KEY",
-        .value = "The value; never shown again",
-    };
+    pub const shape = public.Set;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const secret = shape.secret;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -182,28 +116,16 @@ pub const Set = struct {
 };
 
 pub const Remove = struct {
-    pub const name = "secret.remove";
-    pub const description = "Forget a secret's value";
-    pub const details =
-        \\The plugins that use it then send their requests without it, and are told it is
-        \\missing. An environment variable of the same name is left as it is.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        name: []const u8,
-    };
-    pub const Out = struct {
-        removed: bool,
-    };
-    pub const example: In = .{
-        .name = "STOCKS_API_KEY",
-    };
-    pub const example_out: Out = .{
-        .removed = true,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .name = "The secret's name",
-    };
+    pub const shape = public.Remove;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

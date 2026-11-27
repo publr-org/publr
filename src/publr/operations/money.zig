@@ -7,6 +7,17 @@ const operation = @import("../operation.zig");
 /// `publr.Money`: by currency, in each currency's minor units.
 const Amounts = @import("../money.zig").Money;
 
+pub const namespace: operation.Namespace = .{
+    .name = "money",
+    .label = "Money",
+    .area = .background,
+    .summary = "Amounts written as the site writes them",
+    .details =
+    \\Reads that write amounts in minor units with the site's currencies: their symbols,
+    \\formats and separators. Plugins call them to show money on their own pages.
+    ,
+};
+
 pub const Text = struct {
     pub const name = "money.text";
     /// Changes nothing, and every page may show prices: a plugin's code acting for a

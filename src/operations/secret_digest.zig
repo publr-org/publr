@@ -1,10 +1,6 @@
-//! `secret.digest`: a hash of text that holds a plugin's secrets, made by core so the plugin
-//! never holds them. What a gateway's signature is (Przelewy24's `sha384` over a JSON with
-//! its CRC key, PayU's `md5(body + key)`, an HMAC keyed with an API secret, AWS's chained
-//! HMAC key), answered as hex or base64, and compared with a signature the plugin was sent
-//! in constant time.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/secret/digest.zig");
 const model = @import("../model.zig");
 const http = @import("http.zig");
 const secret = @import("secret.zig");
@@ -16,103 +12,54 @@ const secrets = model.secrets;
 const hash = std.crypto.hash;
 const hmac = std.crypto.auth.hmac;
 
-/// The most text a digest is made of: a webhook's body fits.
-pub const text_bytes_max: u32 = 1 << 20;
-/// The most steps a key's chain takes: AWS takes four.
-pub const chain_max: u32 = 8;
+pub const text_bytes_max = public.text_bytes_max;
+pub const chain_max = public.chain_max;
 const secrets_max: u32 = 8;
 /// The longest digest, SHA-512 in hex.
 const digest_bytes_max: u32 = 128;
 
-pub const Algorithm = enum {
-    md5,
-    sha1,
-    sha256,
-    sha384,
-    sha512,
-    hmac_sha256,
-    hmac_sha384,
-    hmac_sha512,
+pub const Algorithm = public.Algorithm;
+pub const Encoding = public.Encoding;
 
-    fn keyed(algorithm: Algorithm) bool {
-        return switch (algorithm) {
-            .hmac_sha256, .hmac_sha384, .hmac_sha512 => true,
-            else => false,
-        };
-    }
-};
-
-pub const Encoding = enum { hex, base64 };
+/// Whether the algorithm is an HMAC, taking a key.
+fn keyed(algorithm: Algorithm) bool {
+    return switch (algorithm) {
+        .hmac_sha256, .hmac_sha384, .hmac_sha512 => true,
+        else => false,
+    };
+}
 
 pub const Digest = struct {
-    pub const name = "secret.digest";
-    /// A plugin's alone: not listed among the commands people and agents run.
-    pub const plugins_only = true;
-    pub const description = "Hash text holding the plugin's secrets, as the plugin";
-    pub const details =
-        \\The digest of `text` with each `{secret:NAME}` in it (and in `key`) filled in by
-        \\core: the plugin never holds the value. A plain hash (`md5`, `sha1`, `sha256`,
-        \\`sha384`, `sha512`) of the text, or an HMAC (`hmac_sha256`, `hmac_sha384`,
-        \\`hmac_sha512`) of it keyed with `key`; each step of `chain` first turns the key into
-        \\the HMAC of that step under it (AWS's signing key), and the key made along the way
-        \\never leaves core. Answered as hex (lower case) or base64. With `compare`, a
-        \\signature the plugin was sent, `matches` says whether it is the digest, compared in
-        \\constant time. Refused unless the caller is a plugin's code, and every secret named
-        \\is declared in its `.secrets` and set.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        algorithm: Algorithm,
-        text: []const u8,
-        key: []const u8 = "",
-        chain: []const []const u8 = &.{},
-        encoding: Encoding = .hex,
-        compare: []const u8 = "",
-    };
-    pub const Out = struct {
-        digest: []const u8,
-        matches: bool = false,
-    };
-    /// Text a gateway signs and a signature it sent: neither is read as anything here.
-    pub const verbatim = .{ "text", "compare" };
-    pub const example: In = .{
-        .algorithm = .sha384,
-        .text = "{\"sessionId\":\"a1b2\",\"merchantId\":11111,\"amount\":1250," ++
-            "\"currency\":\"PLN\",\"crc\":\"{secret:P24_CRC}\"}",
-    };
-    pub const example_out: Out = .{
-        .digest = "9c0b8a…",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .algorithm = "md5, sha1, sha256, sha384, sha512, hmac_sha256, hmac_sha384 or " ++
-            "hmac_sha512",
-        .text = "What is hashed, up to 1 MiB; may hold {secret:NAME}",
-        .key = "An HMAC's key; may hold {secret:NAME}. Only for the hmac_ algorithms",
-        .chain = "Up to 8 steps, each turning the key into HMAC(key, step) first",
-        .encoding = "hex (lower case) or base64",
-        .compare = "A signature to check against the digest, in the same encoding",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .digest = "The digest, in the encoding asked for",
-        .matches = "Whether `compare` is the digest; false when none was given",
-    };
+    pub const shape = public.Digest;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const verbatim = shape.verbatim;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
         std.debug.assert(chain_max > 0);
 
         const plugin = http.fetcher_of(ctx) orelse return error.Denied;
-        const keyed = in.algorithm.keyed();
+        const is_keyed = keyed(in.algorithm);
 
         if (in.text.len > text_bytes_max or in.chain.len > chain_max) {
             return error.Invalid;
         }
 
-        if (!keyed and (in.key.len > 0 or in.chain.len > 0)) {
+        if (!is_keyed and (in.key.len > 0 or in.chain.len > 0)) {
             return error.Invalid;
         }
 
-        if (keyed and in.key.len == 0) {
+        if (is_keyed and in.key.len == 0) {
             return error.Invalid;
         }
 

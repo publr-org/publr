@@ -6,6 +6,25 @@ const operation = @import("../operation.zig");
 /// A request read piece by piece, as it arrives: `http.stream` and `http.read`.
 pub const stream = @import("http/stream.zig");
 
+pub const namespace: operation.Namespace = .{
+    .name = "http",
+    .label = "Outside requests",
+    .area = .system,
+    .summary = "Requests a plugin sends out, its secrets filled in as they leave",
+    .details =
+    \\From queued work alone (a job, an `on` hook), never a request someone waits on, a
+    \\plugin granted `http.fetch` sends a request to a domain on its grant (exact,
+    \\`*.example.com`, or `*` for any public address): https, or in development plain
+    \\http to this machine when listed. In production local and private addresses and the
+    \\server itself are refused, whatever is listed; redirects stay within the domains, and
+    \\each request is logged (host, path, status). Where it writes
+    \\`{secret:NAME}` (in the address, a header or the body) the secret's value is filled
+    \\in as the request leaves, when the plugin declares it in `.secrets`; the plugin never
+    \\holds it, and a value the answer echoes back is put back as `{secret:NAME}`. Plugins
+    \\only.
+    ,
+};
+
 /// Headers one request sends, at most.
 pub const headers_max: u32 = 16;
 /// What a plugin may send: a conversation with its pictures fits.

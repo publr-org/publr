@@ -1,9 +1,6 @@
-//! `design.save_system`: an app's design system, its tokens and fonts written into its
-//! `app.zon` (the rest of the file kept as it is) and the structure over them into its
-//! `design/system.zon`, through `apps.write`, then loaded live.
-
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/design/system.zig");
 const registry = @import("../../server/registry.zig");
 const apps = @import("../apps.zig");
 const model_app = @import("../../model/app.zig");
@@ -16,64 +13,17 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 
 pub const SaveSystem = struct {
-    pub const name = "design.save_system";
-    pub const description = "Write an app's design tokens and fonts into its app.zon, live";
-    pub const details =
-        \\Administrators only, and not a device that may save drafts only. `tokens` replaces
-        \\the app's `.tokens` and `fonts` its `.fonts`, whole; everything else in `app.zon`
-        \\stays as written. A token's name is lowercase letters, digits and `-`, starting
-        \\with a letter; its value one CSS value (no `;`, `{`, `}` or line break). A font is a
-        \\family with an `https://` stylesheet, or the files the site hosts (`faces`, each a
-        \\media path or `https://`). `system`, when given, replaces `design/system.zon`: the
-        \\color roles and contexts, the font definitions, the type scale, the icons and the
-        \\blocks' starting documents. Once written the apps are loaded again; when
-        \\they do not load, it fails with `NotLoaded` and why, and the file stays written.
-        \\Not found when no app has that `.name`.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        app: []const u8,
-        /// One document: the app's tokens, `[{ "name", "value" }]`, as many as it holds.
-        tokens: sdk.operation.Json = .{
-            .text = "[]",
-        },
-        fonts: []const model_app.Font = &.{},
-        /// One document: `design/system.zon` as JSON.
-        system: ?sdk.operation.Json = null,
-    };
-    pub const Out = struct {
-        path: []const u8,
-        tokens: u32,
-        fonts: u32,
-        system: []const u8 = "",
-    };
-    pub const example: In = .{
-        .app = "www",
-        .tokens = .{
-            .text = "[{\"name\":\"color-brand\",\"value\":\"#2f5d54\"}]",
-        },
-        .fonts = &.{.{
-            .family = "Inter",
-            .url = "https://fonts.googleapis.com/css2?family=Inter",
-        }},
-    };
-    pub const example_out: Out = .{
-        .path = "www/app.zon",
-        .tokens = 1,
-        .fonts = 1,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .app = "The app's `.name`",
-        .tokens = "Every token, `{name, value}`, in order: the app's whole `.tokens`",
-        .fonts = "Every font, `{family, url}` or `{family, faces}`: the app's whole `.fonts`",
-        .system = "The structure over the tokens: `design/system.zon`, whole; null keeps it",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .path = "The file written, `<folder>/app.zon`",
-        .tokens = "How many tokens it holds now",
-        .fonts = "How many fonts it holds now",
-        .system = "The structure's file when one was written, `<folder>/design/system.zon`",
-    };
+    pub const shape = public.SaveSystem;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);

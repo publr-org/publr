@@ -5,53 +5,23 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const version = "0.8.4";
+const public = @import("../publr/operations/heartbeat.zig");
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "heartbeat",
-    .label = "Liveness",
-    .area = .background,
-    .summary = "Liveness and version checks",
-    .details =
-    \\Operations that never touch data: use them to check that Publr is up, which
-    \\version is running, and who you are calling as.
-    ,
-};
+pub const version = public.version;
+pub const namespace = public.namespace;
 
 pub const Check = struct {
-    pub const name = "heartbeat.check";
-    pub const description = "Check that Publr is alive; reports version and caller";
-    pub const details =
-        \\The simplest operation there is: it never touches the database and anyone
-        \\may call it. Use it to check a deployment, to see which version runs, and
-        \\to confirm who you are calling as (`--as`, `--as-admin`, or a session
-        \\cookie over HTTP, where it backs `GET /api/health`).
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        echo: []const u8 = "",
-    };
-    pub const Out = struct {
-        version: []const u8,
-        echo: []const u8,
-        caller: []const u8,
-    };
-    pub const example: In = .{
-        .echo = "hello",
-    };
-    pub const example_out: Out = .{
-        .version = version,
-        .echo = "hello",
-        .caller = "system",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .echo = "Any text; it comes back unchanged, handy for tracing a request",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .version = "The Publr version answering",
-        .echo = "The echo you sent",
-        .caller = "Who you are: `anonymous`, `system`, or a user id",
-    };
+    pub const shape = public.Check;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(echo_len_max > 0);
@@ -68,7 +38,7 @@ pub const Check = struct {
     }
 };
 
-pub const echo_len_max: u32 = 256;
+const echo_len_max = public.echo_len_max;
 pub const operations = [_]type{Check};
 
 test "heartbeat.check echoes and names the caller" {

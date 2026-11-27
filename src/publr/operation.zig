@@ -37,6 +37,31 @@ pub const Error = error{
 
 pub const Kind = enum { read, write };
 
+/// A group of operations, as REST, the CLI and MCP show it: `money` and what it is for.
+pub const Namespace = struct {
+    name: []const u8,
+    summary: []const u8,
+    details: []const u8,
+    /// What people call it: `Media library`. Empty shows the name.
+    label: []const u8 = "",
+    /// Where it sits when roles are edited.
+    area: Area = .site,
+
+    pub const Area = enum {
+        /// What editors write: records, terms, media, their history.
+        content,
+        /// The site's structure and setup: types, fields, apps, design.
+        site,
+        /// Accounts, roles and how people sign in.
+        people,
+        /// How this Publr runs: plugins, secrets, updates, logs.
+        system,
+        /// What every role needs or no one grants by hand (liveness, a person's own pins
+        /// and views): not listed when roles are edited, its grants kept as they are.
+        background,
+    };
+};
+
 /// A way an operation fails that the core's errors do not name, raised with `ctx.fail`:
 /// "your email is not verified", "the plan's limit is reached". A plugin's operation lists
 /// the ones it can end with on its `Fails:` lines.

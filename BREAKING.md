@@ -121,10 +121,136 @@ const id = try publr.sdk.messaging.deliver(&ctx, message);
 
 `publr.operations.money` is the public file of the money operations' shapes, no longer
 core's whole `operations/money.zig`. `Text`, `Texts` (with `Texts.amounts_max`), `Main` and
-`Read` keep their names, inputs and answers, and calls are unchanged. Gone from it: the
-namespace's `namespace` and `operations` list and each operation's `run`, which are core's.
+`Read` keep their names, inputs and answers, and calls are unchanged, as does the
+`namespace` descriptor. Gone from it: the `operations` list and each operation's `run`,
+which are core's.
 
 Before: `publr.operations.money.operations`, `publr.operations.money.Text.run(...)`.
 After: call the operation, `ctx.call(publr.operations.money.Text, .{ .amount = price })`.
+
+### `sdk:operations.heartbeat`
+
+`publr.operations.heartbeat` is the public file of the heartbeat operation's shape, no longer
+core's whole `operations/heartbeat.zig`. `Check`, `version`, `echo_len_max` and `namespace`
+stay; calls are unchanged. Gone from it: the `operations` list and `Check.run`, core's.
+
+Before: `publr.operations.heartbeat.Check.run(...)`.
+After: `ctx.call(publr.operations.heartbeat.Check, .{})`.
+
+### `sdk:operations.status`
+
+`publr.operations.status` is the public file of `status.list`'s shape. `List` and
+`namespace` stay; `List.Out`'s statuses and transitions are `publr/model/status.zig`'s
+`Status` and `Transition`, the same fields. Gone from it: the `operations` list,
+`List.run` and core's helpers `added_statuses`, `drafts_waiting`, `known`, `find`, `find_in`
+and `is_live`.
+
+Before: `publr.operations.status.is_live(ctx, id)`.
+After: read `ctx.call(publr.operations.status.List, .{})` and its statuses' `live`.
+
+### `sdk:operations.request`
+
+`publr.operations.request` is the public file of `request.read`'s shape. `Read`, `Touch`,
+`namespace` and the new `Value` (a parameter or a cookie, before core's own) stay or come;
+calls are unchanged. Gone from it: the `operations` list and `Read.run`.
+
+### `sdk:operations.clock`
+
+`publr.operations.clock` is the public file of `project.clock` and `project.set_clock`'s
+shapes. `Clock` and `SetClock` keep their inputs and answers. Gone from it: the `operations`
+list, each `run`, `offset_key` and `site_ms`, core's; a plugin reads the site's time with
+`ctx.now()`.
+
+### `sdk:operations.sign_in`
+
+`publr.operations.sign_in` is the public file of `user.sign_in` and `user.sign_out`'s shapes.
+`SignIn` and `SignOut` keep their inputs and answers. Gone from it: the `operations` list,
+each `run` and `session_id_len`.
+
+### `sdk:operations.mail`
+
+`publr.operations.mail` is the public file of `mail.send`'s shape. `Send`, `namespace`,
+`recipients_max`, `message_bytes_max` and the new `Security` (what `Send.In.security` is)
+stay or come. Gone from it: the `operations` list, `Send.run`, `not_allowed` and `smtp`,
+core's SMTP client.
+
+Before: `publr.operations.mail.smtp.Security`. After: `publr.operations.mail.Security`.
+
+### `sdk:operations.link`
+
+`publr.operations.link` is the public file of the signed-link operations' shapes. `Sign`,
+`Verify`, `RevokeAll`, `namespace` and the limits `subject_len_max`, `intent_len_max` and
+`token_len_max` stay. Gone from it: the `operations` list, each `run`, `key_setting` and
+`verified`; a plugin reads a link back with `ctx.call(publr.operations.link.Verify, ...)`.
+
+### `sdk:operations.sign_on`
+
+`publr.operations.sign_on` is the public file of the trusted sign-in operations' shapes.
+`Configure`, `Status`, `Redeem` and `namespace` stay. Gone from it: the `operations` list,
+each `run`, the settings' keys (`issuer_key`, `public_key_key`, `audience_key`), the limits
+`issuer_len_max` and `audience_len_max`, `vouched_user` and `valid_issuer`.
+
+### `sdk:operations.rail`
+
+`publr.operations.rail` is the public file of the rail pins' operation shapes. `List`, `Pin`,
+`Unpin`, `Pinned` and `namespace` stay. Gone from it: the `operations` list, each `run` and
+`per_user_max`.
+
+### `sdk:operations.secret`
+
+`publr.operations.secret` is the public file of the secret operations' shapes. `List`, `Set`,
+`Remove`, `Digest`, `Listed` and `namespace` stay; `Algorithm` and `Encoding` (what
+`Digest.In` takes) come. Gone from it: the `operations` list, each `run`, and core's
+`key_variable`, `environment_names_variable`, `value_of`, `is_set`, `Declarer`, `declarers`
+and `users_of`. A plugin never holds a secret's value: it writes `{secret:NAME}` where it
+goes.
+
+### `sdk:operations.messaging`
+
+`publr.operations.messaging` is the public file of the messaging operations' shapes.
+`Feedback`, `Render`, `SetLayout`, `Value`, `List`, `Kind`, `lists_max`, `items_max` and
+`namespace` stay. Gone from it: the `operations` list, each `run`, `layout_setting` and
+`layout_default`.
+
+### `sdk:operations.apps`
+
+`publr.operations.apps` is the public file of the apps operations' shapes. `Files`, `Read`,
+`Write`, `Remove`, `Load`, `Edit` (new here: it was reached only through the list), `Entry`,
+`Encoding` and `namespace` stay or come. Gone from it: the `operations` list, each `run` and
+`files_max`.
+
+### `sdk:operations.view`
+
+`publr.operations.view` is the public file of the saved views' operation shapes. `List`,
+`Get`, `Create`, `Update`, `Delete`, `Saved` and `namespace` stay; `Default`, `SaveDefault`,
+`ResetDefault`, `Named`, `Operator` and `Filterable`, the default views', come. Gone from
+it: the `operations` list, each `run`, `name_len_max`, `query_bytes_max`, `per_user_max` and
+`check_query`.
+
+### `sdk:operations.identity`
+
+`publr.operations.identity` is the public file of the sign-in identity operations' shapes.
+`SignIn`, `Configure`, `Status`, `Link`, `List`, `Unlink`, `Providers`, `Input`,
+`example_in`, `in_docs` and `namespace` stay; `Summary` and `Offered` come. Gone from it: the
+`operations` list, each `run`, `open_sign_up_key`, `identity_of`, `link` and the `providers`
+module (its `Providers` and `Offered` are here).
+
+Before: `publr.operations.identity.providers.Offered`.
+After: `publr.operations.identity.Offered`.
+
+### `sdk:operations.role`
+
+`publr.operations.role` is the public file of the role operations' shapes and events.
+`List`, `Get`, `Create`, `Update`, `Reset`, `Remove`, `Listed`, the events `Created`,
+`Updated`, `Removed` and `GrantDropped` with their `Changed`, and `namespace` stay; the
+failures `locked`, `only_role` and `given_by_type` come. Gone from it: the `operations` list
+and each `run`.
+
+### `sdk:operations.operation`
+
+`publr.operations.operation` is the public file of the operation operations' shapes. `List`,
+`Get`, `Authorize`, `Limit`, `Who`, `Rate`, `Described`, `Grouped`, `Failure`, `Hook`,
+`Detailed` and `namespace` stay. Gone from it: the `operations` list, each `run` and
+`hooks_on`; read an operation's hooks from `ctx.call(publr.operations.operation.Get, ...)`.
 
 ## 0.8.4 (2026-11-26)

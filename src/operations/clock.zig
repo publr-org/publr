@@ -1,13 +1,6 @@
-//! A test site's clock: the site's time moved ahead of (or back to) the wall clock, so
-//! time-driven work can be tried end to end ("it is now 11 January": a payment request goes
-//! overdue, a monthly job runs, VAT falls due on a due date). A plugin's `ctx.now()`
-//! (compiled in and installed), queued work's `.due` moments and the queue worker all read
-//! the site's time. Only on a test site: one that is not hosted, not a copy (`PUBLR_COPY`)
-//! and, while `serve` runs, served over plain http, the switch `serve` already reads as
-//! development (`model/outside.zig` `rule_of`). Everywhere else the clock is the wall clock
-//! and moving it is refused. Sign-ins and sessions keep the wall clock.
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/clock.zig");
 const store = @import("../store.zig");
 
 const Ctx = sdk.Ctx;
@@ -45,31 +38,16 @@ const not_a_test_site: sdk.operation.Failure = .{
 };
 
 pub const Clock = struct {
-    pub const name = "project.clock";
-    pub const description = "The site's time, and whether a test clock moved it";
-    pub const details =
-        \\Administrators only. The time `ctx.now()`, queued work and the queue worker read:
-        \\the wall clock, or on a test site the time `project.set_clock` set. Changes
-        \\nothing.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        now_ms: i64,
-        moved: bool,
-        test_site: bool,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .now_ms = 1799625600000,
-        .moved = false,
-        .test_site = true,
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .now_ms = "The site's time now, in ms",
-        .moved = "Whether a test clock moved it from the wall clock",
-        .test_site = "Whether its clock may be moved here",
-    };
+    pub const shape = public.Clock;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, _: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());
@@ -86,39 +64,17 @@ pub const Clock = struct {
 };
 
 pub const SetClock = struct {
-    pub const name = "project.set_clock";
-    pub const description = "Move a test site's clock: to a time, ahead, or back";
-    pub const details =
-        \\Administrators only, on a test site only: one on this computer, not hosted, not a
-        \\copy, and served over plain http while `serve` runs; refused elsewhere. `at_ms` sets
-        \\the site's time (ms since 1970), `ahead_ms` moves it on by that many ms, `reset`
-        \\puts it back on the wall clock; from then on it runs as the wall clock does. A
-        \\plugin's `ctx.now()`, queued work's `.due` moments and the queue worker read it, so
-        \\what falls due by then runs. Sign-ins keep the wall clock.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        at_ms: ?i64 = null,
-        ahead_ms: ?i64 = null,
-        reset: bool = false,
-    };
-    pub const Out = struct {
-        now_ms: i64,
-    };
-    pub const example: In = .{
-        .at_ms = 1799625600000,
-    };
-    pub const example_out: Out = .{
-        .now_ms = 1799625600000,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .at_ms = "The site's time from now on, in ms since 1970",
-        .ahead_ms = "Or: how many ms to move it on from the site's time now",
-        .reset = "Or: back to the wall clock",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .now_ms = "The site's time now, in ms",
-    };
+    pub const shape = public.SetClock;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

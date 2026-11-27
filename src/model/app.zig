@@ -1,4 +1,5 @@
 const std = @import("std");
+const public = @import("../publr/model/app.zig");
 const address = @import("app/address.zig");
 pub const addresses = @import("app/addresses.zig");
 
@@ -39,23 +40,9 @@ pub const Token = struct {
     value: []const u8,
 };
 
-/// A typeface the app's pages load: its family, and the stylesheet that serves it, or the
-/// files the site hosts itself (each an `@font-face`).
-pub const Font = struct {
-    family: []const u8,
-    url: []const u8 = "",
-    faces: []const FontFace = &.{},
-};
-
-/// One hosted file of a family: its weight (a range for a variable face) and style.
-pub const FontFace = struct {
-    weight_min: u32 = 400,
-    weight_max: u32 = 400,
-    italic: bool = false,
-    src: []const u8,
-};
-
-pub const font_faces_max: u32 = 32;
+pub const Font = public.Font;
+pub const FontFace = public.FontFace;
+pub const font_faces_max = public.font_faces_max;
 
 /// What `app.zon` declares.
 pub const Config = struct {

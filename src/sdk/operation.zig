@@ -62,29 +62,7 @@ pub fn valid_failure(failure: Failure) bool {
     return name_ok and status_ok and message_ok;
 }
 
-pub const Namespace = struct {
-    name: []const u8,
-    summary: []const u8,
-    details: []const u8,
-    /// What people call it: `Media library`. Empty shows the name.
-    label: []const u8 = "",
-    /// Where it sits when roles are edited.
-    area: Area = .site,
-
-    pub const Area = enum {
-        /// What editors write: records, terms, media, their history.
-        content,
-        /// The site's structure and setup: types, fields, apps, design.
-        site,
-        /// Accounts, roles and how people sign in.
-        people,
-        /// How this Publr runs: plugins, secrets, updates, logs.
-        system,
-        /// What every role needs or no one grants by hand (liveness, a person's own pins
-        /// and views): not listed when roles are edited, its grants kept as they are.
-        background,
-    };
-};
+pub const Namespace = public.Namespace;
 
 pub const Docs = public.Docs;
 

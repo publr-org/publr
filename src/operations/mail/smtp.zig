@@ -19,9 +19,7 @@ pub const timeout_ms: u32 = 30_000;
 const look_every_ms: u32 = 25;
 const buffer_bytes: u32 = TlsClient.min_buffer_len + 1024;
 
-/// How the connection is protected: TLS after STARTTLS (port 587), TLS from the start
-/// (port 465), or none (development only).
-pub const Security = enum { starttls, tls, none };
+pub const Security = @import("../../publr/operations/mail.zig").Security;
 
 pub const Request = struct {
     host: []const u8,

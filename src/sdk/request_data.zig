@@ -22,10 +22,7 @@ pub const visits: store.internal_records.Scope = .{
 pub const value_len_max: u32 = 256;
 
 /// One query parameter as a visitor brought it.
-pub const Value = struct {
-    name: []const u8,
-    value: []const u8,
-};
+pub const Value = @import("../publr/operations/request.zig").Value;
 
 /// Where a visitor landed, from where, when, with what.
 pub const Touch = struct {

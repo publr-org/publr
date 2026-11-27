@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/mail.zig");
 const model = @import("../model.zig");
 const secret = @import("secret.zig");
 const http_operations = @import("http.zig");
@@ -15,94 +16,30 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 const secrets = model.secrets;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "mail",
-    .label = "Outside mail",
-    .area = .system,
-    .summary = "Email a plugin hands to a mail server over SMTP",
-    .details =
-    \\From queued work alone (a job, an `on` hook), never a request someone waits on, a
-    \\plugin granted `mail.send` hands an email to the SMTP server it names: over TLS after
-    \\STARTTLS or from the start, the certificate checked, signed in when it gives a user,
-    \\or in development with no TLS. In production local and private addresses and the
-    \\server itself are refused, and so is a site whose host sends everything out through
-    \\its proxy. `{secret:NAME}` in the user or the password is filled in as it leaves, when
-    \\the plugin declares it in `.secrets`. Each email is logged (server, recipients'
-    \\count, the server's answer). Plugins only: a messaging provider is how Publr's own
-    \\emails reach SMTP.
-    ,
-};
+pub const namespace = public.namespace;
 
 pub const operations = [_]type{Send};
 
-/// Recipients of one email, at most.
-pub const recipients_max: u32 = 50;
-/// What one email may be, headers and attachments included.
-pub const message_bytes_max: u32 = 8 << 20;
+pub const recipients_max = public.recipients_max;
+pub const message_bytes_max = public.message_bytes_max;
 const host_len_max: u32 = 253;
 const credential_len_max: u32 = 1024;
 const secrets_max: u32 = 4;
 
 pub const Send = struct {
-    pub const name = "mail.send";
-    /// A plugin's alone: not listed among the commands people and agents run.
-    pub const plugins_only = true;
-    /// Never written to the logs.
-    pub const secret = .{"password"};
-    pub const description = "Hand an email to an SMTP server, as the calling plugin";
-    pub const details =
-        \\Answers whether the server took it and its answer (`250 2.0.0 Ok: queued as 4F3A`),
-        \\or why not in words: what the server said, TLS failing, no answer in 30 seconds.
-        \\Refused outside queued work (a job, an `on` hook), unless the caller is a plugin
-        \\granted `mail.send`, in production for a local or private address or `none`
-        \\security, and when a `{secret:NAME}` it names is not declared in its `.secrets` or
-        \\has no value ("<label> isn't set"). The message goes as written: headers, a blank
-        \\line, the body; core ends its lines in CRLF and doubles a leading dot. Logged under
-        \\the run: server, port, recipients' count, the answer, time; never the message or
-        \\the credentials.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {
-        host: []const u8,
-        port: u16 = 587,
-        security: smtp.Security = .starttls,
-        user: []const u8 = "",
-        password: []const u8 = "",
-        from: []const u8,
-        to: []const []const u8,
-        message: []const u8,
-    };
-    pub const Out = struct {
-        sent: bool,
-        reply: []const u8,
-    };
-    pub const example: In = .{
-        .host = "smtp.example.com",
-        .user = "shop@example.com",
-        .password = "{secret:SMTP_PASSWORD}",
-        .from = "shop@example.com",
-        .to = &.{"ada@example.com"},
-        .message = "From: Shop <shop@example.com>\r\nTo: ada@example.com\r\n" ++
-            "Subject: Your order\r\n\r\nThank you.\r\n",
-    };
-    pub const example_out: Out = .{
-        .sent = true,
-        .reply = "250 2.0.0 Ok: queued as 4F3A",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .host = "The SMTP server's name: smtp.example.com",
-        .port = "587 for STARTTLS, 465 for TLS, 25 for none",
-        .security = "starttls, tls, or none (development only)",
-        .user = "Signs in when given; may hold {secret:NAME}",
-        .password = "May hold {secret:NAME}",
-        .from = "The envelope's sender: shop@example.com",
-        .to = "The envelope's recipients, 1 to 50",
-        .message = "The email as written (RFC 5322), up to 8 MiB",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .sent = "Whether the server took it",
-        .reply = "The server's answer to the message, or why it was not sent",
-    };
+    pub const shape = public.Send;
+    pub const name = shape.name;
+    pub const plugins_only = shape.plugins_only;
+    pub const secret = shape.secret;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, granted: *const Grant) Error!Out {
         std.debug.assert(granted.allows());

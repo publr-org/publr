@@ -3,10 +3,7 @@
 const std = @import("std");
 const file_path = @import("file_path.zig");
 
-pub const Encoding = enum {
-    text,
-    base64,
-};
+pub const Encoding = @import("../../publr/model/app.zig").FileEncoding;
 
 pub const Carried = struct {
     content: []const u8,

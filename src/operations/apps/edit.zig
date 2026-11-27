@@ -1,8 +1,6 @@
-//! `apps edit`: a change to one part of a file, not the whole file written again. A small
-//! change (a word in a heading, one rule in a stylesheet) is then a few words to send.
-
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/apps/edit.zig");
 const registry = @import("../../server/registry.zig");
 const apps = @import("../apps.zig");
 
@@ -11,43 +9,17 @@ const Grant = sdk.Grant;
 const Error = sdk.Error;
 
 pub const Edit = struct {
-    pub const name = "apps.edit";
-    pub const description = "Change one part of a file of the project's apps; `apps load` " ++
-        "makes it live";
-    pub const details =
-        \\Administrators only. `old` must appear exactly once in the file (give enough of the
-        \\text around it to make it so); it is replaced by `new`. Refused, changing nothing,
-        \\when `old` is not there or is there more than once, and, like `apps write`, to a
-        \\device that may save drafts only.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        path: []const u8,
-        old: []const u8,
-        new: []const u8,
-    };
-    pub const Out = struct {
-        path: []const u8,
-        bytes: u64,
-    };
-    pub const example: In = .{
-        .path = "www/content/index.publr",
-        .old = "<h1>Hi</h1>",
-        .new = "<h1>Hello</h1>",
-    };
-    pub const example_out: Out = .{
-        .path = "www/content/index.publr",
-        .bytes = 15,
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .path = "`<app>/<path>`",
-        .old = "The text to change, exactly as it is in the file, once",
-        .new = "What it becomes; empty to remove it",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .path = "The file",
-        .bytes = "Its size now",
-    };
+    pub const shape = public.Edit;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);

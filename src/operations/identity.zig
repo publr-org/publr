@@ -1,10 +1,6 @@
-//! Signing in as who a provider says you are. The provider plugins turn a callback into an
-//! `Identity`; the routes hand it here as the system, and this is the one place that decides
-//! which account it is: the linked one, the one with that verified email, a new one when the
-//! site allows it, or nobody.
-
 const std = @import("std");
 const sdk = @import("../sdk.zig");
+const public = @import("../publr/operations/identity.zig");
 const publr_auth = @import("../sdk/auth_events.zig");
 const store = @import("../store.zig");
 const model = @import("../model/identity.zig");
@@ -18,32 +14,9 @@ const Error = sdk.Error;
 
 pub const open_sign_up_key = "identity.open_sign_up";
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "identity",
-    .label = "Sign-in accounts",
-    .area = .people,
-    .summary = "Signing in with a provider: GitHub, Google, whichever plugins are compiled in",
-    .details =
-    \\A provider plugin proves who someone is; the core keeps which account that identity
-    \\belongs to (`identity list`, `identity unlink`) and signs them in
-    \\(`identity sign_in`, called by `/auth/<provider>/callback`). By default only accounts
-    \\that exist can sign in this way; `identity configure` opens sign-up with a role.
-    ,
-};
+pub const namespace = public.namespace;
 
-/// What a provider reports, as the operations take it.
-pub const Input = struct {
-    provider: []const u8,
-    id: []const u8,
-    email: ?[]const u8 = null,
-    verified: bool = false,
-    name: ?[]const u8 = null,
-    avatar: ?[]const u8 = null,
-    /// Behind an identity-aware proxy, the roles a new account gets when nobody holds the
-    /// identity: what an administrator chose for new members (none at all, or staff too).
-    /// Null: no account is made this way. The system alone passes it.
-    new_account_roles: ?[]const []const u8 = null,
-};
+pub const Input = public.Input;
 
 /// The identity as the model sees it; `Invalid` when the provider or id is malformed.
 pub fn identity_of(in: Input) Error!model.Identity {
@@ -66,68 +39,21 @@ pub fn identity_of(in: Input) Error!model.Identity {
     return identity;
 }
 
-pub const example_in: Input = .{
-    .provider = "github",
-    .id = "583231",
-    .email = "ada@example.com",
-    .verified = true,
-    .name = "Ada Lovelace",
-    .avatar = "https://avatars.githubusercontent.com/u/583231",
-};
-
-pub const in_docs: sdk.operation.Docs(Input) = .{
-    .provider = "The provider's name, as its plugin declares it: `github`, `google`",
-    .id = "The provider's stable id for the person; never their email or login name",
-    .email = "The email the provider reports, if any",
-    .verified = "Whether the provider vouches for that email",
-    .name = "A display name, if the provider gives one",
-    .avatar = "An avatar URL, if the provider gives one",
-    .new_account_roles = "Behind an identity-aware proxy, the roles a new account gets " ++
-        "when nobody holds the identity; the system alone passes it",
-};
+pub const example_in = public.example_in;
+pub const in_docs = public.in_docs;
 
 pub const SignIn = struct {
-    pub const name = "identity.sign_in";
-    pub const description = "Sign in as the account a provider's identity belongs to";
-    pub const details =
-        \\Administrators, and the system: `/auth/<provider>/callback` calls it once the
-        \\provider plugin has verified who someone is; nobody claims an identity by hand,
-        \\and an administrator could sign in as anyone anyway. The account is found
-        \\by provider and id first. Failing that, an account with the same email is linked
-        \\when the provider vouches for the email. Failing that, `wrong email or password`,
-        \\unless sign-up is open (`identity configure`): then an account with that role is
-        \\created, still only from a verified email. Returns a session token, as
-        \\`user sign_in` does.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = Input;
-    pub const Out = struct {
-        token: []const u8,
-        user_id: []const u8,
-        roles: []const []const u8,
-        expires_at: i64,
-        created: bool,
-        /// The identity was just linked to the account with its email.
-        linked: bool = false,
-    };
-    pub const example: In = example_in;
-    pub const example_out: Out = .{
-        .token = "56a0794f6b1c67062563204a.ea477bba173fbbd2cd5fc9808892da24d65b38...",
-        .user_id = "3f9c1e0a5b7d2c4e6f8a9b0c",
-        .roles = &.{"editor"},
-        .expires_at = 1792232000000,
-        .created = false,
-        .linked = false,
-    };
-    pub const field_docs = in_docs;
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .token = "The session token, `id.secret`; treat it like a password",
-        .user_id = "The signed-in account",
-        .roles = "The roles it holds",
-        .expires_at = "When the session expires if unused, Unix milliseconds",
-        .created = "True when the account was created by this sign-in",
-        .linked = "True when this sign-in linked the identity to the account with its email",
-    };
+    pub const shape = public.SignIn;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -340,33 +266,17 @@ pub fn link(ctx: *Ctx, user_id: []const u8, identity: model.Identity) Error!void
 }
 
 pub const Configure = struct {
-    pub const name = "identity.configure";
-    pub const description = "Open or close sign-up through providers, and with which role";
-    pub const details =
-        \\Administrators only. `open_sign_up` names the role a new account gets when a
-        \\provider identity nobody holds signs in with a verified email: a visitor's role,
-        \\never one reaching the admin (refused as denied). Empty closes sign-up again: only
-        \\accounts that exist sign in, which is the default.
-    ;
-    pub const kind: sdk.operation.Kind = .write;
-    pub const In = struct {
-        open_sign_up: []const u8 = "",
-    };
-    pub const Out = struct {
-        open_sign_up: []const u8,
-    };
-    pub const example: In = .{
-        .open_sign_up = "customer",
-    };
-    pub const example_out: Out = .{
-        .open_sign_up = "customer",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{
-        .open_sign_up = "The role new accounts get, or empty to sign in existing accounts only",
-    };
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .open_sign_up = "The role in force, empty when sign-up is closed",
-    };
+    pub const shape = public.Configure;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, in: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.db.transaction_depth >= 1);
@@ -400,22 +310,17 @@ pub const Configure = struct {
 };
 
 pub const Status = struct {
-    pub const name = "identity.status";
-    pub const description = "Whether provider sign-up is open, and with which role";
-    pub const details = "Administrators only. Nothing is written.";
-    pub const kind: sdk.operation.Kind = .read;
-    pub const In = struct {};
-    pub const Out = struct {
-        open_sign_up: []const u8,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .open_sign_up = "",
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .open_sign_up = "The role new accounts get, empty when only existing accounts sign in",
-    };
+    pub const shape = public.Status;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);

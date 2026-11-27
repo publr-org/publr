@@ -1,5 +1,6 @@
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/role.zig");
 const store = @import("../../store.zig");
 const role = @import("../../model/role.zig");
 
@@ -8,45 +9,9 @@ const Error = sdk.Error;
 const Row = store.roles.Row;
 const Root = store.trash_copy.Root;
 
-/// A role as the role operations answer it.
-pub const Listed = struct {
-    name: []const u8,
-    label: []const u8,
-    description: []const u8 = "",
-    /// `core`, the plugin that declared it first, or empty for one the site made.
-    owner: []const u8 = "",
-    grants: []const []const u8,
-    /// What code declares for it, core and every plugin together; empty for the site's own.
-    declared: []const []const u8 = &.{},
-    /// How many accounts hold it.
-    holders: u32 = 0,
-    /// Its grants are not what code declares for it (`role reset` puts them back).
-    changed: bool = false,
-    /// `admin`: everything, never changed or removed.
-    locked: bool = false,
-};
-
-pub const locked: sdk.operation.Failure = .{
-    .name = "Locked",
-    .status = 409,
-    .message = "Administrator holds everything and never changes",
-};
-
-pub const only_role: sdk.operation.Failure = .{
-    .name = "OnlyRole",
-    .status = 409,
-    .message = "It is some account's only role: give them another first",
-};
-
-pub const example: Listed = .{
-    .name = "editor",
-    .label = "Editor",
-    .description = "The content: records, terms and their history.",
-    .owner = role.owner_core,
-    .grants = &.{ "record.*", "!record.purge" },
-    .declared = &.{ "record.*", "!record.purge" },
-    .holders = 3,
-};
+pub const Listed = public.Listed;
+pub const locked = public.locked;
+pub const only_role = public.only_role;
 
 pub fn find(ctx: *Ctx, name: []const u8) Error!Row {
     std.debug.assert(name.len <= 4096);
@@ -139,11 +104,7 @@ pub fn refuse_staff_given(ctx: *Ctx, row: Row, grants: []const []const u8) Error
     });
 }
 
-pub const given_by_type: sdk.operation.Failure = .{
-    .name = "GivenByType",
-    .status = 409,
-    .message = "A type of user gives this role: it cannot reach the admin",
-};
+pub const given_by_type = public.given_by_type;
 
 /// What the trash keeps of a role: its row, which brings its grants, and its holders.
 pub fn roots_of(ctx: *Ctx, name: []const u8) Error![]const Root {

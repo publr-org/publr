@@ -9,16 +9,7 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const namespace: sdk.operation.Namespace = .{
-    .name = "money",
-    .label = "Money",
-    .area = .background,
-    .summary = "Amounts written as the site writes them",
-    .details =
-    \\Reads that write amounts in minor units with the site's currencies: their symbols,
-    \\formats and separators. Plugins call them to show money on their own pages.
-    ,
-};
+pub const namespace = public.namespace;
 
 pub const Text = struct {
     pub const shape = public.Text;

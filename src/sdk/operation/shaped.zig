@@ -1,7 +1,7 @@
 //! A core operation whose shape is public (`pub const shape = public.Text;`, from
 //! `src/publr/operations/`) declares every part of it, each the shape's own, and nothing
-//! public beside them but `run`: a part added to the shape is never left out, and none is
-//! defined in core.
+//! public beside them but `run` and `committed`: a part added to the shape is never left
+//! out, and none is defined in core.
 
 const std = @import("std");
 
@@ -15,8 +15,9 @@ pub fn problem(comptime Operation: type) ?[]const u8 {
 
         const Shape = Operation.shape;
 
-        if (@hasDecl(Shape, "run")) {
-            return Operation.name ++ ": its public shape holds a `run`, which stays in core";
+        if (@hasDecl(Shape, "run") or @hasDecl(Shape, "committed")) {
+            return Operation.name ++ ": its public shape holds a `run` or a `committed`, " ++
+                "which stay in core";
         }
 
         for (@typeInfo(Shape).@"struct".decl_names) |decl_name| {
@@ -31,7 +32,7 @@ pub fn problem(comptime Operation: type) ?[]const u8 {
         }
 
         for (@typeInfo(Operation).@"struct".decl_names) |decl_name| {
-            const own = std.mem.eql(u8, decl_name, "shape") or std.mem.eql(u8, decl_name, "run");
+            const own = std.mem.eql(u8, decl_name, "shape") or core_own(decl_name);
 
             if (!own and !@hasDecl(Shape, decl_name)) {
                 return Operation.name ++ ": `" ++ decl_name ++ "` is not in its public " ++
@@ -41,6 +42,14 @@ pub fn problem(comptime Operation: type) ?[]const u8 {
 
         return null;
     }
+}
+
+/// What core runs for an operation, beside its shape: `run`, and `committed`, what a write
+/// does outside the database once it is kept.
+fn core_own(comptime name: []const u8) bool {
+    std.debug.assert(name.len > 0);
+
+    return std.mem.eql(u8, name, "run") or std.mem.eql(u8, name, "committed");
 }
 
 fn same(comptime Operation: type, comptime Shape: type, comptime name: []const u8) bool {

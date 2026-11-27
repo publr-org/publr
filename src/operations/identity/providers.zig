@@ -1,7 +1,6 @@
-//! Which providers a login page may offer: the ones compiled in whose credentials are there.
-
 const std = @import("std");
 const sdk = @import("../../sdk.zig");
+const public = @import("../../publr/operations/identity/providers.zig");
 const registry = @import("../../server/registry.zig");
 const secret = @import("../secret.zig");
 
@@ -9,39 +8,21 @@ const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
 const Error = sdk.Error;
 
-pub const Offered = struct {
-    name: []const u8,
-    label: []const u8,
-    icon: []const u8,
-    /// Where "Continue with <label>" goes: `/auth/<name>`.
-    path: []const u8,
-};
+pub const Offered = public.Offered;
 
 pub const Providers = struct {
-    pub const name = "identity.providers";
-    pub const description = "The sign-in providers this site offers";
-    pub const details =
-        \\Anyone may call it: a login page asks it which buttons to show. A provider is
-        \\offered when its plugin is compiled in, its client id is in the environment and every
-        \\secret its plugin declares is set; one without them is left out, not broken.
-        \\Nothing is written.
-    ;
-    pub const kind: sdk.operation.Kind = .read;
-    pub const open = true;
-    pub const In = struct {};
-    pub const Out = struct {
-        providers: []const Offered,
-    };
-    pub const example: In = .{};
-    pub const example_out: Out = .{
-        .providers = &.{},
-    };
-    pub const field_docs: sdk.operation.Docs(In) = .{};
-    pub const output_docs: sdk.operation.Docs(Out) = .{
-        .providers = "Each offered provider, in name order: `name` (`github`), `label` " ++
-            "(`GitHub`), `icon` (an SVG path on a 24 by 24 canvas) and `path` " ++
-            "(`/auth/github`); empty with no provider plugin",
-    };
+    pub const shape = public.Providers;
+    pub const name = shape.name;
+    pub const description = shape.description;
+    pub const details = shape.details;
+    pub const kind = shape.kind;
+    pub const open = shape.open;
+    pub const In = shape.In;
+    pub const Out = shape.Out;
+    pub const example = shape.example;
+    pub const example_out = shape.example_out;
+    pub const field_docs = shape.field_docs;
+    pub const output_docs = shape.output_docs;
 
     pub fn run(ctx: *Ctx, _: In, _: *const Grant) Error!Out {
         std.debug.assert(ctx.now_ms >= 0);
