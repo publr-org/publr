@@ -190,6 +190,11 @@ pub fn SDK(comptime registry: Registry) type {
 
                 std.debug.assert(name.len > 0);
 
+                // Not compiled in: another plugin's, reached through `remote` when installed.
+                if (tables.operation_position(name) == null) {
+                    return false;
+                }
+
                 return tables.operation_owner(name).len == 0 and
                     !std.mem.startsWith(u8, name, "mod.");
             }
