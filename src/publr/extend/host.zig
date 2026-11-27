@@ -103,8 +103,10 @@ pub const Host = struct {
     pub const Stage = @import("middleware.zig").Stage;
     pub const Event = @import("middleware.zig").Event;
     /// What only a built-in plugin does with its `ctx` (`powers.zig`): calls as Publr itself,
-    /// SQL on its own tables, its state, I/O, a call on a copy, installed plugins reloaded.
+    /// reads on another copy's database, SQL on its own tables, its state, I/O, a call on a
+    /// copy, installed plugins reloaded.
     pub const as_system = powers.as_system;
+    pub const as_plugin_on = powers.as_plugin_on;
     pub const database = powers.database;
     pub const state_of = powers.state_of;
     pub const io = powers.io;

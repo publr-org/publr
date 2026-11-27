@@ -2026,10 +2026,12 @@ another database), `Command` `{ io, arena, args, db_path }`, `Serving` `{ io, ar
 On `publr.Host`, each taking the plugin's `ctx`; an installed build that names one does not
 compile: `publr.Host.as_system(ctx)` (a `*publr.Ctx` calling as Publr itself, past every
 role, for what no grant reaches; `ctx.as_plugin()` is the way for what the plugin's grants
-cover), `publr.Host.database(ctx)` (its tables), `publr.Host.state_of(ctx, Plugin)` (its
-state), `publr.Host.io(ctx)` (the process's I/O), `publr.Host.mark_copy(ctx)` (the call runs
-on a copy of the site) and `publr.Host.reload_plugins(ctx)` (the installed plugins' rows
-changed underneath them).
+cover), `publr.Host.as_plugin_on(ctx, database)` (the same as the plugin itself, reading
+another database `process.databases().open` opened, another copy of the site: its calls
+only read, and raise nothing here), `publr.Host.database(ctx)` (its tables),
+`publr.Host.state_of(ctx, Plugin)` (its state), `publr.Host.io(ctx)` (the process's I/O),
+`publr.Host.mark_copy(ctx)` (the call runs on a copy of the site) and
+`publr.Host.reload_plugins(ctx)` (the installed plugins' rows changed underneath them).
 
 ### The admin
 

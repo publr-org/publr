@@ -507,7 +507,7 @@ pub fn SDK(comptime registry: Registry) type {
         pub fn trail_open(ctx: *Ctx, state: *trail.Trail) bool {
             std.debug.assert(state.root != 0);
 
-            if (registry.log == null or ctx.trail != null) {
+            if (registry.log == null or ctx.trail != null or ctx.elsewhere) {
                 return false;
             }
 
@@ -694,7 +694,8 @@ pub fn SDK(comptime registry: Registry) type {
 
             const list = ctx.kept_events orelse return;
 
-            if (ctx.db.transaction_depth > 0) {
+            // A call on another copy keeps this site's events for this site's own end.
+            if (ctx.elsewhere or ctx.db.transaction_depth > 0) {
                 return;
             }
 
@@ -2351,6 +2352,10 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(emitted.name.len > 0);
             std.debug.assert(emitted.operation_id != 0);
 
+            if (ctx.elsewhere) {
+                return;
+            }
+
             if (ctx.trail) |open| {
                 follow(ctx, open, .{
                     .emitted = emitted,
@@ -2426,6 +2431,11 @@ pub fn SDK(comptime registry: Registry) type {
             std.debug.assert(registry.hooks.len <= hooks.hooks_max);
 
             std.debug.assert(event != .emitted);
+
+            // Another copy's operations end there: none of this site's hooks hears them.
+            if (ctx.elsewhere) {
+                return;
+            }
 
             if (ctx.trail) |open| {
                 follow(ctx, open, event);

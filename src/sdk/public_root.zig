@@ -6,11 +6,6 @@
 const std = @import("std");
 const public = @import("../publr/root.zig");
 
-/// What `publr` forwards that is not the SDK's: the only one, while
-/// `.agents/specs/public-sdk.md` (M6, `cloud`) waits on Dawid's decision on Cloud's
-/// deployments and environments plugins, which read and write core's tables with SQL.
-pub const exceptions = [_][]const u8{"db"};
-
 /// How far from a root name the check follows types, a root name's own members being one:
 /// past every type reached (about 1,800, by 12 levels, in 0.8.4).
 const depth_max: u8 = 16;
@@ -119,8 +114,7 @@ pub fn check() void {
     }
 }
 
-/// Whether `forwarded` (the `publr` module's root) forwards exactly the public root's names,
-/// besides the exceptions.
+/// Whether `forwarded` (the `publr` module's root) forwards exactly the public root's names.
 pub fn forwards_all(comptime forwarded: type) bool {
     comptime {
         std.debug.assert(std.meta.declarations(public).len > 0);
@@ -132,7 +126,7 @@ pub fn forwards_all(comptime forwarded: type) bool {
         }
 
         for (std.meta.declarations(forwarded)) |decl| {
-            if (!@hasDecl(public, decl) and !listed(&exceptions, decl)) {
+            if (!@hasDecl(public, decl)) {
                 return false;
             }
         }
@@ -271,7 +265,7 @@ fn listed(comptime names: []const []const u8, comptime name: []const u8) bool {
     return false;
 }
 
-test "publr forwards the public root's names and only the sanctioned exception besides" {
+test "publr forwards the public root's names and nothing besides" {
     try std.testing.expect(comptime forwards_all(@import("publr_sdk")));
     try std.testing.expect(comptime !forwards_all(struct {}));
 }

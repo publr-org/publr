@@ -183,7 +183,8 @@ What each opens:
   `project.put` puts anything it stores (records, internal records, terms, content types,
   taxonomies, field groups, roles, users, installed plugins' rows) exactly as another copy
   keeps it, ids and history kept; records and terms land as the same change made by a
-  person would. Rows only, never files.
+  person would. `project.get` reads them back as `put` takes them, and lists every unit of
+  a kind. Rows only, never files.
 - Queued work (jobs, `on` hooks) runs with the plugin's own grant, `.publish` included.
 - `messaging.send` lets a plugin emit message events (`publr.messaging.Email`, `Sms`,
   `Push`) beside its own; without it a message is not sent and the write fails.

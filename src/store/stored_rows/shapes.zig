@@ -36,6 +36,8 @@ pub const Shape = struct {
     children: []const Table = &.{},
     /// Made again from the values once the unit lands; accepted and left out.
     derived: ?Table = null,
+    /// Its own row has a `handle` beside its id: a content type's, a taxonomy's.
+    handled: bool = false,
 };
 
 pub fn shape_of(kind: Kind) Shape {
@@ -163,5 +165,6 @@ fn typed(comptime table: []const u8) Shape {
             .key = "owner",
             .scope = table,
         }},
+        .handled = true,
     };
 }

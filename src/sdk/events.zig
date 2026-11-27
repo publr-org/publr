@@ -157,6 +157,11 @@ pub fn Events(comptime SDK: type, comptime registry: sdk.Registry) type {
             std.debug.assert(name.len > 0);
             std.debug.assert(registry.hooks.len <= sdk.hooks.hooks_max);
 
+            // What a call on another copy of the site raises is not this site's to hear.
+            if (ctx.elsewhere) {
+                return false;
+            }
+
             inline for (comptime tables.hooks_where(queued)) |index| {
                 if (std.mem.eql(u8, registry.hooks[index].event, name)) {
                     return true;

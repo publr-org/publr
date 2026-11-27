@@ -6,6 +6,7 @@ const sdk = @import("../../sdk.zig");
 const registry = @import("../../server/registry.zig");
 const store = @import("../../store.zig");
 const context = @import("context.zig");
+const elsewhere = @import("elsewhere.zig");
 const id_len_max = @import("../caller.zig").id_len_max;
 
 const HostApi = context.HostApi;
@@ -16,21 +17,26 @@ const no_access: @import("../plugin_access.zig").Access = .{
     .own_types = &.{},
 };
 
-/// The caller a `HostApi` made by `as_person` stands for, in place for one call and put back
-/// after it.
+/// The caller a `HostApi` made by `as_person` stands for, and the database one made by
+/// `publr.Host.as_plugin_on` calls on, in place for one call and put back after it.
 pub const Acting = struct {
     inner: *sdk.Ctx,
     saved: sdk.Caller,
+    elsewhere: ?elsewhere.Saved = null,
 
     pub fn end(acting: Acting) void {
         std.debug.assert(acting.inner.now_ms >= 0);
+
+        if (acting.elsewhere) |saved| {
+            elsewhere.put_back(acting.inner, saved);
+        }
 
         acting.inner.caller = acting.saved;
     }
 };
 
 pub fn begin(api: *const HostApi) Acting {
-    const acting: Acting = .{
+    var acting: Acting = .{
         .inner = api.inner,
         .saved = api.inner.caller,
     };
@@ -39,6 +45,10 @@ pub fn begin(api: *const HostApi) Acting {
         std.debug.assert(person == .plugin or person == .system);
 
         api.inner.caller = person;
+    }
+
+    if (api.elsewhere) |database| {
+        acting.elsewhere = elsewhere.turn(api.inner, database);
     }
 
     return acting;
@@ -63,6 +73,7 @@ pub fn as_person(api: *HostApi, person: []const u8) Error!*context.PluginCtx {
     made.* = .{
         .inner = inner,
         .reads = api.reads,
+        .elsewhere = api.elsewhere,
         .person = .{
             .plugin = .{
                 .name = inner.plugin,
@@ -108,6 +119,7 @@ pub fn as_system(api: *HostApi) Error!*context.PluginCtx {
     made.* = .{
         .inner = inner,
         .reads = api.reads,
+        .elsewhere = api.elsewhere,
         .person = .system,
     };
 
@@ -131,6 +143,7 @@ pub fn as_plugin(api: *HostApi) Error!*context.PluginCtx {
     made.* = .{
         .inner = inner,
         .reads = api.reads,
+        .elsewhere = api.elsewhere,
         .person = .{
             .plugin = .{
                 .name = inner.plugin,

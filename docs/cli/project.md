@@ -145,3 +145,18 @@ type's or taxonomy's `handle`. Files (plugins' modules, apps, `publr.zon`) are n
 $ publr --as-admin project put --units '[{"kind":"role","id":"reviewer","rows":{}}]'
 { "put": [{ "kind": "role", "id": "reviewer", "outcome": "removed", "handle": "" }] }
 ```
+
+## `get`
+
+The read half of `put`: each unit of one `kind` named in `--ids` with its stored rows by
+table, exactly as `put` takes them, `{}` for one that is not there. Kinds, ids and tables are
+`put`'s; search text is never read, since `put` makes it again. With `--every true`, also
+the id of every unit of the kind in order, a content type's or taxonomy's `handle` beside
+it, 10,000 at a time: `--after` the answer's `next` continues. At most 1,024 ids a call.
+Changes nothing. Only plugins call it (with `project.put`), and administrators.
+
+```
+$ publr --as-admin project get --kind role --ids '["reviewer"]'
+{ "units": [{ "id": "reviewer", "handle": "", "rows": { "roles": [{ "name": "reviewer", … }],
+  "role_grants": [] } }], "every": [], "next": "" }
+```

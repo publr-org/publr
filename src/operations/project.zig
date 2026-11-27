@@ -10,6 +10,7 @@ pub const changes = @import("project/changes.zig");
 pub const impact = @import("project/impact.zig");
 pub const move_app = @import("project/move_app.zig");
 pub const Put = @import("project/put.zig").Put;
+pub const Get = @import("project/get.zig").Get;
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -128,6 +129,7 @@ pub const operations = [_]type{
     move_app.MoveApp,
     @import("user/language.zig").SetSiteLanguage,
     Put,
+    Get,
 };
 pub const hooks = changes.hooks ++ @import("activity.zig").hooks;
 
@@ -215,5 +217,6 @@ test "init sets the site language and the first admin's own, never asked again; 
 
 test {
     _ = @import("project/put_tests.zig");
+    _ = @import("project/get_tests.zig");
     _ = @import("project/changes_tests.zig");
 }

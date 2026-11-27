@@ -14,6 +14,8 @@ pub const Outcome = shapes.Outcome;
 pub const Table = shapes.Table;
 pub const Shape = shapes.Shape;
 pub const shape_of = shapes.shape_of;
+pub const Listed = @import("stored_rows/listing.zig").Listed;
+pub const list = @import("stored_rows/listing.zig").list;
 
 /// Rows one unit holds in one table, at most.
 pub const rows_max: u32 = 1 << 16;
@@ -293,4 +295,8 @@ test "a unit's rows put exactly, read back the same, unchanged twice, then remov
 
     try std.testing.expect(try count.step());
     try std.testing.expectEqual(@as(i64, 1), (try count.read(Seen, arena)).seen);
+}
+
+test {
+    _ = @import("stored_rows/listing.zig");
 }

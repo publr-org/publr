@@ -89,8 +89,3 @@ pub const ai = public.ai;
 pub const Request = public.Request;
 pub const Response = public.Response;
 pub const operations = public.operations;
-
-/// Core's database, for Publr Cloud's deployments and environments plugins alone while
-/// `.agents/specs/public-sdk.md` (M6, `cloud`) decides how they reach core's tables: they
-/// read and write them with SQL. Not part of the SDK; no other plugin may use it.
-pub const db = @import("p").db;

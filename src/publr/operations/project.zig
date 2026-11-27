@@ -12,7 +12,8 @@ pub const namespace: operation.Namespace = .{
     \\up: it creates the first admin and marks the project as
     \\initialised, exactly once. `project impact` says what a change rebuilds in the
     \\apps' builds. `project put` puts anything it stores exactly as another copy of the
-    \\project keeps it, ids kept: what keeps copies (environments, branches) in sync.
+    \\project keeps it, ids kept: what keeps copies (environments, branches) in sync;
+    \\`project get` reads it back the same way.
     \\`project set_clock` moves a test site's clock, to try time-driven work.
     ,
 };
@@ -22,6 +23,7 @@ pub const changes = @import("project/changes.zig");
 pub const impact = @import("project/impact.zig");
 pub const move_app = @import("project/move_app.zig");
 pub const Put = @import("project/put.zig").Put;
+pub const Get = @import("project/get.zig").Get;
 
 pub const Init = struct {
     pub const name = "project.init";

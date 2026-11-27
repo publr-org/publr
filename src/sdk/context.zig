@@ -370,6 +370,10 @@ pub const Ctx = struct {
     /// Set while a modifier or a `before` hook on a sign-in runs: it may read what it is
     /// granted, never write.
     reads_only: bool = false,
+    /// Its calls run on another database than the site's own (`publr.Host.as_plugin_on`):
+    /// another copy of the site. Reads only, and nothing they raise is this site's: no
+    /// event is emitted or queued, no trail opened, no kept event flushed.
+    elsewhere: bool = false,
     /// The values of an apply a plugin's code hands `mod.apply` held laid out
     /// (`server/sandboxed_plugins/applied.zig`), and where it finds them afterwards: they
     /// never become the operation's JSON. Null for an apply from the outer edge.

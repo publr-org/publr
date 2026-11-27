@@ -1,12 +1,14 @@
 //! What only a built-in plugin does with the `publr.Ctx` it is handed, past what every
-//! plugin does: `publr.Host.as_system(ctx)`, `database`, `state_of`, `io`, `mark_copy`,
-//! `reload_plugins`. An installed build that asks for any of them does not compile.
+//! plugin does: `publr.Host.as_system(ctx)`, `as_plugin_on`, `database`, `state_of`, `io`,
+//! `mark_copy`, `reload_plugins`. An installed build that asks for any of them does not
+//! compile.
 const std = @import("std");
 const guest = @import("../../sdk/plugin/guest.zig");
 const Ctx = @import("../ctx.zig").Ctx;
 const Database = @import("database.zig").Database;
 const Error = @import("../operation.zig").Error;
 const public_of = @import("../../sdk/operation.zig").public_of;
+const core_db = @import("../../lib/db.zig");
 
 fn built_in(comptime name: []const u8) void {
     if (comptime guest.mode == .sandboxed) {
@@ -29,6 +31,19 @@ pub fn as_system(ctx: *Ctx) Error!*Ctx {
     comptime built_in("as_system");
 
     return host(ctx).as_system() catch |err| return public_of(err);
+}
+
+/// The same plugin, calling as itself (`ctx.as_plugin()`) on `opened`: another copy of the
+/// site (a branch's base, the branch, the copy a merge goes into), or this one opened again,
+/// which sees only what is committed; each opened with `publr.Host.Databases.open`. Its
+/// calls are held to the plugin's grants and only read: a write is refused, and nothing
+/// they raise is this site's (no event, no activity entry). Valid while `opened` is open.
+pub fn as_plugin_on(ctx: *Ctx, opened: Database) Error!*Ctx {
+    comptime built_in("as_plugin_on");
+
+    const connection: *core_db.Db = @ptrCast(@alignCast(opened.connection));
+
+    return host(ctx).as_plugin_on(connection) catch |err| return public_of(err);
 }
 
 /// SQL on the plugin's own tables (`host.table`), inside the call's transaction.

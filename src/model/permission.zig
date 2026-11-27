@@ -230,9 +230,10 @@ pub const core = [_]Permission{
     },
     .{
         .key = "project.put",
-        .sentence = "Put anything exactly as another copy of your site keeps it, with its ids",
+        .sentence = "Read and put anything exactly as another copy of your site keeps it, " ++
+            "with its ids",
         .tier = .high,
-        .operations = &.{"project.put"},
+        .operations = &.{ "project.put", "project.get" },
     },
     .{
         .key = "terms.read",

@@ -1069,6 +1069,23 @@ needed it.
 
 `publr.agent` (`publr agent`) is no longer in `publr`; it is a command.
 
+### `sdk:db`
+
+`publr.db`, core's database library, is no longer in `publr`. Only Publr Cloud's plugins used
+it, to read core's tables with SQL; they read them through operations now. A built-in
+plugin's own tables are `publr.Host.database(ctx)`. Anything the project stores is read as
+`project.put` takes it with `project.get`, definitions with `content_type.get` and
+`taxonomy.get`; another copy of the site, opened with `publr.Host.Databases.open`, is read
+the same way through `publr.Host.as_plugin_on(ctx, database)`.
+
+```
+Before: var select = try connection.prepare("SELECT ... FROM records WHERE id = ?1");
+After:  const read = try ctx.call(publr.operations.project.Get, .{
+            .kind = "record",
+            .ids = &.{id},
+        });
+```
+
 ### `sdk:testing.Site`
 
 `publr.testing.Site` no longer has the fields `harness` and `states`, core's own test site
