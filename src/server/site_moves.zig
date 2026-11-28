@@ -3,6 +3,7 @@
 //! with it, so the `publr` command says the new address, and the queue worker starts again
 //! told it, so its plugins' outside calls follow the same rule as the server's.
 const std = @import("std");
+const builtin = @import("builtin");
 const operator = @import("operator.zig");
 const queue_worker = @import("queue_worker.zig");
 const outside = @import("../model/outside.zig");
@@ -42,7 +43,10 @@ pub const Follower = struct {
             .started = origins.started,
         });
 
-        follower.worker.restart(argv.ptr);
+        // The browser build has no worker process to start again.
+        if (builtin.os.tag != .wasi) {
+            follower.worker.restart(argv.ptr);
+        }
 
         if (follower.session) |session| {
             try operator.readdress(follower.io, arena, follower.db_path, session, address);
