@@ -5,6 +5,9 @@
 //! shared, macOS has its own), so the child is booked only for what it reserves itself.
 const std = @import("std");
 
+/// WASI has no processes: in the browser build nothing is started, nothing runs to end or stop.
+const has_processes = @import("builtin").os.tag != .wasi;
+
 pub const Error = error{
     /// The system had no memory or no process slot to start it with.
     SystemResources,
@@ -29,6 +32,10 @@ pub fn start(argv: [*:null]const ?[*:0]const u8) Error!std.c.pid_t {
 
     std.debug.assert(program[0] != 0);
 
+    if (comptime !has_processes) {
+        return error.SpawnFailed;
+    }
+
     const result = posix_spawn(&pid, program, null, null, argv, @ptrCast(std.c.environ));
 
     if (result != 0) {
@@ -49,6 +56,10 @@ pub fn start(argv: [*:null]const ?[*:0]const u8) Error!std.c.pid_t {
 pub fn ended(pid: std.c.pid_t) bool {
     std.debug.assert(pid > 0);
 
+    if (comptime !has_processes) {
+        return true;
+    }
+
     var status: c_int = 0;
     const reaped = std.c.waitpid(pid, &status, std.c.W.NOHANG);
 
@@ -60,6 +71,10 @@ pub fn ended(pid: std.c.pid_t) bool {
 /// Asks the process to stop, and waits until it has.
 pub fn stop(pid: std.c.pid_t) void {
     std.debug.assert(pid > 0);
+
+    if (comptime !has_processes) {
+        return;
+    }
 
     var status: c_int = 0;
 
