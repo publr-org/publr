@@ -137,7 +137,12 @@ pub fn templates(builder: *std.Build, app_dir: []const u8) *std.Build.Module {
             diagnostic.fail("{s} sits at the app's root; a template lives in a folder", .{rel});
         }
 
-        if (std.mem.eql(u8, top, "public") or std.mem.eql(u8, top, "interactive")) {
+        // `.interactive/` is what `publr apps load` built from `interactive/` (`built_dir` in
+        // `src/adapters/apps/interactive.zig`): generated code, never a template, as the folder
+        // reader skips it too.
+        const generated = std.mem.eql(u8, top, ".interactive");
+
+        if (std.mem.eql(u8, top, "public") or std.mem.eql(u8, top, "interactive") or generated) {
             continue;
         }
 
