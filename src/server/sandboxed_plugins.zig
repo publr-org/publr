@@ -6,6 +6,7 @@ const wasm = @import("publr_wasm");
 const sdk = @import("../sdk.zig");
 const model = @import("../model.zig");
 const store = @import("../store.zig");
+const reserved = @import("reserved.zig");
 const registry = @import("registry.zig");
 const lifecycle = @import("../operations/plugin/lifecycle.zig");
 const files_module = @import("sandboxed_plugins/files.zig");
@@ -111,8 +112,8 @@ pub const Host = struct {
         std.debug.assert(heap_bytes >= wasm.heap_bytes_min);
 
         host.gpa = gpa;
-        host.heap = try gpa.alloc(u8, heap_bytes);
-        errdefer gpa.free(host.heap);
+        host.heap = try reserved.reserve(gpa, .@"1", heap_bytes);
+        errdefer reserved.release(gpa, .@"1", host.heap);
 
         try host.runtime.init(host.heap, &invoke_module.imports, .{});
         errdefer host.runtime.deinit();
@@ -150,7 +151,7 @@ pub const Host = struct {
         host.translations_arena.deinit();
         host.files.close();
         host.runtime.deinit();
-        host.gpa.free(host.heap);
+        reserved.release(host.gpa, .@"1", host.heap);
     }
 
     pub fn sandboxed_plugins(host: *Host) *const sdk.sandboxed_plugins.SandboxedPlugins {

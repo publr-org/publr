@@ -6,6 +6,7 @@ const registry = @import("server/registry.zig");
 const sdk = @import("sdk.zig");
 const builtin = @import("builtin");
 const files = @import("lib/files.zig");
+const reserved = @import("server/reserved.zig");
 
 pub const sandboxed_plugins = @import("server/sandboxed_plugins.zig");
 const SandboxHost = sandboxed_plugins.Host;
@@ -51,22 +52,22 @@ pub const Server = struct {
         std.debug.assert(sdk.scratch.bytes_default > 0);
         std.debug.assert(sdk.plugin_memory.bytes % sdk.plugin_memory.page_bytes == 0);
 
-        server.scratch_buffer = try gpa.alloc(u8, sdk.scratch.bytes_default);
-        errdefer gpa.free(server.scratch_buffer);
+        server.scratch_buffer = try reserved.reserve(gpa, .@"1", sdk.scratch.bytes_default);
+        errdefer reserved.release(gpa, .@"1", server.scratch_buffer);
 
         server.scratch = .{
             .fixed = .init(server.scratch_buffer),
         };
 
-        server.call_scratch_buffer = try gpa.alloc(u8, sdk.scratch.call_bytes);
-        errdefer gpa.free(server.call_scratch_buffer);
+        server.call_scratch_buffer = try reserved.reserve(gpa, .@"1", sdk.scratch.call_bytes);
+        errdefer reserved.release(gpa, .@"1", server.call_scratch_buffer);
 
         server.call_scratch = .{
             .fixed = .init(server.call_scratch_buffer),
         };
 
-        server.plugin_buffer = try gpa.alignedAlloc(
-            u8,
+        server.plugin_buffer = try reserved.reserve(
+            gpa,
             sdk.plugin_memory.alignment,
             sdk.plugin_memory.bytes,
         );
@@ -75,10 +76,11 @@ pub const Server = struct {
 
     fn release_working(server: *Server) void {
         std.debug.assert(server.scratch_buffer.len == sdk.scratch.bytes_default);
+        std.debug.assert(server.plugin_buffer.len == sdk.plugin_memory.bytes);
 
-        server.gpa.free(server.scratch_buffer);
-        server.gpa.free(server.call_scratch_buffer);
-        server.gpa.free(server.plugin_buffer);
+        reserved.release(server.gpa, .@"1", server.scratch_buffer);
+        reserved.release(server.gpa, .@"1", server.call_scratch_buffer);
+        reserved.release(server.gpa, sdk.plugin_memory.alignment, server.plugin_buffer);
     }
 
     pub fn init(server: *Server, process: std.process.Init, db_path: [:0]const u8) !void {
