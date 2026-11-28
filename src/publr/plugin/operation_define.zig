@@ -11,6 +11,7 @@ const comptime_json = @import("../../model/comptime_json.zig");
 const plugin_define = @import("define.zig");
 const PluginCtx = @import("../../sdk/plugin/context.zig").PluginCtx;
 const plugin_words = @import("words.zig");
+const hint_words = @import("../hint.zig");
 
 pub const Kind = public_operation.Kind;
 pub const verb_len_max: u32 = 48;
@@ -108,6 +109,8 @@ pub fn Described(comptime Definition: type, comptime plugin: []const u8, comptim
             pub const name = full_name;
             pub const description = parsed.description;
             pub const details = parsed.details;
+            pub const find_words = parsed.find_words;
+            pub const hint = parsed.hint;
             pub const kind: Kind = options.kind;
             pub const In = Definition.In;
             pub const Out = Definition.Out;
@@ -255,6 +258,10 @@ pub fn Problems(comptime In: type) type {
 const Sections = struct {
     description: []const u8,
     details: []const u8,
+    /// The `Find:` line: more words `publr find` matches it by.
+    find_words: []const u8,
+    /// The `Hint:` line: the fields it is the better fit for.
+    hint: ?hint_words.Hint,
     failures: []const public_operation.Failure,
     example_in: []const u8,
     example_out: []const u8,
@@ -272,11 +279,25 @@ fn sections(comptime full_name: []const u8, comptime words: []const u8) Sections
         var failures: []const public_operation.Failure = &.{};
         var example_in: []const u8 = "";
         var example_out: []const u8 = "";
+        var find_words: []const u8 = "";
+        var hint: ?hint_words.Hint = null;
         var section: enum { details, fails, example } = .details;
         var reading: enum { none, in, out } = .none;
 
         while (lines.next()) |raw| {
             const line = std.mem.trim(u8, raw, " ");
+
+            if (section == .details and std.mem.startsWith(u8, line, "Find:")) {
+                find_words = std.mem.trim(u8, line["Find:".len..], " ");
+                continue;
+            }
+
+            if (section == .details and std.mem.startsWith(u8, line, "Hint:")) {
+                hint = hint_words.parse(std.mem.trim(u8, line["Hint:".len..], " ")) orelse
+                    @compileError("operation " ++ full_name ++ ": a `Hint:` line names its " ++
+                        "fields, then `: ` and what fits better");
+                continue;
+            }
 
             if (std.mem.eql(u8, line, "Fails:")) {
                 section = .fails;
@@ -322,6 +343,8 @@ fn sections(comptime full_name: []const u8, comptime words: []const u8) Sections
         return .{
             .description = first,
             .details = std.mem.trim(u8, details, " \n"),
+            .find_words = find_words,
+            .hint = hint,
             .failures = failures,
             .example_in = example_in,
             .example_out = example_out,

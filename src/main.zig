@@ -56,6 +56,14 @@ fn run(init: std.process.Init) !u8 {
         rest = rest[2..];
     }
 
+    // Here, where the agent's shell is, not in the server a command may be sent to.
+    const finding = rest.len > 0 and std.mem.eql(u8, rest[0], "find");
+    const helping = builtin.os.tag != .wasi and !finding and cli.agent_help.asks_for_help(rest);
+
+    if (helping and cli.agent_help.running_in_agent(init.environ_map)) {
+        try out.writeAll(cli.agent_help.block);
+    }
+
     if (try tool(init, out, db_path, rest)) |code| {
         return code;
     }

@@ -2,6 +2,7 @@
 //! `publr.content_type.Def`, taken and answered as a value; REST, the CLI and MCP write it as
 //! a JSON object.
 const operation = @import("../operation.zig");
+const hint_words = @import("../hint.zig");
 const model = @import("../model/content_type.zig");
 
 pub const namespace: operation.Namespace = .{
@@ -83,6 +84,10 @@ pub const example_definition: Def = .{
     },
 };
 
+/// What `hints` in a create or update answer says.
+const hints_doc = "Fields just added that another API probably fits better: the field, what " ++
+    "fits and the command (`publr find` finds more). Only a note: the change was made";
+
 pub const Create = struct {
     pub const name = "content_type.create";
     pub const description = "Create a content type from its definition";
@@ -111,6 +116,7 @@ pub const Create = struct {
     pub const Out = struct {
         id: []const u8,
         handle: []const u8,
+        hints: []const hint_words.Hinted = &.{},
     };
     pub const example: In = .{
         .definition = new_definition,
@@ -125,6 +131,7 @@ pub const Create = struct {
     pub const output_docs: operation.Docs(Out) = .{
         .id = "The new type's id",
         .handle = "Its handle",
+        .hints = hints_doc,
     };
 };
 
@@ -153,6 +160,7 @@ pub const Update = struct {
         handle: []const u8,
         records_rewritten: u32,
         values_dropped: u32,
+        hints: []const hint_words.Hinted = &.{},
     };
     pub const example: In = .{
         .type = "post",
@@ -174,6 +182,7 @@ pub const Update = struct {
         .handle = "Its handle",
         .records_rewritten = "Records whose values were converted or re-indexed",
         .values_dropped = "Values deleted for removed fields",
+        .hints = hints_doc,
     };
 };
 

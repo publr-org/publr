@@ -317,5 +317,6 @@ test {
 
     if (builtin.os.tag != .wasi) {
         _ = gate;
+        _ = @import("server/find_queries.zig");
     }
 }

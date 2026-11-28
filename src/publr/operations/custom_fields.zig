@@ -116,6 +116,8 @@ pub const List = struct {
 pub const Create = struct {
     pub const name = "custom_fields.create";
     pub const description = "Create a named custom field group";
+    pub const find_words = "extra fields, shared fields, fields on many types, " ++
+        "add fields to another type";
     pub const kind: operation.Kind = .write;
     pub const In = Update.In;
     pub const Out = Update.Out;

@@ -182,6 +182,7 @@ pub const Get = struct {
 pub const Authorize = struct {
     pub const name = "operation.authorize";
     pub const description = "Override who may call an operation on this site";
+    pub const find_words = "permissions, who may call, restrict access, roles, lock down";
     pub const details =
         \\Administrators only. Give one of `user_has_role` (the roles, administrators
         \\always), `user_is_signed_in` (only where the operation takes untrusted callers),

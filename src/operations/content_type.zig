@@ -10,6 +10,7 @@ const Error = sdk.Error;
 const content_type = model.content_type;
 const definition = record.domain.definition;
 const definition_module = @import("document/definition.zig");
+const hints = @import("hints.zig");
 const Def = content_type.Def;
 
 pub const namespace = public.namespace;
@@ -41,10 +42,12 @@ pub const Create = struct {
         std.debug.assert(ctx.db.transaction_depth >= 1);
 
         const row = try definition.create(ctx, in.definition);
+        const added = try hints.added_names(ctx.arena, row.def.fields, &[_]model.field.Def{});
 
         return .{
             .id = row.id,
             .handle = row.def.handle,
+            .hints = try hints.for_fields(ctx, added),
         };
     }
 };
@@ -69,13 +72,17 @@ pub const Update = struct {
             return error.Invalid;
         }
 
+        const before = try definition.find_raw(ctx, in.type);
         const updated = try definition.update(ctx, in.type, in.definition, in.drop_content);
+        const held = if (before) |row| row.def.fields else &.{};
+        const added = try hints.added_names(ctx.arena, in.definition.fields, held);
 
         return .{
             .id = updated.id,
             .handle = updated.handle,
             .records_rewritten = updated.rewritten,
             .values_dropped = updated.dropped,
+            .hints = try hints.for_fields(ctx, added),
         };
     }
 };

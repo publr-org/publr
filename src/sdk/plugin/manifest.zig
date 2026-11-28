@@ -8,6 +8,7 @@ const runtime = @import("sandboxed.zig");
 const sdk_operation = @import("../operation.zig");
 const sandboxed_plugin = @import("../../model/sandboxed_plugin.zig");
 const help = @import("../help.zig");
+const find_hint = @import("../../publr/hint.zig");
 const shapes = @import("../../model/contract.zig");
 
 /// The name of the custom section the manifest travels in.
@@ -255,6 +256,9 @@ fn operations_of(comptime Plugin: type) []const Operation {
                 .kind = if (Declared.kind == .read) .read else .write,
                 .description = Declared.description,
                 .details = Declared.details,
+                .find_words = find_hint.find_words(Declared),
+                .hint_fields = if (find_hint.hint_of(Declared)) |hint| hint.fields else &.{},
+                .hint_says = if (find_hint.hint_of(Declared)) |hint| hint.says else "",
                 .open = Declared.open,
                 .public_api = Declared.public_api,
                 .example = Declared.example_json,

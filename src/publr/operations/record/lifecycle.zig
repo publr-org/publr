@@ -54,6 +54,7 @@ pub const TransitionAt = struct {
     pub const name = "record.transition_at";
     pub const description = "Schedule a transition of a record for a moment: publish on " ++
         "5 Nov at 9:00";
+    pub const find_words = "schedule, later, publish at a time, timed, future, embargo";
     pub const details =
         \\A person schedules it; at that moment the server makes it as them, with the rights
         \\they hold then, as `record transition` would. A record may have any number

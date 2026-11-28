@@ -3,6 +3,7 @@
 //! `publr.content_type.Def`, taken and answered as a value; REST, the CLI and MCP write it as
 //! a JSON object.
 const operation = @import("../operation.zig");
+const hint_words = @import("../hint.zig");
 const model = @import("../model/content_type.zig");
 
 pub const namespace: operation.Namespace = .{
@@ -77,6 +78,16 @@ const example_id = "d4e5f60718293a4b5c6d7e8f";
 pub const Create = struct {
     pub const name = "taxonomy.create";
     pub const description = "Create a taxonomy from its definition";
+    pub const find_words = "categories, tags, topics, genres, labels, classify, group records, " ++
+        "filed under, tag posts, products or articles";
+    pub const hint: hint_words.Hint = .{
+        .fields = &.{
+            "category", "categories", "tag", "tags", "topic", "topics", "genre", "genres",
+        },
+        .says = "A list many records are filed under is a taxonomy: `publr taxonomy create`, " ++
+            "then list it on the type (`taxonomies`); a plugin declares one with " ++
+            "`publr.taxonomy.define` in `.taxonomies`",
+    };
     pub const details =
         \\Admins only. The definition takes the keys of a content type definition
         \\(`handle`, `name`, `public`, `title_field`, `statuses`, `fields`; see

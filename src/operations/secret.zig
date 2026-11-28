@@ -81,6 +81,7 @@ pub const Set = struct {
     pub const shape = public.Set;
     pub const name = shape.name;
     pub const description = shape.description;
+    pub const find_words = shape.find_words;
     pub const details = shape.details;
     pub const kind = shape.kind;
     pub const secret = shape.secret;

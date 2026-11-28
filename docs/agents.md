@@ -29,6 +29,10 @@ command is sent to it and takes effect at once: you never restart it.
 `publr --help` lists Publr's own commands; installed plugins bring namespaces of their own
 (`publr --as-admin plugin list` names the plugins). `publr <namespace> --help` lists a
 namespace's commands, either kind, and `publr <namespace> <verb> --help` explains one.
+To find the command for a task, run `publr find "<what you want to do>"` first: the five
+commands and guide entries that fit best, the installed plugins' included, as JSON.
+Answers that change a type carry `hints`: a field another API probably fits better (a
+`category` text field is a taxonomy's). They are notes; the change was made as asked.
 `--as-admin` runs a command as an administrator, `--as <email>` as that account.
 
 ## Publr's marketplace first
@@ -147,6 +151,10 @@ pub const plugin = publr.plugin.define(manifest, .{
   made from the same words. An operation's `///` gives its description, details, `Fails:`
   and `Example:` (an `in:` and an `out:` line of JSON); every field of a record, an input
   and an output has a `///`. A missing one fails the build and says where it goes.
+  Two more lines help agents find an operation: `Find: book a table, reservation` (words
+  `publr find` matches it by), and `Hint: booking, reservation: tables are booked with
+  this` (the field names it fits better, then what it says to whoever adds one: in
+  `content_type create` answers and `plugin check` warnings).
 - **Names.** An operation is `<plugin>.<verb>` (`guestbook.sign`): `.name` is the verb. A
   plugin cannot be named after one of Publr's own namespaces, or `app`. Never give one
   operation two names; if the admin needs different behaviour, that is a second

@@ -83,6 +83,82 @@ pub fn check(
     try check_bookkeeping(arena, &tree, out);
 }
 
+/// A field of a struct a file defines as a record (`publr.record.define(Post, ...)`), for
+/// the hints `plugin check` gives: the binary matches the names against every operation's.
+pub const RecordField = struct {
+    line: u32,
+    name: []const u8,
+};
+
+pub const record_fields_max: u32 = 1024;
+
+/// The fields of each struct the file hands to `record.define` as its first argument and
+/// defines itself. A file that does not parse has none.
+pub fn record_fields(
+    arena: std.mem.Allocator,
+    text: [:0]const u8,
+    out: *std.ArrayList(RecordField),
+) !void {
+    var tree = try Ast.parse(arena, text, .{});
+
+    if (tree.errors.len > 0) {
+        return;
+    }
+
+    for (0..tree.nodes.len) |index| {
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
+        const declaration = tree.fullVarDecl(node) orelse continue;
+        const init = declaration.ast.init_node.unwrap() orelse continue;
+        var buffer: [1]Ast.Node.Index = undefined;
+        const call = tree.fullCall(&buffer, init) orelse continue;
+
+        if (!std.mem.endsWith(u8, node_text(&tree, call.ast.fn_expr), "record.define") or
+            call.ast.params.len != 2)
+        {
+            continue;
+        }
+
+        const named = node_text(&tree, call.ast.params[0]);
+        const struct_node = struct_named(&tree, named) orelse continue;
+        var members: [2]Ast.Node.Index = undefined;
+        const container = tree.fullContainerDecl(&members, struct_node) orelse continue;
+
+        for (container.ast.members) |member| {
+            const field = tree.fullContainerField(member) orelse continue;
+
+            if (out.items.len == record_fields_max) return;
+
+            try out.append(arena, .{
+                .line = line_of(&tree, field.ast.main_token),
+                .name = try arena.dupe(u8, tree.tokenSlice(field.ast.main_token)),
+            });
+        }
+    }
+}
+
+/// The struct the file declares under `name` (`const Post = struct { ... }`).
+fn struct_named(tree: *const Ast, name: []const u8) ?Ast.Node.Index {
+    std.debug.assert(tree.errors.len == 0);
+
+    for (0..tree.nodes.len) |index| {
+        const node: Ast.Node.Index = @fromBackingInt(@intCast(index));
+        const declaration = tree.fullVarDecl(node) orelse continue;
+        const init = declaration.ast.init_node.unwrap() orelse continue;
+
+        if (!std.mem.eql(u8, tree.tokenSlice(declaration.ast.mut_token + 1), name)) {
+            continue;
+        }
+
+        var members: [2]Ast.Node.Index = undefined;
+
+        if (tree.fullContainerDecl(&members, init) != null) {
+            return init;
+        }
+    }
+
+    return null;
+}
+
 /// Each content type left out of the menu without a public URL that is not a settings
 /// record: what only operations write is bookkeeping, an internal record. A `Why:` on its
 /// declaration passes it.

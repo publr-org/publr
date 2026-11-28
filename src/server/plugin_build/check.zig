@@ -46,8 +46,50 @@ pub fn problems_of(arena: std.mem.Allocator, read: doc_reader.Source) ![]const d
         });
     }
 
+    try hinted(arena, read.record_fields, &problems);
+
     return problems.items;
 }
+
+/// A warning for each record field an operation's hint names: a list many records are filed
+/// under is a taxonomy. Every operation's own hint, core's and compiled-in plugins'.
+fn hinted(
+    arena: std.mem.Allocator,
+    fields: []const doc_reader.PlacedField,
+    problems: *std.ArrayList(doc_reader.Placed),
+) !void {
+    const registry = @import("../registry.zig");
+    const hint = @import("../../publr/hint.zig");
+
+    @setEvalBranchQuota(registry.SDK.operations.len * 1024);
+
+    for (fields) |placed| {
+        inline for (registry.SDK.operations) |Operation| {
+            if (comptime hint.hint_of(Operation)) |its| {
+                if (hint.names(its, placed.field.name)) {
+                    const see = comptime sdk_operation.namespace(Operation.name) ++ " " ++
+                        sdk_operation.verb(Operation.name);
+
+                    try problems.append(arena, .{
+                        .path = placed.path,
+                        .problem = .{
+                            .line = placed.field.line,
+                            .message = try std.fmt.allocPrint(arena, "`{s}`: {s} (`publr {s}" ++
+                                " --help`; `publr find` finds more)", .{
+                                placed.field.name,
+                                its.says,
+                                see,
+                            }),
+                            .warning = true,
+                        },
+                    });
+                }
+            }
+        }
+    }
+}
+
+const sdk_operation = @import("../../sdk.zig").operation;
 
 /// Each problem printed where it is; a warning says so and stops nothing.
 pub fn reported(dir: []const u8, problems: []const doc_reader.Placed) void {

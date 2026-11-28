@@ -14,6 +14,9 @@ pub const pages_max: u32 = 100_000;
 pub const Error = sdk.Error || error{ UnknownOp, UnknownFlag, MissingValue, WriteFailed };
 
 const runtime_cli = @import("cli/sandboxed_plugins.zig");
+/// The block an agent reads first when it asks for help (`main.zig` prints it).
+pub const agent_help = @import("cli/agent_help.zig");
+pub const find = @import("cli/find.zig");
 const language = @import("../operations/user/language.zig");
 const help = sdk.help;
 
@@ -179,6 +182,10 @@ pub fn CLI(comptime SDK: type) type {
                 return fail(invocation, "command must not be empty");
             }
 
+            if (std.mem.eql(u8, args[0], "find")) {
+                return find_command(invocation, args[1..], out);
+            }
+
             const index: u32 = 0;
             const bare_namespace = std.mem.indexOfScalar(u8, args[index], '.') == null and
                 (index + 1 == args.len or is_help_flag(args[index + 1]));
@@ -274,6 +281,32 @@ pub fn CLI(comptime SDK: type) type {
             }
 
             return failf(invocation, "unknown command \"{s}\"; run \"publr --help\"", .{name});
+        }
+
+        /// `publr find <words>`: the commands and guide entries that fit a task best. Like
+        /// `--help`, it needs no sign-in: it names commands, never data.
+        fn find_command(
+            invocation: Invocation,
+            words: []const []const u8,
+            out: *std.Io.Writer,
+        ) Error!u8 {
+            const asked_help = words.len == 1 and is_help_flag(words[0]);
+
+            if (words.len == 0 or asked_help) {
+                write(out, find.usage) catch return error.WriteFailed;
+
+                return if (asked_help) 0 else 2;
+            }
+
+            const arena = invocation.arena;
+            const query = try std.mem.join(arena, " ", words);
+            const sandboxed = invocation.options.sandboxed_plugins;
+            const all = try find.documents(SDK, arena, sandboxed, find.guide);
+            const found = try find.rank(arena, all, query);
+
+            try find.print(found, out);
+
+            return 0;
         }
 
         fn namespace_known(namespace: []const u8) bool {
@@ -499,7 +532,8 @@ const help_header =
     \\`brew install publr-org/tap/publr` or `curl -fsSL https://publr.dev/install.sh | sh`.
     \\
     \\An agent building on Publr: run `publr agents` first, and read all of it. Every command
-    \\with its flags, on one line each: `publr --commands`.
+    \\with its flags, on one line each: `publr --commands`. The command for a task:
+    \\`publr find "<what you want to do>"`.
     \\
     \\Options:
     \\
@@ -1268,4 +1302,10 @@ test "empty commands, oversized caller names and a full init alias fail graceful
     const auth = &harness.auth;
     const long_as = try Command.run(connection, io, fixed, auth, &too_long, &output, options);
     try std.testing.expectEqual(@as(u8, 2), long_as);
+}
+
+test {
+    _ = agent_help;
+    _ = find;
+    _ = @import("../publr/hint.zig");
 }

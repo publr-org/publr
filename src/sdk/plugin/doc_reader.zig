@@ -40,6 +40,13 @@ pub const Source = struct {
     problems: []const Placed,
     /// The GROQ texts it prepares, for the checks that parse them.
     queries: []const prepared_queries.Query,
+    /// The fields of its records, by file: what the binary gives hints on.
+    record_fields: []const PlacedField = &.{},
+};
+
+pub const PlacedField = struct {
+    path: []const u8,
+    field: @import("checks.zig").RecordField,
 };
 
 const prepared_queries = @import("prepared_queries.zig");
@@ -66,6 +73,7 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
     var failures: checks.Failures = .{};
     var queries: std.ArrayList(prepared_queries.Query) = .empty;
     var missing: std.ArrayList(prepared_queries.Missing) = .empty;
+    var fields: std.ArrayList(PlacedField) = .empty;
 
     for (files) |file| {
         if (!std.mem.endsWith(u8, file.path, ".zig")) {
@@ -79,6 +87,17 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
         try read_among(arena, try file_key(arena, file.path), file.text, files, &entries);
         try written_secrets.read(arena, file.text, &written);
         try checks.check(arena, file.path, file.text, &found);
+
+        var its_fields: std.ArrayList(checks.RecordField) = .empty;
+
+        try checks.record_fields(arena, file.text, &its_fields);
+
+        for (its_fields.items) |field| {
+            try fields.append(arena, .{
+                .path = file.path,
+                .field = field,
+            });
+        }
         try failures.read(arena, file.path, file.text);
 
         for (found.items) |problem| {
@@ -134,6 +153,7 @@ pub fn source_of(arena: std.mem.Allocator, files: []const File) !Source {
             warned.items,
         }),
         .problems = problems.items,
+        .record_fields = fields.items,
         .queries = queries.items,
     };
 }

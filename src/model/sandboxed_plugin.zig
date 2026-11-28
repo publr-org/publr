@@ -157,6 +157,11 @@ pub const Operation = struct {
     kind: Kind,
     description: []const u8,
     details: []const u8 = "",
+    /// Its `Find:` words: more words `publr find` matches it by.
+    find_words: []const u8 = "",
+    /// Its `Hint:`: the fields it is the better fit for, and what it says to whoever adds one.
+    hint_fields: []const []const u8 = &.{},
+    hint_says: []const u8 = "",
     open: bool = false,
     /// Listed in the published API reference (`.public_api`).
     public_api: bool = false,

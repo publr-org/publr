@@ -78,6 +78,7 @@ pub const List = struct {
 pub const Set = struct {
     pub const name = "secret.set";
     pub const description = "Set a secret's value, replacing any";
+    pub const find_words = "api key, token, credentials, password, keep a key";
     pub const details =
         \\Kept sealed with the project's key, made beside the database the first time when
         \\`PUBLR_SECRET_KEY` is not set. An environment variable of the same name still wins.

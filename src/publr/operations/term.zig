@@ -72,6 +72,7 @@ pub const Node = struct {
 pub const Create = struct {
     pub const name = "term.create";
     pub const description = "Create a term of a taxonomy from a JSON document";
+    pub const find_words = "add a category, add a tag, new topic";
     pub const details =
         \\The document is validated against the taxonomy's fields; the title comes from
         \\its `title_field`, the slug from the `slug` field's source when the document

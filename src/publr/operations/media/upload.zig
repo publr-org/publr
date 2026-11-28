@@ -11,6 +11,7 @@ pub const svg_bytes_max: u32 = 1 << 20;
 pub const Upload = struct {
     pub const name = "media.upload";
     pub const description = "Add the file an upload streamed in to the media library";
+    pub const find_words = "file, image, picture, photo, attachment, add a file";
     pub const details =
         \\What the library's Upload does after it sends a file's bytes to `/media/upload`,
         \\which keeps them under a token: the file is checked (its bytes must be what its
