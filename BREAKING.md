@@ -14,6 +14,8 @@ release renames it to its version and day.
 
 ## Unreleased
 
+## 0.9.1 (2026-11-28)
+
 ## 0.9.0 (2026-11-28)
 
 ### `http:/admin/styles.css`

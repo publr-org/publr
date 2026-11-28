@@ -1,7 +1,7 @@
 const std = @import("std");
 
 /// The Publr release this is; a release writes it.
-pub const version = "0.9.0";
+pub const version = "0.9.1";
 
 test "version is a semantic version with three components" {
     var parts: u32 = 0;
