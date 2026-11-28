@@ -276,3 +276,94 @@ test "project.put puts every kind with its id: removed, back, and unchanged when
     try round_trip(&admin, .plugin, "shelf");
     try std.testing.expectError(error.Denied, put_one(&editor, .plugin, "shelf", "{}"));
 }
+
+test "project.put carries a file's row with its record; removing it keeps it in the trash" {
+    const files_module = @import("../../lib/files.zig");
+    const upload = @import("../media/upload.zig");
+    const media_edit = @import("../media/edit.zig");
+    const trash = @import("../trash.zig");
+    var harness: sdk.testing.Harness = undefined;
+    try harness.init();
+    defer harness.deinit();
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+
+    const root = try temporary.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    var disk = try files_module.Disk.open(std.testing.io, root);
+    defer disk.close();
+
+    var system = harness.ctx(.system);
+    system.files = .{
+        .disk = &disk,
+    };
+    try SDK.bootstrap(&system);
+    try system.files.?.write(.incoming, "upload0001", "plain words");
+
+    const notes = try SDK.dispatch(&system, upload.Upload, .{
+        .upload = "upload0001",
+        .filename = "notes.txt",
+    });
+    const kept = try system.arena.dupe(u8, try rows_of(&system, .record, notes.id));
+
+    try std.testing.expect(std.mem.indexOf(u8, kept, "\"media\":[{\"record\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, kept, "\"filename\":\"notes.txt\"") != null);
+
+    // Rows that leave the file's row out leave it as it is.
+    const end = std.mem.indexOf(u8, kept, ",\"media\":").?;
+    const without = try std.fmt.allocPrint(system.arena, "{s}}}", .{kept[0..end]});
+
+    const left_out = try put_one(&system, .record, notes.id, without);
+
+    try std.testing.expectEqualStrings("unchanged", left_out);
+
+    // Removed: into the trash with its file set aside, as `media.delete` leaves it.
+    try std.testing.expectEqualStrings("removed", try put_one(&system, .record, notes.id, "{}"));
+
+    const listed = try SDK.dispatch(&system, trash.List, .{});
+
+    try std.testing.expectEqual(@as(usize, 1), listed.entries.len);
+    try std.testing.expectEqualStrings("File notes.txt", listed.entries[0].label);
+    try std.testing.expectError(
+        error.NotFound,
+        system.files.?.read(std.testing.allocator, .files, notes.key, 1024),
+    );
+
+    const trashed = try system.files.?.read(std.testing.allocator, .trash, notes.key, 1024);
+    defer std.testing.allocator.free(trashed);
+
+    try std.testing.expectEqualStrings("plain words", trashed);
+
+    // Put back, its row is back with it, the file where the caller put it.
+    try system.files.?.write(.files, notes.key, "plain words");
+    try std.testing.expectEqualStrings("added", try put_one(&system, .record, notes.id, kept));
+    try std.testing.expectEqualStrings(kept, try rows_of(&system, .record, notes.id));
+
+    // Back in the library, so what the trash kept of it goes.
+    const emptied = try SDK.dispatch(&system, trash.List, .{});
+
+    try std.testing.expectEqual(@as(usize, 0), emptied.entries.len);
+    try std.testing.expectError(
+        error.NotFound,
+        system.files.?.read(std.testing.allocator, .trash, notes.key, 1024),
+    );
+
+    const got = try SDK.dispatch(&system, media_edit.Get, .{
+        .id = notes.id,
+    });
+
+    try std.testing.expectEqualStrings("notes.txt", got.media.filename);
+
+    // Put naming another file: the one it no longer names goes.
+    const other = "2026/11/other-ab12.txt";
+    const moved = try std.mem.replaceOwned(u8, system.arena, kept, notes.key, other);
+
+    try system.files.?.write(.files, other, "plain words");
+    try std.testing.expectEqualStrings("replaced", try put_one(&system, .record, notes.id, moved));
+    try std.testing.expectError(
+        error.NotFound,
+        system.files.?.read(std.testing.allocator, .files, notes.key, 1024),
+    );
+}

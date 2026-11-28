@@ -126,7 +126,7 @@ nothing. Only plugins call it (with `project.put`), and administrators.
 
 | Kind | Id | Tables |
 |---|---|---|
-| `record` | its id | `records`, `record_values`, `record_terms` (search text made again) |
+| `record` | its id | `records`, `record_values`, `record_terms` (search text made again), and `media` for a file in the media library (left as it is when the rows do not name it) |
 | `term` | its id | `terms`, `term_values` (search text made again) |
 | `internal` | its id | `internal_records`, `internal_record_values` |
 | `content_type`, `taxonomy` | its id | its row, its `field_groups` row |
@@ -139,7 +139,10 @@ A BLOB travels as hex. Records and terms then land as the same change made by a 
 slugs and unique values free, references live, the replaced live document kept as a
 revision, its events raised; a refused check fails the whole call. The answer lists every
 unit with its outcome: `added`, `replaced`, `removed` or `unchanged`, and a content
-type's or taxonomy's `handle`. Files (plugins' modules, apps, `publr.zon`) are not put.
+type's or taxonomy's `handle`. A file removed goes to the trash with its bytes, as `media
+delete` puts it there, and one put back leaves the trash; one put again has its resized
+copies made anew, and the bytes of a file its row no longer names go. Files (media files, plugins' modules, apps, `publr.zon`)
+are not put: a file's bytes are in the media folder under its key before its row is put.
 
 ```
 $ publr --as-admin project put --units '[{"kind":"role","id":"reviewer","rows":{}}]'

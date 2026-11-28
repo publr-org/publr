@@ -27,6 +27,10 @@ pub const Table = struct {
     name: []const u8,
     key: []const u8,
     scope: ?[]const u8 = null,
+    /// Rows a put may leave out: when the rows given do not name the table at all, what it
+    /// holds of the unit stays as it is (a file's `media` row, put by a caller that knows
+    /// nothing of files). Named, even empty, it is replaced as any other.
+    kept_unless_named: bool = false,
 };
 
 pub const Shape = struct {
@@ -56,6 +60,12 @@ pub fn shape_of(kind: Kind) Shape {
                 .{
                     .name = "record_terms",
                     .key = "record",
+                },
+                // A file in the media library: its facts beside its record.
+                .{
+                    .name = "media",
+                    .key = "record",
+                    .kept_unless_named = true,
                 },
             },
             .derived = .{

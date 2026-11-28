@@ -33,7 +33,8 @@ pub const Put = struct {
         \\For plugins that keep copies of a project in sync (a rollback, a promotion, a
         \\merge): each unit's stored rows as JSON objects by column, by table, `{}` to
         \\remove it. Kinds and their tables: `record` (`records`, `record_values`,
-        \\`record_terms`), `term` (`terms`, `term_values`), `internal` (`internal_records`,
+        \\`record_terms`, and `media` for a file in the media library, left as it is when the
+        \\rows do not name it), `term` (`terms`, `term_values`), `internal` (`internal_records`,
         \\`internal_record_values`), `content_type` and `taxonomy` (its row and its
         \\`field_groups` row), `field_group` (a custom field group, by its handle), `role`
         \\(`roles`, `role_grants`), `user` (`users`, `user_roles`, `user_types`,
@@ -44,8 +45,12 @@ pub const Put = struct {
         \\as a person making the same change would: slugs and unique values free,
         \\references live, the replaced live document kept as a revision, the change's
         \\events raised. A refused check fails the whole call. Only plugins call it
-        \\(administrators too); a plugin needs the `project.put` permission. Rows only:
-        \\files (plugins' modules, apps, `publr.zon`) are not put.
+        \\(administrators too); a plugin needs the `project.put` permission. A file removed
+        \\goes to the trash with its bytes, as `media.delete` puts it there, and one put back
+        \\leaves the trash; one put again has its resized copies made anew, and the bytes of
+        \\a file its row no longer names go.
+        \\Rows only: files (media files, plugins' modules, apps, `publr.zon`) are not put, so a
+        \\file's bytes are in the media folder under its key before its row is put.
     ;
     pub const kind: operation.Kind = .write;
     pub const untrusted_callers = false;

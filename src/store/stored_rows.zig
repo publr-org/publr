@@ -67,11 +67,15 @@ pub fn put(
         try statements.clear(connection, arena, derived, id);
     }
 
+    const removing = std.mem.eql(u8, own_given, "[]");
+
     for (shape.children) |child| {
-        try statements.clear(connection, arena, child, id);
+        if (removing or named(parsed.object, child)) {
+            try statements.clear(connection, arena, child, id);
+        }
     }
 
-    if (std.mem.eql(u8, own_given, "[]")) {
+    if (removing) {
         try statements.clear(connection, arena, shape.own, id);
 
         return .{
@@ -83,6 +87,10 @@ pub fn put(
     try statements.put_own(connection, arena, shape, id, own_given);
 
     for (shape.children) |child| {
+        if (!named(parsed.object, child)) {
+            continue;
+        }
+
         const given = try rows_in(arena, parsed.object, child.name);
 
         try statements.insert(connection, arena, child, id, given);
@@ -149,6 +157,10 @@ fn holds(
     }
 
     for (shape.children) |child| {
+        if (!named(given, child)) {
+            continue;
+        }
+
         const child_given = try rows_in(arena, given, child.name);
         const wanted = try statements.canonical_given(connection, arena, child, id, child_given);
         const stored = try statements.canonical_stored(connection, arena, child, id);
@@ -159,6 +171,14 @@ fn holds(
     }
 
     return true;
+}
+
+/// Whether a put replaces the table's rows: always, but for a table kept unless named that
+/// the rows given leave out.
+fn named(given: std.json.ObjectMap, table: Table) bool {
+    std.debug.assert(table.name.len > 0);
+
+    return !table.kept_unless_named or given.contains(table.name);
 }
 
 /// Only the shape's own tables, each a list.
@@ -295,6 +315,72 @@ test "a unit's rows put exactly, read back the same, unchanged twice, then remov
 
     try std.testing.expect(try count.step());
     try std.testing.expectEqual(@as(i64, 1), (try count.read(Seen, arena)).seen);
+}
+
+test "a table kept unless named stays when the rows leave it out, and is replaced when named" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var fixture: db.testing.Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+
+    const connection = &fixture.connection;
+    const shape: Shape = .{
+        .own = .{
+            .name = "notes",
+            .key = "id",
+        },
+        .conflict = "id",
+        .children = &.{.{
+            .name = "files",
+            .key = "note",
+            .kept_unless_named = true,
+        }},
+    };
+
+    try connection.exec("CREATE TABLE notes (id TEXT PRIMARY KEY, status TEXT NOT NULL) STRICT");
+    try connection.exec("CREATE TABLE files (note TEXT PRIMARY KEY REFERENCES notes(id) " ++
+        "ON DELETE CASCADE, name TEXT NOT NULL) STRICT");
+    try connection.exec("INSERT INTO notes VALUES ('t1', 'draft')");
+    try connection.exec("INSERT INTO files VALUES ('t1', 'a.jpg')");
+
+    var transaction = try connection.transaction();
+    defer transaction.rollback();
+
+    const left_out = "{\"notes\":[{\"id\":\"t1\",\"status\":\"published\"}]}";
+
+    const kept = "{\"notes\":[{\"id\":\"t1\",\"status\":\"published\"}]," ++
+        "\"files\":[{\"note\":\"t1\",\"name\":\"a.jpg\"}]}";
+
+    try expect_outcome(connection, arena, shape, left_out, .replaced);
+    try std.testing.expectEqualStrings(kept, try read(connection, arena, shape, "t1"));
+    try expect_outcome(connection, arena, shape, left_out, .unchanged);
+
+    const renamed = "{\"notes\":[{\"id\":\"t1\",\"status\":\"published\"}]," ++
+        "\"files\":[{\"note\":\"t1\",\"name\":\"b.jpg\"}]}";
+
+    try expect_outcome(connection, arena, shape, renamed, .replaced);
+    try std.testing.expectEqualStrings(renamed, try read(connection, arena, shape, "t1"));
+
+    const emptied = "{\"notes\":[{\"id\":\"t1\",\"status\":\"published\"}],\"files\":[]}";
+
+    try expect_outcome(connection, arena, shape, emptied, .replaced);
+    try std.testing.expectEqualStrings(emptied, try read(connection, arena, shape, "t1"));
+    try expect_outcome(connection, arena, shape, "{}", .removed);
+}
+
+fn expect_outcome(
+    connection: *db.Db,
+    arena: std.mem.Allocator,
+    shape: Shape,
+    rows: []const u8,
+    wanted: Outcome,
+) !void {
+    std.debug.assert(rows.len > 0);
+
+    try std.testing.expectEqual(wanted, try outcome_of(connection, arena, shape, rows));
 }
 
 test {

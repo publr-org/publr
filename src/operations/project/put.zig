@@ -9,6 +9,8 @@ const operation_define = @import("../../publr/plugin/operation_define.zig");
 const record_operations = @import("../record.zig");
 const term_operations = @import("../term.zig");
 const changes = @import("changes.zig");
+const media_edit = @import("../media/edit.zig");
+const trash = @import("../trash.zig");
 
 const Ctx = sdk.Ctx;
 const Grant = sdk.Grant;
@@ -53,6 +55,13 @@ pub const Put = struct {
         for (in.units, kinds, befores) |unit, *kind_slot, *before| {
             kind_slot.* = try checked(unit);
             before.* = try landing(ctx, kind_slot.*, unit.id);
+
+            // A file removed goes to the trash as `media.delete` puts it there.
+            if (before.* == .record and before.record.file != null) {
+                if (try removes(ctx.arena, unit.rows.text)) {
+                    try media_edit.keep_in_trash(ctx, before.record.file.?);
+                }
+            }
         }
 
         for (in.units, kinds, results) |unit, unit_kind, *result| {
@@ -70,6 +79,7 @@ pub const Put = struct {
         for (in.units, kinds, befores, results, done) |unit, unit_kind, before, result, *slot| {
             if (result.outcome != .unchanged) {
                 try landed(ctx, unit.id, before);
+                try file_landed(ctx, unit.id, before, result.outcome);
             }
 
             const by_handle = unit_kind == .content_type or unit_kind == .taxonomy;
@@ -103,7 +113,7 @@ fn checked(unit: Unit) Error!stored_rows.Kind {
 
 const Before = union(enum) {
     none,
-    record: ?records.Before,
+    record: Recorded,
     term: ?terms.Before,
     /// The collection the record was in, when it was there.
     internal: ?store.internal_records.Owner,
@@ -115,7 +125,10 @@ fn landing(ctx: *Ctx, kind: stored_rows.Kind, id: []const u8) Error!Before {
 
     return switch (kind) {
         .record => .{
-            .record = try records.landing(ctx, id),
+            .record = .{
+                .was = try records.landing(ctx, id),
+                .file = try store.media.get(ctx.db, ctx.arena, id),
+            },
         },
         .term => .{
             .term = try terms.landing(ctx, id),
@@ -135,7 +148,7 @@ fn landed(ctx: *Ctx, id: []const u8, before: Before) Error!void {
     std.debug.assert(ctx.db.transaction_depth >= 1);
 
     switch (before) {
-        .record => |was| return records.landed(ctx, id, was),
+        .record => |was| return records.landed(ctx, id, was.was),
         .term => |was| return terms.landed(ctx, id, was),
         .internal => |was| {
             const now = try store.internal_records.owner_of(ctx.db, ctx.arena, id);
@@ -157,6 +170,79 @@ fn landed(ctx: *Ctx, id: []const u8, before: Before) Error!void {
             }
         },
         .none => {},
+    }
+}
+
+/// A record before it is put: as a document, and its row in the media library when it is a
+/// file.
+const Recorded = struct {
+    was: ?records.Before,
+    file: ?store.media.Row,
+};
+
+/// Whether the rows given remove the record: no row of its own.
+fn removes(arena: std.mem.Allocator, rows: []const u8) Error!bool {
+    std.debug.assert(rows.len > 0);
+
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, rows, .{}) catch {
+        return error.Invalid;
+    };
+
+    if (parsed != .object) {
+        return error.Invalid;
+    }
+
+    const own = parsed.object.get("records") orelse return true;
+
+    return own != .array or own.array.items.len == 0;
+}
+
+/// What follows a file's record put: removed, its file set aside in the trash beside the
+/// copy kept there; put again, its resized copies made anew (its focal point may have moved),
+/// and a file it no longer names gone.
+fn file_landed(ctx: *Ctx, id: []const u8, before: Before, outcome: stored_rows.Outcome) Error!void {
+    std.debug.assert(id.len > 0);
+    std.debug.assert(outcome != .unchanged);
+
+    if (before != .record) {
+        return;
+    }
+
+    const was = before.record.file orelse {
+        return if (outcome == .added) came_back(ctx, id) else {};
+    };
+
+    if (outcome == .removed) {
+        return trash.set_aside(ctx, was.storage_key);
+    }
+
+    const files = ctx.files orelse return;
+    const now = try store.media.get(ctx.db, ctx.arena, id);
+
+    files.clear_copies(was.storage_key);
+
+    if (now == null or !std.mem.eql(u8, now.?.storage_key, was.storage_key)) {
+        files.remove(.files, was.storage_key);
+    }
+}
+
+/// A file put back where it had been removed (a removal rolled back): what the trash kept of
+/// it goes, since it is in the library again.
+fn came_back(ctx: *Ctx, id: []const u8) Error!void {
+    std.debug.assert(id.len > 0);
+
+    const now = try store.media.get(ctx.db, ctx.arena, id) orelse return;
+    var dropped: u32 = 0;
+
+    while (try store.trash.id_of(ctx.db, ctx.arena, "media", id)) |entry| {
+        std.debug.assert(dropped < units_max);
+
+        _ = try store.trash.delete(ctx.db, entry);
+        dropped += 1;
+    }
+
+    if (dropped > 0) {
+        if (ctx.files) |files| files.remove(.trash, now.storage_key);
     }
 }
 

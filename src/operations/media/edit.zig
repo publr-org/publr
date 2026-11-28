@@ -287,35 +287,7 @@ pub const Delete = struct {
 
             keys[index] = row.storage_key;
 
-            const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{row.record}) catch {
-                return error.OutOfMemory;
-            };
-
-            _ = try trash.keep(ctx, .{
-                .kind = "media",
-                .key = row.record,
-                .label = std.fmt.allocPrint(ctx.arena, "File {s}", .{row.filename}) catch {
-                    return error.OutOfMemory;
-                },
-                .roots = &.{
-                    .{
-                        .table = "records",
-                        .column = "id",
-                        .keys = key,
-                    },
-                    .{
-                        .table = "record_search",
-                        .column = "record",
-                        .keys = key,
-                    },
-                    .{
-                        .table = "snapshots",
-                        .column = "record",
-                        .keys = key,
-                    },
-                },
-                .files = &.{row.storage_key},
-            });
+            try keep_in_trash(ctx, row);
             ctx.kept = true;
             _ = try registry.SDK.dispatch(ctx, record.Purge, .{
                 .id = row.record,
@@ -332,6 +304,44 @@ pub const Delete = struct {
         };
     }
 };
+
+/// A file's record and row kept in the trash with the file named, before they are removed:
+/// what `trash restore` brings back. The file itself is set aside (`trash.set_aside`) once
+/// everything the removal takes has gone.
+pub fn keep_in_trash(ctx: *Ctx, row: store.media.Row) Error!void {
+    std.debug.assert(row.record.len > 0);
+    std.debug.assert(row.storage_key.len > 0);
+
+    const key = std.fmt.allocPrint(ctx.arena, "[\"{s}\"]", .{row.record}) catch {
+        return error.OutOfMemory;
+    };
+
+    _ = try trash.keep(ctx, .{
+        .kind = "media",
+        .key = row.record,
+        .label = std.fmt.allocPrint(ctx.arena, "File {s}", .{row.filename}) catch {
+            return error.OutOfMemory;
+        },
+        .roots = &.{
+            .{
+                .table = "records",
+                .column = "id",
+                .keys = key,
+            },
+            .{
+                .table = "record_search",
+                .column = "record",
+                .keys = key,
+            },
+            .{
+                .table = "snapshots",
+                .column = "record",
+                .keys = key,
+            },
+        },
+        .files = &.{row.storage_key},
+    });
+}
 
 pub const Move = struct {
     pub const shape = public.Move;
