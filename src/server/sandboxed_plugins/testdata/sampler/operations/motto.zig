@@ -4,6 +4,9 @@
 //! users, and answers it as read back; with no motto given, the account's motto is cleared.
 //! Administrators may call it.
 //!
+//! Find: slogan, catchphrase
+//! Hint: motto, slogan: an account's motto is kept by the sampler, `sampler motto`
+//!
 //! Example:
 //!   in: { "user": "admin@example.com", "motto": "Keep notes" }
 //!   out: { "motto": "Keep notes" }

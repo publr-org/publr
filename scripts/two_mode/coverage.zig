@@ -300,6 +300,18 @@ const exercised = [_]Part{
         .name = "webhooks",
         .where = "sampler's ping, delivered to it installed in scenarios_queued.zig",
     },
+    .{
+        .name = "find_words",
+        .where = "sampler's motto, found by its `Find:` words in scenarios_find.zig",
+    },
+    .{
+        .name = "hint_fields",
+        .where = "sampler's motto, its `Hint:` on a new field in scenarios_find.zig",
+    },
+    .{
+        .name = "hint_says",
+        .where = "the same hint's sentence",
+    },
 };
 
 /// What only the sandbox has: a compiled-in plugin runs unlimited, its grants as asked.

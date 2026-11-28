@@ -274,6 +274,7 @@ test {
     _ = @import("sandboxed_plugins/scenarios_domains.zig");
     _ = @import("sandboxed_plugins/scenarios_queued.zig");
     _ = @import("sandboxed_plugins/scenarios_taxonomies.zig");
+    _ = @import("sandboxed_plugins/scenarios_find.zig");
     _ = @import("sandboxed_plugins/scenarios_enable_many.zig");
     _ = @import("sandboxed_plugins/scenarios_soak.zig");
     _ = @import("sandboxed_plugins/scenarios_placed_fields.zig");
